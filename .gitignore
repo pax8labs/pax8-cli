@@ -1,0 +1,9 @@
+node_modules
+dist
+.pax8
+.env
+*.tgz
+*.tsbuildinfo
+.turbo
+coverage
+.DS_Store

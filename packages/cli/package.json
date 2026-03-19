@@ -1,0 +1,27 @@
+{
+  "name": "@pax8/cli",
+  "version": "0.1.0",
+  "description": "CLI tool for MSPs to manage Pax8 cloud marketplace operations",
+  "type": "module",
+  "bin": {
+    "pax8": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@pax8/core": "workspace:*",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "ora": "^8.1.0",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

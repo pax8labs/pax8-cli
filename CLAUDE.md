@@ -1,5 +1,14 @@
 # CLAUDE.md — pax8-cli
 
+## Autonomous Build Mode
+
+When following `docs/BUILD.md`, operate fully autonomously:
+- **Do NOT ask for permission** to create files, install packages, run builds/tests, or make git commits
+- **Do NOT ask for confirmation** on implementation decisions — make reasonable choices and document in commit messages
+- **Commit frequently** after each logical unit of work without asking
+- **Run all shell commands** (pnpm install, build, test, git) without prompting
+- This is an autonomous build — the BUILD.md is the complete spec. Execute it end-to-end.
+
 ## What is this project?
 
 An open-source CLI tool for MSPs to manage Pax8 cloud marketplace operations (subscriptions, billing, customers, products) from the terminal. See `docs/PRD.md` for full product requirements.

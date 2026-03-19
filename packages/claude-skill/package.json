@@ -1,0 +1,10 @@
+{
+  "name": "@pax8/claude-skill",
+  "version": "0.1.0",
+  "description": "Claude Code skill for AI-assisted Pax8 operations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "echo 'no build needed'"
+  }
+}
