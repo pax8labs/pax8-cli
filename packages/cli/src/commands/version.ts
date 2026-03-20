@@ -1,5 +1,7 @@
 import { Command } from "commander";
 
+declare const __CLI_VERSION__: string;
+
 export const versionCommand = new Command("version")
   .description("Print version information")
   .addHelpText(
@@ -9,7 +11,7 @@ Examples:
   pax8 version`
   )
   .action(async () => {
-    const version = "0.1.0";
+    const version = typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0";
     const nodeVersion = process.versions.node;
     const platform = `${process.platform}-${process.arch}`;
 
