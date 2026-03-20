@@ -163,6 +163,11 @@ async function startRepl(): Promise<void> {
     // Parse the input line into argv tokens (respects quoted strings)
     const args = tokenize(input);
 
+    // Strip leading "pax8" if the user types it — the REPL already adds it
+    if (args[0] === "pax8") {
+      args.shift();
+    }
+
     // Create a fresh program for each command to avoid stale state
     const prog = createProgram();
     prog.exitOverride(); // Don't call process.exit()
