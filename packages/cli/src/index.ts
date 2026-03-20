@@ -18,6 +18,7 @@ import { handleCommandError } from "./lib/errors.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
+import { loadConfig } from "@pax8/core";
 
 export function createProgram(): Command {
   const program = new Command();
@@ -50,11 +51,25 @@ export function createProgram(): Command {
   program.addCommand(mooCommand, { hidden: true });
   program.addCommand(coffeeCommand, { hidden: true });
 
-  // Time-based quip hook
-  program.hook("preAction", () => {
+  // Time-based quip hook and demo mode banner
+  program.hook("preAction", async () => {
     const quip = getTimeQuip();
     if (quip) {
       console.error(quip);
+    }
+
+    // Show demo mode banner if active
+    let isDemo = process.env.PAX8_DEMO === "1";
+    if (!isDemo) {
+      try {
+        const config = await loadConfig();
+        isDemo = config.demo === true;
+      } catch {
+        // ignore config load errors
+      }
+    }
+    if (isDemo) {
+      process.stderr.write(chalk.dim("  \u2728 Demo mode \u2014 showing sample data\n"));
     }
   });
 
