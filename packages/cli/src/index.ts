@@ -147,7 +147,6 @@ async function startRepl(): Promise<void> {
     }
 
     if (input === "exit" || input === "quit" || input === "q") {
-      process.stdout.write(chalk.dim("\n  Goodbye.\n\n"));
       rl.close();
       return;
     }
@@ -171,14 +170,26 @@ async function startRepl(): Promise<void> {
       writeErr: (str: string) => process.stderr.write(str),
     });
 
+    // Override process.exit so commands don't kill the REPL
+    const origExit = process.exit;
+    let exitCalled = false;
+    process.exit = ((_code?: number) => {
+      exitCalled = true;
+    }) as typeof process.exit;
+
     try {
       await prog.parseAsync(["node", "pax8", ...args]);
     } catch (err: unknown) {
-      // Commander throws on --help and --version with exitOverride — that's fine
       const e = err as { code?: string };
       if (e?.code !== "commander.helpDisplayed" && e?.code !== "commander.version") {
-        handleCommandError(err);
+        // Print error without exiting
+        if (err instanceof Error) {
+          process.stderr.write(chalk.red.bold(`\n  \u2717 ${err.message}\n\n`));
+        }
       }
+    } finally {
+      process.exit = origExit;
+      exitCalled = false;
     }
 
     process.stdout.write("\n");
@@ -186,6 +197,7 @@ async function startRepl(): Promise<void> {
   });
 
   rl.on("close", () => {
+    process.stdout.write(chalk.dim("\n  Goodbye.\n\n"));
     process.exit(0);
   });
 }
