@@ -99,7 +99,7 @@ describe("output", () => {
         {
           key: "name",
           header: "Name",
-          format: (v: string) => v.toUpperCase(),
+          format: (v) => String(v).toUpperCase(),
         },
       ];
 

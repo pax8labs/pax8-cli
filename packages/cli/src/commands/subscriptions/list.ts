@@ -14,21 +14,21 @@ const columns: Column[] = [
   {
     key: "id",
     header: "ID",
-    format: (v: string) => chalk.dim(v.slice(0, 8)),
+    format: (v) => chalk.dim(String(v).slice(0, 8)),
   },
   {
     key: "companyName",
     header: "Company",
-    format: (v: string) => formatCompanyName(v),
+    format: (v) => formatCompanyName(String(v)),
   },
   { key: "productName", header: "Product" },
-  { key: "quantity", header: "Qty", format: (v: number) => String(v) },
-  { key: "status", header: "Status", format: (v: string) => formatStatus(v) },
+  { key: "quantity", header: "Qty", format: (v) => String(v) },
+  { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
   { key: "billingTerm", header: "Term" },
   {
     key: "price",
     header: "Price",
-    format: (v: number) => formatCurrency(v),
+    format: (v) => formatCurrency(Number(v)),
   },
 ];
 

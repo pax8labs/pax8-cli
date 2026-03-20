@@ -113,6 +113,7 @@ describe("handleCommandError", () => {
 
   it("stops spinner if provided", () => {
     const spinner = { fail: vi.fn() };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial mock for testing
     handleCommandError(new Error("test"), spinner as any);
 
     expect(spinner.fail).toHaveBeenCalled();
@@ -126,6 +127,7 @@ describe("handleCommandError", () => {
     };
 
     // Should not throw
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial mock for testing
     handleCommandError(new Error("test"), spinner as any);
     expect(exitSpy).toHaveBeenCalledWith(1);
   });

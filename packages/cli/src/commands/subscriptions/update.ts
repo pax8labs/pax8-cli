@@ -31,7 +31,7 @@ Examples:
       const sub = await ctx.api.subscriptions.get(id);
       spinner.stop();
 
-      const updateData: Record<string, any> = {};
+      const updateData: Record<string, unknown> = {};
 
       if (options.quantity !== undefined) {
         const newQty = parseInt(options.quantity, 10);

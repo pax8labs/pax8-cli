@@ -35,7 +35,6 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
       return getDefaultConfig();
     }
-    // If it's a Zod validation error, re-throw as-is
     if (err instanceof Error && err.name === "ZodError") {
       throw err;
     }

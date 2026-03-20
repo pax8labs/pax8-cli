@@ -28,7 +28,7 @@ export const mooCommand = new Command("moo")
   .helpOption(false)
   .action(() => {
     const quote = QUOTES[Math.floor(Math.random() * QUOTES.length)];
-    console.log(COW);
-    console.log(`  ${chalk.cyan(`"${quote}"`)}`);
-    console.log();
+    process.stdout.write(COW + "\n");
+    process.stdout.write(`  ${chalk.cyan(`"${quote}"`)}\n`);
+    process.stdout.write("\n");
   });

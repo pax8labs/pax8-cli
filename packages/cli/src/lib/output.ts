@@ -5,7 +5,7 @@ export interface Column {
   key: string;
   header: string;
   width?: number;
-  format?: (value: any) => string;
+  format?: (value: unknown) => string;
 }
 
 export interface OutputOptions {
@@ -25,7 +25,7 @@ function escapeCSV(value: string): string {
   return value;
 }
 
-function formatTable(data: any[], columns: Column[]): void {
+function formatTable(data: Record<string, unknown>[], columns: Column[]): void {
   const table = new Table({
     head: columns.map((col) => chalk.cyan.bold(col.header)),
     style: {
@@ -54,11 +54,11 @@ function formatTable(data: any[], columns: Column[]): void {
   }
 }
 
-function formatJSON(data: any[]): void {
+function formatJSON(data: Record<string, unknown>[]): void {
   process.stdout.write(JSON.stringify(data, null, 2) + "\n");
 }
 
-function formatCSV(data: any[], columns: Column[]): void {
+function formatCSV(data: Record<string, unknown>[], columns: Column[]): void {
   // Header row
   const header = columns.map((col) => escapeCSV(col.header)).join(",");
   process.stdout.write(header + "\n");
@@ -76,7 +76,7 @@ function formatCSV(data: any[], columns: Column[]): void {
   }
 }
 
-export function output(data: any[], options: OutputOptions): void {
+export function output(data: Record<string, unknown>[], options: OutputOptions): void {
   const { format, columns } = options;
 
   if (format === "quiet") {

@@ -27,11 +27,12 @@ export async function runCli(
       timeout: 15000,
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { stdout?: string; stderr?: string; code?: number };
     return {
-      stdout: error.stdout ?? "",
-      stderr: error.stderr ?? "",
-      exitCode: error.code ?? 1,
+      stdout: err.stdout ?? "",
+      stderr: err.stderr ?? "",
+      exitCode: err.code ?? 1,
     };
   }
 }

@@ -25,14 +25,14 @@ const columns: Column[] = [
   {
     key: "companyName",
     header: "Company",
-    format: (v: string) => formatCompanyName(v),
+    format: (v) => formatCompanyName(String(v)),
   },
   { key: "productName", header: "Product" },
-  { key: "quantity", header: "Quantity", format: (v: number) => String(v) },
+  { key: "quantity", header: "Quantity", format: (v) => String(v) },
   {
     key: "renewalDate",
     header: "Renews",
-    format: (v: Date) => formatDaysUntil(v),
+    format: (v) => formatDaysUntil(v as Date),
   },
   { key: "billingTerm", header: "Term" },
 ];

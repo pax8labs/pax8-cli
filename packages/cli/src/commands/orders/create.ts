@@ -4,6 +4,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
+import type { CreateOrderInput } from "@pax8/core";
 
 export const ordersCreateCommand = new Command("create")
   .description("Create a new order")
@@ -43,7 +44,9 @@ Examples:
 
       const spinner = createSpinner("Creating order...").start();
 
-      const order = await ctx.api.orders.create({
+      // Only pass fields defined in OrderLineItemInput — do not include
+      // display-only fields like productName which are not part of the API input schema.
+      const orderInput: CreateOrderInput = {
         companyId: allOpts.company,
         lineItems: [
           {
@@ -52,7 +55,8 @@ Examples:
             billingTerm: allOpts.billingTerm,
           },
         ],
-      });
+      };
+      const order = await ctx.api.orders.create(orderInput);
 
       spinner.succeed("Order created");
 

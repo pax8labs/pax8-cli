@@ -7,9 +7,9 @@ import { output, type Column } from "../../lib/output.js";
 import { formatStatus, formatCompanyName } from "../../lib/formatters.js";
 
 const columns: Column[] = [
-  { key: "name", header: "Name", format: (v: string) => formatCompanyName(v, 30) },
+  { key: "name", header: "Name", format: (v) => formatCompanyName(String(v), 30) },
   { key: "id", header: "ID" },
-  { key: "status", header: "Status", format: (v: string) => formatStatus(v) },
+  { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
 ];
 
 export const companiesListCommand = new Command("list")
