@@ -23,7 +23,7 @@ Examples:
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
-    const spinner = createSpinner("Fetching invoices…");
+    const spinner = createSpinner("Fetching invoices...");
 
     try {
       spinner.start();
@@ -72,7 +72,7 @@ Examples:
       output(result.content, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stderr.write(
+        process.stdout.write(
           `\n  ${result.page.totalElements} invoices\n\n`
         );
       }

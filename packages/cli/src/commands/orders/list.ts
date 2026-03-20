@@ -17,7 +17,7 @@ export const ordersListCommand = new Command("list")
   .description("List orders")
   .option("--company <id>", "Filter by company ID")
   .option("--page <number>", "Page number (zero-based)", "0")
-  .option("--size <number>", "Page size", "10")
+  .option("--size <number>", "Page size", "25")
   .addHelpText(
     "after",
     `
@@ -29,7 +29,7 @@ Examples:
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
-    const spinner = createSpinner("Loading orders...").start();
+    const spinner = createSpinner("Fetching orders...").start();
 
     try {
       const ctx = await buildContext(allOpts);

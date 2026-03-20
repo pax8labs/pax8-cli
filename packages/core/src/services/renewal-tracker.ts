@@ -1,3 +1,11 @@
+import type { Subscription } from "../api/types.js";
+
+/** The subset of Subscription fields used by the renewal tracker. */
+type RenewalSubscriptionInput = Partial<Subscription> & {
+  commitmentTerm?: { endDate?: string; billingTerm?: string };
+  subscriptionId?: string;
+};
+
 export interface RenewalItem {
   subscriptionId: string;
   companyId: string;
@@ -34,7 +42,7 @@ function computeMrrAtRisk(price: number, quantity: number, billingTerm: string):
   return price * quantity;
 }
 
-export function getUpcomingRenewals(subscriptions: any[], withinDays: number): RenewalReport {
+export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], withinDays: number): RenewalReport {
   const now = new Date();
   const items: RenewalItem[] = [];
 

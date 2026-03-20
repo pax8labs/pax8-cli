@@ -21,7 +21,7 @@ Examples:
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
-    const spinner = createSpinner("Auditing invoices…");
+    const spinner = createSpinner("Fetching invoices...");
 
     try {
       spinner.start();

@@ -36,7 +36,7 @@ export const subscriptionsListCommand = new Command("list")
   .description("List subscriptions")
   .option("--company <id>", "Filter by company ID")
   .option("--page <number>", "Page number", "0")
-  .option("--size <number>", "Page size", "50")
+  .option("--size <number>", "Page size", "25")
   .addHelpText(
     "after",
     `

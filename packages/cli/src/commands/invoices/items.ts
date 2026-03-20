@@ -11,7 +11,7 @@ export const invoicesItemsCommand = new Command("items")
   .option("--company <id>", "Filter by company ID")
   .option("--invoice-id <id>", "Filter by invoice ID")
   .option("--page <number>", "Page number (0-based)", "0")
-  .option("--size <number>", "Page size", "50")
+  .option("--size <number>", "Page size", "25")
   .addHelpText(
     "after",
     `

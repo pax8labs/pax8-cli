@@ -24,7 +24,7 @@ Examples:
   )
   .action(async (id: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();
-    const spinner = createSpinner("Loading order...").start();
+    const spinner = createSpinner("Fetching order...").start();
 
     try {
       const ctx = await buildContext(allOpts);
@@ -61,7 +61,7 @@ Examples:
       process.stdout.write("\n");
 
       if (order.lineItems && order.lineItems.length > 0) {
-        process.stderr.write(chalk.dim(`  Line Items (${order.lineItems.length}):\n\n`));
+        process.stdout.write(chalk.dim(`  Line Items (${order.lineItems.length}):\n\n`));
         output(order.lineItems, { format: "table", columns: lineItemColumns });
         process.stdout.write("\n");
       }

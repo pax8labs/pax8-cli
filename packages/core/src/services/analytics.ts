@@ -1,3 +1,16 @@
+import type { Subscription, Invoice } from "../api/types.js";
+
+/** The subset of Subscription fields used by analytics. */
+type AnalyticsSubscriptionInput = Partial<Subscription> & {
+  vendorName?: string;
+};
+
+/** The subset of Invoice fields used by growth analytics. */
+type AnalyticsInvoiceInput = Partial<Invoice> & {
+  date?: string;
+  amount?: number;
+};
+
 export interface MrrReport {
   totalMrr: number;
   byCompany: Array<{ companyId: string; companyName: string; mrr: number }>;
@@ -10,7 +23,7 @@ export interface GrowthReport {
   averageGrowth: number;
 }
 
-function subscriptionMrr(sub: any): number {
+function subscriptionMrr(sub: AnalyticsSubscriptionInput): number {
   const price: number = sub.price ?? 0;
   const quantity: number = sub.quantity ?? 1;
   const billingTerm: string = (sub.billingTerm ?? "monthly").toLowerCase();
@@ -21,7 +34,7 @@ function subscriptionMrr(sub: any): number {
   return price * quantity;
 }
 
-export function computeMrr(subscriptions: any[]): MrrReport {
+export function computeMrr(subscriptions: AnalyticsSubscriptionInput[]): MrrReport {
   const activeSubs = subscriptions.filter(
     (s) => (s.status ?? "").toLowerCase() === "active",
   );
@@ -71,7 +84,7 @@ export function computeMrr(subscriptions: any[]): MrrReport {
   };
 }
 
-export function computeGrowth(invoices: any[], months: number): GrowthReport {
+export function computeGrowth(invoices: AnalyticsInvoiceInput[], months: number): GrowthReport {
   // Group invoices by month (YYYY-MM)
   const monthlyTotals = new Map<string, number>();
 

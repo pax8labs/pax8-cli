@@ -28,7 +28,7 @@ Examples:
   )
   .action(async (id: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();
-    const spinner = createSpinner("Loading company...").start();
+    const spinner = createSpinner("Fetching company...").start();
 
     try {
       const ctx = await buildContext(allOpts);
@@ -83,11 +83,11 @@ Examples:
       if (allOpts.subscriptions) {
         const subs = await ctx.api.subscriptions.list({ companyId: id });
         if (subs.content.length > 0) {
-          process.stderr.write(chalk.dim(`  Subscriptions (${subs.content.length}):\n\n`));
+          process.stdout.write(chalk.dim(`  Subscriptions (${subs.content.length}):\n\n`));
           output(subs.content, { format: "table", columns: subscriptionColumns });
           process.stdout.write("\n");
         } else {
-          process.stderr.write(chalk.dim("  No subscriptions found.\n\n"));
+          process.stdout.write(chalk.dim("  No subscriptions found.\n\n"));
         }
       }
     } catch (error) {

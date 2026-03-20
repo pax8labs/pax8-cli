@@ -54,6 +54,11 @@ Examples:
         return;
       }
 
+      if (ctx.outputFormat === "csv") {
+        output([product], { format: "csv" });
+        return;
+      }
+
       if (ctx.outputFormat === "quiet") return;
 
       // Table/human-readable output

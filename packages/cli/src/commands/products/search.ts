@@ -19,7 +19,7 @@ Examples:
   .action(async (query, options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
-    const spinner = createSpinner("Searching products…");
+    const spinner = createSpinner("Fetching products...");
 
     try {
       spinner.start();
@@ -39,7 +39,7 @@ Examples:
         if (ctx.outputFormat === "json") {
           output([], { format: "json" });
         } else if (ctx.outputFormat !== "quiet") {
-          process.stderr.write(
+          process.stdout.write(
             `\n  No products matching '${query}' found.\n\n`
           );
         }
@@ -56,7 +56,7 @@ Examples:
       output(matches, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stderr.write(
+        process.stdout.write(
           `\n  ${matches.length} products\n\n`
         );
       }

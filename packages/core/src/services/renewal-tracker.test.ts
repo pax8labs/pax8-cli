@@ -168,4 +168,65 @@ describe("getUpcomingRenewals", () => {
     expect(report.monthlyCount).toBe(0);
     expect(report.urgentCount).toBe(0);
   });
+
+  // --- Edge case tests ---
+
+  it("should return empty report when all subscriptions have no commitmentTermEndDate", () => {
+    const subs = [
+      { id: "s1", companyId: "co-1", productName: "M365", quantity: 10, price: 10 },
+      { id: "s2", companyId: "co-2", productName: "Teams", quantity: 5, price: 20 },
+      { id: "s3", companyId: "co-3", productName: "Exchange", quantity: 3, price: 15 },
+    ];
+
+    const report = getUpcomingRenewals(subs, 30);
+    expect(report.items).toHaveLength(0);
+    expect(report.totalMrrAtRisk).toBe(0);
+  });
+
+  it("should not include subscriptions with commitmentTermEndDate in the past", () => {
+    const subs = [
+      makeSub({ id: "s1", commitmentTermEndDate: daysFromNow(-10) }),
+      makeSub({ id: "s2", commitmentTermEndDate: daysFromNow(-1) }),
+      makeSub({ id: "s3", commitmentTermEndDate: daysFromNow(-100) }),
+    ];
+
+    const report = getUpcomingRenewals(subs, 30);
+    expect(report.items).toHaveLength(0);
+  });
+
+  it("should handle withinDays = 0 (only renewals today)", () => {
+    const subs = [
+      makeSub({ id: "s1", commitmentTermEndDate: daysFromNow(0) }),
+      makeSub({ id: "s2", commitmentTermEndDate: daysFromNow(1) }),
+    ];
+
+    const report = getUpcomingRenewals(subs, 0);
+    expect(report.items).toHaveLength(1);
+    expect(report.items[0].subscriptionId).toBe("s1");
+    expect(report.items[0].daysUntilRenewal).toBe(0);
+  });
+
+  it("should handle very large withinDays (365+)", () => {
+    const subs = [
+      makeSub({ id: "s1", commitmentTermEndDate: daysFromNow(100) }),
+      makeSub({ id: "s2", commitmentTermEndDate: daysFromNow(200) }),
+      makeSub({ id: "s3", commitmentTermEndDate: daysFromNow(364) }),
+      makeSub({ id: "s4", commitmentTermEndDate: daysFromNow(400) }),
+    ];
+
+    const report = getUpcomingRenewals(subs, 365);
+    expect(report.items).toHaveLength(3);
+    expect(report.items.map((i) => i.subscriptionId)).toEqual(["s1", "s2", "s3"]);
+  });
+
+  it("should include subscription with price = 0 but with 0 MRR", () => {
+    const subs = [
+      makeSub({ id: "s1", price: 0, quantity: 10, commitmentTermEndDate: daysFromNow(5) }),
+    ];
+
+    const report = getUpcomingRenewals(subs, 30);
+    expect(report.items).toHaveLength(1);
+    expect(report.items[0].mrrAtRisk).toBe(0);
+    expect(report.totalMrrAtRisk).toBe(0);
+  });
 });

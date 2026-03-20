@@ -14,12 +14,25 @@ import {
   CredentialStore,
   loadConfig,
 } from "@pax8/core";
+import type { Config } from "@pax8/core";
 import { CliError } from "./errors.js";
 
+export interface ApiClient {
+  companies: CompaniesApi;
+  subscriptions: SubscriptionsApi;
+  products: ProductsApi;
+  invoices: InvoicesApi;
+  orders: OrdersApi;
+  contacts: ContactsApi;
+  usage: UsageApi;
+  quotes: QuotesApi;
+  webhooks: WebhooksApi;
+}
+
 export interface CommandContext {
-  api: any;
+  api: ApiClient | MockPax8Client;
   outputFormat: "table" | "json" | "csv" | "quiet";
-  config: any;
+  config: Config;
   isDemo: boolean;
   verbose: boolean;
 }
@@ -62,7 +75,7 @@ export async function buildContext(
     telemetry: { enabled: false },
   }));
 
-  let api: any;
+  let api: ApiClient | MockPax8Client;
 
   if (isDemo) {
     api = new MockPax8Client();

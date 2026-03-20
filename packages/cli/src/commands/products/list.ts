@@ -21,7 +21,7 @@ Examples:
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
-    const spinner = createSpinner("Fetching products…");
+    const spinner = createSpinner("Fetching products...");
 
     try {
       spinner.start();
@@ -42,7 +42,7 @@ Examples:
       output(result.content, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stderr.write(
+        process.stdout.write(
           `\n  ${result.page.totalElements} products\n\n`
         );
       }

@@ -19,7 +19,7 @@ Examples:
   .action(async (id, options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
-    const spinner = createSpinner("Fetching invoice…");
+    const spinner = createSpinner("Fetching invoice...");
 
     try {
       spinner.start();

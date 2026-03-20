@@ -15,7 +15,7 @@ const columns: Column[] = [
 export const companiesListCommand = new Command("list")
   .description("List all companies")
   .option("--page <number>", "Page number (zero-based)", "0")
-  .option("--size <number>", "Page size", "10")
+  .option("--size <number>", "Page size", "25")
   .addHelpText(
     "after",
     `
@@ -27,7 +27,7 @@ Examples:
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
-    const spinner = createSpinner("Loading companies...").start();
+    const spinner = createSpinner("Fetching companies...").start();
 
     try {
       const ctx = await buildContext(allOpts);

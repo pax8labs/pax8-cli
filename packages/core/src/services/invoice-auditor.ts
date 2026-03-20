@@ -1,3 +1,18 @@
+import type { InvoiceItem, Subscription } from "../api/types.js";
+
+/** The subset of InvoiceItem fields used by the invoice auditor. */
+type AuditInvoiceItemInput = Partial<InvoiceItem> & {
+  companyName?: string;
+  productName?: string;
+  price?: number;
+};
+
+/** The subset of Subscription fields used by the invoice auditor. */
+type AuditSubscriptionInput = Partial<Subscription> & {
+  subscriptionId?: string;
+  unitPrice?: number;
+};
+
 export interface AuditDiscrepancy {
   companyId: string;
   companyName: string;
@@ -38,7 +53,7 @@ interface NormalizedSubscription {
   status: string;
 }
 
-function normalizeInvoiceItem(item: any): NormalizedInvoiceItem {
+function normalizeInvoiceItem(item: AuditInvoiceItemInput): NormalizedInvoiceItem {
   return {
     subscriptionId: item.subscriptionId,
     companyId: item.companyId ?? "",
@@ -50,7 +65,7 @@ function normalizeInvoiceItem(item: any): NormalizedInvoiceItem {
   };
 }
 
-function normalizeSubscription(sub: any): NormalizedSubscription {
+function normalizeSubscription(sub: AuditSubscriptionInput): NormalizedSubscription {
   return {
     subscriptionId: sub.id ?? sub.subscriptionId ?? "",
     companyId: sub.companyId ?? "",
@@ -68,7 +83,7 @@ function matchKey(item: { subscriptionId?: string; companyId: string; productId?
   return `cp:${item.companyId}:${item.productId ?? ""}`;
 }
 
-export function auditInvoices(invoiceItems: any[], subscriptions: any[]): AuditReport {
+export function auditInvoices(invoiceItems: AuditInvoiceItemInput[], subscriptions: AuditSubscriptionInput[]): AuditReport {
   const normalizedInvoices = invoiceItems.map(normalizeInvoiceItem);
   const normalizedSubs = subscriptions.map(normalizeSubscription).filter((s) => s.status === "active");
 
