@@ -1,0 +1,115 @@
+export interface MrrReport {
+  totalMrr: number;
+  byCompany: Array<{ companyId: string; companyName: string; mrr: number }>;
+  byProduct: Array<{ productName: string; mrr: number; subscriptionCount: number }>;
+  byVendor: Array<{ vendorName: string; mrr: number }>;
+}
+
+export interface GrowthReport {
+  months: Array<{ month: string; mrr: number; delta: number; growthPercent: number }>;
+  averageGrowth: number;
+}
+
+function subscriptionMrr(sub: any): number {
+  const price: number = sub.price ?? 0;
+  const quantity: number = sub.quantity ?? 1;
+  const billingTerm: string = (sub.billingTerm ?? "monthly").toLowerCase();
+
+  if (billingTerm.includes("annual") || billingTerm.includes("yearly")) {
+    return (price * quantity) / 12;
+  }
+  return price * quantity;
+}
+
+export function computeMrr(subscriptions: any[]): MrrReport {
+  const activeSubs = subscriptions.filter(
+    (s) => (s.status ?? "").toLowerCase() === "active",
+  );
+
+  let totalMrr = 0;
+
+  const companyMap = new Map<string, { companyId: string; companyName: string; mrr: number }>();
+  const productMap = new Map<string, { productName: string; mrr: number; subscriptionCount: number }>();
+  const vendorMap = new Map<string, { vendorName: string; mrr: number }>();
+
+  for (const sub of activeSubs) {
+    const mrr = subscriptionMrr(sub);
+    totalMrr += mrr;
+
+    const companyId: string = sub.companyId ?? "";
+    const companyName: string = sub.companyName ?? "";
+    const existing = companyMap.get(companyId);
+    if (existing) {
+      existing.mrr += mrr;
+    } else {
+      companyMap.set(companyId, { companyId, companyName, mrr });
+    }
+
+    const productName: string = sub.productName ?? "";
+    const prodEntry = productMap.get(productName);
+    if (prodEntry) {
+      prodEntry.mrr += mrr;
+      prodEntry.subscriptionCount += 1;
+    } else {
+      productMap.set(productName, { productName, mrr, subscriptionCount: 1 });
+    }
+
+    const vendorName: string = sub.vendorName ?? "";
+    const vendorEntry = vendorMap.get(vendorName);
+    if (vendorEntry) {
+      vendorEntry.mrr += mrr;
+    } else {
+      vendorMap.set(vendorName, { vendorName, mrr });
+    }
+  }
+
+  return {
+    totalMrr,
+    byCompany: Array.from(companyMap.values()).sort((a, b) => b.mrr - a.mrr),
+    byProduct: Array.from(productMap.values()).sort((a, b) => b.mrr - a.mrr),
+    byVendor: Array.from(vendorMap.values()).sort((a, b) => b.mrr - a.mrr),
+  };
+}
+
+export function computeGrowth(invoices: any[], months: number): GrowthReport {
+  // Group invoices by month (YYYY-MM)
+  const monthlyTotals = new Map<string, number>();
+
+  for (const inv of invoices) {
+    const dateStr: string = inv.invoiceDate ?? inv.date ?? "";
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) continue;
+
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const total: number = inv.total ?? inv.amount ?? 0;
+    monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) ?? 0) + total);
+  }
+
+  // Sort months and take the last N
+  const sortedMonths = Array.from(monthlyTotals.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-months);
+
+  const result: GrowthReport["months"] = [];
+  let previousMrr = 0;
+
+  for (let i = 0; i < sortedMonths.length; i++) {
+    const [month, mrr] = sortedMonths[i];
+    const delta = i === 0 ? 0 : mrr - previousMrr;
+    const growthPercent = i === 0 || previousMrr === 0 ? 0 : (delta / previousMrr) * 100;
+
+    result.push({ month, mrr, delta, growthPercent });
+    previousMrr = mrr;
+  }
+
+  const growthEntries = result.filter((_, i) => i > 0);
+  const averageGrowth =
+    growthEntries.length > 0
+      ? growthEntries.reduce((sum, e) => sum + e.growthPercent, 0) / growthEntries.length
+      : 0;
+
+  return {
+    months: result,
+    averageGrowth,
+  };
+}

@@ -390,3 +390,41 @@ export type PaginatedResponse<T> = {
   page: PageInfo;
   content: T[];
 };
+
+// ─── Quote Input Types ──────────────────────────────────────────────────────
+
+export const CreateQuoteInputSchema = z.object({
+  companyId: z.string().uuid(),
+  lineItems: z.array(z.object({
+    productId: z.string().uuid(),
+    quantity: z.number().int().positive(),
+    billingTerm: BillingTermSchema.optional(),
+    provisioningDetails: z.record(z.string(), z.unknown()).optional(),
+  })),
+});
+export type CreateQuoteInput = z.infer<typeof CreateQuoteInputSchema>;
+
+export const UpdateQuoteInputSchema = z.object({
+  lineItems: z.array(z.object({
+    productId: z.string().uuid(),
+    quantity: z.number().int().positive(),
+    billingTerm: BillingTermSchema.optional(),
+    provisioningDetails: z.record(z.string(), z.unknown()).optional(),
+  })).optional(),
+  expirationDate: z.string().optional(),
+});
+export type UpdateQuoteInput = z.infer<typeof UpdateQuoteInputSchema>;
+
+// Aliases for backward compatibility
+export const PageSchema = PageInfoSchema;
+
+// ─── Product Dependency ─────────────────────────────────────────────────────
+
+export const ProductDependencySchema = z.object({
+  id: z.string().uuid(),
+  productId: z.string().uuid(),
+  dependsOnProductId: z.string().uuid(),
+  dependencyType: z.string(),
+  description: z.string().optional(),
+});
+export type ProductDependency = z.infer<typeof ProductDependencySchema>;

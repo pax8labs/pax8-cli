@@ -1,402 +1,1047 @@
 # Autonomous Build Prompt — pax8-cli MVP
 
-You are building `pax8-cli`, an open-source CLI for MSPs to manage Pax8 cloud marketplace operations. This document contains everything you need to build the MVP autonomously without human input.
+You are building `pax8-cli`, an open-source CLI for MSPs to manage Pax8 cloud marketplace operations.
 
-Read `docs/PRD.md` first for full context. This document is your execution plan.
+**Read `docs/PRD.md` for full product context. This document is your execution plan.**
 
 ---
 
-## Ground Rules
+## Operating Rules
 
-1. **Do not ask questions.** Make reasonable decisions and document them in commit messages. If a decision is genuinely ambiguous, pick the simpler option.
-2. **Test everything.** Every module gets unit tests. Every command gets subprocess integration tests. Target 80%+ coverage.
-3. **Commit frequently.** Small, focused commits after each logical unit of work. Never commit broken code — run tests before every commit.
-4. **Match the PRD UX exactly.** The command names, flag names, output formats, and error messages in the PRD are the spec. Follow them precisely.
-5. **Follow existing patterns.** Once you establish a pattern (e.g., how a command file is structured), replicate it consistently across all commands.
-6. **No placeholders.** Every feature you build should be complete and functional. If something depends on a real Pax8 API key, it should work with one and fail gracefully without one.
-7. **Demo mode from day one.** All commands must work in demo mode with realistic mock data so the CLI can be tested and demonstrated without API credentials.
+1. **Never ask questions.** Make the simpler choice. Document decisions in commit messages.
+2. **Never ask for permission.** Create files, install packages, run commands, and commit freely.
+3. **Test before committing.** Run `pnpm build && pnpm test` before every commit. If tests fail, fix them before committing.
+4. **If something breaks, fix it.** Don't stop to ask. Diagnose, fix, re-test, commit.
+5. **Commit after each numbered build step.** Small, focused commits.
+6. **No placeholders or TODO comments.** Everything you build must be complete and functional.
+7. **Demo mode from step 1.** Every command works with `PAX8_DEMO=1` using realistic mock data.
+8. **Follow patterns exactly.** Once a pattern is established, replicate it identically for all similar code.
+9. **Skip keytar for MVP.** Use env vars + file storage only. Keytar requires native compilation that complicates setup. Add it later.
+10. **Use Node 20+ built-in fetch.** No undici dependency needed.
 
 ---
 
 ## Phase 1: Project Scaffolding
 
-### 1.1 Monorepo Setup
+### Step 1: Monorepo setup
 
-```
-pax8-cli/
-├── package.json              # Root workspace config
-├── pnpm-workspace.yaml
-├── tsconfig.json             # Base TypeScript config (strict mode)
-├── tsconfig.build.json       # Build config (excludes tests)
-├── vitest.config.ts          # Shared test config
-├── .gitignore
-├── .eslintrc.cjs
-├── .prettierrc
-├── docs/
-│   ├── PRD.md
-│   └── BUILD.md
-├── packages/
-│   ├── cli/
-│   │   ├── package.json      # @pax8/cli — bin: { pax8: ./dist/index.js }
-│   │   ├── tsconfig.json
-│   │   └── src/
-│   ├── core/
-│   │   ├── package.json      # @pax8/core
-│   │   ├── tsconfig.json
-│   │   └── src/
-│   └── claude-skill/
-│       ├── package.json      # @pax8/claude-skill
-│       └── skill.md
+Create the following files exactly:
+
+**`pnpm-workspace.yaml`**
+```yaml
+packages:
+  - "packages/*"
 ```
 
-**Dependencies:**
-- Root: `pnpm`, `typescript`, `vitest`, `eslint`, `prettier`, `tsup`, `@vitest/coverage-v8`
-- `@pax8/core`: `zod`, `undici` (or built-in fetch for Node 20+), no chalk/ora (headless)
-- `@pax8/cli`: `commander`, `chalk`, `cli-table3`, `ora`, `yaml`, `@pax8/core`
-
-**TypeScript config:**
-- Strict mode, ES2022 target, NodeNext module resolution
-- Path aliases: `@pax8/core` resolves to `../core/src`
-
-**Scripts:**
+**`package.json`** (root)
 ```json
 {
-  "build": "pnpm -r build",
-  "test": "vitest run",
-  "test:watch": "vitest",
-  "test:coverage": "vitest run --coverage",
-  "lint": "eslint packages/*/src/**/*.ts",
-  "format": "prettier --write .",
-  "dev": "pnpm --filter @pax8/cli dev"
+  "name": "pax8-cli-monorepo",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint 'packages/*/src/**/*.ts'",
+    "format": "prettier --write 'packages/*/src/**/*.ts'"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
 }
 ```
 
-### 1.2 Initial Commit Checklist
-- [ ] All config files created and working
-- [ ] `pnpm install` succeeds
-- [ ] `pnpm build` succeeds (empty packages compile)
-- [ ] `pnpm test` succeeds (no tests yet, exits clean)
-- [ ] `.gitignore` covers `node_modules`, `dist`, `.pax8`, `.env`, `*.tgz`
+**`tsconfig.json`** (root base)
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  }
+}
+```
+
+**`vitest.config.ts`**
+```typescript
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true,
+    testTimeout: 30000,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      include: ["packages/*/src/**/*.ts"],
+      exclude: ["**/__tests__/**", "**/*.test.ts", "**/mock/**"],
+    },
+  },
+});
+```
+
+**`.gitignore`**
+```
+node_modules/
+dist/
+.pax8/
+.env
+*.tgz
+coverage/
+.turbo/
+```
+
+**`.prettierrc`**
+```json
+{
+  "semi": true,
+  "singleQuote": false,
+  "trailingComma": "all",
+  "printWidth": 100,
+  "tabWidth": 2
+}
+```
+
+**`packages/core/package.json`**
+```json
+{
+  "name": "@pax8/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --dts --watch"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0"
+  }
+}
+```
+
+**`packages/core/tsconfig.json`**
+```json
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "outDir": "./dist", "rootDir": "./src" },
+  "include": ["src/**/*.ts"]
+}
+```
+
+**`packages/core/src/index.ts`** — empty barrel export for now:
+```typescript
+export {};
+```
+
+**`packages/cli/package.json`**
+```json
+{
+  "name": "@pax8/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "pax8": "./dist/index.js" },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean --banner.js '#!/usr/bin/env node'",
+    "dev": "tsup src/index.ts --format esm --watch --banner.js '#!/usr/bin/env node'"
+  },
+  "dependencies": {
+    "@pax8/core": "workspace:*",
+    "chalk": "^5.4.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^13.0.0",
+    "ora": "^8.1.0",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "@types/cli-table3": "^0.6.0"
+  }
+}
+```
+
+**`packages/cli/tsconfig.json`**
+```json
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "outDir": "./dist", "rootDir": "./src" },
+  "include": ["src/**/*.ts"]
+}
+```
+
+**`packages/cli/src/index.ts`** — minimal entry point:
+```typescript
+#!/usr/bin/env node
+console.log("pax8 cli - coming soon");
+```
+
+**`packages/claude-skill/package.json`**
+```json
+{
+  "name": "@pax8/claude-skill",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": { "build": "echo 'no build step yet'" }
+}
+```
+
+After creating all files, run:
+```bash
+pnpm install
+pnpm build
+```
+
+Verify both succeed, then commit: `"chore: scaffold monorepo with core, cli, and claude-skill packages"`
 
 ---
 
-## Phase 2: Core Package (`@pax8/core`)
+## Phase 2: Core Package
 
-Build the core package first. It has zero CLI dependencies — pure business logic and API client.
+### Step 2: Zod schemas for all Pax8 API entities
 
-### 2.1 Auth Module (`core/src/auth/`)
+Create `packages/core/src/api/types.ts` with complete Zod schemas for every entity. These schemas reflect the actual Pax8 API response format (verified against their docs and community SDKs).
 
-**`token-manager.ts`**
-- OAuth 2.0 client credentials flow against `POST https://api.pax8.com/v1/token`
-- Request body: `{ client_id, client_secret, grant_type: "client_credentials", audience: "https://api.pax8.com" }`
-- Cache token in memory with TTL tracking (tokens last 24h, refresh at 23h)
-- Methods: `getToken(): Promise<string>`, `isAuthenticated(): boolean`, `clearToken(): void`
-- Throw typed `AuthError` on failure with parsed error message
-
-**`credential-store.ts`**
-- Priority chain: keytar (OS keychain) → `PAX8_CLIENT_ID`/`PAX8_CLIENT_SECRET` env vars → `~/.pax8/credentials.json`
-- Methods: `getCredentials(): Promise<{clientId, clientSecret}>`, `saveCredentials(...)`, `clearCredentials()`
-- Graceful degradation: if keytar fails (no native module), fall back to env/file with a warning
-- Never log or return the client_secret in any output
-
-**Tests:**
-- Token manager: mock HTTP responses (success, 401, network error, token refresh)
-- Credential store: test each fallback in the chain
-- Test that expired tokens trigger refresh
-
-### 2.2 API Client (`core/src/api/`)
-
-**`client.ts` — Base HTTP Client**
-- Constructor: `new Pax8Client({ tokenManager: TokenManager })`
-- Methods: `get<T>(path, params?)`, `post<T>(path, body)`, `put<T>(path, body)`, `patch<T>(path, body)`, `delete(path)`
-- Automatic `Authorization: Bearer <token>` header injection via token manager
-- Base URL: `https://api.pax8.com/v1`
-- Automatic pagination: `getPaginated<T>(path, params?)` returns async iterator that follows pages
-- Rate limit handling: parse `429` responses, wait for reset, retry automatically (max 3 retries)
-- Retry on 5xx with exponential backoff (1s, 2s, 4s)
-- Request/response logging when `PAX8_DEBUG=1` (to stderr, never stdout)
-- Zod validation on all response bodies — throw typed `ApiError` with status code, message, and request context
-- Timeout: 30s default, configurable
-
-**Response types** — define Zod schemas for every API entity:
+**IMPORTANT:** Use `.passthrough()` on all top-level entity schemas so unknown fields from the API don't cause validation failures. Use `.optional()` generously — the API returns different fields depending on context.
 
 ```typescript
-// core/src/api/types.ts
+// packages/core/src/api/types.ts
+import { z } from "zod";
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+export const SubscriptionStatusSchema = z.enum([
+  "Active", "Cancelled", "PendingManual", "PendingAutomated",
+  "PendingCancel", "WaitingForDetails", "Trial", "Converted",
+  "Inactive", "Deleted",
+]);
+export type SubscriptionStatus = z.infer<typeof SubscriptionStatusSchema>;
+
+export const BillingTermSchema = z.enum([
+  "Monthly", "Annual", "2 Year", "3 Year", "One-Time", "Trial", "Activation",
+]);
+export type BillingTerm = z.infer<typeof BillingTermSchema>;
+
+export const InvoiceStatusSchema = z.enum([
+  "Unpaid", "Paid", "Void", "Carried", "Nothing Due",
+]);
+export type InvoiceStatus = z.infer<typeof InvoiceStatusSchema>;
+
+export const CompanyStatusSchema = z.enum(["Active", "Inactive", "Deleted"]);
+export type CompanyStatus = z.infer<typeof CompanyStatusSchema>;
+
+export const ContactTypeSchema = z.enum(["Admin", "Billing", "Technical"]);
+export type ContactType = z.infer<typeof ContactTypeSchema>;
+
+// ─── Pagination ──────────────────────────────────────────────────────────────
+
+export const PageInfoSchema = z.object({
+  size: z.number(),
+  totalElements: z.number(),
+  totalPages: z.number(),
+  number: z.number(),
+});
+export type PageInfo = z.infer<typeof PageInfoSchema>;
+
+export function PaginatedSchema<T extends z.ZodTypeAny>(itemSchema: T) {
+  return z.object({
+    content: z.array(itemSchema),
+    page: PageInfoSchema,
+  });
+}
+
+// ─── Address ─────────────────────────────────────────────────────────────────
+
+export const AddressSchema = z.object({
+  street: z.string().optional(),
+  street2: z.string().optional(),
+  city: z.string().optional(),
+  stateOrProvince: z.string().optional(),
+  postcode: z.string().optional(),
+  country: z.string().optional(),
+}).passthrough();
+export type Address = z.infer<typeof AddressSchema>;
+
+// ─── Company ─────────────────────────────────────────────────────────────────
+
 export const CompanySchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   name: z.string(),
-  address: z.object({ ... }).optional(),
+  address: AddressSchema.optional(),
   phone: z.string().optional(),
   website: z.string().optional(),
-  // ... all fields from Pax8 API
-});
+  status: CompanyStatusSchema.optional(),
+  billOnBehalfOfEnabled: z.boolean().optional(),
+  selfServiceAllowed: z.boolean().optional(),
+  orderApprovalRequired: z.boolean().optional(),
+  externalId: z.string().nullable().optional(),
+  created: z.string().optional(),
+  modified: z.string().optional(),
+}).passthrough();
 export type Company = z.infer<typeof CompanySchema>;
 
-export const PaginatedResponseSchema = <T>(itemSchema: z.ZodType<T>) =>
-  z.object({
-    page: z.object({
-      size: z.number(),
-      totalElements: z.number(),
-      totalPages: z.number(),
-      number: z.number(),
-    }),
-    content: z.array(itemSchema),
-  });
+export const CreateCompanyInputSchema = z.object({
+  name: z.string(),
+  address: AddressSchema.optional(),
+  phone: z.string().optional(),
+  website: z.string().optional(),
+  externalId: z.string().optional(),
+});
+export type CreateCompanyInput = z.infer<typeof CreateCompanyInputSchema>;
+
+export const UpdateCompanyInputSchema = CreateCompanyInputSchema.partial();
+export type UpdateCompanyInput = z.infer<typeof UpdateCompanyInputSchema>;
+
+// ─── Contact ─────────────────────────────────────────────────────────────────
+
+export const ContactTypeEntrySchema = z.object({
+  type: ContactTypeSchema,
+  primary: z.boolean().optional(),
+});
+
+export const ContactSchema = z.object({
+  id: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
+  email: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  phoneCountryCode: z.string().nullable().optional(),
+  phoneNumber: z.string().nullable().optional(),
+  companyId: z.string(),
+  types: z.array(ContactTypeEntrySchema).optional(),
+  createdDate: z.string().optional(),
+}).passthrough();
+export type Contact = z.infer<typeof ContactSchema>;
+
+export const CreateContactInputSchema = z.object({
+  firstName: z.string(),
+  lastName: z.string(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  types: z.array(ContactTypeEntrySchema).optional(),
+});
+export type CreateContactInput = z.infer<typeof CreateContactInputSchema>;
+
+// ─── Product ─────────────────────────────────────────────────────────────────
+
+export const ProductSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  vendorName: z.string().optional(),
+  vendor: z.string().optional(),
+  sku: z.string().optional(),
+  vendorSku: z.string().optional(),
+  shortDescription: z.string().optional(),
+  description: z.string().optional(),
+  unitOfMeasurement: z.string().optional(),
+  categoryName: z.string().optional(),
+}).passthrough();
+export type Product = z.infer<typeof ProductSchema>;
+
+export const ProductPricingRateSchema = z.object({
+  partnerBuyRate: z.number(),
+  suggestedRetailPrice: z.number(),
+  startQuantityRange: z.number().optional(),
+  chargeType: z.string().optional(),
+});
+
+export const ProductPricingSchema = z.object({
+  billingTerm: z.string(),
+  type: z.string().optional(),
+  unitOfMeasurement: z.string().optional(),
+  productId: z.string().optional(),
+  productName: z.string().optional(),
+  rates: z.array(ProductPricingRateSchema),
+}).passthrough();
+export type ProductPricing = z.infer<typeof ProductPricingSchema>;
+
+// ─── Subscription ────────────────────────────────────────────────────────────
+
+export const CommitmentSchema = z.object({
+  id: z.string().optional(),
+  term: z.string().optional(),
+  endDate: z.string().optional(),
+}).passthrough();
+export type Commitment = z.infer<typeof CommitmentSchema>;
+
+export const SubscriptionSchema = z.object({
+  id: z.string(),
+  companyId: z.string(),
+  productId: z.string(),
+  quantity: z.number(),
+  startDate: z.string(),
+  endDate: z.string().nullable().optional(),
+  createdDate: z.string(),
+  billingStart: z.string().optional(),
+  status: SubscriptionStatusSchema,
+  price: z.number().optional(),
+  billingTerm: z.string().optional(),
+  commitment: CommitmentSchema.optional(),
+  commitmentTermEndDate: z.string().nullable().optional(),
+  vendorSubscriptionId: z.string().nullable().optional(),
+  companyName: z.string().optional(),
+  productName: z.string().optional(),
+}).passthrough();
+export type Subscription = z.infer<typeof SubscriptionSchema>;
+
+export const UpdateSubscriptionInputSchema = z.object({
+  quantity: z.number().int().min(1).optional(),
+  billingTerm: BillingTermSchema.optional(),
+  price: z.number().optional(),
+  startDate: z.string().optional(),
+});
+export type UpdateSubscriptionInput = z.infer<typeof UpdateSubscriptionInputSchema>;
+
+// ─── Order ───────────────────────────────────────────────────────────────────
+
+export const OrderLineItemSchema = z.object({
+  id: z.string().optional(),
+  offerId: z.string().optional(),
+  productId: z.string(),
+  subscriptionId: z.string().optional(),
+  lineItemNumber: z.number().int().optional(),
+  quantity: z.number(),
+  billingTerm: z.string().optional(),
+  commitmentTermId: z.string().optional(),
+  provisionStartDate: z.string().optional(),
+  provisioningDetails: z.record(z.string(), z.unknown()).optional(),
+}).passthrough();
+export type OrderLineItem = z.infer<typeof OrderLineItemSchema>;
+
+export const OrderSchema = z.object({
+  id: z.string(),
+  companyId: z.string(),
+  orderedBy: z.string().optional(),
+  orderedByUserId: z.string().optional(),
+  orderedByUserEmail: z.string().optional(),
+  createdDate: z.string(),
+  lineItems: z.array(OrderLineItemSchema).optional(),
+}).passthrough();
+export type Order = z.infer<typeof OrderSchema>;
+
+export const CreateOrderInputSchema = z.object({
+  companyId: z.string(),
+  lineItems: z.array(z.object({
+    productId: z.string(),
+    quantity: z.number().int().min(1),
+    billingTerm: BillingTermSchema.optional(),
+    provisioningDetails: z.record(z.string(), z.unknown()).optional(),
+  })),
+});
+export type CreateOrderInput = z.infer<typeof CreateOrderInputSchema>;
+
+// ─── Invoice ─────────────────────────────────────────────────────────────────
+
+export const InvoiceSchema = z.object({
+  id: z.string(),
+  companyId: z.string().nullable().optional(),
+  invoiceDate: z.string(),
+  dueDate: z.string(),
+  status: InvoiceStatusSchema,
+  total: z.number(),
+  balance: z.number(),
+  carriedBalance: z.number().optional(),
+  partnerName: z.string().optional(),
+  externalId: z.string().nullable().optional(),
+  companyName: z.string().optional(),
+}).passthrough();
+export type Invoice = z.infer<typeof InvoiceSchema>;
+
+export const InvoiceItemSchema = z.object({
+  id: z.string(),
+  invoiceId: z.string(),
+  type: z.string().optional(),
+  companyId: z.string().optional(),
+  companyName: z.string().optional(),
+  productId: z.string(),
+  productName: z.string().optional(),
+  subscriptionId: z.string().optional(),
+  startPeriod: z.string().optional(),
+  endPeriod: z.string().optional(),
+  term: z.string().optional(),
+  sku: z.string().optional(),
+  description: z.string().optional(),
+  quantity: z.number(),
+  unitOfMeasure: z.string().optional(),
+  rateType: z.string().optional(),
+  chargeType: z.string().optional(),
+  price: z.number().optional(),
+  unitPrice: z.number().optional(),
+  subTotal: z.number().optional(),
+  cost: z.number().optional(),
+  costTotal: z.number().optional(),
+  total: z.number().optional(),
+  billingFee: z.number().optional(),
+  billingFeeRate: z.number().optional(),
+  amountDue: z.number().optional(),
+  offeredBy: z.string().optional(),
+  vendorName: z.string().optional(),
+  currencyCode: z.string().optional(),
+  billedByPax8: z.boolean().optional(),
+}).passthrough();
+export type InvoiceItem = z.infer<typeof InvoiceItemSchema>;
+
+// ─── Usage ───────────────────────────────────────────────────────────────────
+
+export const UsageSummarySchema = z.object({
+  id: z.string(),
+  companyId: z.string(),
+  productId: z.string(),
+  subscriptionId: z.string().optional(),
+  date: z.string(),
+  billingMonth: z.string().optional(),
+  quantity: z.number(),
+  unitPrice: z.number(),
+  subtotal: z.number(),
+  totalCost: z.number().optional(),
+  status: z.string().optional(),
+  resourceGroup: z.string().optional(),
+  companyName: z.string().optional(),
+  productName: z.string().optional(),
+}).passthrough();
+export type UsageSummary = z.infer<typeof UsageSummarySchema>;
+
+export const UsageLineSchema = z.object({
+  id: z.string(),
+  usageSummaryId: z.string(),
+  productId: z.string().optional(),
+  quantity: z.number(),
+  unitOfMeasurement: z.string().optional(),
+  unitPrice: z.number().optional(),
+  ratePerUnit: z.number().optional(),
+  subtotal: z.number().optional(),
+  lineTotal: z.number().optional(),
+  description: z.string().optional(),
+  date: z.string(),
+  resourceId: z.string().optional(),
+  summaryKey: z.string().optional(),
+  summaryDisplayName: z.string().optional(),
+}).passthrough();
+export type UsageLine = z.infer<typeof UsageLineSchema>;
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+export const TokenResponseSchema = z.object({
+  access_token: z.string(),
+  token_type: z.string(),
+  expires_in: z.number(),
+});
+export type TokenResponse = z.infer<typeof TokenResponseSchema>;
+
+// ─── Errors ──────────────────────────────────────────────────────────────────
+
+export const ApiErrorResponseSchema = z.object({
+  type: z.string().optional(),
+  message: z.string(),
+  instance: z.string().optional(),
+  status: z.number().optional(),
+  details: z.array(z.object({
+    type: z.string().optional(),
+    status: z.number().optional(),
+    message: z.string(),
+    instance: z.string().optional(),
+    supportId: z.string().optional(),
+  })).optional(),
+}).passthrough();
+export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 ```
 
-**Resource modules** — one file per API resource, each exporting a class:
-
-**`companies.ts`**
+Export everything from `packages/core/src/index.ts`:
 ```typescript
-export class CompaniesApi {
-  constructor(private client: Pax8Client) {}
-  list(params?: { page?: number; size?: number }): Promise<PaginatedResponse<Company>>
-  get(id: string): Promise<Company>
-  create(data: CreateCompanyInput): Promise<Company>
-  update(id: string, data: UpdateCompanyInput): Promise<Company>
+export * from "./api/types.js";
+```
+
+Build and test, then commit: `"feat(core): add Zod schemas for all Pax8 API entities"`
+
+### Step 3: Auth module
+
+Create `packages/core/src/auth/token-manager.ts`:
+
+- Constructor takes `{ clientId: string; clientSecret: string }`
+- `getToken()` — if cached token is valid (check `expiresAt`), return it. Otherwise call `POST https://api.pax8.com/v1/token` with `{ client_id, client_secret, grant_type: "client_credentials", audience: "https://api.pax8.com" }` as `application/json` body
+- Parse response with `TokenResponseSchema`
+- Cache `access_token` and compute `expiresAt = Date.now() + (expires_in - 300) * 1000` (refresh 5 min early)
+- `isAuthenticated()` — returns true if token exists and not expired
+- `clearToken()` — clears cached token
+- On auth failure, throw a typed `AuthError` that extends `Error` with `statusCode` and `responseBody` fields
+
+Create `packages/core/src/auth/credential-store.ts`:
+
+- `getCredentials()` — check in order: (1) `PAX8_CLIENT_ID` + `PAX8_CLIENT_SECRET` env vars, (2) `~/.pax8/credentials.json` file. Return `{ clientId, clientSecret }` or throw `CredentialError`
+- `saveCredentials(clientId, clientSecret)` — write to `~/.pax8/credentials.json` with `0o600` permissions. Create `~/.pax8/` dir if needed.
+- `clearCredentials()` — delete `~/.pax8/credentials.json` if it exists
+- `hasCredentials()` — returns boolean
+
+Create `packages/core/src/auth/errors.ts`:
+```typescript
+export class AuthError extends Error {
+  constructor(message: string, public statusCode?: number, public responseBody?: string) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
+export class CredentialError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CredentialError";
+  }
 }
 ```
 
-Implement the same pattern for:
-- **`contacts.ts`** — list (by company), get, create, update, delete
-- **`products.ts`** — list, get, getPricing, getProvisioningDetails, getDependencies
-- **`orders.ts`** — list, get, create
-- **`subscriptions.ts`** — list, get, getHistory, update, delete (cancel)
-- **`invoices.ts`** — list, get, listItems, listDraftItems
-- **`usage.ts`** — listSummaries, getSummary, listLines
-- **`quotes.ts`** — list, get, create, update, delete (plus sub-resources)
-- **`webhooks.ts`** — list topics, create, update config, update status, add/replace/remove topics, delete, test, logs, retry
+Write unit tests in `packages/core/src/__tests__/auth/`:
+- `token-manager.test.ts` — mock `global.fetch` to test: successful token fetch, cached token reuse, token refresh on expiry, 401 error handling, network error handling
+- `credential-store.test.ts` — test env var priority, file fallback, save/clear operations. Use a temp directory (not real `~/.pax8/`).
 
-**Tests for each resource module:**
-- Mock HTTP responses with realistic Pax8 API payloads
-- Test pagination (multiple pages)
-- Test error responses (404, 400, 429, 500)
-- Test Zod validation catches malformed responses
+Export from index. Build, test, commit: `"feat(core): add token manager and credential store with auth tests"`
 
-### 2.3 Services (`core/src/services/`)
+### Step 4: Base HTTP client
 
-**`renewal-tracker.ts`**
-- `getUpcomingRenewals(subscriptions: Subscription[], withinDays: number): RenewalReport`
-- Parses `commitmentTermEndDate` from subscription data
-- Sorts by urgency (soonest first)
-- Flags annual subscriptions (higher risk than monthly)
-- Computes days remaining, MRR at risk
-- Returns structured report with per-company breakdown
+Create `packages/core/src/api/client.ts`:
 
-**`invoice-auditor.ts`**
-- `auditInvoices(invoiceItems: InvoiceItem[], subscriptions: Subscription[]): AuditReport`
-- Cross-references invoice line items with active subscription quantities
-- Identifies: overcharges, undercharges, missing items, unexpected items
-- Computes dollar impact per discrepancy
-- Returns structured report
-
-**`analytics.ts`**
-- `computeMrr(subscriptions: Subscription[]): MrrReport` — aggregate by company, product, vendor
-- `computeGrowth(invoices: Invoice[], months: number): GrowthReport` — MRR trend over time
-- Pure functions, no API calls — operate on pre-fetched data
-
-**`cache.ts`**
-- File-based cache in `~/.pax8/cache/`
-- Key-value with TTL (default 24h for product catalog, 1h for company list)
-- Methods: `get<T>(key)`, `set<T>(key, value, ttlMs)`, `invalidate(key)`, `clear()`
-- JSON serialization, atomic writes
-
-**`bulk-executor.ts`**
-- `executeBulk<T>(operations: BulkOp[], concurrency: number): Promise<BulkResult<T>>`
-- Configurable concurrency (default 5, max 10)
-- Rate-limit aware: pauses all workers on 429, resumes after reset
-- Returns per-operation success/failure with errors
-- Progress callback: `onProgress(completed: number, total: number, current: BulkOp)`
-
-**Tests:**
-- Renewal tracker: test with mix of annual/monthly, past/future renewals, edge cases (today, tomorrow)
-- Invoice auditor: test overcharge, undercharge, missing, clean scenarios
-- Analytics: test MRR aggregation by different dimensions
-- Cache: test TTL expiry, invalidation, concurrent access
-- Bulk executor: test concurrency limits, rate-limit pausing, partial failures
-
-### 2.4 Config (`core/src/config/`)
-
-**`schema.ts`**
 ```typescript
-export const ConfigSchema = z.object({
-  version: z.literal("1.0"),
-  auth: z.object({
-    client_id: z.string().optional(),
-  }).optional(),
-  defaults: z.object({
-    output_format: z.enum(["table", "json", "csv"]).default("table"),
-    page_size: z.number().min(1).max(100).default(50),
-    confirm_destructive: z.boolean().default(true),
-  }).default({}),
-  cache: z.object({
-    enabled: z.boolean().default(true),
-    ttl_hours: z.number().default(24),
-  }).default({}),
-});
+export interface Pax8ClientOptions {
+  tokenManager: TokenManager;
+  baseUrl?: string; // default: "https://api.pax8.com/v1"
+  timeout?: number; // default: 30000
+  debug?: boolean;  // default: process.env.PAX8_DEBUG === "1"
+}
+
+export class Pax8Client {
+  // All methods auto-inject Authorization header via tokenManager.getToken()
+  // All methods validate responses with provided Zod schema
+  // All methods retry on 429 (read Retry-After header, default 60s wait) up to 3 times
+  // All methods retry on 5xx with exponential backoff (1s, 2s, 4s) up to 3 times
+  // If debug=true, log request method+url+status to stderr
+
+  async get<T>(path: string, params?: Record<string, string | number | undefined>, schema?: z.ZodType<T>): Promise<T>
+  async post<T>(path: string, body: unknown, schema?: z.ZodType<T>): Promise<T>
+  async put<T>(path: string, body: unknown, schema?: z.ZodType<T>): Promise<T>
+  async patch<T>(path: string, body: unknown, schema?: z.ZodType<T>): Promise<T>
+  async delete(path: string): Promise<void>
+
+  // Pagination helper: fetches all pages and returns combined content array
+  async getAllPages<T>(path: string, params?: Record<string, string | number | undefined>, itemSchema?: z.ZodType<T>): Promise<T[]>
+}
 ```
 
-**`loader.ts`**
-- Looks for config at `~/.pax8/config.yaml`, falls back to defaults
-- Merges file config with env var overrides
-- Validates with Zod, returns typed config
-- `ensureConfigDir()` creates `~/.pax8/` if missing
+Create `packages/core/src/api/errors.ts`:
+```typescript
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number,
+    public path: string,
+    public responseBody?: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
-### 2.5 Demo Data (`core/src/mock/`)
+export class RateLimitError extends ApiError {
+  constructor(public retryAfterMs: number, path: string) {
+    super(`Rate limited on ${path}. Retry after ${retryAfterMs}ms`, 429, path);
+    this.name = "RateLimitError";
+  }
+}
+```
 
-**`demo-data.ts`**
-- Realistic mock data for all entity types
-- 5 companies with varied profiles (small MSP client, enterprise, startup, etc.)
-- 15-20 subscriptions across companies (mix of Microsoft 365, security tools, backup)
-- Invoices for the last 3 months with realistic line items
-- Products matching real Pax8 catalog entries (use real product names)
-- Some subscriptions renewing within 7/14/30 days
-- Some invoice discrepancies (for audit testing)
-- Usage data for consumption-based products
+Tests: mock `global.fetch` to test successful requests, pagination (2 pages), 429 retry, 5xx retry, timeout, Zod validation failure.
 
-**`mock-client.ts`**
-- Implements same interface as `Pax8Client` but returns demo data
-- Simulates pagination (returns page.totalPages, page.number correctly)
-- Simulates realistic latency (50-200ms random delay)
-- Supports filtering/search on mock data (e.g., company name filter actually filters)
+Build, test, commit: `"feat(core): add HTTP client with retry, rate-limit handling, and pagination"`
+
+### Step 5-8: API resource modules
+
+Create one file per resource in `packages/core/src/api/`. Each follows this exact pattern:
+
+```typescript
+// packages/core/src/api/companies.ts
+import { Pax8Client } from "./client.js";
+import {
+  CompanySchema, Company, CreateCompanyInput, UpdateCompanyInput,
+  PaginatedSchema, PageInfo,
+} from "./types.js";
+
+export interface CompanyListParams {
+  page?: number;
+  size?: number;
+}
+
+export class CompaniesApi {
+  constructor(private client: Pax8Client) {}
+
+  async list(params?: CompanyListParams) {
+    return this.client.get("/companies", params as Record<string, string | number>, PaginatedSchema(CompanySchema));
+  }
+
+  async get(id: string) {
+    return this.client.get(`/companies/${id}`, undefined, CompanySchema);
+  }
+
+  async create(data: CreateCompanyInput) {
+    return this.client.post("/companies", data, CompanySchema);
+  }
+
+  async update(id: string, data: UpdateCompanyInput) {
+    return this.client.patch(`/companies/${id}`, data, CompanySchema);
+  }
+}
+```
+
+**Step 5:** `companies.ts` + tests → commit `"feat(core): add companies API module"`
+**Step 6:** `subscriptions.ts` (list, get, getHistory, update, cancel/delete) + tests → commit `"feat(core): add subscriptions API module"`
+**Step 7:** `products.ts` (list, get, getPricing, getProvisioningDetails, getDependencies) + tests → commit `"feat(core): add products API module"`
+**Step 8:** `invoices.ts` (list, get, listItems, listDraftItems) + tests → commit `"feat(core): add invoices API module"`
+
+For subscriptions, the list endpoint supports these query params: `companyId`, `productId`, `status` (comma-separated), `page`, `size`.
+For invoices, list supports: `status`, `invoiceDateStart`, `invoiceDateEnd`, `page`, `size`.
+For invoice items: `invoiceId`, `invoiceDateStart`, `invoiceDateEnd`, `page`, `size`.
+
+### Step 9: Remaining API modules
+
+Create all at once: `orders.ts`, `contacts.ts`, `usage.ts`, `quotes.ts`, `webhooks.ts`. Follow the same pattern. Each gets basic tests.
+
+Contacts are nested: `GET /companies/{companyId}/contacts`, etc.
+
+Commit: `"feat(core): add orders, contacts, usage, quotes, and webhooks API modules"`
+
+### Step 10: Demo data and mock client
+
+Create `packages/core/src/mock/demo-data.ts` with these exact entities:
+
+**Companies (5):**
+```typescript
+export const DEMO_COMPANIES: Company[] = [
+  {
+    id: "c1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c",
+    name: "Acme Corp",
+    status: "Active",
+    address: { city: "Denver", stateOrProvince: "CO", country: "US" },
+    phone: "303-555-0100",
+    website: "https://acmecorp.com",
+  },
+  {
+    id: "d2b3c4d5-e6f7-4a8b-9c0d-1e2f3a4b5c6d",
+    name: "Contoso Ltd",
+    status: "Active",
+    address: { city: "Seattle", stateOrProvince: "WA", country: "US" },
+    phone: "206-555-0200",
+    website: "https://contoso.com",
+  },
+  {
+    id: "e3c4d5e6-f7a8-4b9c-0d1e-2f3a4b5c6d7e",
+    name: "Fabrikam Inc",
+    status: "Active",
+    address: { city: "Austin", stateOrProvince: "TX", country: "US" },
+    phone: "512-555-0300",
+  },
+  {
+    id: "f4d5e6f7-a8b9-4c0d-1e2f-3a4b5c6d7e8f",
+    name: "Northwind Traders",
+    status: "Active",
+    address: { city: "Portland", stateOrProvince: "OR", country: "US" },
+  },
+  {
+    id: "a5e6f7a8-b9c0-4d1e-2f3a-4b5c6d7e8f9a",
+    name: "Woodgrove Bank",
+    status: "Active",
+    address: { city: "Chicago", stateOrProvince: "IL", country: "US" },
+    phone: "312-555-0500",
+  },
+];
+```
+
+**Products (8):** Use real Pax8 product names. Give each a unique UUID.
+- Microsoft 365 Business Basic ($6.00/user/mo)
+- Microsoft 365 Business Premium ($22.00/user/mo)
+- Microsoft 365 E3 ($36.00/user/mo)
+- Microsoft Defender for Business ($3.00/user/mo)
+- SentinelOne Singularity Complete ($5.50/endpoint/mo)
+- Acronis Cyber Protect Cloud ($1.50/GB/mo)
+- Huntress Managed EDR ($4.00/agent/mo)
+- Datto SaaS Protection ($3.50/user/mo)
+
+**Subscriptions (18):** Spread across the 5 companies. Mix of:
+- Monthly and Annual billing terms
+- Various quantities (5 to 150)
+- Some with `commitmentTermEndDate` within 7 days, 14 days, 30 days of "now" (use relative dates computed from `Date.now()`)
+- Most status "Active", one "PendingCancel", one "Trial"
+- Include `companyName` and `productName` on each for easy display
+
+**Invoices (3):** For the current month and previous 2 months. Each with:
+- Realistic totals ($500-$15,000 range)
+- Status: current month "Unpaid", previous months "Paid"
+
+**Invoice Items (25-30):** Line items for the 3 invoices.
+- Most match subscription quantities exactly
+- **3 deliberate discrepancies for audit testing:**
+  - Acme Corp M365 Business Premium: invoiced 50 seats but subscription has 45 (overcharge)
+  - Contoso Exchange Online: invoiced 10 but subscription has 12 (undercharge)
+  - Fabrikam Azure AD Premium: invoiced 0 but subscription has 5 (missing)
+
+Create `packages/core/src/mock/mock-client.ts`:
+- Class `MockPax8Client` that implements the same interface as resource API classes
+- Has `companies`, `subscriptions`, `products`, `invoices`, `orders`, `contacts`, `usage`, `webhooks` properties that return mock data
+- Supports filtering: `companies.list()` returns paginated demo data, `subscriptions.list({ companyId })` filters correctly
+- Simulates pagination: if `size=10` and there are 18 subscriptions, return proper `page.totalPages=2`
+- No artificial latency in test mode
+
+Export from core index. Build, test, commit: `"feat(core): add demo data and mock client for all API resources"`
+
+### Step 11: Config module
+
+Create `packages/core/src/config/schema.ts` with the Zod config schema from the PRD.
+Create `packages/core/src/config/loader.ts`:
+- `loadConfig(configPath?: string)` — reads YAML from `~/.pax8/config.yaml` (or provided path), validates with Zod, returns typed config
+- `saveConfig(config, configPath?)` — writes YAML
+- `getConfigDir()` — returns `~/.pax8`
+- `ensureConfigDir()` — creates dir if missing
+- Returns defaults if no config file exists (don't error)
+
+Tests with temp directories. Build, test, commit: `"feat(core): add config schema and loader"`
+
+### Steps 12-16: Services
+
+Build each service with unit tests. Each service is a pure module with functions that operate on typed data — no API calls inside services.
+
+**Step 12: `renewal-tracker.ts`**
+```typescript
+export interface RenewalItem {
+  subscriptionId: string;
+  companyId: string;
+  companyName: string;
+  productName: string;
+  quantity: number;
+  billingTerm: string;
+  renewalDate: string;     // ISO 8601
+  daysUntilRenewal: number;
+  isAnnual: boolean;
+  mrrAtRisk: number;       // price * quantity
+}
+
+export interface RenewalReport {
+  items: RenewalItem[];
+  totalMrrAtRisk: number;
+  urgentCount: number;     // renewing within 14 days
+  annualCount: number;     // annual terms (higher risk)
+}
+
+export function getUpcomingRenewals(
+  subscriptions: Subscription[],
+  withinDays: number,
+  now?: Date, // injectable for testing
+): RenewalReport
+```
+
+Use `commitment.endDate` if available, fall back to `commitmentTermEndDate`, fall back to `endDate`. Skip subscriptions without any end date. Sort by `daysUntilRenewal` ascending.
+
+Tests: various mixes of dates, annual vs monthly, edge cases. Commit: `"feat(core): add renewal tracker service"`
+
+**Step 13: `invoice-auditor.ts`**
+```typescript
+export interface AuditDiscrepancy {
+  companyName: string;
+  productName: string;
+  invoicedQuantity: number;
+  activeQuantity: number;
+  quantityDelta: number;
+  dollarImpact: number;
+  type: "overcharge" | "undercharge" | "missing" | "unexpected";
+}
+
+export interface AuditReport {
+  discrepancies: AuditDiscrepancy[];
+  totalOvercharge: number;
+  totalUndercharge: number;
+  clean: boolean;
+}
+
+export function auditInvoices(
+  invoiceItems: InvoiceItem[],
+  subscriptions: Subscription[],
+): AuditReport
+```
+
+Match invoice items to subscriptions by `subscriptionId` or `productId + companyId`. Commit: `"feat(core): add invoice auditor service"`
+
+**Step 14: `analytics.ts`**
+```typescript
+export interface MrrByDimension { name: string; mrr: number; subscriptionCount: number; }
+export interface MrrReport { total: number; byCompany: MrrByDimension[]; byProduct: MrrByDimension[]; byVendor: MrrByDimension[]; }
+
+export function computeMrr(subscriptions: Subscription[]): MrrReport
+```
+MRR = sum of `price * quantity` for active subscriptions. For annual billing, divide by 12. Commit: `"feat(core): add analytics service"`
+
+**Step 15: `cache.ts`** — file-based cache with TTL. Uses `~/.pax8/cache/` directory. JSON files with `{ data, expiresAt }` wrapper. Commit: `"feat(core): add file-based cache service"`
+
+**Step 16: `bulk-executor.ts`** — parallel execution with concurrency limit. Uses a simple semaphore pattern. Commit: `"feat(core): add bulk executor with rate-limit awareness"`
 
 ---
 
-## Phase 3: CLI Package (`@pax8/cli`)
+## Phase 3: CLI Package
 
-### 3.1 Entry Point and Program Setup
+### Step 17: Entry point and program structure
 
-**`cli/src/index.ts`**
-- `#!/usr/bin/env node` shebang
-- Create Commander program with `createProgram()` factory
-- Register all commands
-- Global options: `--json`, `--csv`, `--quiet`, `--verbose`, `--no-color`, `--config <path>`
-- Version from package.json
-- Error handling: catch unhandled errors, format with `handleCommandError()`
-- Auto-detect demo mode: `PAX8_DEMO=1` env var or `pax8 config set demo true`
-
-**Output format auto-detection:**
+Create `packages/cli/src/index.ts`:
 ```typescript
-function getOutputFormat(options: GlobalOptions): "table" | "json" | "csv" {
-  if (options.json) return "json";
-  if (options.csv) return "csv";
-  if (!process.stdout.isTTY) return "json";  // Piped output defaults to JSON
-  return config.defaults.output_format || "table";
+#!/usr/bin/env node
+import { Command } from "commander";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+// Read version from package.json
+const __dirname = dirname(fileURLToPath(import.meta.url));
+let version = "0.1.0";
+try {
+  const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+  version = pkg.version;
+} catch {}
+
+const program = new Command()
+  .name("pax8")
+  .description("CLI for managing Pax8 cloud marketplace operations")
+  .version(version)
+  .option("--json", "Output as JSON")
+  .option("--csv", "Output as CSV")
+  .option("--quiet", "Suppress all output except errors")
+  .option("--verbose", "Show detailed output including API calls")
+  .option("--no-color", "Disable colored output");
+
+// Register command groups (add as they're built)
+// program.addCommand(authCommand);
+// program.addCommand(companiesCommand);
+// etc.
+
+program.parse();
+```
+
+Build and verify `node packages/cli/dist/index.js --help` works. Commit: `"feat(cli): add entry point with global options"`
+
+### Step 18: CLI library utilities
+
+Create all lib files in `packages/cli/src/lib/`:
+
+**`output.ts`** — The core output engine. Must handle table, JSON, CSV, and quiet modes.
+
+For tables, use `cli-table3`. Define a `Column` interface: `{ key: string; header: string; formatter?: (val: any) => string; align?: "left" | "right" }`.
+
+For CSV: escape fields containing commas or quotes. Use double-quote escaping.
+
+The `output()` function signature:
+```typescript
+export function output(data: unknown[], options: {
+  format: "table" | "json" | "csv" | "quiet";
+  columns: Column[];
+}): void
+```
+
+For table format, print to stdout. For JSON, `JSON.stringify(data, null, 2)`. For CSV, header row + data rows. For quiet, nothing.
+
+**`spinner.ts`** — wrap ora. Disable if `--quiet`, `--json`, `--csv`, or non-TTY. Use stderr stream.
+
+**`errors.ts`** — `CliError` class with causes and recovery steps. `handleCommandError()` that formats nicely and calls `process.exit()`.
+
+**`formatters.ts`** — all the formatting functions from the PRD. `formatCurrency` takes a number (dollars, not cents) and returns `"$1,234.56"`. `formatDaysUntil` returns `"today"`, `"tomorrow"`, `"in 6 days"`, `"in 2 months"`.
+
+**`confirm.ts`** — uses `readline` from Node stdlib. `confirm()` for yes/no, `confirmDestructive()` for typing a keyword. In non-TTY or `--yes` flag, auto-confirm.
+
+**`context.ts`** — the key integration point:
+```typescript
+export interface CommandContext {
+  config: Config;
+  api: {
+    companies: CompaniesApi;
+    subscriptions: SubscriptionsApi;
+    products: ProductsApi;
+    invoices: InvoicesApi;
+    orders: OrdersApi;
+    contacts: ContactsApi;
+    usage: UsageApi;
+  };
+  outputFormat: "table" | "json" | "csv" | "quiet";
+  isDemo: boolean;
+  verbose: boolean;
 }
+
+export async function buildContext(options: Record<string, unknown>): Promise<CommandContext>
 ```
 
-### 3.2 Shared CLI Utilities (`cli/src/lib/`)
+This function checks for `PAX8_DEMO=1` env var. If demo mode, it creates a `MockPax8Client`. Otherwise, it loads credentials, creates `TokenManager`, creates `Pax8Client`, and builds real API instances.
 
-**`output.ts`** — Unified output handling
-```typescript
-export function output(data: any[], options: { format: string; columns?: Column[] }): void
-// Table: uses cli-table3 with chalk colors
-// JSON: JSON.stringify(data, null, 2)
-// CSV: header row + data rows, properly escaped
-// Quiet: no output (for scripts that only care about exit code)
-```
+Detect output format: `--json` → json, `--csv` → csv, `--quiet` → quiet, otherwise check `process.stdout.isTTY` (non-TTY defaults to json), otherwise table.
 
-**`spinner.ts`** — Spinner wrapper (same pattern as agentsync)
-- Uses `ora` with stderr stream
-- Methods: `createSpinner(text)` returns spinner with `.start()`, `.succeed()`, `.fail()`, `.warn()`
-- Auto-disables in non-TTY, quiet mode, or JSON output mode
+Commit: `"feat(cli): add output, spinner, error, formatter, confirm, and context utilities"`
 
-**`errors.ts`** — Error formatting
-```typescript
-export class CliError extends Error {
-  constructor(
-    message: string,
-    public causes?: string[],
-    public recoverySteps?: string[],
-    public docsUrl?: string
-  ) { super(message); }
-}
+### Step 19: Utility tests
 
-export function handleCommandError(error: unknown, spinner?: Ora, context?: string): never {
-  // Stop spinner if active
-  // Format error with causes and recovery steps
-  // Print to stderr
-  // Exit with appropriate code (1 for runtime, 2 for usage)
-}
-```
+Write unit tests for all lib modules. Test formatters thoroughly (edge cases). Test output in all 4 modes. Test context builder in demo mode.
 
-**`formatters.ts`** — Display formatting helpers
-- `formatTimeAgo(date)` → "5d ago", "2h ago", "just now"
-- `formatCurrency(cents)` → "$1,234.56"
-- `formatQuantity(n)` → "45 seats"
-- `formatStatus(status)` → colored status with icon (✓ Active, ✗ Cancelled, ● Pending)
-- `formatCompanyName(name, maxLen)` → truncated with ellipsis if needed
-- `formatDate(iso)` → "Mar 25, 2026"
-- `formatDaysUntil(date)` → "in 6 days", "in 2 months", "tomorrow", "today"
+Commit: `"test(cli): add unit tests for all CLI utility modules"`
 
-**`confirm.ts`** — Confirmation prompts
-```typescript
-export async function confirm(message: string, options?: { default?: boolean }): Promise<boolean>
-export async function confirmDestructive(message: string, keyword: string): Promise<boolean>
-// confirmDestructive requires typing a specific word (e.g., "cancel") to proceed
-```
+### Steps 20-28: Commands
 
-**`context.ts`** — Command context builder
-```typescript
-export async function buildContext(options: GlobalOptions): Promise<CommandContext> {
-  // Load config
-  // Initialize credential store
-  // Initialize token manager (or mock for demo mode)
-  // Initialize API client (or mock for demo mode)
-  // Return typed context with all dependencies ready
-}
-// Every command calls this first. It handles demo mode transparently.
-```
+Each step creates a command group with all subcommands and integration tests.
 
-**Tests for each utility:**
-- Output: test all 4 formats with sample data
-- Spinner: test TTY vs non-TTY behavior
-- Errors: test formatting with causes, recovery steps, and without
-- Formatters: test edge cases (0, negative, null, very large numbers)
-- Context: test demo mode vs real mode initialization
-
-### 3.3 Command Implementation
-
-Implement each command following this exact pattern:
+**The command file pattern** (follow exactly for every command):
 
 ```typescript
-// cli/src/commands/companies/list.ts
 import { Command } from "commander";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 
-export const companiesListCommand = new Command("list")
+export const listCommand = new Command("list")
   .description("List all companies")
-  .option("--page <number>", "Page number", parseInt)
-  .option("--size <number>", "Page size", parseInt)
-  .addHelpText("after", `
-Examples:
-  pax8 companies list
-  pax8 companies list --json
-  pax8 companies list --csv > companies.csv`)
-  .action(async (options) => {
+  .option("--page <number>", "Page number (starts at 0)", parseInt)
+  .option("--size <number>", "Results per page", parseInt)
+  .addHelpText("after", "\nExamples:\n  pax8 companies list\n  pax8 companies list --json\n  pax8 companies list --csv > companies.csv")
+  .action(async function (this: Command) {
+    // Access parent options (--json, --csv, etc.) via this.optsWithGlobals()
+    const opts = this.optsWithGlobals();
     const spinner = createSpinner("Fetching companies...").start();
     try {
-      const ctx = await buildContext(options);
-      const companies = await ctx.api.companies.list({
-        page: options.page,
-        size: options.size,
-      });
+      const ctx = await buildContext(opts);
+      const result = await ctx.api.companies.list({ page: opts.page, size: opts.size });
       spinner.stop();
-
-      output(companies.content, {
+      output(result.content, {
         format: ctx.outputFormat,
         columns: [
           { key: "name", header: "Name" },
           { key: "id", header: "ID" },
-          // ...
+          { key: "status", header: "Status" },
         ],
       });
-
       if (ctx.outputFormat === "table") {
-        console.log(`\n  ${companies.page.totalElements} companies`);
+        console.log(`\n  ${result.page.totalElements} companies`);
       }
     } catch (error) {
       handleCommandError(error, spinner, "Failed to list companies");
@@ -404,385 +1049,209 @@ Examples:
   });
 ```
 
-**Command implementation order** (build in this exact sequence, commit after each):
-
-1. **`auth login`** — credential prompt/flags → store → test token → success message
-2. **`auth status`** — show stored credentials (masked), token state, expiry
-3. **`auth logout`** — clear credentials from all stores
-4. **`config init`** — create `~/.pax8/config.yaml` with defaults
-5. **`config show`** — display current config
-6. **`config set`** — update a config value
-7. **`config path`** — print config directory path
-8. **`doctor`** — check auth, connectivity, config validity, Node version, disk space for cache
-9. **`version`** — print version from package.json
-10. **`completions`** — generate shell completions (bash, zsh, fish)
-11. **`companies list`** — paginated company listing
-12. **`companies show`** — single company detail, with `--subscriptions` flag
-13. **`companies create`** — create company with validation
-14. **`companies update`** — update company fields
-15. **`subscriptions list`** — paginated, with `--company` filter
-16. **`subscriptions show`** — single subscription detail, with `--history` flag
-17. **`subscriptions update`** — update quantity/billing term with confirmation for reductions
-18. **`subscriptions cancel`** — cancel with destructive confirmation (type "cancel")
-19. **`subscriptions renewals`** — renewal tracking report (uses `renewal-tracker` service)
-20. **`products list`** — paginated product listing
-21. **`products show`** — single product with `--pricing`, `--provisioning`, `--dependencies` flags
-22. **`products search`** — text search across products (uses cache for speed)
-23. **`invoices list`** — paginated, with `--month` and `--company` filters
-24. **`invoices show`** — single invoice detail
-25. **`invoices items`** — invoice line items with filters
-26. **`invoices audit`** — billing reconciliation report (uses `invoice-auditor` service)
-
-### 3.4 Subprocess Integration Tests
-
-Every command gets a subprocess integration test:
-
+**Group commands** with a parent command:
 ```typescript
-// cli/src/__tests__/companies-list.test.ts
-import { describe, it, expect } from "vitest";
-import { runCli, runCliExpectSuccess } from "./test-utils.js";
+// packages/cli/src/commands/companies/index.ts
+import { Command } from "commander";
+import { listCommand } from "./list.js";
+import { showCommand } from "./show.js";
+// ...
+export const companiesCommand = new Command("companies")
+  .description("Manage companies");
+companiesCommand.addCommand(listCommand);
+companiesCommand.addCommand(showCommand);
+// ...
+```
+
+**Integration test pattern** (every command gets at least 3 tests):
+```typescript
+import { describe, it, expect, beforeAll } from "vitest";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import { resolve } from "path";
+
+const exec = promisify(execFile);
+const CLI = resolve(import.meta.dirname, "../../../dist/index.js");
+
+async function run(args: string[], env?: Record<string, string>) {
+  return exec("node", [CLI, ...args], {
+    env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...env },
+    timeout: 15000,
+  });
+}
 
 describe("pax8 companies list", () => {
-  it("lists companies in table format", async () => {
-    const { stdout, exitCode } = await runCliExpectSuccess(["companies", "list"]);
-    expect(stdout).toContain("Name");
-    expect(stdout).toContain("companies");
+  it("shows companies in table format", async () => {
+    const { stdout } = await run(["companies", "list"]);
+    expect(stdout).toContain("Acme Corp");
+    expect(stdout).toContain("5 companies");
   });
 
-  it("outputs JSON when --json flag is set", async () => {
-    const { stdout } = await runCliExpectSuccess(["companies", "list", "--json"]);
+  it("outputs valid JSON with --json", async () => {
+    const { stdout } = await run(["companies", "list", "--json"]);
     const data = JSON.parse(stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data[0]).toHaveProperty("id");
+    expect(data).toHaveLength(5);
     expect(data[0]).toHaveProperty("name");
   });
 
-  it("outputs CSV when --csv flag is set", async () => {
-    const { stdout } = await runCliExpectSuccess(["companies", "list", "--csv"]);
-    const lines = stdout.trim().split("\n");
-    expect(lines[0]).toContain("name");  // header row
-    expect(lines.length).toBeGreaterThan(1);
+  it("outputs CSV with --csv", async () => {
+    const { stdout } = await run(["companies", "list", "--csv"]);
+    expect(stdout.split("\n")[0]).toContain("name");
   });
 
-  it("shows help text with examples", async () => {
-    const { stdout } = await runCliExpectSuccess(["companies", "list", "--help"]);
+  it("shows help with examples", async () => {
+    const { stdout } = await run(["companies", "list", "--help"]);
     expect(stdout).toContain("Examples:");
-    expect(stdout).toContain("pax8 companies list");
   });
 });
 ```
 
-**Test utilities (`cli/src/__tests__/test-utils.ts`):**
-```typescript
-import { execFile } from "child_process";
-import { promisify } from "util";
+**IMPORTANT:** Integration tests require a build first. Before running integration tests for CLI commands, the test setup must build the CLI. Add a `beforeAll` or a vitest setup file that runs `pnpm --filter @pax8/cli build`. Or: configure the test to use `tsx` to run the source directly instead of the compiled output. Choose whichever is simpler to get working — don't let this block you.
 
-const exec = promisify(execFile);
-const CLI_PATH = resolve(__dirname, "../../dist/index.js");
+**Step 20: auth commands** — `auth login` (accepts `--client-id` and `--client-secret` flags, stores via credential store, tests token), `auth status` (shows masked credentials and token state), `auth logout` (clears). In demo mode, `auth login` with any credentials succeeds. Commit: `"feat(cli): add auth login, status, and logout commands"`
 
-export async function runCli(args: string[], env?: Record<string, string>) {
-  const result = await exec("node", [CLI_PATH, ...args], {
-    env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...env },
-    timeout: 15000,
-  });
-  return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
-}
+**Step 21: config commands** — `config init` (create default config.yaml), `config show` (print current config), `config set <key> <value>`, `config path`. Commit: `"feat(cli): add config init, show, set, and path commands"`
 
-export async function runCliExpectSuccess(args: string[]) {
-  const result = await runCli(args);
-  expect(result.exitCode).toBe(0);
-  return result;
-}
+**Step 22: doctor, version, completions** — `doctor` checks: config exists, credentials present, can authenticate (in demo mode, always passes). `version` prints version. `completions` generates shell completion scripts. Commit: `"feat(cli): add doctor, version, and completions commands"`
 
-export async function runCliExpectFailure(args: string[]) {
-  try {
-    await runCli(args);
-    throw new Error("Expected CLI to fail");
-  } catch (error: any) {
-    return { stdout: error.stdout, stderr: error.stderr, exitCode: error.code };
-  }
-}
-```
+**Step 23: companies** — list, show (with `--subscriptions` flag that fetches and displays subs), create, update. For `show`, support both UUID and name lookup (if not UUID format, search by name). Commit: `"feat(cli): add companies list, show, create, and update commands"`
 
-All integration tests run in demo mode (`PAX8_DEMO=1`) so they need no real API credentials.
+**Step 24: subscriptions** — list (with `--company` filter supporting name or ID), show (with `--history`), update (with confirmation on quantity reduction), cancel (with destructive confirmation). Commit: `"feat(cli): add subscriptions list, show, update, and cancel commands"`
+
+**Step 25: subscriptions renewals** — the high-value command. Uses `renewal-tracker` service. Default `--within 30d`. Output table with columns: Company, Product, Quantity, Renews, Term. Footer with summary warnings. Commit: `"feat(cli): add subscriptions renewals command"`
+
+**Step 26: products** — list, show (with `--pricing`, `--provisioning`, `--dependencies`), search (filter by name containing search term). Commit: `"feat(cli): add products list, show, and search commands"`
+
+**Step 27: invoices** — list (with `--month`, `--company`), show, items, audit (uses `invoice-auditor` service). Audit output matches the PRD example format exactly. Commit: `"feat(cli): add invoices list, show, items, and audit commands"`
+
+**Step 28: orders** — list, show, create (with `--company`, `--product`, `--quantity` and `--dry-run`). Commit: `"feat(cli): add orders list, show, and create commands"`
 
 ---
 
-## Phase 4: Instrumentation & Telemetry
+## Phase 4: Telemetry
 
-### 4.1 Telemetry Module (`core/src/telemetry/`)
+### Step 29: Telemetry module
 
-**`telemetry.ts`**
-- Opt-in only, disabled by default
-- Respects `PAX8_TELEMETRY_DISABLED=1` and `DO_NOT_TRACK` env vars
-- Check `~/.pax8/config.yaml` for `telemetry.enabled` setting
-- First-run notice: print once (track in `~/.pax8/.telemetry-notice-shown`)
+Create `packages/core/src/telemetry/telemetry.ts`:
+- `TelemetryCollector` class
+- `isEnabled()` — check `PAX8_TELEMETRY_DISABLED`, `DO_NOT_TRACK` env vars, config setting. Default: disabled.
+- `track(event: TelemetryEvent)` — buffer in memory
+- `flush()` — write buffered events as JSONL to `~/.pax8/telemetry/YYYY-MM-DD.jsonl`
+- No network calls in MVP — local only
 
-**What to collect:**
-```typescript
-interface TelemetryEvent {
-  event: "command_executed";
-  command: string;          // e.g., "subscriptions.list"
-  flags: string[];          // Flag names only, never values: ["--company", "--json"]
-  duration_ms: number;
-  success: boolean;
-  error_code?: string;      // e.g., "AUTH_FAILED", "RATE_LIMITED" — never error messages
-  cli_version: string;
-  node_version: string;
-  os: string;               // "darwin", "linux", "win32"
-  demo_mode: boolean;
-}
-```
+Create `packages/cli/src/lib/instrumented-action.ts` — wrapper that times commands and records telemetry. Wrap all existing command actions with it.
 
-**What to NEVER collect:**
-- Company IDs, names, or any customer data
-- Subscription, invoice, or product data
-- API credentials or tokens
-- File paths
-- Error messages (only error codes)
-- Flag values (only flag names)
-- Environment URLs
+Add `pax8 telemetry status/enable/disable` commands.
 
-**Implementation:**
-- Buffer events in memory, flush on process exit
-- Store locally in `~/.pax8/telemetry/` as JSONL files
-- No remote endpoint in MVP — just local collection for analysis
-- Add `pax8 telemetry status`, `pax8 telemetry enable`, `pax8 telemetry disable` commands
-
-### 4.2 Command Instrumentation
-
-Wrap every command action with telemetry:
-
-```typescript
-// cli/src/lib/instrumented-action.ts
-export function instrumentedAction(
-  commandName: string,
-  action: (options: any) => Promise<void>
-) {
-  return async (options: any) => {
-    const start = performance.now();
-    const flags = extractFlagNames(options);
-    try {
-      await action(options);
-      telemetry.track({ command: commandName, flags, duration_ms: performance.now() - start, success: true });
-    } catch (error) {
-      telemetry.track({ command: commandName, flags, duration_ms: performance.now() - start, success: false, error_code: classifyError(error) });
-      throw error;
-    }
-  };
-}
-```
-
-### 4.3 Performance Metrics
-
-Track and expose in `--verbose` mode:
-- API call count per command
-- Total API time vs. processing time
-- Cache hit/miss ratio
-- Rate limit encounters
+Commit: `"feat: add telemetry module with local-only event collection"`
 
 ---
 
-## Phase 5: End-to-End Test Suite
+## Phase 5: E2E Tests
 
-### 5.1 User Flow Tests
+### Steps 30-35: E2E user flow tests
 
-These test complete user workflows as subprocess integration tests, verifying the CLI works end-to-end in demo mode.
+Create `packages/cli/src/__tests__/e2e/` directory. Each test file exercises a complete user workflow in demo mode. These are subprocess tests that run the built CLI binary.
 
-**`e2e/onboarding.test.ts`** — First-time user experience
-```
-1. pax8 doctor → reports no auth configured
-2. pax8 auth login --client-id demo --client-secret demo → succeeds (demo mode)
-3. pax8 auth status → shows authenticated
-4. pax8 companies list → shows demo companies
-5. pax8 companies show "Acme Corp" --subscriptions → shows company with subscriptions
-```
+**Step 30:** `onboarding.test.ts` — doctor → auth login → auth status → companies list → companies show with subscriptions. Commit: `"test(e2e): add onboarding user flow test"`
 
-**`e2e/subscription-management.test.ts`** — Daily subscription workflows
-```
-1. pax8 subscriptions list → shows all subscriptions
-2. pax8 subscriptions list --company "Acme Corp" → filtered list
-3. pax8 subscriptions show <id> → subscription detail
-4. pax8 subscriptions show <id> --history → includes history
-5. pax8 subscriptions renewals --within 30d → renewal report
-6. pax8 subscriptions renewals --within 7d → urgent renewals only
-```
+**Step 31:** `subscription-management.test.ts` — subscriptions list → filter by company → show → show with history → renewals → renewals with tight window. Commit: `"test(e2e): add subscription management flow test"`
 
-**`e2e/billing-workflow.test.ts`** — Invoice and audit workflows
-```
-1. pax8 invoices list → shows recent invoices
-2. pax8 invoices list --month 2026-03 → filtered by month
-3. pax8 invoices items --month 2026-03 --csv → CSV output
-4. pax8 invoices audit → shows discrepancies with dollar amounts
-```
+**Step 32:** `billing-workflow.test.ts` — invoices list → filter by month → items as CSV → audit with discrepancies. Commit: `"test(e2e): add billing workflow flow test"`
 
-**`e2e/product-discovery.test.ts`** — Product search and pricing
-```
-1. pax8 products search "Microsoft 365" → matching products
-2. pax8 products show <id> --pricing → includes pricing tiers
-3. pax8 products search "nonexistent" → helpful empty state message
-```
+**Step 33:** `product-discovery.test.ts` — search → show with pricing → search with no results (should show helpful empty message, not error). Commit: `"test(e2e): add product discovery flow test"`
 
-**`e2e/output-formats.test.ts`** — Output format consistency
-```
-For each major list command:
-1. Default (table) → has headers, aligned columns, summary footer
-2. --json → valid JSON, array of objects with expected keys
-3. --csv → valid CSV, header row matches JSON keys
-4. --quiet → no output (exit code 0)
-5. Piped (non-TTY) → defaults to JSON
-```
+**Step 34:** `output-formats.test.ts` — for companies list, subscriptions list, and invoices list: verify table has headers, JSON is valid array, CSV has header row, quiet produces no stdout. Commit: `"test(e2e): add output format consistency tests"`
 
-**`e2e/error-handling.test.ts`** — Error scenarios
-```
-1. pax8 subscriptions show nonexistent-id → structured error with recovery steps
-2. pax8 companies list (no auth) → auth error with setup instructions
-3. pax8 subscriptions update <id> --quantity -1 → validation error
-4. pax8 nonexistent-command → usage error with suggestions
-```
-
-### 5.2 Coverage Requirements
-
-| Package | Unit Test Coverage | Integration Test Coverage |
-|---------|-------------------|-------------------------|
-| `@pax8/core` | 85%+ | N/A |
-| `@pax8/cli` | 70%+ | Every command has at least 3 subprocess tests |
-| E2E flows | N/A | 6 complete user workflows |
+**Step 35:** `error-handling.test.ts` — nonexistent subcommand → helpful error, auth without credentials (non-demo, `PAX8_DEMO` unset) → auth error with recovery steps. Commit: `"test(e2e): add error handling flow tests"`
 
 ---
 
 ## Phase 6: Claude Skill
 
-### 6.1 Skill Definition
+### Step 36: Skill definition
 
-**`claude-skill/skill.md`**
+Create `packages/claude-skill/skill.md`:
+
 ```markdown
 ---
 name: pax8
-description: Manage Pax8 cloud marketplace operations — query customers, subscriptions, invoices, renewals, and products
-tools:
-  - pax8_companies_list
-  - pax8_companies_show
-  - pax8_subscriptions_list
-  - pax8_subscriptions_renewals
-  - pax8_invoices_list
-  - pax8_invoices_audit
-  - pax8_products_search
-  - pax8_report_mrr
+description: Manage Pax8 cloud marketplace — customers, subscriptions, invoices, renewals, products
 ---
 
-You have access to Pax8 cloud marketplace data through the pax8 CLI. Use these tools to answer questions about MSP customers, subscriptions, billing, renewals, and products.
+You have tools to query Pax8 cloud marketplace data via the pax8 CLI. The CLI must be installed and authenticated (`pax8 auth login`).
 
-When answering questions:
-- Always present data in a clear, summarized format — don't dump raw JSON
-- Proactively highlight items that need attention (upcoming renewals, billing discrepancies)
-- When showing financial data, include totals and context
-- If a question requires data from multiple tools, call them in parallel when possible
-- For renewal questions, default to 30 days if no timeframe specified
-- For invoice questions, default to current month if no month specified
+## Guidelines
+
+- Present data in clear summaries, not raw JSON dumps
+- Proactively flag items needing attention (upcoming renewals, billing issues)
+- Include totals and context with financial data
+- For renewals, default to 30 days if no timeframe given
+- For invoices, default to current month if no month given
+- Call multiple tools in parallel when a question needs data from several sources
+
+## Available Tools
+
+All tools return JSON. Parse and summarize the results for the user.
 ```
 
-### 6.2 Tool Definitions
+Commit: `"feat(claude-skill): add skill definition"`
 
-Each tool wraps a CLI command with `--json` output:
+### Step 37: Tool definitions
 
-```typescript
-// claude-skill/tools/subscriptions.ts
-export const pax8_subscriptions_renewals = {
-  name: "pax8_subscriptions_renewals",
-  description: "List subscriptions approaching renewal, sorted by urgency. Shows company, product, quantity, renewal date, and term type.",
-  parameters: {
-    type: "object",
-    properties: {
-      within: {
-        type: "string",
-        description: "Time window for renewals, e.g. '7d', '14d', '30d', '90d'. Default: '30d'"
-      },
-      company: {
-        type: "string",
-        description: "Filter by company name or ID. Optional."
-      }
-    }
-  },
-  execute: async (params) => {
-    const args = ["subscriptions", "renewals", "--json"];
-    if (params.within) args.push("--within", params.within);
-    if (params.company) args.push("--company", params.company);
-    return execCli(args);
-  }
-};
-```
+Create `packages/claude-skill/src/tools.ts` with tool definitions for:
+- `pax8_companies_list` — wraps `pax8 companies list --json`
+- `pax8_companies_show` — wraps `pax8 companies show <id> --subscriptions --json`
+- `pax8_subscriptions_list` — wraps `pax8 subscriptions list --json [--company <id>]`
+- `pax8_subscriptions_renewals` — wraps `pax8 subscriptions renewals --json [--within <days>]`
+- `pax8_invoices_list` — wraps `pax8 invoices list --json [--month <month>]`
+- `pax8_invoices_audit` — wraps `pax8 invoices audit --json [--month <month>]`
+- `pax8_products_search` — wraps `pax8 products search <query> --json`
+- `pax8_report_mrr` — wraps `pax8 report mrr --json` (if implemented, else subscriptions list and compute)
 
-Implement tool definitions for all 8 tools listed in skill.md.
+Each tool: name, description, JSON Schema parameters, `execute` function that spawns the CLI as a child process and returns parsed JSON.
+
+Create `packages/claude-skill/src/executor.ts` — shared `execCli(args: string[]): Promise<unknown>` function.
+
+Commit: `"feat(claude-skill): add tool definitions for all major operations"`
 
 ---
 
-## Build Order Summary
+## Phase 7: Polish
 
-Execute in this exact order. Commit after each numbered item.
+### Step 38: Final polish
 
-```
- 1. Project scaffolding (monorepo, configs, dependencies)
- 2. Core: types and Zod schemas for all API entities
- 3. Core: token manager + credential store + auth tests
- 4. Core: base HTTP client with retry/rate-limit/pagination
- 5. Core: companies API + tests
- 6. Core: subscriptions API + tests
- 7. Core: products API + tests
- 8. Core: invoices API + tests
- 9. Core: orders, contacts, usage, quotes, webhooks APIs + tests
-10. Core: demo data + mock client
-11. Core: config schema + loader
-12. Core: renewal tracker service + tests
-13. Core: invoice auditor service + tests
-14. Core: analytics service + tests
-15. Core: cache service + tests
-16. Core: bulk executor + tests
-17. CLI: entry point, program setup, global options
-18. CLI: lib utilities (output, spinner, errors, formatters, confirm, context)
-19. CLI: lib utility tests
-20. CLI: auth commands (login, status, logout) + tests
-21. CLI: config commands (init, show, set, path) + tests
-22. CLI: doctor + version + completions commands + tests
-23. CLI: companies commands (list, show, create, update) + tests
-24. CLI: subscriptions commands (list, show, update, cancel) + tests
-25. CLI: subscriptions renewals command + tests
-26. CLI: products commands (list, show, search) + tests
-27. CLI: invoices commands (list, show, items, audit) + tests
-28. CLI: orders commands (list, show, create) + tests
-29. Core + CLI: telemetry module + instrumented action wrapper
-30. E2E: onboarding flow test
-31. E2E: subscription management flow test
-32. E2E: billing workflow test
-33. E2E: product discovery flow test
-34. E2E: output format consistency tests
-35. E2E: error handling flow tests
-36. Claude skill: skill.md definition
-37. Claude skill: tool definitions + execution wrapper
-38. Final: coverage report, lint fix, README update with actual install instructions
-```
+1. Run `pnpm test:coverage` — verify core ≥80%, cli ≥70%. If below, add tests for uncovered lines.
+2. Run `pnpm lint` — fix any lint errors.
+3. Run `pnpm build` from a clean state — verify it succeeds.
+4. Test `node packages/cli/dist/index.js --help` — verify organized output.
+5. Test `node packages/cli/dist/index.js doctor` in demo mode — should pass.
+6. Test `node packages/cli/dist/index.js companies list --json | node -e "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))"` — verify valid JSON.
+7. Update `README.md` with actual install/build instructions for contributors.
+8. Verify the quality checklist below.
+
+Commit: `"chore: final polish — coverage, lint, README update"`
 
 ---
 
-## Quality Checklist (verify before declaring MVP complete)
+## Quality Checklist
+
+Run through every item before declaring MVP complete. Fix anything that fails.
 
 - [ ] `pnpm install && pnpm build` succeeds from clean clone
-- [ ] `pnpm test` passes with 80%+ coverage on core, 70%+ on CLI
-- [ ] All 6 E2E user flow tests pass in demo mode
-- [ ] `pax8 --help` shows organized command groups with descriptions
+- [ ] `pnpm test` all tests pass
+- [ ] `pnpm test:coverage` — core ≥80%, cli ≥70%
+- [ ] All 6 E2E user flow tests pass
+- [ ] `pax8 --help` shows organized command groups
 - [ ] Every command has `--help` with examples
-- [ ] Every command supports `--json`, `--csv`, `--quiet`
-- [ ] Piped output (non-TTY) defaults to JSON automatically
-- [ ] Errors show causes and recovery steps, never raw stack traces
-- [ ] `pax8 doctor` validates auth, config, connectivity, and reports issues
-- [ ] Demo mode works for every command without any API credentials
-- [ ] `pax8 auth login --client-id X --client-secret Y` stores credentials securely
-- [ ] `pax8 subscriptions renewals --within 14d` produces the renewal report shown in the PRD
-- [ ] `pax8 invoices audit` produces the audit report shown in the PRD
-- [ ] Shell completions generate correctly for bash, zsh, fish
-- [ ] No TypeScript errors, no ESLint warnings
-- [ ] All commits are clean, focused, and have descriptive messages
-- [ ] Claude skill installs and tool definitions are syntactically valid
-- [ ] Telemetry is opt-in, disabled by default, respects DO_NOT_TRACK
-- [ ] No secrets, tokens, or customer data appear in any log output
-- [ ] Package can be published to npm (`npm pack` produces valid tarball)
+- [ ] Every list command supports `--json`, `--csv`, `--quiet`
+- [ ] Piped output (non-TTY) defaults to JSON
+- [ ] Errors show causes + recovery steps, never stack traces
+- [ ] `pax8 doctor` passes in demo mode
+- [ ] Demo mode works for every command without credentials
+- [ ] `pax8 subscriptions renewals --within 14d` shows renewal report with company/product/quantity/date
+- [ ] `pax8 invoices audit` shows discrepancies with dollar amounts
+- [ ] No TypeScript errors
+- [ ] No secrets/tokens in any log output
+- [ ] Telemetry disabled by default, respects `DO_NOT_TRACK`
+- [ ] Claude skill has valid tool definitions

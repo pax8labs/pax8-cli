@@ -2,12 +2,17 @@
 
 ## Autonomous Build Mode
 
-When following `docs/BUILD.md`, operate fully autonomously:
-- **Do NOT ask for permission** to create files, install packages, run builds/tests, or make git commits
-- **Do NOT ask for confirmation** on implementation decisions — make reasonable choices and document in commit messages
-- **Commit frequently** after each logical unit of work without asking
-- **Run all shell commands** (pnpm install, build, test, git) without prompting
-- This is an autonomous build — the BUILD.md is the complete spec. Execute it end-to-end.
+When following `docs/BUILD.md`, operate fully autonomously with ZERO human interaction:
+- **NEVER ask questions, for permission, or for confirmation.** Not for file creation, package installation, build/test execution, git commits, design decisions, or anything else.
+- **NEVER stop to explain what you're about to do.** Just do it.
+- **NEVER present options or ask "should I...?"** — make the simpler choice and move on.
+- **If something breaks, fix it yourself.** Diagnose the error, fix the code, re-run tests, commit. Do not stop to report the error.
+- **If a test fails, fix the test or the code.** Do not ask which one to fix — read the error and determine the right fix.
+- **If a dependency is missing, install it.** If a config is wrong, fix it. If a type doesn't match, update it.
+- **Commit after every numbered build step** in BUILD.md. Run `pnpm build && pnpm test` before each commit. If either fails, fix before committing.
+- **Go fast.** Minimize tool calls. Create multiple files per step when possible. Batch related changes.
+- Your output should be almost entirely tool calls (file writes, bash commands). Minimal text narration.
+- The BUILD.md is the complete spec. Execute it from step 1 to step 38, then run the quality checklist.
 
 ## What is this project?
 

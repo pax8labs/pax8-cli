@@ -1,19 +1,27 @@
 export class ApiError extends Error {
   public readonly statusCode: number;
   public readonly requestPath: string;
+  public readonly requestMethod?: string;
   public readonly responseBody: unknown;
 
   constructor(
     message: string,
     statusCode: number,
     requestPath: string,
+    requestMethodOrBody?: string | unknown,
     responseBody?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
     this.statusCode = statusCode;
     this.requestPath = requestPath;
-    this.responseBody = responseBody;
+    // Support both 4-arg (message, status, path, body) and 5-arg (message, status, path, method, body) forms
+    if (responseBody !== undefined) {
+      this.requestMethod = requestMethodOrBody as string;
+      this.responseBody = responseBody;
+    } else {
+      this.responseBody = requestMethodOrBody;
+    }
   }
 }
 
