@@ -30,10 +30,11 @@ const sampleInvoice = {
 const sampleInvoiceItem = {
   id: "f6a7b8c9-d0e1-2345-6789-abcdef012345",
   invoiceId: INVOICE_ID,
-  productName: "Microsoft 365 Business Premium",
+  productId: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
   quantity: 45,
   unitPrice: 22.0,
   subtotal: 990.0,
+  productName: "Microsoft 365 Business Premium",
 };
 
 const samplePaginatedInvoices = {

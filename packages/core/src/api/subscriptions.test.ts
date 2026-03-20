@@ -66,7 +66,7 @@ describe("SubscriptionsApi", () => {
   it("getHistory returns subscription history", async () => {
     const history = [
       {
-        subscriptionId: SUB_ID,
+        id: "e5f6a7b8-c9d0-1234-5678-9abcdef01234",
         action: "QuantityChanged",
         date: "2025-06-15",
         quantity: 45,
