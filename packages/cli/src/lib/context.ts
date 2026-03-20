@@ -60,7 +60,6 @@ export function getOutputFormat(
 export async function buildContext(
   options: GlobalOptions,
 ): Promise<CommandContext> {
-  const isDemo = process.env.PAX8_DEMO === "1";
   const outputFormat = getOutputFormat(options);
   const verbose = options.verbose ?? false;
 
@@ -74,6 +73,8 @@ export async function buildContext(
     cache: { enabled: true, ttl_hours: 24 },
     telemetry: { enabled: false },
   }));
+
+  const isDemo = process.env.PAX8_DEMO === "1" || config.demo === true;
 
   let api: ApiClient | MockPax8Client;
 

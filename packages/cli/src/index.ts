@@ -13,6 +13,7 @@ import { registerTelemetryCommands } from "./commands/telemetry/index.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
+import { initCommand } from "./commands/init.js";
 import { handleCommandError } from "./lib/errors.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
@@ -40,6 +41,7 @@ export function createProgram(): Command {
   registerInvoicesCommands(program);
   registerOrdersCommands(program);
   registerTelemetryCommands(program);
+  program.addCommand(initCommand);
   program.addCommand(doctorCommand);
   program.addCommand(completionsCommand);
   program.addCommand(versionCommand);
