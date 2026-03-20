@@ -6,6 +6,7 @@ import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { formatStatus } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
+import { resolveFromLastList } from "../../lib/last-list.js";
 
 const subscriptionColumns: Column[] = [
   { key: "productName", header: "Product" },
@@ -29,6 +30,13 @@ Examples:
   )
   .action(async (idOrName: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+
+    // Resolve numbered reference from last `companies list`
+    const fromList = await resolveFromLastList(idOrName);
+    if (fromList) {
+      idOrName = fromList.id;
+    }
+
     const spinner = createSpinner("Fetching company...").start();
 
     try {

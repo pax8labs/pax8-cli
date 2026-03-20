@@ -5,8 +5,10 @@ import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { formatStatus, formatCompanyName } from "../../lib/formatters.js";
+import { saveLastList } from "../../lib/last-list.js";
 
 const columns: Column[] = [
+  { key: "_num", header: "#" },
   { key: "name", header: "Name", format: (v) => formatCompanyName(String(v), 30) },
   { key: "id", header: "ID" },
   { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
@@ -48,11 +50,27 @@ Examples:
         return;
       }
 
-      output(result.content, { format: ctx.outputFormat, columns });
+      // Add row numbers and save for `companies more <#>` lookups
+      const numbered = result.content.map((c: Record<string, unknown>, i: number) => ({
+        ...c,
+        _num: String(i + 1),
+      }));
+
+      await saveLastList(
+        result.content.map((c: Record<string, unknown>, i: number) => ({
+          index: i + 1,
+          id: String(c.id),
+          name: String(c.name),
+        }))
+      );
+
+      output(numbered, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
         process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} companies\n\n`)
+          chalk.dim(`\n  ${result.page.totalElements} companies · Use `) +
+          chalk.cyan("pax8 companies more <#>") +
+          chalk.dim(" for details\n\n")
         );
       }
     } catch (error) {

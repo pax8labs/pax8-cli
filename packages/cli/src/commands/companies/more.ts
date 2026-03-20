@@ -9,6 +9,7 @@ import {
   formatDaysUntil,
   formatDate,
 } from "../../lib/formatters.js";
+import { resolveFromLastList } from "../../lib/last-list.js";
 
 interface SubSummary {
   productName: string;
@@ -49,16 +50,24 @@ function daysUntil(dateStr: string | undefined): number | null {
 
 export const companiesMoreCommand = new Command("more")
   .description("Full company summary — subscriptions, vendors, seats, MRR, and issues")
-  .argument("<name>", "Company name or ID")
+  .argument("<name-or-number>", "Company name, ID, or # from companies list")
   .addHelpText(
     "after",
     `
 Examples:
+  pax8 companies more 1                                  Use # from companies list
   pax8 companies more "Summit Healthcare Partners"
   pax8 companies more "Summit Healthcare Partners" --json`
   )
   .action(async (idOrName: string, _options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+
+    // Resolve numbered reference from last `companies list`
+    const fromList = await resolveFromLastList(idOrName);
+    if (fromList) {
+      idOrName = fromList.id;
+    }
+
     const spinner = createSpinner("Loading company details...").start();
 
     try {
