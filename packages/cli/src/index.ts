@@ -111,12 +111,12 @@ function showWelcomeScreen(): void {
     `  ${rule}`,
     "",
     `  ${chalk.dim("Get started:")}`,
-    `    ${chalk.cyan("auth login")}        ${chalk.dim("Set up API credentials")}`,
-    `    ${chalk.cyan("init --demo")}       ${chalk.dim("Try with sample data")}`,
-    `    ${chalk.cyan("companies list")}    ${chalk.dim("List your customers")}`,
-    `    ${chalk.cyan("doctor")}            ${chalk.dim("Check your setup")}`,
+    `    ${chalk.cyan("pax8 auth login")}        ${chalk.dim("Set up API credentials")}`,
+    `    ${chalk.cyan("pax8 init --demo")}       ${chalk.dim("Try with sample data")}`,
+    `    ${chalk.cyan("pax8 companies list")}    ${chalk.dim("List your customers")}`,
+    `    ${chalk.cyan("pax8 doctor")}            ${chalk.dim("Check your setup")}`,
     "",
-    `  ${chalk.dim("Type")} help ${chalk.dim("for all commands.")}`,
+    `  ${chalk.dim("Run")} pax8 --help ${chalk.dim("for all commands.")}`,
     "",
   ];
   process.stdout.write(lines.join("\n"));
