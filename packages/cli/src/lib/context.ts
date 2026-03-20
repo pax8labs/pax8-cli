@@ -61,13 +61,14 @@ export function getOutputFormat(
 export async function buildContext(
   options: GlobalOptions,
 ): Promise<CommandContext> {
-  const isDemo = process.env.PAX8_DEMO === "1";
   const outputFormat = getOutputFormat(options);
   const verbose = options.verbose ?? false;
 
   const config = await loadConfig(options.config).catch(
     (): Config => ConfigSchema.parse({ version: "1.0" }),
   );
+
+  const isDemo = process.env.PAX8_DEMO === "1" || config.demo === true;
 
   let api: ApiClient | MockPax8Client;
 

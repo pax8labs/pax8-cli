@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const ConfigSchema = z.object({
   version: z.literal("1.0"),
+  demo: z.boolean().optional(),
   auth: z
     .object({
       client_id: z.string().optional(),
