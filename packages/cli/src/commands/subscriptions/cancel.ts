@@ -19,8 +19,8 @@ Examples:
   pax8 subscriptions cancel sub-acme-m365bp-0001 --yes`
   )
   .action(async (id, options, cmd) => {
-    const parentOpts = cmd.parent?.parent?.opts() ?? {};
-    const ctx = await buildContext({ ...parentOpts, ...options });
+    const allOpts = cmd.optsWithGlobals();
+    const ctx = await buildContext(allOpts);
 
     try {
       // Fetch subscription details to show what will be cancelled

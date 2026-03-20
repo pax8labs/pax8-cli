@@ -37,6 +37,21 @@ describe("getOutputFormat", () => {
   it("json takes precedence over csv", () => {
     expect(getOutputFormat({ json: true, csv: true })).toBe("json");
   });
+
+  it("uses config default in TTY when no explicit flag", () => {
+    Object.defineProperty(process.stdout, "isTTY", { value: true, writable: true });
+    expect(getOutputFormat({}, "json")).toBe("json");
+  });
+
+  it("config default is ignored when non-TTY (pipe always returns json)", () => {
+    Object.defineProperty(process.stdout, "isTTY", { value: false, writable: true });
+    expect(getOutputFormat({}, "table")).toBe("json");
+  });
+
+  it("explicit --csv flag overrides config default", () => {
+    Object.defineProperty(process.stdout, "isTTY", { value: true, writable: true });
+    expect(getOutputFormat({ csv: true }, "json")).toBe("csv");
+  });
 });
 
 describe("buildContext", () => {

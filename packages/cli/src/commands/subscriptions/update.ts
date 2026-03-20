@@ -22,8 +22,8 @@ Examples:
   pax8 subscriptions update sub-acme-m365bp-0001 --quantity 30 --yes`
   )
   .action(async (id, options, cmd) => {
-    const parentOpts = cmd.parent?.parent?.opts() ?? {};
-    const ctx = await buildContext({ ...parentOpts, ...options });
+    const allOpts = cmd.optsWithGlobals();
+    const ctx = await buildContext(allOpts);
 
     try {
       // First, fetch the current subscription

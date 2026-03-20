@@ -49,19 +49,23 @@ export interface GlobalOptions {
 
 export function getOutputFormat(
   options: GlobalOptions,
+  configDefault?: "table" | "json" | "csv",
 ): "table" | "json" | "csv" | "quiet" {
+  // Explicit CLI flags always take priority
   if (options.quiet) return "quiet";
   if (options.json) return "json";
   if (options.csv) return "csv";
+
+  // Non-TTY (piped) output always defaults to JSON for machine consumption
   if (!process.stdout.isTTY) return "json";
-  return "table";
+
+  // In a TTY, use the config default if set, otherwise show a table
+  return configDefault ?? "table";
 }
 
 export async function buildContext(
   options: GlobalOptions,
 ): Promise<CommandContext> {
-  const isDemo = process.env.PAX8_DEMO === "1";
-  const outputFormat = getOutputFormat(options);
   const verbose = options.verbose ?? false;
 
   const config = await loadConfig(options.config).catch(() => ({
@@ -74,6 +78,9 @@ export async function buildContext(
     cache: { enabled: true, ttl_hours: 24 },
     telemetry: { enabled: false },
   }));
+
+  const isDemo = process.env.PAX8_DEMO === "1" || config.demo === true;
+  const outputFormat = getOutputFormat(options, config.defaults?.output_format);
 
   let api: ApiClient | MockPax8Client;
 
