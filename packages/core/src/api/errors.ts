@@ -8,20 +8,15 @@ export class ApiError extends Error {
     message: string,
     statusCode: number,
     requestPath: string,
-    requestMethodOrBody?: string | unknown,
+    requestMethod?: string,
     responseBody?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
     this.statusCode = statusCode;
     this.requestPath = requestPath;
-    // Support both 4-arg (message, status, path, body) and 5-arg (message, status, path, method, body) forms
-    if (responseBody !== undefined) {
-      this.requestMethod = requestMethodOrBody as string;
-      this.responseBody = responseBody;
-    } else {
-      this.responseBody = requestMethodOrBody;
-    }
+    this.requestMethod = requestMethod;
+    this.responseBody = responseBody;
   }
 }
 
@@ -32,7 +27,7 @@ export class AuthError extends ApiError {
     requestPath: string = "/v1/token",
     responseBody?: unknown,
   ) {
-    super(message, statusCode, requestPath, responseBody);
+    super(message, statusCode, requestPath, "POST", responseBody);
     this.name = "AuthError";
   }
 }
@@ -44,9 +39,10 @@ export class RateLimitError extends ApiError {
     message: string,
     requestPath: string,
     retryAfterMs: number,
+    requestMethod?: string,
     responseBody?: unknown,
   ) {
-    super(message, 429, requestPath, responseBody);
+    super(message, 429, requestPath, requestMethod, responseBody);
     this.name = "RateLimitError";
     this.retryAfterMs = retryAfterMs;
   }
