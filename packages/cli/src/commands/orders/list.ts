@@ -18,6 +18,7 @@ export const ordersListCommand = new Command("list")
   .option("--company <id>", "Filter by company ID")
   .option("--page <number>", "Page number (zero-based)", "0")
   .option("--size <number>", "Page size", "25")
+  .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
     `
@@ -44,6 +45,13 @@ Examples:
       const result = await ctx.api.orders.list(params);
 
       spinner.stop();
+
+      if (allOpts.idsOnly) {
+        for (const item of result.content) {
+          process.stdout.write(item.id + "\n");
+        }
+        return;
+      }
 
       output(result.content, { format: ctx.outputFormat, columns });
 

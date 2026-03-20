@@ -16,6 +16,7 @@ export const companiesListCommand = new Command("list")
   .description("List all companies")
   .option("--page <number>", "Page number (zero-based)", "0")
   .option("--size <number>", "Page size", "25")
+  .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
     `
@@ -23,7 +24,9 @@ Examples:
   pax8 companies list
   pax8 companies list --page 1 --size 25
   pax8 companies list --json
-  pax8 companies list --csv`
+  pax8 companies list --csv
+  pax8 companies list --ids-only
+  pax8 companies list --ids-only | xargs -I{} pax8 subscriptions list --company {}`
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -37,6 +40,13 @@ Examples:
       });
 
       spinner.stop();
+
+      if (allOpts.idsOnly) {
+        for (const item of result.content) {
+          process.stdout.write(item.id + "\n");
+        }
+        return;
+      }
 
       output(result.content, { format: ctx.outputFormat, columns });
 
