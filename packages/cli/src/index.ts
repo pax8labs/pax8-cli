@@ -82,7 +82,7 @@ function showWelcomeScreen(): void {
     "",
     `  ${chalk.bold.cyan("pax8")} ${chalk.dim(`v${version}`)}`,
     `  ${chalk.dim("Open source CLI for the Pax8 cloud marketplace")}`,
-    `  ${chalk.dim("Built by Pax8 \u00b7 https://github.com/pax8labs/pax8-cli")}`,
+    `  ${chalk.dim("Built by Pax8 Labs \u00b7 https://github.com/pax8labs/pax8-cli")}`,
     "",
     `  ${chalk.dim("Get started:")}`,
     `    ${chalk.cyan("pax8 auth login")}        ${chalk.dim("Set up API credentials")}`,
