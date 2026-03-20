@@ -80,9 +80,15 @@ describe("buildContext", () => {
     delete process.env.PAX8_CLIENT_ID;
     delete process.env.PAX8_CLIENT_SECRET;
 
-    // buildContext tries to read credentials; mock the credential store
-    // Since it imports CredentialStore directly, we rely on env vars being absent
-    // and the file not existing
-    await expect(buildContext({ json: true })).rejects.toThrow("Not authenticated");
+    // Mock CredentialStore so keychain credentials don't interfere
+    const core = await import("@pax8/core");
+    const getCredSpy = vi.spyOn(core.CredentialStore.prototype, "getCredentials")
+      .mockResolvedValue(null);
+
+    try {
+      await expect(buildContext({ json: true })).rejects.toThrow("Not authenticated");
+    } finally {
+      getCredSpy.mockRestore();
+    }
   });
 });
