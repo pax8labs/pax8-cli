@@ -127,6 +127,17 @@ function showWelcomeScreen(): void {
 async function startRepl(): Promise<void> {
   const { createInterface } = await import("node:readline");
 
+  // Prevent ANY unhandled error from killing the REPL
+  process.on("uncaughtException", (err) => {
+    process.stderr.write(chalk.red.bold(`\n  ✗ ${err.message}\n\n`));
+  });
+  process.on("unhandledRejection", (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg !== "process.exit intercepted") {
+      process.stderr.write(chalk.red.bold(`\n  ✗ ${msg}\n\n`));
+    }
+  });
+
   showWelcomeScreen();
   process.stdout.write(chalk.dim("  Type a command, or ") + chalk.cyan("help") + chalk.dim(" / ") + chalk.cyan("exit") + "\n\n");
 
