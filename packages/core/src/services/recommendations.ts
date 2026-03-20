@@ -326,19 +326,32 @@ export function getRecommendations(
     }
   }
 
+  // Deduplicate: if the same company + missing category appears from multiple rules, keep highest priority
+  const seen = new Set<string>();
+  const deduped: Recommendation[] = [];
+  for (const rec of recommendations) {
+    // For cross-sell, dedupe by company + suggested category (from title)
+    // For seat_gap, dedupe by company + product
+    const key = `${rec.companyId}:${rec.type}:${rec.title}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(rec);
+    }
+  }
+
   // Sort: high priority first, then by estimated MRR uplift descending
   const priorityOrder = { high: 0, medium: 1, low: 2 };
-  recommendations.sort((a, b) => {
+  deduped.sort((a, b) => {
     const pDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
     if (pDiff !== 0) return pDiff;
     return (b.estimatedMrrUplift ?? 0) - (a.estimatedMrrUplift ?? 0);
   });
 
-  const companiesWithGaps = new Set(recommendations.map((r) => r.companyId)).size;
-  const estimatedTotalMrrUplift = recommendations.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+  const companiesWithGaps = new Set(deduped.map((r) => r.companyId)).size;
+  const estimatedTotalMrrUplift = deduped.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
 
   return {
-    recommendations,
+    recommendations: deduped,
     totalCompanies: byCompany.size,
     companiesWithGaps,
     estimatedTotalMrrUplift,

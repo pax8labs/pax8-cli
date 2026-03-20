@@ -57,10 +57,17 @@ Examples:
         ctx.api.products.list({ size: 200 }),
       ]);
 
+      // Enrich subscriptions with product names when missing (live API often omits them)
+      const productMap = new Map(productsResult.content.map((p: { id: string; name: string }) => [p.id, p.name]));
+      const enrichedSubs = subsResult.content.map((sub: Record<string, unknown>) => ({
+        ...sub,
+        productName: sub.productName || productMap.get(sub.productId as string) || undefined,
+      }));
+
       spinner.stop();
 
       const report = getRecommendations(
-        subsResult.content,
+        enrichedSubs,
         productsResult.content as Array<{ id: string; name: string; vendorName?: string; pricing?: Array<{ billingTerm: string; suggestedRetailPrice: number }> }>,
       );
 
