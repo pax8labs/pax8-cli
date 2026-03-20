@@ -196,9 +196,11 @@ async function startRepl(): Promise<void> {
     rl.prompt();
   });
 
-  rl.on("close", () => {
-    process.stdout.write(chalk.dim("\n  Goodbye.\n\n"));
-    process.exit(0);
+  return new Promise<void>((resolve) => {
+    rl.on("close", () => {
+      process.stdout.write(chalk.dim("\n  Goodbye.\n\n"));
+      resolve();
+    });
   });
 }
 
@@ -233,17 +235,19 @@ function tokenize(input: string): string[] {
   return tokens;
 }
 
-const program = createProgram();
-
-if (process.argv.length <= 2) {
-  // No args — enter interactive REPL if TTY, show welcome otherwise
-  if (process.stdin.isTTY) {
-    startRepl();
+async function main(): Promise<void> {
+  if (process.argv.length <= 2) {
+    if (process.stdin.isTTY) {
+      await startRepl();
+    } else {
+      showWelcomeScreen();
+    }
   } else {
-    showWelcomeScreen();
+    const program = createProgram();
+    await program.parseAsync(process.argv).catch((err) => {
+      handleCommandError(err);
+    });
   }
-} else {
-  program.parseAsync(process.argv).catch((err) => {
-    handleCommandError(err);
-  });
 }
+
+main();
