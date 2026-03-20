@@ -10,6 +10,7 @@ import {
   formatCurrency,
   formatCompanyName,
 } from "../../lib/formatters.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 
 function parseWithinDays(within: string): number {
   const match = within.match(/^(\d+)d$/);
@@ -59,6 +60,7 @@ Examples:
 
       // Fetch all subscriptions (large page to get them all)
       const result = await ctx.api.subscriptions.list({ size: 1000 });
+      await enrichProductNames(ctx, result.content as Record<string, unknown>[]);
       const allSubs = result.content;
 
       spinner.stop();

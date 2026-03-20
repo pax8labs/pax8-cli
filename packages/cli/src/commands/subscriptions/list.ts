@@ -10,6 +10,7 @@ import {
   formatCompanyName,
 } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 
 const columns: Column[] = [
   {
@@ -62,6 +63,8 @@ Examples:
         page: parseInt(options.page, 10),
         size: parseInt(options.size, 10),
       });
+
+      await enrichProductNames(ctx, result.content as Record<string, unknown>[]);
 
       spinner.stop();
 

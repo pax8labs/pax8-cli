@@ -7,6 +7,7 @@ import { output, type Column } from "../../lib/output.js";
 import { formatStatus } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { resolveFromLastList } from "../../lib/last-list.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 
 const subscriptionColumns: Column[] = [
   { key: "productName", header: "Product" },
@@ -49,6 +50,7 @@ Examples:
       if (ctx.outputFormat === "json") {
         if (allOpts.subscriptions) {
           const subs = await ctx.api.subscriptions.list({ companyId: id });
+          await enrichProductNames(ctx, subs.content as Record<string, unknown>[]);
           process.stdout.write(
             JSON.stringify({ ...company, subscriptions: subs.content }, null, 2) + "\n"
           );
@@ -92,6 +94,7 @@ Examples:
 
       if (allOpts.subscriptions) {
         const subs = await ctx.api.subscriptions.list({ companyId: id });
+        await enrichProductNames(ctx, subs.content as Record<string, unknown>[]);
         if (subs.content.length > 0) {
           process.stdout.write(chalk.dim(`  Subscriptions (${subs.content.length}):\n\n`));
           output(subs.content, { format: "table", columns: subscriptionColumns });
