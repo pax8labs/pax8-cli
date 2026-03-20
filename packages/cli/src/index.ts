@@ -170,14 +170,13 @@ async function startRepl(): Promise<void> {
       args.shift();
     }
 
-    // Run each command as a child process so it can never crash the REPL
+    // Run each command as a child process so it can never crash the REPL.
+    // Use "inherit" for all stdio so the child gets the real TTY
+    // (needed for table output detection and spinner animations).
     const child = spawn("node", [cliPath, ...args], {
       env: { ...process.env, FORCE_COLOR: "1" },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: "inherit",
     });
-
-    child.stdout.pipe(process.stdout, { end: false });
-    child.stderr.pipe(process.stderr, { end: false });
 
     child.on("close", () => {
       process.stdout.write("\n");
