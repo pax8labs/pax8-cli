@@ -6,6 +6,7 @@ import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName } from "../../lib/formatters.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 
 const columns: Column[] = [
   {
@@ -51,25 +52,33 @@ Examples:
     const spinner = createSpinner("Analyzing customer portfolios...").start();
 
     try {
-      // Fetch all active subscriptions and products
-      const [subsResult, productsResult] = await Promise.all([
+      // Fetch subscriptions, companies, and enrich product names — all in parallel where possible
+      const [subsResult, companiesResult] = await Promise.all([
         ctx.api.subscriptions.list({ size: 1000, status: "Active" }),
-        ctx.api.products.list({ size: 200 }),
+        ctx.api.companies.list({ size: 200 }),
       ]);
 
-      // Enrich subscriptions with product names when missing (live API often omits them)
-      const productMap = new Map(productsResult.content.map((p: { id: string; name: string }) => [p.id, p.name]));
-      const enrichedSubs = subsResult.content.map((sub: Record<string, unknown>) => ({
-        ...sub,
-        productName: sub.productName || productMap.get(sub.productId as string) || undefined,
-      }));
+      // Build company name lookup
+      const companyNames = new Map<string, string>();
+      for (const c of companiesResult.content as Array<{ id: string; name: string }>) {
+        companyNames.set(c.id, c.name);
+      }
+
+      // Enrich subscriptions with product names (individual lookups, cached)
+      const subs = subsResult.content as Record<string, unknown>[];
+      await enrichProductNames(ctx, subs);
+
+      // Also enrich company names on subscriptions
+      for (const sub of subs) {
+        if (!sub.companyName || String(sub.companyName) === sub.companyId) {
+          const name = companyNames.get(String(sub.companyId));
+          if (name) sub.companyName = name;
+        }
+      }
 
       spinner.stop();
 
-      const report = getRecommendations(
-        enrichedSubs,
-        productsResult.content as Array<{ id: string; name: string; vendorName?: string; pricing?: Array<{ billingTerm: string; suggestedRetailPrice: number }> }>,
-      );
+      const report = getRecommendations(subs as any);
 
       let recs = report.recommendations;
 
@@ -129,16 +138,7 @@ Examples:
         );
       }
 
-      process.stdout.write("\n");
-
-      // Show actionable tip
-      process.stdout.write(
-        chalk.dim(
-          `\n  Tip: Use ${chalk.cyan("--json")} to get order commands you can execute directly.\n`
-        )
-      );
-
-      process.stdout.write("\n");
+      process.stdout.write("\n\n");
     } catch (error) {
       handleCommandError(error, spinner, "Failed to generate recommendations");
     }
