@@ -1,0 +1,7 @@
+src/
+tsconfig.json
+tsup.config.ts
+*.test.ts
+*.test.js
+__tests__/
+coverage/

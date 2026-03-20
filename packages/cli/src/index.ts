@@ -123,11 +123,113 @@ function showWelcomeScreen(): void {
   process.stdout.write(lines.join("\n"));
 }
 
+async function startRepl(): Promise<void> {
+  const { createInterface } = await import("node:readline");
+
+  showWelcomeScreen();
+  process.stdout.write(chalk.dim("  Type a command, or ") + chalk.cyan("help") + chalk.dim(" / ") + chalk.cyan("exit") + "\n\n");
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr, // prompt goes to stderr so stdout stays clean for piping
+    prompt: chalk.cyan.bold("pax8> "),
+    terminal: process.stdin.isTTY ?? false,
+  });
+
+  rl.prompt();
+
+  rl.on("line", async (line: string) => {
+    const input = line.trim();
+
+    if (!input) {
+      rl.prompt();
+      return;
+    }
+
+    if (input === "exit" || input === "quit" || input === "q") {
+      process.stdout.write(chalk.dim("\n  Goodbye.\n\n"));
+      rl.close();
+      return;
+    }
+
+    if (input === "help") {
+      const prog = createProgram();
+      prog.outputHelp();
+      process.stdout.write("\n");
+      rl.prompt();
+      return;
+    }
+
+    // Parse the input line into argv tokens (respects quoted strings)
+    const args = tokenize(input);
+
+    // Create a fresh program for each command to avoid stale state
+    const prog = createProgram();
+    prog.exitOverride(); // Don't call process.exit()
+    prog.configureOutput({
+      writeOut: (str: string) => process.stdout.write(str),
+      writeErr: (str: string) => process.stderr.write(str),
+    });
+
+    try {
+      await prog.parseAsync(["node", "pax8", ...args]);
+    } catch (err: unknown) {
+      // Commander throws on --help and --version with exitOverride — that's fine
+      const e = err as { code?: string };
+      if (e?.code !== "commander.helpDisplayed" && e?.code !== "commander.version") {
+        handleCommandError(err);
+      }
+    }
+
+    process.stdout.write("\n");
+    rl.prompt();
+  });
+
+  rl.on("close", () => {
+    process.exit(0);
+  });
+}
+
+/**
+ * Tokenize a command line string, respecting quoted strings.
+ * "companies more "Acme Corp" --json" → ["companies", "more", "Acme Corp", "--json"]
+ */
+function tokenize(input: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let inQuote: string | null = null;
+
+  for (const ch of input) {
+    if (inQuote) {
+      if (ch === inQuote) {
+        inQuote = null;
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"' || ch === "'") {
+      inQuote = ch;
+    } else if (ch === " " || ch === "\t") {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
 const program = createProgram();
 
-// Show welcome screen when no subcommand is provided
 if (process.argv.length <= 2) {
-  showWelcomeScreen();
+  // No args — enter interactive REPL if TTY, show welcome otherwise
+  if (process.stdin.isTTY) {
+    startRepl();
+  } else {
+    showWelcomeScreen();
+  }
 } else {
   program.parseAsync(process.argv).catch((err) => {
     handleCommandError(err);
