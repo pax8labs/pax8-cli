@@ -113,6 +113,43 @@ Install the skill in Claude Code to enable AI-assisted MSP workflows.
 | `--csv` | CSV | Spreadsheets, PSA imports |
 | `--quiet` | Minimal | Cron jobs, CI pipelines |
 
+## Demo Mode
+
+Try the CLI without API credentials using demo mode with realistic mock data:
+
+```bash
+PAX8_DEMO=1 pax8 companies list
+PAX8_DEMO=1 pax8 subscriptions renewals --within 14d
+PAX8_DEMO=1 pax8 invoices audit
+```
+
+## Development
+
+```bash
+# Clone and install
+git clone https://github.com/your-org/pax8-cli.git
+cd pax8-cli
+pnpm install
+
+# Build all packages
+pnpm build
+
+# Run tests (435 tests)
+pnpm test
+
+# Run with coverage
+pnpm test:coverage
+
+# Run CLI in dev mode
+PAX8_DEMO=1 pnpm dev -- companies list
+```
+
+### Architecture
+
+- **`packages/core`** — API client, auth, services, types (zero CLI dependencies)
+- **`packages/cli`** — Commander.js commands, formatting, UX
+- **`packages/claude-skill`** — Claude Code skill wrapping CLI as AI tools
+
 ## Documentation
 
 - [Product Requirements Document](docs/PRD.md)
