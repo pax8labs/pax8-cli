@@ -52,8 +52,11 @@ describe("handleCommandError", () => {
     exitSpy.mockRestore();
   });
 
+  // handleCommandError calls process.exit(1) then throws "process.exit intercepted"
+  // We need to catch the throw to inspect stderr output and exit spy
+
   it("formats CliError with message", () => {
-    handleCommandError(new CliError("Something broke"));
+    expect(() => handleCommandError(new CliError("Something broke"))).toThrow("process.exit intercepted");
 
     const written = stderrWrite.mock.calls.map((c) => c[0]).join("");
     expect(written).toContain("Something broke");
@@ -61,13 +64,13 @@ describe("handleCommandError", () => {
   });
 
   it("formats CliError with causes and recovery steps", () => {
-    handleCommandError(
+    expect(() => handleCommandError(
       new CliError(
         "Auth failed",
         ["Token expired"],
         ["Run pax8 auth login"]
       )
-    );
+    )).toThrow("process.exit intercepted");
 
     const written = stderrWrite.mock.calls.map((c) => c[0]).join("");
     expect(written).toContain("Auth failed");
@@ -76,16 +79,16 @@ describe("handleCommandError", () => {
   });
 
   it("formats CliError with docs URL", () => {
-    handleCommandError(
+    expect(() => handleCommandError(
       new CliError("Error", undefined, undefined, "https://example.com/docs")
-    );
+    )).toThrow("process.exit intercepted");
 
     const written = stderrWrite.mock.calls.map((c) => c[0]).join("");
     expect(written).toContain("https://example.com/docs");
   });
 
   it("formats generic Error", () => {
-    handleCommandError(new Error("Generic problem"));
+    expect(() => handleCommandError(new Error("Generic problem"))).toThrow("process.exit intercepted");
 
     const written = stderrWrite.mock.calls.map((c) => c[0]).join("");
     expect(written).toContain("Generic problem");
@@ -93,7 +96,7 @@ describe("handleCommandError", () => {
   });
 
   it("formats unknown error", () => {
-    handleCommandError("a string error");
+    expect(() => handleCommandError("a string error")).toThrow("process.exit intercepted");
 
     const written = stderrWrite.mock.calls.map((c) => c[0]).join("");
     expect(written).toContain("unexpected error");
@@ -101,11 +104,11 @@ describe("handleCommandError", () => {
   });
 
   it("prepends context if provided", () => {
-    handleCommandError(
+    expect(() => handleCommandError(
       new CliError("broken"),
       undefined,
       "Failed to list companies"
-    );
+    )).toThrow("process.exit intercepted");
 
     const written = stderrWrite.mock.calls.map((c) => c[0]).join("");
     expect(written).toContain("Failed to list companies");
@@ -114,7 +117,7 @@ describe("handleCommandError", () => {
   it("stops spinner if provided", () => {
     const spinner = { fail: vi.fn() };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial mock for testing
-    handleCommandError(new Error("test"), spinner as any);
+    expect(() => handleCommandError(new Error("test"), spinner as any)).toThrow("process.exit intercepted");
 
     expect(spinner.fail).toHaveBeenCalled();
   });
@@ -126,9 +129,8 @@ describe("handleCommandError", () => {
       }),
     };
 
-    // Should not throw
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial mock for testing
-    handleCommandError(new Error("test"), spinner as any);
+    expect(() => handleCommandError(new Error("test"), spinner as any)).toThrow("process.exit intercepted");
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });
