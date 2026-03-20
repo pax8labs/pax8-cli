@@ -11,6 +11,7 @@ import {
 } from "../../lib/formatters.js";
 import { resolveFromLastList } from "../../lib/last-list.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { promptNextSteps } from "../../lib/next-step.js";
 
 interface SubSummary {
   productName: string;
@@ -228,6 +229,13 @@ Examples:
         process.stdout.write("\n");
       } else {
         process.stdout.write(chalk.green("  ✓ No issues found\n\n"));
+      }
+
+      if (ctx.outputFormat === "table") {
+        await promptNextSteps([
+          { key: "1", label: "Find recommendations for this customer", command: ["pax8", "recommendations", "list", "--company", company.id] },
+          { key: "2", label: "Back to all customers", command: ["pax8", "companies", "list"] },
+        ]);
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

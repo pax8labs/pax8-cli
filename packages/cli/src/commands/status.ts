@@ -4,6 +4,7 @@ import { buildContext } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency } from "../lib/formatters.js";
+import { promptNextSteps } from "../lib/next-step.js";
 
 export const statusCommand = new Command("status")
   .description("Quick snapshot of your Pax8 business")
@@ -74,8 +75,12 @@ Examples:
       }
 
       process.stdout.write("\n");
-      process.stdout.write(chalk.dim("  Run ") + chalk.cyan("pax8 recommendations list") + chalk.dim(" to find growth opportunities\n"));
-      process.stdout.write("\n");
+
+      await promptNextSteps([
+        { key: "1", label: "View customers", command: ["pax8", "companies", "list"] },
+        { key: "2", label: "Find growth opportunities", command: ["pax8", "recommendations", "list", "--priority", "high"] },
+        { key: "3", label: "Check upcoming renewals", command: ["pax8", "subscriptions", "renewals"] },
+      ]);
     } catch (error) {
       handleCommandError(error, spinner, "Failed to load status");
     }

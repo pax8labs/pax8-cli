@@ -117,6 +117,7 @@ export const recommendationsListCommand = new Command("list")
   .description("Analyze customer portfolios and recommend products")
   .option("--company <id|name>", "Filter to a specific company")
   .option("--priority <level>", "Filter by priority (high, medium, low)")
+  .option("--limit <number>", "Max rows to show in table (default 10)")
   .addHelpText(
     "after",
     `
@@ -196,14 +197,20 @@ Examples:
         return;
       }
 
-      // Number the recs for interactive selection
-      const numbered = recs.map((r, i) => ({ ...r, _num: String(i + 1) }));
+      // Number the recs for interactive selection, cap table output
+      const limit = parseInt(options.limit, 10) || 10;
+      const displayRecs = recs.slice(0, limit);
+      const numbered = displayRecs.map((r, i) => ({ ...r, _num: String(i + 1) }));
       output(numbered, { format: "table", columns });
 
       // Summary footer
       const highCount = recs.filter((r) => r.priority === "high").length;
       const totalUplift = recs.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
       const actionableCount = recs.filter((r) => r.orderCommand).length;
+
+      if (recs.length > limit) {
+        process.stderr.write(chalk.dim(`\n  Showing top ${limit} of ${recs.length} recommendations`) + chalk.dim(` · use --limit ${recs.length} to see all\n`));
+      }
 
       process.stderr.write(
         chalk.dim(
@@ -230,16 +237,17 @@ Examples:
       }
 
       // Interactive: ask user to pick one
-      if (actionableCount > 0 && process.stdin.isTTY) {
+      const displayActionable = displayRecs.filter((r) => r.orderCommand).length;
+      if (displayActionable > 0 && process.stdin.isTTY) {
         process.stderr.write("\n");
         const answer = await promptLine(
-          `  ${chalk.bold("Act on a recommendation?")} Enter # to order, or press Enter to skip: `
+          `  ${chalk.bold("Act on a recommendation?")} Enter # (1-${displayRecs.length}) to order, or press Enter to skip: `
         );
 
         if (answer !== "") {
           const idx = parseInt(answer, 10) - 1;
-          if (idx >= 0 && idx < recs.length) {
-            await executeRecommendation(recs[idx], ctx);
+          if (idx >= 0 && idx < displayRecs.length) {
+            await executeRecommendation(displayRecs[idx], ctx);
           } else {
             process.stderr.write(chalk.yellow(`  Invalid selection.\n\n`));
           }
