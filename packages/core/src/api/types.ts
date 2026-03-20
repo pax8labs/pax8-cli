@@ -135,8 +135,8 @@ export const ProductSchema = z.object({
   vendorName: z.string().optional(),
   vendor: z.string().optional(),
   sku: z.string().optional(),
-  shortDescription: z.string().optional(),
-  description: z.string().optional(),
+  shortDescription: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
   unitOfMeasurement: z.string().optional(),
   categoryName: z.string().optional(),
 });
@@ -306,7 +306,7 @@ export const UsageLineSchema = z.object({
   quantity: z.number(),
   unitPrice: z.number(),
   subtotal: z.number(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   date: z.string(),
 });
 export type UsageLine = z.infer<typeof UsageLineSchema>;
@@ -425,6 +425,6 @@ export const ProductDependencySchema = z.object({
   productId: z.string().uuid(),
   dependsOnProductId: z.string().uuid(),
   dependencyType: z.string(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
 });
 export type ProductDependency = z.infer<typeof ProductDependencySchema>;
