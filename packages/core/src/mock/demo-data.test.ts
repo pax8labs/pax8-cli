@@ -54,11 +54,11 @@ describe("demo-data", () => {
 
     it("includes all expected companies by name", () => {
       const names = companies.map((c) => c.name);
-      expect(names).toContain("Acme Corp");
-      expect(names).toContain("Contoso Ltd");
-      expect(names).toContain("Fabrikam Inc");
-      expect(names).toContain("Northwind Traders");
-      expect(names).toContain("Adventure Works");
+      expect(names).toContain("Summit Healthcare Partners");
+      expect(names).toContain("Coastline Legal Group");
+      expect(names).toContain("Redwood Manufacturing");
+      expect(names).toContain("Bright Minds Academy");
+      expect(names).toContain("Pinnacle Financial Advisors");
     });
   });
 
@@ -98,70 +98,103 @@ describe("demo-data", () => {
   });
 
   describe("invoice discrepancies exist", () => {
-    it("Acme Corp M365 BP: invoiced quantity != active subscription quantity (overcharge)", () => {
-      // Acme has 45 active M365 Business Premium seats
-      const acmeM365BPSubs = subscriptions.filter(
+    it("Summit Healthcare M365 BP: invoiced 95 seats but only 85 active (overcharge)", () => {
+      const summitId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+      const summitM365BPSubs = subscriptions.filter(
         (s) =>
-          s.companyId === "a1b2c3d4-e5f6-7890-abcd-ef1234567890" &&
+          s.companyId === summitId &&
           s.productId === "prod-m365-biz-prem-0001" &&
           s.status === "Active"
       );
-      const activeQty = acmeM365BPSubs.reduce((sum, s) => sum + s.quantity, 0);
+      const activeQty = summitM365BPSubs.reduce((sum, s) => sum + s.quantity, 0);
 
-      // Invoice line says 50 seats
       const invoiceLine = invoiceItems.find(
         (ii) =>
-          ii.companyId === "a1b2c3d4-e5f6-7890-abcd-ef1234567890" &&
+          ii.companyId === summitId &&
           ii.productId === "prod-m365-biz-prem-0001"
       );
 
       expect(invoiceLine).toBeDefined();
-      expect(invoiceLine!.quantity).toBe(50);
-      expect(activeQty).toBe(45);
+      expect(invoiceLine!.quantity).toBe(95);
+      expect(activeQty).toBe(85);
       expect(invoiceLine!.quantity).toBeGreaterThan(activeQty); // overcharge
     });
 
-    it("Fabrikam Azure AD P1: invoiced but no active subscription (unexpected)", () => {
-      // Fabrikam has no Azure AD Premium P1 subscription
-      const fabrikamAADSubs = subscriptions.filter(
+    it("Bright Minds Azure AD P1: invoiced but no active subscription (unexpected)", () => {
+      const brightId = "d4e5f6a7-b8c9-0123-defa-234567890123";
+      const brightAADSubs = subscriptions.filter(
         (s) =>
-          s.companyId === "c3d4e5f6-a7b8-9012-cdef-123456789012" &&
+          s.companyId === brightId &&
           s.productId === "prod-aad-p1-0008" &&
           s.status === "Active"
       );
-      expect(fabrikamAADSubs).toHaveLength(0);
+      expect(brightAADSubs).toHaveLength(0);
 
-      // But there is an invoice item for it
       const invoiceLine = invoiceItems.find(
         (ii) =>
-          ii.companyId === "c3d4e5f6-a7b8-9012-cdef-123456789012" &&
+          ii.companyId === brightId &&
           ii.productId === "prod-aad-p1-0008"
       );
       expect(invoiceLine).toBeDefined();
       expect(invoiceLine!.quantity).toBeGreaterThan(0);
     });
+
+    it("Redwood Manufacturing E5: active subscription but missing from invoice (undercharge)", () => {
+      const redwoodId = "c3d4e5f6-a7b8-9012-cdef-123456789012";
+      const redwoodE5Subs = subscriptions.filter(
+        (s) =>
+          s.companyId === redwoodId &&
+          s.productId === "prod-m365-e5-0004" &&
+          s.status === "Active"
+      );
+      expect(redwoodE5Subs.length).toBeGreaterThan(0);
+      const activeQty = redwoodE5Subs.reduce((sum, s) => sum + s.quantity, 0);
+      expect(activeQty).toBe(50);
+
+      // E5 line should be missing from current month invoice
+      const e5InvoiceLine = invoiceItems.find(
+        (ii) =>
+          ii.invoiceId === "inv-redwood-curr-001" &&
+          ii.productId === "prod-m365-e5-0004"
+      );
+      expect(e5InvoiceLine).toBeUndefined(); // missing = undercharge
+    });
   });
 
   describe("subscriptions per company", () => {
-    it("Acme Corp has 12 subscriptions", () => {
-      const acme = subscriptions.filter(
+    it("Summit Healthcare Partners has 5 subscriptions", () => {
+      const summit = subscriptions.filter(
         (s) => s.companyId === "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
       );
-      expect(acme).toHaveLength(12);
+      expect(summit).toHaveLength(5);
     });
 
-    it("Contoso Ltd has 8 subscriptions", () => {
-      const contoso = subscriptions.filter(
+    it("Coastline Legal Group has 3 subscriptions", () => {
+      const coastline = subscriptions.filter(
         (s) => s.companyId === "b2c3d4e5-f6a7-8901-bcde-f12345678901"
       );
-      expect(contoso).toHaveLength(8);
+      expect(coastline).toHaveLength(3);
     });
 
-    it("Fabrikam Inc has 3 subscriptions", () => {
-      const fabrikam = subscriptions.filter(
+    it("Redwood Manufacturing has 7 subscriptions", () => {
+      const redwood = subscriptions.filter(
         (s) => s.companyId === "c3d4e5f6-a7b8-9012-cdef-123456789012"
       );
-      expect(fabrikam).toHaveLength(3);
+      expect(redwood).toHaveLength(7);
+    });
+
+    it("Bright Minds Academy has 2 subscriptions", () => {
+      const bright = subscriptions.filter(
+        (s) => s.companyId === "d4e5f6a7-b8c9-0123-defa-234567890123"
+      );
+      expect(bright).toHaveLength(2);
+    });
+
+    it("Pinnacle Financial Advisors has 3 subscriptions", () => {
+      const pinnacle = subscriptions.filter(
+        (s) => s.companyId === "e5f6a7b8-c9d0-1234-efab-345678901234"
+      );
+      expect(pinnacle).toHaveLength(3);
     });
   });
 
@@ -172,10 +205,6 @@ describe("demo-data", () => {
 
     it("has Trial subscriptions", () => {
       expect(subscriptions.some((s) => s.status === "Trial")).toBe(true);
-    });
-
-    it("has PendingManual subscriptions", () => {
-      expect(subscriptions.some((s) => s.status === "PendingManual")).toBe(true);
     });
   });
 

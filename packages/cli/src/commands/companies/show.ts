@@ -23,8 +23,8 @@ export const companiesShowCommand = new Command("show")
     "after",
     `
 Examples:
-  pax8 companies show "Acme Corp"
-  pax8 companies show "Acme Corp" --subscriptions
+  pax8 companies show "Summit Healthcare Partners"
+  pax8 companies show "Summit Healthcare Partners" --subscriptions
   pax8 companies show a1b2c3d4-e5f6-7890-abcd-ef1234567890 --json`
   )
   .action(async (idOrName: string, options, command: Command) => {

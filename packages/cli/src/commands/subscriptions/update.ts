@@ -17,9 +17,9 @@ export const subscriptionsUpdateCommand = new Command("update")
     "after",
     `
 Examples:
-  pax8 subscriptions update sub-acme-m365bp-0001 --quantity 50
-  pax8 subscriptions update sub-acme-m365bp-0001 --billing-term Annual
-  pax8 subscriptions update sub-acme-m365bp-0001 --quantity 30 --yes`
+  pax8 subscriptions update sub-summit-m365bp-001 --quantity 50
+  pax8 subscriptions update sub-summit-m365bp-001 --billing-term Annual
+  pax8 subscriptions update sub-summit-m365bp-001 --quantity 30 --yes`
   )
   .action(async (id, options, cmd) => {
     const allOpts = cmd.optsWithGlobals();

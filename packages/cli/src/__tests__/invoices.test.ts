@@ -54,12 +54,12 @@ describe("pax8 invoices", () => {
       const result = await runCliExpectSuccess([
         "invoices",
         "show",
-        "inv-acme-curr-001",
+        "inv-summit-curr-001",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("id", "inv-acme-curr-001");
-      expect(data[0]).toHaveProperty("companyName", "Acme Corp");
+      expect(data[0]).toHaveProperty("id", "inv-summit-curr-001");
+      expect(data[0]).toHaveProperty("companyName", "Summit Healthcare Partners");
       expect(data[0]).toHaveProperty("total");
       expect(data[0]).toHaveProperty("status");
       expect(data[0]).toHaveProperty("balance");
@@ -88,13 +88,13 @@ describe("pax8 invoices", () => {
         "invoices",
         "items",
         "--invoice-id",
-        "inv-acme-curr-001",
+        "inv-summit-curr-001",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
       expect(data.length).toBeGreaterThan(0);
       for (const item of data) {
-        expect(item.invoiceId).toBe("inv-acme-curr-001");
+        expect(item.invoiceId).toBe("inv-summit-curr-001");
       }
     });
   });

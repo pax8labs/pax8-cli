@@ -18,7 +18,7 @@ describe("pax8 companies", () => {
       // Non-TTY defaults to JSON
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(true);
-      expect(data[0].name).toBe("Acme Corp");
+      expect(data[0].name).toBe("Summit Healthcare Partners");
     });
 
     it("outputs CSV format", async () => {
@@ -30,7 +30,7 @@ describe("pax8 companies", () => {
       expect(lines[0]).toContain("Status");
       // Data rows
       expect(lines.length).toBeGreaterThan(1);
-      expect(lines[1]).toContain("Acme Corp");
+      expect(lines[1]).toContain("Summit Healthcare Partners");
     });
 
     it("supports pagination options", async () => {
@@ -63,7 +63,7 @@ describe("pax8 companies", () => {
       ]);
       const data = JSON.parse(result.stdout);
       expect(data.id).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
-      expect(data.name).toBe("Acme Corp");
+      expect(data.name).toBe("Summit Healthcare Partners");
       expect(data.status).toBe("Active");
     });
 
@@ -75,7 +75,7 @@ describe("pax8 companies", () => {
       ]);
       // Non-TTY defaults to JSON
       const data = JSON.parse(result.stdout);
-      expect(data.name).toBe("Acme Corp");
+      expect(data.name).toBe("Summit Healthcare Partners");
       expect(data.phone).toBeTruthy();
     });
 

@@ -56,10 +56,10 @@ describe("pax8 subscriptions show", () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "show",
-      "sub-acme-m365bp-0001",
+      "sub-summit-m365bp-001",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(data[0].id).toBe("sub-acme-m365bp-0001");
+    expect(data[0].id).toBe("sub-summit-m365bp-001");
     expect(data[0].productName).toBe("Microsoft 365 Business Premium");
   });
 
@@ -67,7 +67,7 @@ describe("pax8 subscriptions show", () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "show",
-      "sub-acme-m365bp-0001",
+      "sub-summit-m365bp-001",
       "--history",
     ]);
     const data = JSON.parse(result.stdout);

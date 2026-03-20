@@ -18,7 +18,7 @@ describe("pax8 orders", () => {
       const result = await runCliExpectSuccess(["orders", "list"]);
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(true);
-      expect(data[0].id).toBe("ord-acme-001");
+      expect(data[0].id).toBe("ord-summit-001");
     });
 
     it("filters by company ID", async () => {
@@ -61,12 +61,12 @@ describe("pax8 orders", () => {
       const result = await runCliExpectSuccess([
         "orders",
         "show",
-        "ord-acme-001",
+        "ord-summit-001",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.id).toBe("ord-acme-001");
-      expect(data.companyName).toBe("Acme Corp");
+      expect(data.id).toBe("ord-summit-001");
+      expect(data.companyName).toBe("Summit Healthcare Partners");
       expect(data.status).toBe("Completed");
       expect(data.lineItems).toBeDefined();
       expect(data.lineItems.length).toBeGreaterThan(0);
@@ -76,19 +76,19 @@ describe("pax8 orders", () => {
       const result = await runCliExpectSuccess([
         "orders",
         "show",
-        "ord-acme-001",
+        "ord-summit-001",
       ]);
       // Non-TTY defaults to JSON
       const data = JSON.parse(result.stdout);
-      expect(data.lineItems[0].productName).toBe("Microsoft 365 E5");
-      expect(data.lineItems[0].quantity).toBe(2);
+      expect(data.lineItems[0].productName).toBe("SentinelOne Singularity");
+      expect(data.lineItems[0].quantity).toBe(85);
     });
 
     it("shows order with multiple line items", async () => {
       const result = await runCliExpectSuccess([
         "orders",
         "show",
-        "ord-advworks-001",
+        "ord-pinnacle-001",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);

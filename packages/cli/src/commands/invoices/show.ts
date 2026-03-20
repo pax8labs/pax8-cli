@@ -13,8 +13,8 @@ export const invoicesShowCommand = new Command("show")
     "after",
     `
 Examples:
-  pax8 invoices show inv-acme-curr-001
-  pax8 invoices show inv-acme-curr-001 --json`
+  pax8 invoices show inv-summit-curr-001
+  pax8 invoices show inv-summit-curr-001 --json`
   )
   .action(async (id, options, command) => {
     const globalOpts = command.optsWithGlobals();

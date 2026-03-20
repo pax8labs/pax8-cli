@@ -213,10 +213,10 @@ describe("MockPax8Client — extended coverage", () => {
     it("creates an order with provided data", async () => {
       const result = await client.orders.create({
         companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        companyName: "Acme Corp",
+        companyName: "Summit Healthcare Partners",
       });
       expect(result.id).toContain("ord-demo-");
-      expect(result.companyName).toBe("Acme Corp");
+      expect(result.companyName).toBe("Summit Healthcare Partners");
       expect(result.status).toBe("Processing");
     });
   });
@@ -368,7 +368,7 @@ describe("MockPax8Client — extended coverage", () => {
     it("creates a quote", async () => {
       const result = await client.quotes.create({
         companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        companyName: "Acme Corp",
+        companyName: "Summit Healthcare Partners",
         total: 1000,
       });
       expect(result.id).toContain("quote-demo-");

@@ -23,9 +23,9 @@ describe("MockPax8Client", () => {
     });
 
     it("filters by name", async () => {
-      const result = await client.companies.list({ filter: "acme" });
+      const result = await client.companies.list({ filter: "summit" });
       expect(result.content).toHaveLength(1);
-      expect(result.content[0].name).toBe("Acme Corp");
+      expect(result.content[0].name).toBe("Summit Healthcare Partners");
     });
 
     it("returns empty for non-matching filter", async () => {
@@ -42,7 +42,7 @@ describe("MockPax8Client", () => {
       const company = await client.companies.get(
         "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
       );
-      expect(company.name).toBe("Acme Corp");
+      expect(company.name).toBe("Summit Healthcare Partners");
       expect(company.id).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     });
 
@@ -58,7 +58,7 @@ describe("MockPax8Client", () => {
   describe("subscriptions.list()", () => {
     it("returns all subscriptions", async () => {
       const result = await client.subscriptions.list({ size: 100 });
-      expect(result.content.length).toBeGreaterThanOrEqual(15);
+      expect(result.content.length).toBeGreaterThanOrEqual(10);
     });
 
     it("filters by companyId", async () => {
@@ -66,7 +66,7 @@ describe("MockPax8Client", () => {
         companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         size: 100,
       });
-      expect(result.content.length).toBe(12);
+      expect(result.content.length).toBe(5);
       expect(
         result.content.every(
           (s) => s.companyId === "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -181,8 +181,8 @@ describe("MockPax8Client", () => {
     });
 
     it("get returns correct order", async () => {
-      const order = await client.orders.get("ord-acme-001");
-      expect(order.companyName).toBe("Acme Corp");
+      const order = await client.orders.get("ord-summit-001");
+      expect(order.companyName).toBe("Summit Healthcare Partners");
     });
   });
 

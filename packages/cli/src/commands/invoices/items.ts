@@ -18,7 +18,7 @@ export const invoicesItemsCommand = new Command("items")
 Examples:
   pax8 invoices items
   pax8 invoices items --month 2026-03
-  pax8 invoices items --invoice-id inv-acme-curr-001
+  pax8 invoices items --invoice-id inv-summit-curr-001
   pax8 invoices items --json`
   )
   .action(async (options, command) => {

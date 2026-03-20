@@ -26,9 +26,9 @@ export const subscriptionsShowCommand = new Command("show")
     "after",
     `
 Examples:
-  pax8 subscriptions show sub-acme-m365bp-0001
-  pax8 subscriptions show sub-acme-m365bp-0001 --history
-  pax8 subscriptions show sub-acme-m365bp-0001 --json`
+  pax8 subscriptions show sub-summit-m365bp-001
+  pax8 subscriptions show sub-summit-m365bp-001 --history
+  pax8 subscriptions show sub-summit-m365bp-001 --json`
   )
   .action(async (id, options, cmd) => {
     const allOpts = cmd.optsWithGlobals();

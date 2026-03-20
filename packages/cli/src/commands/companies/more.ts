@@ -54,8 +54,8 @@ export const companiesMoreCommand = new Command("more")
     "after",
     `
 Examples:
-  pax8 companies more "Acme Corp"
-  pax8 companies more "Acme Corp" --json`
+  pax8 companies more "Summit Healthcare Partners"
+  pax8 companies more "Summit Healthcare Partners" --json`
   )
   .action(async (idOrName: string, _options, command: Command) => {
     const allOpts = command.optsWithGlobals();

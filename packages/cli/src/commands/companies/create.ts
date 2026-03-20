@@ -19,7 +19,7 @@ export const companiesCreateCommand = new Command("create")
     "after",
     `
 Examples:
-  pax8 companies create --name "Acme Corp" --phone "+1-555-0100" --website "https://acme.com"
+  pax8 companies create --name "Summit Healthcare Partners" --phone "+1-303-555-0101" --website "https://summithealthcare.example.com"
   pax8 companies create --name "Test Co" --city Denver --state CO --zip 80202 --country US
   pax8 companies create --name "Quick Co" --yes`
   )

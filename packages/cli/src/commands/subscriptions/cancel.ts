@@ -15,8 +15,8 @@ export const subscriptionsCancelCommand = new Command("cancel")
     "after",
     `
 Examples:
-  pax8 subscriptions cancel sub-acme-m365bp-0001
-  pax8 subscriptions cancel sub-acme-m365bp-0001 --yes`
+  pax8 subscriptions cancel sub-summit-m365bp-001
+  pax8 subscriptions cancel sub-summit-m365bp-001 --yes`
   )
   .action(async (id, options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
