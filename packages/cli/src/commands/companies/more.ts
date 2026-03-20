@@ -1,0 +1,221 @@
+import { Command } from "commander";
+import chalk from "chalk";
+import { createSpinner } from "../../lib/spinner.js";
+import { handleCommandError } from "../../lib/errors.js";
+import { buildContext } from "../../lib/context.js";
+import {
+  formatStatus,
+  formatCurrency,
+  formatDaysUntil,
+  formatDate,
+} from "../../lib/formatters.js";
+
+interface SubSummary {
+  productName: string;
+  quantity: number;
+  price: number;
+  mrr: number;
+  status: string;
+  billingTerm: string;
+  renewsIn: string | null;
+  commitmentTermEndDate?: string;
+}
+
+interface VendorSummary {
+  vendor: string;
+  products: number;
+  seats: number;
+  mrr: number;
+}
+
+function extractVendor(productName: string): string {
+  const lower = productName.toLowerCase();
+  if (lower.includes("microsoft") || lower.includes("m365") || lower.includes("exchange") || lower.includes("defender") || lower.includes("azure") || lower.includes("teams")) return "Microsoft";
+  if (lower.includes("acronis")) return "Acronis";
+  if (lower.includes("sentinel")) return "SentinelOne";
+  if (lower.includes("adobe")) return "Adobe";
+  if (lower.includes("google") || lower.includes("workspace")) return "Google";
+  if (lower.includes("dropbox")) return "Dropbox";
+  if (lower.includes("slack")) return "Slack";
+  if (lower.includes("zoom")) return "Zoom";
+  return "Other";
+}
+
+function daysUntil(dateStr: string | undefined): number | null {
+  if (!dateStr) return null;
+  const diff = new Date(dateStr).getTime() - Date.now();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+export const companiesMoreCommand = new Command("more")
+  .description("Full company summary — subscriptions, vendors, seats, MRR, and issues")
+  .argument("<name>", "Company name or ID")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  pax8 companies more "Acme Corp"
+  pax8 companies more "Acme Corp" --json`
+  )
+  .action(async (idOrName: string, _options, command: Command) => {
+    const allOpts = command.optsWithGlobals();
+    const spinner = createSpinner("Loading company details...").start();
+
+    try {
+      const ctx = await buildContext(allOpts);
+
+      // Resolve company
+      let company;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName);
+      if (isUuid) {
+        company = await ctx.api.companies.get(idOrName);
+      } else {
+        const result = await ctx.api.companies.list({ size: 100 });
+        const matches = result.content.filter(
+          (c: Record<string, unknown>) => (c.name as string).toLowerCase() === idOrName.toLowerCase()
+        );
+        if (matches.length === 0) {
+          const fuzzy = result.content.filter(
+            (c: Record<string, unknown>) => (c.name as string).toLowerCase().includes(idOrName.toLowerCase())
+          );
+          if (fuzzy.length === 1) {
+            company = fuzzy[0];
+          } else if (fuzzy.length > 1) {
+            throw new Error(
+              `Multiple companies match "${idOrName}": ${fuzzy.map((c: Record<string, unknown>) => c.name).join(", ")}. Use an exact name or ID.`
+            );
+          } else {
+            throw new Error(`Company not found: ${idOrName}`);
+          }
+        } else {
+          company = matches[0];
+        }
+      }
+
+      // Fetch subscriptions
+      const subs = await ctx.api.subscriptions.list({ companyId: company.id });
+      spinner.stop();
+
+      const subscriptions: SubSummary[] = subs.content.map((s: Record<string, unknown>) => {
+        const qty = Number(s.quantity) || 0;
+        const price = Number(s.price) || 0;
+        const termEnd = s.commitmentTermEndDate as string | undefined;
+        return {
+          productName: String(s.productName),
+          quantity: qty,
+          price,
+          mrr: qty * price,
+          status: String(s.status),
+          billingTerm: String(s.billingTerm),
+          renewsIn: termEnd ? formatDaysUntil(termEnd) : null,
+          commitmentTermEndDate: termEnd,
+        };
+      });
+
+      const activeSubs = subscriptions.filter((s) => s.status === "Active");
+      const totalMrr = activeSubs.reduce((sum, s) => sum + s.mrr, 0);
+      const totalSeats = activeSubs.reduce((sum, s) => sum + s.quantity, 0);
+
+      // Vendor breakdown
+      const vendorMap = new Map<string, VendorSummary>();
+      for (const sub of activeSubs) {
+        const vendor = extractVendor(sub.productName);
+        const existing = vendorMap.get(vendor) || { vendor, products: 0, seats: 0, mrr: 0 };
+        existing.products++;
+        existing.seats += sub.quantity;
+        existing.mrr += sub.mrr;
+        vendorMap.set(vendor, existing);
+      }
+      const vendors = [...vendorMap.values()].sort((a, b) => b.mrr - a.mrr);
+
+      // Issues
+      const issues: string[] = [];
+      for (const sub of activeSubs) {
+        const days = daysUntil(sub.commitmentTermEndDate);
+        if (days !== null && days <= 30 && days > 0 && sub.billingTerm === "Annual") {
+          issues.push(
+            `${sub.productName} (${sub.quantity} seats) renews ${sub.renewsIn} — review before auto-renewal`
+          );
+        }
+      }
+      const cancelledCount = subscriptions.filter((s) => s.status === "Cancelled").length;
+      if (cancelledCount > 0) {
+        issues.push(`${cancelledCount} cancelled subscription${cancelledCount > 1 ? "s" : ""}`);
+      }
+      const trialSubs = subscriptions.filter((s) => s.status === "Trial");
+      for (const s of trialSubs) {
+        issues.push(`${s.productName} is on trial — convert or cancel`);
+      }
+
+      // JSON output
+      if (ctx.outputFormat === "json" || ctx.outputFormat === "csv") {
+        const result = {
+          company: { name: company.name, id: company.id, status: company.status },
+          summary: { active_subscriptions: activeSubs.length, total_seats: totalSeats, mrr: totalMrr, arr: totalMrr * 12 },
+          vendors,
+          subscriptions: activeSubs,
+          issues,
+        };
+        process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+        return;
+      }
+
+      // Rich table output
+      const W = 60;
+      const line = chalk.dim("─".repeat(W));
+
+      process.stdout.write("\n");
+      process.stdout.write(chalk.bold.white(`  ${company.name}`) + chalk.dim(`  ${company.id.slice(0, 8)}...`) + "\n");
+      process.stdout.write(`  ${formatStatus(company.status)}${chalk.dim("  ·  Since " + formatDate(company.createdDate))}` + "\n");
+      process.stdout.write("\n");
+
+      // Summary bar
+      process.stdout.write(`  ${line}\n`);
+      process.stdout.write(
+        `  ${chalk.bold(String(activeSubs.length))} subscriptions` +
+        `    ${chalk.bold(String(totalSeats))} seats` +
+        `    ${chalk.bold.green(formatCurrency(totalMrr))}/mo` +
+        `    ${chalk.dim(formatCurrency(totalMrr * 12) + "/yr")}\n`
+      );
+      process.stdout.write(`  ${line}\n`);
+      process.stdout.write("\n");
+
+      // Vendor breakdown
+      process.stdout.write(chalk.dim("  VENDORS\n"));
+      for (const v of vendors) {
+        const pctBar = Math.round((v.mrr / totalMrr) * 20);
+        const bar = chalk.cyan("█".repeat(pctBar)) + chalk.dim("░".repeat(20 - pctBar));
+        const pct = Math.round((v.mrr / totalMrr) * 100);
+        process.stdout.write(
+          `  ${v.vendor.padEnd(14)} ${bar} ${chalk.bold(formatCurrency(v.mrr).padStart(10))}  ${chalk.dim(String(pct) + "%")}  ${chalk.dim(v.seats + " seats")}\n`
+        );
+      }
+      process.stdout.write("\n");
+
+      // Subscriptions
+      process.stdout.write(chalk.dim("  SUBSCRIPTIONS\n"));
+      for (const sub of subscriptions) {
+        const statusIcon = sub.status === "Active" ? chalk.green("●")
+          : sub.status === "Trial" ? chalk.yellow("●")
+          : chalk.red("●");
+        const renewal = sub.renewsIn ? chalk.dim(` · renews ${sub.renewsIn}`) : "";
+        process.stdout.write(
+          `  ${statusIcon} ${sub.productName.padEnd(35)} ${chalk.bold(String(sub.quantity).padStart(4))} seats  ${formatCurrency(sub.mrr).padStart(10)}/mo${renewal}\n`
+        );
+      }
+      process.stdout.write("\n");
+
+      // Issues
+      if (issues.length > 0) {
+        process.stdout.write(chalk.yellow.bold(`  ⚠ ${issues.length} issue${issues.length > 1 ? "s" : ""} found\n`));
+        for (const issue of issues) {
+          process.stdout.write(chalk.yellow(`    • ${issue}\n`));
+        }
+        process.stdout.write("\n");
+      } else {
+        process.stdout.write(chalk.green("  ✓ No issues found\n\n"));
+      }
+    } catch (error) {
+      handleCommandError(error, spinner, "Failed to load company summary");
+    }
+  });
