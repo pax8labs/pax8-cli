@@ -9,6 +9,7 @@ import { registerSubscriptionsCommands } from "./commands/subscriptions/index.js
 import { registerProductsCommands } from "./commands/products/index.js";
 import { registerInvoicesCommands } from "./commands/invoices/index.js";
 import { registerOrdersCommands } from "./commands/orders/index.js";
+import { registerRecommendationsCommands } from "./commands/recommendations/index.js";
 import { registerTelemetryCommands } from "./commands/telemetry/index.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
@@ -41,6 +42,7 @@ export function createProgram(): Command {
   registerProductsCommands(program);
   registerInvoicesCommands(program);
   registerOrdersCommands(program);
+  registerRecommendationsCommands(program);
   registerTelemetryCommands(program);
   program.addCommand(initCommand);
   program.addCommand(doctorCommand);
@@ -78,46 +80,43 @@ export function createProgram(): Command {
 
 function showWelcomeScreen(): void {
   const version = typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0";
-  const W = 58;
-  const border = "\u2550".repeat(W);
-  const pad = (text: string, visLen: number) =>
-    chalk.cyan.bold("\u2551") + text + " ".repeat(W - visLen) + chalk.cyan.bold("\u2551");
-  const empty = pad("", 0);
+
+  const W = 48;
+  const rule = chalk.cyan("\u2500".repeat(W));
 
   const pax8Art = [
-    ["    ██████╗  █████╗ ██╗  ██╗ █████╗ ", 36],
-    ["    ██╔══██╗██╔══██╗╚██╗██╔╝██╔══██╗", 36],
-    ["    ██████╔╝███████║ ╚███╔╝ ╚█████╔╝", 36],
-    ["    ██╔═══╝ ██╔══██║ ██╔██╗ ██╔══██╗", 36],
-    ["    ██║     ██║  ██║██╔╝ ██╗╚█████╔╝", 36],
-    ["    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝ ╚════╝ ", 37],
-  ] as const;
+    "    \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557  \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2557 ",
+    "    \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u255a\u2588\u2588\u2557\u2588\u2588\u2554\u255d\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557",
+    "    \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2554\u255d \u255a\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
+    "    \u2588\u2588\u2554\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551 \u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557",
+    "    \u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u255d \u2588\u2588\u2557\u255a\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
+    "    \u255a\u2550\u255d     \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u255d ",
+  ];
 
   const subtitle = "    C O M M A N D   L I N E";
-
   const tagline = "   Manage your cloud marketplace from the terminal";
   const versionLine = `   v${version} \u00b7 Open Source \u00b7 Pax8 Labs`;
 
   const lines = [
     "",
-    chalk.cyan.bold("\u2554" + border + "\u2557"),
-    empty,
-    ...pax8Art.map(([text, len]) => pad(text, len as number)),
-    empty,
-    pad(subtitle, subtitle.length),
-    empty,
-    pad(tagline, tagline.length),
-    pad(versionLine, versionLine.length),
-    empty,
-    chalk.cyan.bold("\u255a" + border + "\u255d"),
+    `  ${rule}`,
+    "",
+    ...pax8Art.map((l) => chalk.cyan.bold(`  ${l}`)),
+    "",
+    `  ${chalk.dim(subtitle)}`,
+    "",
+    `  ${chalk.dim(tagline)}`,
+    `  ${chalk.dim(versionLine)}`,
+    "",
+    `  ${rule}`,
     "",
     `  ${chalk.dim("Get started:")}`,
-    `    ${chalk.cyan("pax8 auth login")}        ${chalk.dim("Set up API credentials")}`,
-    `    ${chalk.cyan("pax8 init --demo")}       ${chalk.dim("Try with sample data")}`,
-    `    ${chalk.cyan("pax8 companies list")}    ${chalk.dim("List your customers")}`,
-    `    ${chalk.cyan("pax8 doctor")}            ${chalk.dim("Check your setup")}`,
+    `    ${chalk.cyan("auth login")}        ${chalk.dim("Set up API credentials")}`,
+    `    ${chalk.cyan("init --demo")}       ${chalk.dim("Try with sample data")}`,
+    `    ${chalk.cyan("companies list")}    ${chalk.dim("List your customers")}`,
+    `    ${chalk.cyan("doctor")}            ${chalk.dim("Check your setup")}`,
     "",
-    `  ${chalk.dim("Run")} pax8 --help ${chalk.dim("for all commands.")}`,
+    `  ${chalk.dim("Type")} help ${chalk.dim("for all commands.")}`,
     "",
   ];
   process.stdout.write(lines.join("\n"));
@@ -170,26 +169,29 @@ async function startRepl(): Promise<void> {
       writeErr: (str: string) => process.stderr.write(str),
     });
 
-    // Override process.exit so commands don't kill the REPL
+    // Override process.exit so commands don't kill the REPL.
+    // Throw a sentinel so execution stops immediately (handleCommandError returns `never`).
     const origExit = process.exit;
-    let exitCalled = false;
+    const EXIT_SENTINEL = Symbol("repl-exit");
     process.exit = ((_code?: number) => {
-      exitCalled = true;
+      throw EXIT_SENTINEL;
     }) as typeof process.exit;
 
     try {
       await prog.parseAsync(["node", "pax8", ...args]);
     } catch (err: unknown) {
-      const e = err as { code?: string };
-      if (e?.code !== "commander.helpDisplayed" && e?.code !== "commander.version") {
-        // Print error without exiting
-        if (err instanceof Error) {
-          process.stderr.write(chalk.red.bold(`\n  \u2717 ${err.message}\n\n`));
+      if (err === EXIT_SENTINEL) {
+        // Command called process.exit — swallowed
+      } else {
+        const e = err as { code?: string };
+        if (e?.code !== "commander.helpDisplayed" && e?.code !== "commander.version") {
+          if (err instanceof Error) {
+            process.stderr.write(chalk.red.bold(`\n  \u2717 ${err.message}\n\n`));
+          }
         }
       }
     } finally {
       process.exit = origExit;
-      exitCalled = false;
     }
 
     process.stdout.write("\n");

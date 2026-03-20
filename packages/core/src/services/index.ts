@@ -3,3 +3,4 @@ export { auditInvoices, type AuditDiscrepancy, type AuditReport } from "./invoic
 export { computeMrr, computeGrowth, type MrrReport, type GrowthReport } from "./analytics.js";
 export { FileCache } from "./cache.js";
 export { executeBulk, type BulkOp, type BulkResult } from "./bulk-executor.js";
+export { getRecommendations, type Recommendation, type RecommendationReport } from "./recommendations.js";
