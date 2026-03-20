@@ -1,7 +1,23 @@
-import { MockPax8Client } from "@pax8/core";
+import {
+  MockPax8Client,
+  Pax8Client,
+  CompaniesApi,
+  ContactsApi,
+  ProductsApi,
+  OrdersApi,
+  SubscriptionsApi,
+  InvoicesApi,
+  UsageApi,
+  QuotesApi,
+  WebhooksApi,
+  TokenManager,
+  CredentialStore,
+  loadConfig,
+} from "@pax8/core";
+import { CliError } from "./errors.js";
 
 export interface CommandContext {
-  api: MockPax8Client | any; // MockPax8Client in demo mode, real client otherwise
+  api: any;
   outputFormat: "table" | "json" | "csv" | "quiet";
   config: any;
   isDemo: boolean;
@@ -19,47 +35,76 @@ export interface GlobalOptions {
 }
 
 export function getOutputFormat(
-  options: GlobalOptions
+  options: GlobalOptions,
 ): "table" | "json" | "csv" | "quiet" {
   if (options.quiet) return "quiet";
   if (options.json) return "json";
   if (options.csv) return "csv";
-
-  // Non-TTY defaults to JSON (piped output)
   if (!process.stdout.isTTY) return "json";
-
-  // Default to table
   return "table";
 }
 
 export async function buildContext(
-  options: GlobalOptions
+  options: GlobalOptions,
 ): Promise<CommandContext> {
   const isDemo = process.env.PAX8_DEMO === "1";
   const outputFormat = getOutputFormat(options);
   const verbose = options.verbose ?? false;
 
-  // Use MockPax8Client in demo mode, placeholder otherwise
-  const api = isDemo ? new MockPax8Client() : { _demo: false };
-
-  // Placeholder config — will be replaced with real config loader
-  const config = {
+  const config = await loadConfig(options.config).catch(() => ({
+    version: "1.0" as const,
     defaults: {
-      output_format: "table",
+      output_format: "table" as const,
       page_size: 50,
       confirm_destructive: true,
     },
-    cache: {
-      enabled: true,
-      ttl_hours: 24,
-    },
-  };
+    cache: { enabled: true, ttl_hours: 24 },
+    telemetry: { enabled: false },
+  }));
 
-  return {
-    api,
-    outputFormat,
-    config,
-    isDemo,
-    verbose,
-  };
+  let api: any;
+
+  if (isDemo) {
+    api = new MockPax8Client();
+  } else {
+    const credentialStore = new CredentialStore();
+    const credentials = await credentialStore.getCredentials();
+
+    if (!credentials) {
+      throw new CliError(
+        "Not authenticated",
+        ["No Pax8 API credentials found"],
+        [
+          "Run: pax8 auth login --client-id <id> --client-secret <secret>",
+          "Or set PAX8_CLIENT_ID and PAX8_CLIENT_SECRET environment variables",
+          "Or use demo mode: PAX8_DEMO=1 pax8 <command>",
+        ],
+        "https://devx.pax8.com/",
+      );
+    }
+
+    const tokenManager = new TokenManager({
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
+    });
+
+    const client = new Pax8Client({
+      tokenManager,
+      debug: verbose,
+    });
+
+    api = {
+      companies: new CompaniesApi(client),
+      contacts: new ContactsApi(client),
+      products: new ProductsApi(client),
+      orders: new OrdersApi(client),
+      subscriptions: new SubscriptionsApi(client),
+      invoices: new InvoicesApi(client),
+      usage: new UsageApi(client),
+      quotes: new QuotesApi(client),
+      webhooks: new WebhooksApi(client),
+    };
+  }
+
+  return { api, outputFormat, config, isDemo, verbose };
 }

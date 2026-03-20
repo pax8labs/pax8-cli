@@ -48,7 +48,6 @@ Examples:
         lineItems: [
           {
             productId: allOpts.product,
-            productName: allOpts.product,
             quantity,
             billingTerm: allOpts.billingTerm,
           },
