@@ -139,7 +139,12 @@ async function startRepl(): Promise<void> {
 
   rl.prompt();
 
-  rl.on("line", async (line: string) => {
+  // Process lines sequentially — readline doesn't await async callbacks,
+  // so we queue them and use a sync wrapper to avoid unhandled rejections.
+  let processing = false;
+  const lineQueue: string[] = [];
+
+  async function processLine(line: string): Promise<void> {
     const input = line.trim();
 
     if (!input) {
@@ -176,25 +181,19 @@ async function startRepl(): Promise<void> {
       writeErr: (str: string) => process.stderr.write(str),
     });
 
-    // Override process.exit so commands don't kill the REPL.
-    // Throw a sentinel so execution stops immediately (handleCommandError returns `never`).
+    // Override process.exit with a no-op so commands don't kill the REPL.
+    // The error output is already written by handleCommandError before it
+    // calls process.exit, so we just need to swallow the exit.
     const origExit = process.exit;
-    const EXIT_SENTINEL = Symbol("repl-exit");
-    process.exit = ((_code?: number) => {
-      throw EXIT_SENTINEL;
-    }) as typeof process.exit;
+    process.exit = (() => {}) as typeof process.exit;
 
     try {
       await prog.parseAsync(["node", "pax8", ...args]);
     } catch (err: unknown) {
-      if (err === EXIT_SENTINEL) {
-        // Command called process.exit — swallowed
-      } else {
-        const e = err as { code?: string };
-        if (e?.code !== "commander.helpDisplayed" && e?.code !== "commander.version") {
-          if (err instanceof Error) {
-            process.stderr.write(chalk.red.bold(`\n  \u2717 ${err.message}\n\n`));
-          }
+      const e = err as { code?: string };
+      if (e?.code !== "commander.helpDisplayed" && e?.code !== "commander.version") {
+        if (err instanceof Error) {
+          process.stderr.write(chalk.red.bold(`\n  \u2717 ${err.message}\n\n`));
         }
       }
     } finally {
@@ -203,6 +202,26 @@ async function startRepl(): Promise<void> {
 
     process.stdout.write("\n");
     rl.prompt();
+  }
+
+  rl.on("line", (line: string) => {
+    lineQueue.push(line);
+    if (!processing) {
+      processing = true;
+      (async () => {
+        while (lineQueue.length > 0) {
+          const next = lineQueue.shift()!;
+          try {
+            await processLine(next);
+          } catch {
+            // Never let an error kill the REPL — just re-prompt
+            process.stdout.write("\n");
+            rl.prompt();
+          }
+        }
+        processing = false;
+      })();
+    }
   });
 
   return new Promise<void>((resolve) => {
