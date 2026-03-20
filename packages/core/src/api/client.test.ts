@@ -8,6 +8,7 @@ function createClient(options?: Partial<{ baseUrl: string; timeout: number; debu
   return new Pax8Client({
     tokenManager: mockTokenManager,
     baseUrl: "https://api.pax8.com/v1",
+    cacheTtlMs: 0,
     ...options,
   });
 }
