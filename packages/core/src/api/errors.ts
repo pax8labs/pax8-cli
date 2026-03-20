@@ -52,6 +52,17 @@ export class RateLimitError extends ApiError {
   }
 }
 
+export class NotFoundError extends ApiError {
+  constructor(
+    resource: string,
+    id: string,
+    requestPath: string = `/${resource.toLowerCase()}s/${id}`,
+  ) {
+    super(`${resource} not found: ${id}`, 404, requestPath);
+    this.name = "NotFoundError";
+  }
+}
+
 export interface FieldError {
   field: string;
   message: string;

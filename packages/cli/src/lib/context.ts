@@ -44,7 +44,7 @@ export interface GlobalOptions {
   verbose?: boolean;
   noColor?: boolean;
   config?: string;
-  parent?: any;
+  parent?: Record<string, unknown>;
 }
 
 export function getOutputFormat(
@@ -88,9 +88,9 @@ export async function buildContext(
         "Not authenticated",
         ["No Pax8 API credentials found"],
         [
-          "Run: pax8 auth login --client-id <id> --client-secret <secret>",
+          "Run: pax8 auth login",
           "Or set PAX8_CLIENT_ID and PAX8_CLIENT_SECRET environment variables",
-          "Or use demo mode: PAX8_DEMO=1 pax8 <command>",
+          "Or try demo mode: PAX8_DEMO=1 pax8 <command>",
         ],
         "https://devx.pax8.com/",
       );

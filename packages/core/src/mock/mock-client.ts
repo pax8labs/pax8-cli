@@ -28,6 +28,7 @@ import {
   type Webhook,
   type WebhookLog,
 } from "./demo-data.js";
+import { NotFoundError } from "../api/errors.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -72,10 +73,8 @@ function paginate<T>(
   };
 }
 
-function notFound(resource: string, id: string): Error {
-  const err = new Error(`${resource} not found: ${id}`);
-  (err as any).statusCode = 404;
-  return err;
+function notFound(resource: string, id: string): NotFoundError {
+  return new NotFoundError(resource, id);
 }
 
 // ─── Resource helpers ────────────────────────────────────────────────────────
