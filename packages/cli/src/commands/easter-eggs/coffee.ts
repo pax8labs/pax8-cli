@@ -29,7 +29,7 @@ export const coffeeCommand = new Command("coffee")
   .description("Brew a mass-produced cup of artisanal CLI coffee")
   .helpOption(false)
   .action(async () => {
-    console.log();
+    process.stdout.write("\n");
 
     for (const stage of STAGES) {
       const bar = renderBar(stage.pct);
@@ -38,6 +38,6 @@ export const coffeeCommand = new Command("coffee")
     }
 
     process.stdout.write("\n\n");
-    console.log(chalk.yellow("  \u2615 Your coffee is ready. Back to work."));
-    console.log();
+    process.stdout.write(chalk.yellow("  \u2615 Your coffee is ready. Back to work.") + "\n");
+    process.stdout.write("\n");
   });
