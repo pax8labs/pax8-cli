@@ -68,7 +68,7 @@ Examples:
       idOrName = fromList.id;
     }
 
-    const spinner = createSpinner("Loading company details...").start();
+    const spinner = createSpinner("Fetching company...").start();
 
     try {
       const ctx = await buildContext(allOpts);
@@ -102,20 +102,22 @@ Examples:
       }
 
       // Fetch subscriptions
+      spinner.text = `Fetching subscriptions for ${company.name}...`;
       const subs = await ctx.api.subscriptions.list({ companyId: company.id });
-      spinner.stop();
+      spinner.succeed(`Loaded ${company.name}`);
 
       const subscriptions: SubSummary[] = subs.content.map((s: Record<string, unknown>) => {
         const qty = Number(s.quantity) || 0;
         const price = Number(s.price) || 0;
         const termEnd = s.commitmentTermEndDate as string | undefined;
+        const rawName = s.productName as string | undefined;
         return {
-          productName: String(s.productName),
+          productName: rawName || `Product ${String(s.productId ?? "unknown").slice(0, 8)}`,
           quantity: qty,
           price,
           mrr: qty * price,
           status: String(s.status),
-          billingTerm: String(s.billingTerm),
+          billingTerm: String(s.billingTerm ?? "Unknown"),
           renewsIn: termEnd ? formatDaysUntil(termEnd) : null,
           commitmentTermEndDate: termEnd,
         };
@@ -175,7 +177,8 @@ Examples:
 
       process.stdout.write("\n");
       process.stdout.write(chalk.bold.white(`  ${company.name}`) + chalk.dim(`  ${company.id.slice(0, 8)}...`) + "\n");
-      process.stdout.write(`  ${formatStatus(company.status)}${chalk.dim("  ·  Since " + formatDate(company.createdDate))}` + "\n");
+      const sinceStr = company.createdDate ? chalk.dim("  ·  Since " + formatDate(company.createdDate)) : "";
+      process.stdout.write(`  ${formatStatus(company.status)}${sinceStr}` + "\n");
       process.stdout.write("\n");
 
       // Summary bar
@@ -225,6 +228,16 @@ Examples:
         process.stdout.write(chalk.green("  ✓ No issues found\n\n"));
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("not found") || msg.includes("404") || msg.includes("Not Found")) {
+        spinner?.stop();
+        process.stderr.write(
+          chalk.red.bold(`\n  \u2717 Could not load company summary\n`) +
+          chalk.dim(`    The company may not exist or the API returned no data.\n`) +
+          chalk.yellow(`    \u2192 Run ${chalk.cyan("pax8 companies list")} to see available companies\n\n`)
+        );
+        process.exit(1);
+      }
       handleCommandError(error, spinner, "Failed to load company summary");
     }
   });
