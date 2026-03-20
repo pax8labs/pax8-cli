@@ -10,6 +10,7 @@ import {
   formatDate,
 } from "../../lib/formatters.js";
 import { resolveFromLastList } from "../../lib/last-list.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 
 interface SubSummary {
   productName: string;
@@ -101,9 +102,10 @@ Examples:
         }
       }
 
-      // Fetch subscriptions
+      // Fetch subscriptions and enrich product names
       spinner.text = `Fetching subscriptions for ${company.name}...`;
       const subs = await ctx.api.subscriptions.list({ companyId: company.id });
+      await enrichProductNames(ctx, subs.content as Record<string, unknown>[]);
       spinner.succeed(`Loaded ${company.name}`);
 
       const subscriptions: SubSummary[] = subs.content.map((s: Record<string, unknown>) => {

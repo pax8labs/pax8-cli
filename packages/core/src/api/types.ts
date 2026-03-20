@@ -204,6 +204,7 @@ export const OrderSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   orderedBy: z.string().optional(),
+  status: z.string().optional(),
   createdDate: z.string(),
   lineItems: z.array(OrderLineItemSchema).optional(),
 });

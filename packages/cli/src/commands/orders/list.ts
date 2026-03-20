@@ -7,10 +7,11 @@ import { output, type Column } from "../../lib/output.js";
 import { formatStatus, formatDate } from "../../lib/formatters.js";
 
 const columns: Column[] = [
-  { key: "id", header: "ID" },
+  { key: "id", header: "ID", format: (v) => chalk.dim(String(v).slice(0, 8)) },
   { key: "companyName", header: "Company" },
+  { key: "orderedBy", header: "Ordered By" },
   { key: "createdDate", header: "Date", format: (v) => formatDate(String(v)) },
-  { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
+  { key: "lineItems", header: "Items", format: (v) => String(Array.isArray(v) ? v.length : 0) },
 ];
 
 export const ordersListCommand = new Command("list")
@@ -42,7 +43,18 @@ Examples:
         params.companyId = allOpts.company;
       }
 
-      const result = await ctx.api.orders.list(params);
+      const [result, companiesResult] = await Promise.all([
+        ctx.api.orders.list(params),
+        ctx.api.companies.list({ size: 200 }),
+      ]);
+
+      // Enrich company names
+      const nameMap = new Map((companiesResult.content as Array<{ id: string; name: string }>).map(c => [c.id, c.name]));
+      for (const order of result.content as Record<string, unknown>[]) {
+        if (!order.companyName) {
+          order.companyName = nameMap.get(String(order.companyId)) ?? String(order.companyId).slice(0, 8);
+        }
+      }
 
       spinner.stop();
 
