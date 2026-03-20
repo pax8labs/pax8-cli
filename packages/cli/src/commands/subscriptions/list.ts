@@ -37,6 +37,7 @@ export const subscriptionsListCommand = new Command("list")
   .option("--company <id>", "Filter by company ID")
   .option("--page <number>", "Page number", "0")
   .option("--size <number>", "Page size", "25")
+  .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
     `
@@ -59,6 +60,13 @@ Examples:
       });
 
       spinner.stop();
+
+      if (options.idsOnly) {
+        for (const item of result.content) {
+          process.stdout.write(item.id + "\n");
+        }
+        return;
+      }
 
       output(result.content, { format: ctx.outputFormat, columns });
 
