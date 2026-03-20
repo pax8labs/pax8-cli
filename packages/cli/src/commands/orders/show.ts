@@ -1,0 +1,71 @@
+import { Command } from "commander";
+import chalk from "chalk";
+import { createSpinner } from "../../lib/spinner.js";
+import { handleCommandError } from "../../lib/errors.js";
+import { buildContext } from "../../lib/context.js";
+import { output, type Column } from "../../lib/output.js";
+import { formatStatus, formatDate } from "../../lib/formatters.js";
+
+const lineItemColumns: Column[] = [
+  { key: "productName", header: "Product" },
+  { key: "quantity", header: "Qty" },
+  { key: "billingTerm", header: "Term" },
+];
+
+export const ordersShowCommand = new Command("show")
+  .description("Show order details")
+  .argument("<id>", "Order ID")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  pax8 orders show ord-acme-001
+  pax8 orders show ord-acme-001 --json`
+  )
+  .action(async (id: string, options, command: Command) => {
+    const allOpts = command.optsWithGlobals();
+    const spinner = createSpinner("Loading order...").start();
+
+    try {
+      const ctx = await buildContext(allOpts);
+      const order = await ctx.api.orders.get(id);
+
+      spinner.stop();
+
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(JSON.stringify(order, null, 2) + "\n");
+        return;
+      }
+
+      if (ctx.outputFormat === "csv") {
+        output([order], {
+          format: "csv",
+          columns: [
+            { key: "id", header: "ID" },
+            { key: "companyName", header: "Company" },
+            { key: "createdDate", header: "Date" },
+            { key: "status", header: "Status" },
+            { key: "orderedBy", header: "Ordered By" },
+          ],
+        });
+        return;
+      }
+
+      // Table / detail view
+      process.stdout.write("\n");
+      process.stdout.write(chalk.bold(`  Order ${order.id}\n\n`));
+      process.stdout.write(`  ${chalk.dim("Company:")}    ${order.companyName}\n`);
+      process.stdout.write(`  ${chalk.dim("Status:")}     ${formatStatus(order.status)}\n`);
+      process.stdout.write(`  ${chalk.dim("Date:")}       ${formatDate(order.createdDate)}\n`);
+      process.stdout.write(`  ${chalk.dim("Ordered By:")} ${order.orderedBy} (${order.orderedByEmail})\n`);
+      process.stdout.write("\n");
+
+      if (order.lineItems && order.lineItems.length > 0) {
+        process.stderr.write(chalk.dim(`  Line Items (${order.lineItems.length}):\n\n`));
+        output(order.lineItems, { format: "table", columns: lineItemColumns });
+        process.stdout.write("\n");
+      }
+    } catch (error) {
+      handleCommandError(error, spinner, "Failed to show order");
+    }
+  });

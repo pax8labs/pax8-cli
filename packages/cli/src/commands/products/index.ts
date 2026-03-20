@@ -1,7 +1,14 @@
 import { Command } from "commander";
+import { productsListCommand } from "./list.js";
+import { productsShowCommand } from "./show.js";
+import { productsSearchCommand } from "./search.js";
 
 export function registerProductsCommands(program: Command): void {
-  program.addCommand(
-    new Command("products").description("Manage products")
-  );
+  const products = new Command("products").description("Manage products");
+
+  products.addCommand(productsListCommand);
+  products.addCommand(productsShowCommand);
+  products.addCommand(productsSearchCommand);
+
+  program.addCommand(products);
 }

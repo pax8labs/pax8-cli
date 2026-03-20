@@ -1,7 +1,16 @@
 import { Command } from "commander";
+import { invoicesListCommand } from "./list.js";
+import { invoicesShowCommand } from "./show.js";
+import { invoicesItemsCommand } from "./items.js";
+import { invoicesAuditCommand } from "./audit.js";
 
 export function registerInvoicesCommands(program: Command): void {
-  program.addCommand(
-    new Command("invoices").description("Manage invoices")
-  );
+  const invoices = new Command("invoices").description("Manage invoices");
+
+  invoices.addCommand(invoicesListCommand);
+  invoices.addCommand(invoicesShowCommand);
+  invoices.addCommand(invoicesItemsCommand);
+  invoices.addCommand(invoicesAuditCommand);
+
+  program.addCommand(invoices);
 }

@@ -1,5 +1,7 @@
+import { MockPax8Client } from "@pax8/core";
+
 export interface CommandContext {
-  api: any; // Will be typed later when core API client is built
+  api: MockPax8Client | any; // MockPax8Client in demo mode, real client otherwise
   outputFormat: "table" | "json" | "csv" | "quiet";
   config: any;
   isDemo: boolean;
@@ -37,8 +39,8 @@ export async function buildContext(
   const outputFormat = getOutputFormat(options);
   const verbose = options.verbose ?? false;
 
-  // Placeholder API client — will be replaced with real/mock client
-  const api = isDemo ? { _demo: true } : { _demo: false };
+  // Use MockPax8Client in demo mode, placeholder otherwise
+  const api = isDemo ? new MockPax8Client() : { _demo: false };
 
   // Placeholder config — will be replaced with real config loader
   const config = {
