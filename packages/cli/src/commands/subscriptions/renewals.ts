@@ -93,7 +93,7 @@ Examples:
 
       if (report.items.length === 0) {
         process.stdout.write(
-          chalk.green(`\n  No subscriptions renewing within ${withinDays} days.\n\n`)
+          chalk.green(`\n  🎉 No subscriptions renewing within ${withinDays} days. Smooth sailing!\n\n`)
         );
         return;
       }

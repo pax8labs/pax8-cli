@@ -111,7 +111,7 @@ Examples:
 
       if (recs.length === 0) {
         process.stdout.write(
-          chalk.green("\n  All customers look well-covered — no recommendations at this time.\n\n")
+          chalk.green("\n  ✨ All customers look well-covered — nice work!\n\n")
         );
         return;
       }
@@ -138,7 +138,16 @@ Examples:
         );
       }
 
-      process.stdout.write("\n\n");
+      process.stdout.write("\n");
+
+      // Motivational nudge based on uplift
+      if (totalUplift >= 5000) {
+        process.stdout.write(chalk.cyan(`\n  💰 That's ${formatCurrency(totalUplift * 12)}/yr waiting to be captured.\n`));
+      } else if (totalUplift >= 1000) {
+        process.stdout.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
+      }
+
+      process.stdout.write("\n");
     } catch (error) {
       handleCommandError(error, spinner, "Failed to generate recommendations");
     }

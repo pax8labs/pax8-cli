@@ -6,6 +6,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 
 | User asks about | Run this |
 |---|---|
+| overview / status / how am I doing | `pax8 status --json 2>/dev/null` |
 | companies / customers | `pax8 companies list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
@@ -15,6 +16,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
 | products / catalog | `pax8 products search "query" --json 2>/dev/null` |
 | place an order | `pax8 orders create --company <id> --product <id> --quantity <n>` (confirm first) |
+| act on a recommendation | Extract orderCommand from recommendations JSON and run it. Always confirm with the user first. |
 
 MRR math: monthly subs = price × qty. Annual subs = price × qty ÷ 12. Group by companyId, resolve names from companies list.
 

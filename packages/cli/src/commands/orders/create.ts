@@ -28,10 +28,21 @@ Examples:
       const ctx = await buildContext(allOpts);
       const quantity = parseInt(allOpts.quantity, 10);
 
-      // Show pricing preview
-      process.stderr.write(chalk.bold("\n  Order Preview:\n\n"));
-      process.stderr.write(`  ${chalk.dim("Company:")}      ${allOpts.company}\n`);
-      process.stderr.write(`  ${chalk.dim("Product:")}      ${allOpts.product}\n`);
+      // Resolve names for a human-friendly preview
+      let companyName = allOpts.company;
+      let productName = allOpts.product;
+      try {
+        const [company, product] = await Promise.all([
+          ctx.api.companies.get(allOpts.company).catch(() => null),
+          ctx.api.products.get(allOpts.product).catch(() => null),
+        ]);
+        if (company?.name) companyName = company.name;
+        if (product?.name) productName = product.name;
+      } catch { /* best effort */ }
+
+      process.stderr.write(chalk.bold("\n  📦 Order Preview:\n\n"));
+      process.stderr.write(`  ${chalk.dim("Company:")}      ${companyName}\n`);
+      process.stderr.write(`  ${chalk.dim("Product:")}      ${productName}\n`);
       process.stderr.write(`  ${chalk.dim("Quantity:")}     ${quantity}\n`);
       process.stderr.write(`  ${chalk.dim("Billing Term:")} ${allOpts.billingTerm}\n`);
       process.stderr.write("\n");
@@ -58,7 +69,7 @@ Examples:
       };
       const order = await ctx.api.orders.create(orderInput);
 
-      spinner.succeed("Order created");
+      spinner.succeed("Order created 🎉");
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(JSON.stringify(order, null, 2) + "\n");
