@@ -6,6 +6,7 @@ import { registerSubscriptionsCommands } from "./commands/subscriptions/index.js
 import { registerProductsCommands } from "./commands/products/index.js";
 import { registerInvoicesCommands } from "./commands/invoices/index.js";
 import { registerOrdersCommands } from "./commands/orders/index.js";
+import { registerTelemetryCommands } from "./commands/telemetry/index.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
@@ -35,6 +36,7 @@ export function createProgram(): Command {
   registerProductsCommands(program);
   registerInvoicesCommands(program);
   registerOrdersCommands(program);
+  registerTelemetryCommands(program);
   program.addCommand(doctorCommand);
   program.addCommand(completionsCommand);
   program.addCommand(versionCommand);

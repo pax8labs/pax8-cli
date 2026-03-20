@@ -22,6 +22,9 @@ export * from "./services/index.js";
 // Config
 export * from "./config/index.js";
 
+// Telemetry
+export * from "./telemetry/index.js";
+
 // Mock/demo - data arrays and mock client (types come from api/types.ts)
 export {
   companies as demoCompanies,

@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "description": "Claude Code skill for AI-assisted Pax8 operations",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./src/index.ts",
+  "files": ["src", "skill.md"],
   "scripts": {
     "build": "echo 'no build needed'"
+  },
+  "peerDependencies": {
+    "@pax8/cli": "workspace:*"
   }
 }
