@@ -66,4 +66,8 @@ export function handleCommandError(
   }
 
   process.exit(1);
+
+  // If process.exit was overridden (e.g. REPL mode), throw to stop execution.
+  // This ensures the `never` return type contract is honored.
+  throw new Error("process.exit intercepted");
 }

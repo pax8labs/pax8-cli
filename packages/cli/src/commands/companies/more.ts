@@ -239,6 +239,7 @@ Examples:
           chalk.yellow(`    \u2192 Run ${chalk.cyan("pax8 companies list")} to see available companies\n\n`)
         );
         process.exit(1);
+        throw new Error("process.exit intercepted");
       }
       handleCommandError(error, spinner, "Failed to load company summary");
     }

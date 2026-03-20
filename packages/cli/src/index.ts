@@ -190,11 +190,14 @@ async function startRepl(): Promise<void> {
     try {
       await prog.parseAsync(["node", "pax8", ...args]);
     } catch (err: unknown) {
-      const e = err as { code?: string };
-      if (e?.code !== "commander.helpDisplayed" && e?.code !== "commander.version") {
-        if (err instanceof Error) {
-          process.stderr.write(chalk.red.bold(`\n  \u2717 ${err.message}\n\n`));
-        }
+      const e = err as { code?: string; message?: string };
+      // Suppress known non-error throws
+      if (e?.code === "commander.helpDisplayed" || e?.code === "commander.version") {
+        // Expected — help or version was printed
+      } else if (e?.message === "process.exit intercepted") {
+        // Expected — command error already printed, exit was swallowed
+      } else if (err instanceof Error) {
+        process.stderr.write(chalk.red.bold(`\n  \u2717 ${err.message}\n\n`));
       }
     } finally {
       process.exit = origExit;
