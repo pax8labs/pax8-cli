@@ -13,7 +13,12 @@ export const authLoginCommand = new Command("login")
     `
 Examples:
   pax8 auth login --client-id abc123 --client-secret s3cret
-  PAX8_CLIENT_ID=abc123 PAX8_CLIENT_SECRET=s3cret pax8 auth login`
+
+  # macOS / Linux
+  PAX8_CLIENT_ID=abc123 PAX8_CLIENT_SECRET=s3cret pax8 auth login
+
+  # PowerShell
+  $env:PAX8_CLIENT_ID="abc123"; $env:PAX8_CLIENT_SECRET="s3cret"; pax8 auth login`
   )
   .action(async (options) => {
     const isDemo = process.env.PAX8_DEMO === "1";

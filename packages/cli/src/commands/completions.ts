@@ -24,7 +24,7 @@ _pax8_completions() {
       return 0
       ;;
     completions)
-      COMPREPLY=( $(compgen -W "bash zsh fish" -- "\${cur}") )
+      COMPREPLY=( $(compgen -W "bash zsh fish powershell" -- "\${cur}") )
       return 0
       ;;
     pax8)
@@ -101,16 +101,46 @@ complete -c pax8 -l verbose -d 'Show detailed output'
 complete -c pax8 -l no-color -d 'Disable color output'
 `;
 
+const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -CommandName pax8 -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    $commands = @('auth', 'config', 'companies', 'subscriptions', 'products', 'invoices', 'orders', 'telemetry', 'doctor', 'completions', 'version')
+    $subcommands = @{
+        'auth' = @('login', 'status', 'logout')
+        'config' = @('init', 'show', 'set', 'path')
+        'companies' = @('list', 'show', 'create', 'update')
+        'subscriptions' = @('list', 'show', 'update', 'cancel', 'renewals')
+        'products' = @('list', 'show', 'search')
+        'invoices' = @('list', 'show', 'items', 'audit')
+        'orders' = @('list', 'show', 'create')
+        'telemetry' = @('status', 'enable', 'disable')
+    }
+    $elements = $commandAst.CommandElements
+    if ($elements.Count -eq 2) {
+        $commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+    } elseif ($elements.Count -ge 3) {
+        $cmd = $elements[1].ToString()
+        if ($subcommands.ContainsKey($cmd)) {
+            $subcommands[$cmd] | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        }
+    }
+}
+`;
+
 export const completionsCommand = new Command("completions")
   .description("Generate shell completion script")
-  .argument("<shell>", "Shell type: bash, zsh, or fish")
+  .argument("<shell>", "Shell type: bash, zsh, fish, or powershell")
   .addHelpText(
     "after",
     `
 Examples:
   pax8 completions bash >> ~/.bashrc
   pax8 completions zsh >> ~/.zshrc
-  pax8 completions fish > ~/.config/fish/completions/pax8.fish`
+  pax8 completions fish > ~/.config/fish/completions/pax8.fish
+  pax8 completions powershell >> $PROFILE`
   )
   .action(async (shell: string) => {
     const normalized = shell.toLowerCase();
@@ -125,10 +155,14 @@ Examples:
       case "fish":
         process.stdout.write(FISH_COMPLETION);
         break;
+      case "powershell":
+      case "pwsh":
+        process.stdout.write(POWERSHELL_COMPLETION);
+        break;
       default:
         process.stderr.write(
           chalk.red(
-            `\n  ✗ Unsupported shell: ${shell}\n  Supported: bash, zsh, fish\n\n`
+            `\n  ✗ Unsupported shell: ${shell}\n  Supported: bash, zsh, fish, powershell\n\n`
           )
         );
         process.exit(1);

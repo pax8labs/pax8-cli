@@ -111,7 +111,12 @@ export const doctorCommand = new Command("doctor")
     `
 Examples:
   pax8 doctor
-  PAX8_DEMO=1 pax8 doctor`
+
+  # macOS / Linux
+  PAX8_DEMO=1 pax8 doctor
+
+  # PowerShell
+  $env:PAX8_DEMO="1"; pax8 doctor`
   )
   .action(async () => {
     process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));

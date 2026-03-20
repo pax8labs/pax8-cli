@@ -1,0 +1,581 @@
+import { describe, it, expect } from "vitest";
+import { MockPax8Client } from "./mock-client.js";
+import { NotFoundError } from "../api/errors.js";
+
+describe("MockPax8Client — extended coverage", () => {
+  const client = new MockPax8Client();
+
+  // ─── Companies ───────────────────────────────────────────────────────────
+
+  describe("companies.create()", () => {
+    it("creates a company with provided data", async () => {
+      const result = await client.companies.create({ name: "Test Co" });
+      expect(result.name).toBe("Test Co");
+      expect(result.id).toContain("demo-new-");
+      expect(result.status).toBe("Active");
+    });
+
+    it("creates a company with defaults when no data", async () => {
+      const result = await client.companies.create({});
+      expect(result.name).toBe("New Company");
+    });
+  });
+
+  describe("companies.update()", () => {
+    it("updates company by id", async () => {
+      const result = await client.companies.update(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        { name: "Updated Name" },
+      );
+      expect(result.name).toBe("Updated Name");
+      expect(result.id).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    });
+
+    it("throws NotFoundError for unknown company id", async () => {
+      await expect(
+        client.companies.update("nonexistent", { name: "X" }),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  // ─── Subscriptions ─────────────────────────────────────────────────────────
+
+  describe("subscriptions.get()", () => {
+    it("returns subscription by id", async () => {
+      const all = await client.subscriptions.list({ size: 100 });
+      const firstId = all.content[0].id;
+      const sub = await client.subscriptions.get(firstId);
+      expect(sub.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown subscription", async () => {
+      await expect(client.subscriptions.get("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("subscriptions.getHistory()", () => {
+    it("returns history for existing subscription", async () => {
+      const all = await client.subscriptions.list({ size: 100 });
+      const firstId = all.content[0].id;
+      const history = await client.subscriptions.getHistory(firstId);
+      expect(history.changes).toHaveLength(2);
+      expect(history.changes[0].field).toBe("status");
+    });
+
+    it("throws NotFoundError for unknown subscription", async () => {
+      await expect(client.subscriptions.getHistory("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("subscriptions.update()", () => {
+    it("updates subscription", async () => {
+      const all = await client.subscriptions.list({ size: 100 });
+      const firstId = all.content[0].id;
+      const result = await client.subscriptions.update(firstId, { quantity: 99 } as never);
+      expect(result.quantity).toBe(99);
+      expect(result.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown subscription", async () => {
+      await expect(
+        client.subscriptions.update("nonexistent", {} as never),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("subscriptions.delete()", () => {
+    it("deletes an existing subscription without error", async () => {
+      const all = await client.subscriptions.list({ size: 100 });
+      const firstId = all.content[0].id;
+      await expect(client.subscriptions.delete(firstId)).resolves.toBeUndefined();
+    });
+
+    it("throws NotFoundError for unknown subscription", async () => {
+      await expect(client.subscriptions.delete("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  // ─── Products ────────────────────────────────────────────────────────────
+
+  describe("products.list() with vendorName filter", () => {
+    it("filters by vendor name", async () => {
+      const result = await client.products.list({ vendorName: "Microsoft" });
+      expect(result.content.length).toBeGreaterThan(0);
+      for (const p of result.content) {
+        expect(p.vendorName.toLowerCase()).toContain("microsoft");
+      }
+    });
+  });
+
+  describe("products.get()", () => {
+    it("throws NotFoundError for unknown product", async () => {
+      await expect(client.products.get("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("products.getProvisioningDetails()", () => {
+    it("returns provisioning details for Microsoft product", async () => {
+      const msProduct = (await client.products.list({ vendorName: "Microsoft", size: 1 })).content[0];
+      const details = await client.products.getProvisioningDetails(msProduct.id);
+      expect(details.requiresDomain).toBe(true);
+      expect(details.requiresTenant).toBe(true);
+      expect(details.fields).toContain("domain");
+    });
+
+    it("throws NotFoundError for unknown product", async () => {
+      await expect(client.products.getProvisioningDetails("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("products.getDependencies()", () => {
+    it("returns empty dependencies", async () => {
+      const all = await client.products.list({ size: 1 });
+      const result = await client.products.getDependencies(all.content[0].id);
+      expect(result.dependencies).toEqual([]);
+    });
+  });
+
+  // ─── Invoices ────────────────────────────────────────────────────────────
+
+  describe("invoices.get()", () => {
+    it("returns invoice by id", async () => {
+      const all = await client.invoices.list({ size: 100 });
+      const firstId = all.content[0].id;
+      const invoice = await client.invoices.get(firstId);
+      expect(invoice.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown invoice", async () => {
+      await expect(client.invoices.get("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("invoices.listItems()", () => {
+    it("returns items filtered by invoiceId", async () => {
+      const invoiceList = await client.invoices.list({ size: 100 });
+      const invoiceId = invoiceList.content[0].id;
+      const items = await client.invoices.listItems({ invoiceId, size: 100 });
+      expect(items.content.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it("filters by companyId", async () => {
+      const result = await client.invoices.listItems({
+        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        size: 100,
+      });
+      for (const item of result.content) {
+        expect(item.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+      }
+    });
+  });
+
+  describe("invoices.listDraftItems()", () => {
+    it("returns empty paginated response", async () => {
+      const result = await client.invoices.listDraftItems();
+      expect(result.content).toHaveLength(0);
+      expect(result.page.totalElements).toBe(0);
+    });
+  });
+
+  describe("invoices.list() with companyId filter", () => {
+    it("filters invoices by companyId", async () => {
+      const result = await client.invoices.list({
+        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        size: 100,
+      });
+      for (const inv of result.content) {
+        expect(inv.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+      }
+    });
+  });
+
+  // ─── Orders ──────────────────────────────────────────────────────────────
+
+  describe("orders.list() with companyId filter", () => {
+    it("filters by companyId", async () => {
+      const result = await client.orders.list({
+        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        size: 100,
+      });
+      for (const order of result.content) {
+        expect(order.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+      }
+    });
+  });
+
+  describe("orders.get()", () => {
+    it("throws NotFoundError for unknown order", async () => {
+      await expect(client.orders.get("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("orders.create()", () => {
+    it("creates an order with provided data", async () => {
+      const result = await client.orders.create({
+        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        companyName: "Acme Corp",
+      });
+      expect(result.id).toContain("ord-demo-");
+      expect(result.companyName).toBe("Acme Corp");
+      expect(result.status).toBe("Processing");
+    });
+  });
+
+  // ─── Contacts ────────────────────────────────────────────────────────────
+
+  describe("contacts.get()", () => {
+    it("returns contact by id", async () => {
+      const all = await client.contacts.list({ size: 100 });
+      const firstId = all.content[0].id;
+      const contact = await client.contacts.get(firstId);
+      expect(contact.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown contact", async () => {
+      await expect(client.contacts.get("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("contacts.create()", () => {
+    it("creates a contact", async () => {
+      const result = await client.contacts.create({
+        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        firstName: "Jane",
+        lastName: "Doe",
+        email: "jane@example.com",
+      });
+      expect(result.id).toContain("contact-demo-");
+      expect(result.firstName).toBe("Jane");
+    });
+  });
+
+  describe("contacts.update()", () => {
+    it("updates a contact", async () => {
+      const all = await client.contacts.list({ size: 100 });
+      const firstId = all.content[0].id;
+      const result = await client.contacts.update(firstId, { firstName: "Updated" });
+      expect(result.firstName).toBe("Updated");
+      expect(result.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown contact", async () => {
+      await expect(
+        client.contacts.update("nonexistent", { firstName: "X" }),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("contacts.delete()", () => {
+    it("deletes existing contact", async () => {
+      const all = await client.contacts.list({ size: 100 });
+      const firstId = all.content[0].id;
+      await expect(client.contacts.delete(firstId)).resolves.toBeUndefined();
+    });
+
+    it("throws NotFoundError for unknown contact", async () => {
+      await expect(client.contacts.delete("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  // ─── Usage ───────────────────────────────────────────────────────────────
+
+  describe("usage.listSummaries()", () => {
+    it("returns usage summaries", async () => {
+      const result = await client.usage.listSummaries({ size: 100 });
+      expect(result.content.length).toBeGreaterThan(0);
+    });
+
+    it("filters by companyId", async () => {
+      const result = await client.usage.listSummaries({
+        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        size: 100,
+      });
+      for (const u of result.content) {
+        expect(u.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+      }
+    });
+
+    it("filters by month", async () => {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const result = await client.usage.listSummaries({ month: currentMonth, size: 100 });
+      for (const u of result.content) {
+        expect(u.usageDate.startsWith(currentMonth)).toBe(true);
+      }
+    });
+  });
+
+  describe("usage.getSummary()", () => {
+    it("returns summary by id", async () => {
+      const all = await client.usage.listSummaries({ size: 100 });
+      const firstId = all.content[0].id;
+      const summary = await client.usage.getSummary(firstId);
+      expect(summary.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown summary", async () => {
+      await expect(client.usage.getSummary("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("usage.listLines()", () => {
+    it("returns usage lines", async () => {
+      const result = await client.usage.listLines({ size: 100 });
+      expect(result.content.length).toBeGreaterThan(0);
+    });
+
+    it("filters by usageSummaryId", async () => {
+      const summaries = await client.usage.listSummaries({ size: 100 });
+      const summaryId = summaries.content[0].id;
+      const result = await client.usage.listLines({ usageSummaryId: summaryId, size: 100 });
+      for (const line of result.content) {
+        expect(line.usageSummaryId).toBe(summaryId);
+      }
+    });
+  });
+
+  // ─── Quotes ──────────────────────────────────────────────────────────────
+
+  describe("quotes.list()", () => {
+    it("returns quotes", async () => {
+      const result = await client.quotes.list({ size: 100 });
+      expect(result.content.length).toBeGreaterThan(0);
+    });
+
+    it("filters by companyId", async () => {
+      const all = await client.quotes.list({ size: 100 });
+      const companyId = all.content[0].companyId;
+      const result = await client.quotes.list({ companyId, size: 100 });
+      for (const q of result.content) {
+        expect(q.companyId).toBe(companyId);
+      }
+    });
+  });
+
+  describe("quotes.get()", () => {
+    it("returns quote by id", async () => {
+      const all = await client.quotes.list({ size: 100 });
+      const firstId = all.content[0].id;
+      const quote = await client.quotes.get(firstId);
+      expect(quote.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown quote", async () => {
+      await expect(client.quotes.get("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("quotes.create()", () => {
+    it("creates a quote", async () => {
+      const result = await client.quotes.create({
+        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        companyName: "Acme Corp",
+        total: 1000,
+      });
+      expect(result.id).toContain("quote-demo-");
+      expect(result.status).toBe("Draft");
+    });
+  });
+
+  describe("quotes.update()", () => {
+    it("updates a quote", async () => {
+      const all = await client.quotes.list({ size: 100 });
+      const firstId = all.content[0].id;
+      const result = await client.quotes.update(firstId, { total: 2000 } as never);
+      expect(result.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown quote", async () => {
+      await expect(
+        client.quotes.update("nonexistent", {} as never),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("quotes.delete()", () => {
+    it("deletes existing quote", async () => {
+      const all = await client.quotes.list({ size: 100 });
+      const firstId = all.content[0].id;
+      await expect(client.quotes.delete(firstId)).resolves.toBeUndefined();
+    });
+
+    it("throws NotFoundError for unknown quote", async () => {
+      await expect(client.quotes.delete("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  // ─── Webhooks ────────────────────────────────────────────────────────────
+
+  describe("webhooks.get()", () => {
+    it("returns webhook by id", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      const wh = await client.webhooks.get(firstId);
+      expect(wh.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(client.webhooks.get("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("webhooks.create()", () => {
+    it("creates a webhook", async () => {
+      const result = await client.webhooks.create({
+        url: "https://example.com/hook",
+        topics: ["subscription.created"],
+      });
+      expect(result.id).toContain("wh-demo-");
+      expect(result.status).toBe("Active");
+      expect(result.url).toBe("https://example.com/hook");
+    });
+  });
+
+  describe("webhooks.update()", () => {
+    it("updates a webhook", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      const result = await client.webhooks.update(firstId, { url: "https://new.com/hook" });
+      expect(result.url).toBe("https://new.com/hook");
+      expect(result.id).toBe(firstId);
+    });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(
+        client.webhooks.update("nonexistent", { url: "https://x.com" }),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("webhooks.updateStatus()", () => {
+    it("updates webhook status", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      const result = await client.webhooks.updateStatus(firstId, "Inactive");
+      expect(result.status).toBe("Inactive");
+    });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(
+        client.webhooks.updateStatus("nonexistent", "Active"),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("webhooks.addTopics()", () => {
+    it("adds topics to webhook", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      const original = await client.webhooks.get(firstId);
+      const result = await client.webhooks.addTopics(firstId, ["new.topic"]);
+      expect(result.topics.length).toBeGreaterThanOrEqual(original.topics.length);
+      expect(result.topics).toContain("new.topic");
+    });
+
+    it("deduplicates topics", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      const original = await client.webhooks.get(firstId);
+      const existingTopic = original.topics[0];
+      const result = await client.webhooks.addTopics(firstId, [existingTopic]);
+      // Should not duplicate
+      const count = result.topics.filter((t) => t === existingTopic).length;
+      expect(count).toBe(1);
+    });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(
+        client.webhooks.addTopics("nonexistent", ["x"]),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("webhooks.replaceTopics()", () => {
+    it("replaces all topics", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      const result = await client.webhooks.replaceTopics(firstId, ["only.this"]);
+      expect(result.topics).toEqual(["only.this"]);
+    });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(
+        client.webhooks.replaceTopics("nonexistent", ["x"]),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("webhooks.removeTopics()", () => {
+    it("removes specified topics", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      const original = await client.webhooks.get(firstId);
+      const topicToRemove = original.topics[0];
+      const result = await client.webhooks.removeTopics(firstId, [topicToRemove]);
+      expect(result.topics).not.toContain(topicToRemove);
+    });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(
+        client.webhooks.removeTopics("nonexistent", ["x"]),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("webhooks.delete()", () => {
+    it("deletes existing webhook", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      await expect(client.webhooks.delete(firstId)).resolves.toBeUndefined();
+    });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(client.webhooks.delete("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("webhooks.test()", () => {
+    it("returns test result for active webhook", async () => {
+      const all = await client.webhooks.list();
+      const active = all.content.find((w) => w.status === "Active");
+      expect(active).toBeDefined();
+      const result = await client.webhooks.test(active!.id);
+      expect(result.success).toBe(true);
+      expect(result.statusCode).toBe(200);
+      expect(result.responseTime).toBeGreaterThan(0);
+    });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(client.webhooks.test("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("webhooks.logs()", () => {
+    it("returns webhook logs", async () => {
+      const result = await client.webhooks.logs({ size: 100 });
+      expect(result.content.length).toBeGreaterThan(0);
+    });
+
+    it("filters by webhookId", async () => {
+      const all = await client.webhooks.list();
+      const firstId = all.content[0].id;
+      const result = await client.webhooks.logs({ webhookId: firstId, size: 100 });
+      for (const log of result.content) {
+        expect(log.webhookId).toBe(firstId);
+      }
+    });
+  });
+
+  describe("webhooks.retry()", () => {
+    it("retries a webhook log", async () => {
+      const logs = await client.webhooks.logs({ size: 100 });
+      const firstLogId = logs.content[0].id;
+      const result = await client.webhooks.retry(firstLogId);
+      expect(result.status).toBe("Success");
+      expect(result.statusCode).toBe(200);
+    });
+
+    it("throws NotFoundError for unknown log", async () => {
+      await expect(client.webhooks.retry("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+});

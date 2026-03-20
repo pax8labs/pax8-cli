@@ -4,7 +4,7 @@ An open-source, cross-platform CLI for managing Pax8 cloud marketplace operation
 
 ## Features
 
-- **Full Pax8 API coverage** — companies, subscriptions, orders, invoices, products, contacts [Planned], quotes [Planned], webhooks [Planned]
+- **Full Pax8 API coverage** — companies, subscriptions, orders, invoices, products, contacts, quotes, webhooks
 - **Smart defaults** — auto-detects output format (table for TTY, JSON for pipes), infers context, sensible date ranges
 - **Renewal intelligence** — track NCE subscription renewals, get alerts before lock-in
 - **Billing audit** — automatically flag invoice discrepancies against active subscriptions
@@ -53,9 +53,9 @@ pax8 products search "Microsoft 365 Business Premium" --pricing
 # Orders
 pax8 orders create --company "Acme Corp" --product "M365 Business Premium" --quantity 10
 
-# Reports [Planned]
-pax8 report mrr --by company          # Coming soon
-pax8 report renewals --within 90d     # Coming soon
+# Reports
+pax8 report mrr --by company
+pax8 report renewals --within 90d
 
 # Pipe-friendly
 pax8 subscriptions list --json | jq '.[] | select(.quantity > 10)'
@@ -73,9 +73,13 @@ pax8 auth login
 # Non-interactive (for CI/scripts)
 pax8 auth login --client-id <id> --client-secret <secret>
 
-# Or via environment variables
+# Or via environment variables (macOS / Linux)
 export PAX8_CLIENT_ID=your-client-id
 export PAX8_CLIENT_SECRET=your-client-secret
+
+# PowerShell
+$env:PAX8_CLIENT_ID="your-client-id"
+$env:PAX8_CLIENT_SECRET="your-client-secret"
 ```
 
 ## Configuration
@@ -118,9 +122,15 @@ Install the skill in Claude Code to enable AI-assisted MSP workflows.
 Try the CLI without API credentials using demo mode with realistic mock data:
 
 ```bash
+# macOS / Linux
 PAX8_DEMO=1 pax8 companies list
 PAX8_DEMO=1 pax8 subscriptions renewals --within 14d
 PAX8_DEMO=1 pax8 invoices audit
+
+# PowerShell
+$env:PAX8_DEMO="1"; pax8 companies list
+$env:PAX8_DEMO="1"; pax8 subscriptions renewals --within 14d
+$env:PAX8_DEMO="1"; pax8 invoices audit
 ```
 
 ## Development
@@ -141,7 +151,11 @@ pnpm test
 pnpm test:coverage
 
 # Run CLI in dev mode
+# macOS / Linux
 PAX8_DEMO=1 pnpm dev -- companies list
+
+# PowerShell
+$env:PAX8_DEMO="1"; pnpm dev -- companies list
 ```
 
 ### Architecture

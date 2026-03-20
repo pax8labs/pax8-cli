@@ -1,9 +1,10 @@
 import * as fs from "node:fs/promises";
+import { homedir } from "node:os";
 import * as path from "node:path";
 import YAML from "yaml";
 import { ConfigSchema, type Config } from "./schema.js";
 
-const DEFAULT_CONFIG_DIR = path.join(process.env.HOME ?? "~", ".pax8");
+const DEFAULT_CONFIG_DIR = path.join(homedir(), ".pax8");
 const DEFAULT_CONFIG_FILE = "config.yaml";
 
 export function getConfigDir(): string {
@@ -31,11 +32,12 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     const content = await fs.readFile(filePath, "utf-8");
     const raw = YAML.parse(content);
     return ConfigSchema.parse(raw);
-  } catch (err: unknown) {
-    if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+  } catch (err: any) {
+    if (err?.code === "ENOENT") {
       return getDefaultConfig();
     }
-    if (err instanceof Error && err.name === "ZodError") {
+    // If it's a Zod validation error, re-throw as-is
+    if (err?.name === "ZodError") {
       throw err;
     }
     throw err;

@@ -1,4 +1,3 @@
-import { Command } from "commander";
 import {
   MockPax8Client,
   Pax8Client,
@@ -14,7 +13,6 @@ import {
   TokenManager,
   CredentialStore,
   loadConfig,
-  ConfigSchema,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
 import { CliError } from "./errors.js";
@@ -46,7 +44,7 @@ export interface GlobalOptions {
   verbose?: boolean;
   noColor?: boolean;
   config?: string;
-  parent?: Command;
+  parent?: any;
 }
 
 export function getOutputFormat(
@@ -62,14 +60,20 @@ export function getOutputFormat(
 export async function buildContext(
   options: GlobalOptions,
 ): Promise<CommandContext> {
+  const isDemo = process.env.PAX8_DEMO === "1";
   const outputFormat = getOutputFormat(options);
   const verbose = options.verbose ?? false;
 
-  const config = await loadConfig(options.config).catch(
-    (): Config => ConfigSchema.parse({ version: "1.0" }),
-  );
-
-  const isDemo = process.env.PAX8_DEMO === "1" || config.demo === true;
+  const config = await loadConfig(options.config).catch(() => ({
+    version: "1.0" as const,
+    defaults: {
+      output_format: "table" as const,
+      page_size: 50,
+      confirm_destructive: true,
+    },
+    cache: { enabled: true, ttl_hours: 24 },
+    telemetry: { enabled: false },
+  }));
 
   let api: ApiClient | MockPax8Client;
 
@@ -84,9 +88,10 @@ export async function buildContext(
         "Not authenticated",
         ["No Pax8 API credentials found"],
         [
-          "Run: pax8 auth login",
-          "Or set PAX8_CLIENT_ID and PAX8_CLIENT_SECRET environment variables",
-          "Or try demo mode: PAX8_DEMO=1 pax8 <command>",
+          "Run: pax8 auth login --client-id <id> --client-secret <secret>",
+          "Or set environment variables: export PAX8_CLIENT_ID=... && export PAX8_CLIENT_SECRET=... (macOS/Linux)",
+          "  PowerShell: $env:PAX8_CLIENT_ID=\"...\"; $env:PAX8_CLIENT_SECRET=\"...\"",
+          "Or use demo mode: PAX8_DEMO=1 pax8 <command> (macOS/Linux) or $env:PAX8_DEMO=\"1\"; pax8 <command> (PowerShell)",
         ],
         "https://devx.pax8.com/",
       );

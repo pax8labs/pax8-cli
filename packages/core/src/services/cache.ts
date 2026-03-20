@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import { homedir } from "node:os";
 import * as path from "node:path";
 
 interface CacheEntry<T> {
@@ -7,7 +8,7 @@ interface CacheEntry<T> {
 }
 
 export class FileCache {
-  constructor(private cacheDir: string = path.join(process.env.HOME ?? "~", ".pax8", "cache")) {}
+  constructor(private cacheDir: string = path.join(homedir(), ".pax8", "cache")) {}
 
   private filePath(key: string): string {
     // Sanitize key to be safe as filename
