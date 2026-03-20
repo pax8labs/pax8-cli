@@ -7,7 +7,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | User asks about | Run this |
 |---|---|
 | companies / customers | `pax8 companies list --json 2>/dev/null` |
-| subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` |
+| subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
 | MRR / revenue | `pax8 subscriptions list --json --size 1000 2>/dev/null` AND `pax8 companies list --json 2>/dev/null` (parallel) |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
