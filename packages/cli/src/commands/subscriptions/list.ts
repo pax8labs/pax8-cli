@@ -37,6 +37,7 @@ const columns: Column[] = [
 export const subscriptionsListCommand = new Command("list")
   .description("List subscriptions")
   .option("--company <id|name>", "Filter by company ID or name")
+  .option("--status <status>", "Filter by status (Active, Cancelled, PendingManual, Trial, etc.)")
   .option("--page <number>", "Page number", "0")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
@@ -60,6 +61,7 @@ Examples:
         : undefined;
       const result = await ctx.api.subscriptions.list({
         companyId,
+        status: options.status,
         page: parseInt(options.page, 10),
         size: parseInt(options.size, 10),
       });
