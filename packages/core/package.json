@@ -23,5 +23,14 @@
     "@types/node": "^25.5.0",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pax8labs/pax8-cli.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/pax8labs/pax8-cli#readme",
+  "bugs": "https://github.com/pax8labs/pax8-cli/issues",
+  "keywords": ["pax8", "msp", "cli", "cloud-marketplace", "subscriptions", "billing"],
+  "license": "MIT"
 }
