@@ -57,3 +57,29 @@ pnpm dev              # Run CLI in dev mode
 - Auth: OAuth 2.0 client credentials → `POST /v1/token`
 - Rate limit: 1,000 calls/minute
 - Docs: https://devx.pax8.com/
+
+## Pax8 data queries (IMPORTANT — read this)
+
+When the user asks about their Pax8 data (companies, subscriptions, MRR, recommendations, invoices, products), **run `pax8` CLI commands directly via Bash. Do NOT use the /pax8 skill.** The `pax8` binary is on PATH.
+
+**Act immediately** — run the command in your FIRST response. No preamble, no "let me fetch that for you".
+
+Common commands (always add `--json` and pipe through `2>/dev/null`):
+```
+pax8 companies list --json
+pax8 subscriptions list --json --size 1000
+pax8 subscriptions renewals --json --within 30d
+pax8 invoices list --json
+pax8 invoices audit --json
+pax8 products search "query" --json
+pax8 recommendations list --json
+pax8 orders create --company <id> --product <id> --quantity <n>
+```
+
+For MRR: run `pax8 subscriptions list --json --size 1000` and `pax8 companies list --json` **in parallel**, then compute MRR (monthly: price×qty, annual: price×qty/12) and group by company.
+
+Rules:
+- **No clarifying questions.** Default to all companies, current month, 30 days.
+- **Parallel Bash calls** when you need data from multiple commands.
+- **Be concise.** Lead with the key number. Top 3-5 items in a short table. Omit UUIDs.
+- **Only confirm writes** (orders, updates). Reads need zero confirmation.
