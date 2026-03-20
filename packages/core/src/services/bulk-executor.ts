@@ -1,6 +1,6 @@
-export interface BulkOp {
+export interface BulkOp<T = unknown> {
   id: string;
-  execute: () => Promise<any>;
+  execute: () => Promise<T>;
 }
 
 export interface BulkResult<T> {
@@ -12,10 +12,10 @@ export interface BulkResult<T> {
 }
 
 export async function executeBulk<T>(
-  operations: BulkOp[],
+  operations: BulkOp<T>[],
   options?: {
     concurrency?: number; // default 5, max 10
-    onProgress?: (completed: number, total: number, current: BulkOp) => void;
+    onProgress?: (completed: number, total: number, current: BulkOp<T>) => void;
   },
 ): Promise<BulkResult<T>> {
   const concurrency = Math.min(Math.max(options?.concurrency ?? 5, 1), 10);

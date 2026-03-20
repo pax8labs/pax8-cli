@@ -35,6 +35,7 @@ describe("auditInvoices", () => {
   });
 
   it("should detect missing subscriptions (active but not invoiced)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- empty array for testing missing subscription scenario
     const invoiceItems: any[] = [];
     const subscriptions = [
       { id: "s1", companyId: "co-1", companyName: "Acme", productName: "M365", quantity: 10, price: 10, status: "Active" },
@@ -51,6 +52,7 @@ describe("auditInvoices", () => {
     const invoiceItems = [
       { subscriptionId: "s1", companyId: "co-1", companyName: "Acme", productName: "M365", quantity: 5, unitPrice: 10 },
     ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- empty array for testing unexpected items scenario
     const subscriptions: any[] = [];
 
     const report = auditInvoices(invoiceItems, subscriptions);

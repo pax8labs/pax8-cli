@@ -74,7 +74,7 @@ function paginate<T>(
 
 function notFound(resource: string, id: string): Error {
   const err = new Error(`${resource} not found: ${id}`);
-  (err as any).statusCode = 404;
+  (err as unknown as Record<string, number>).statusCode = 404;
   return err;
 }
 

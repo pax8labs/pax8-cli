@@ -7,7 +7,7 @@ function daysFromNow(days: number): string {
   return d.toISOString();
 }
 
-function makeSub(overrides: Record<string, any> = {}) {
+function makeSub(overrides: Record<string, unknown> = {}) {
   return {
     id: "sub-1",
     companyId: "co-1",
