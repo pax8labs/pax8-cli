@@ -13,6 +13,7 @@ import {
   TokenManager,
   CredentialStore,
   loadConfig,
+  ConfigSchema,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
 import { CliError } from "./errors.js";
@@ -64,16 +65,9 @@ export async function buildContext(
   const outputFormat = getOutputFormat(options);
   const verbose = options.verbose ?? false;
 
-  const config = await loadConfig(options.config).catch(() => ({
-    version: "1.0" as const,
-    defaults: {
-      output_format: "table" as const,
-      page_size: 50,
-      confirm_destructive: true,
-    },
-    cache: { enabled: true, ttl_hours: 24 },
-    telemetry: { enabled: false },
-  }));
+  const config = await loadConfig(options.config).catch(
+    (): Config => ConfigSchema.parse({ version: "1.0" }),
+  );
 
   let api: ApiClient | MockPax8Client;
 
