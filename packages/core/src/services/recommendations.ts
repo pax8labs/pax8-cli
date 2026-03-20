@@ -129,6 +129,7 @@ interface SeatGap {
   baseProduct: string;
   baseQuantity: number;
   gapProduct: string;
+  gapProductId: string;
   gapQuantity: number;
   missingSeats: number;
   category: ProductCategory;
@@ -137,29 +138,44 @@ interface SeatGap {
 function findSeatGaps(companySubs: SubscriptionInput[]): SeatGap[] {
   const gaps: SeatGap[] = [];
 
-  // Find the "primary" subscription (highest seat count, typically productivity)
   const activeSubs = companySubs.filter((s) => s.status === "Active");
   if (activeSubs.length < 2) return gaps;
 
-  const sorted = [...activeSubs].sort((a, b) => (b.quantity ?? 0) - (a.quantity ?? 0));
-  const primary = sorted[0];
-  const primaryQty = primary.quantity ?? 0;
-  if (primaryQty === 0) return gaps;
+  // Group subs by category — only compare within the same category
+  const byCategory = new Map<ProductCategory, SubscriptionInput[]>();
+  for (const sub of activeSubs) {
+    const cats = categorizeProduct(sub.productName ?? "");
+    for (const cat of cats) {
+      const list = byCategory.get(cat) ?? [];
+      list.push(sub);
+      byCategory.set(cat, list);
+    }
+  }
 
-  for (const sub of sorted.slice(1)) {
-    const subQty = sub.quantity ?? 0;
-    const ratio = subQty / primaryQty;
-    // Flag if coverage is less than 80% of primary seats
-    if (ratio < 0.8 && primaryQty - subQty >= 5) {
-      const categories = categorizeProduct(sub.productName ?? "");
-      gaps.push({
-        baseProduct: primary.productName ?? "",
-        baseQuantity: primaryQty,
-        gapProduct: sub.productName ?? "",
-        gapQuantity: subQty,
-        missingSeats: primaryQty - subQty,
-        category: categories[0] ?? "security",
-      });
+  // For each category with multiple products, find seat gaps
+  for (const [category, catSubs] of byCategory) {
+    if (catSubs.length < 2) continue;
+    const sorted = [...catSubs].sort((a, b) => (b.quantity ?? 0) - (a.quantity ?? 0));
+    const primary = sorted[0];
+    const primaryQty = primary.quantity ?? 0;
+    if (primaryQty < 10) continue; // Don't flag tiny deployments
+
+    for (const sub of sorted.slice(1)) {
+      const subQty = sub.quantity ?? 0;
+      const ratio = subQty / primaryQty;
+      const missing = primaryQty - subQty;
+      // Flag if coverage is less than 50% and at least 10 seats missing
+      if (ratio < 0.5 && missing >= 10) {
+        gaps.push({
+          baseProduct: primary.productName ?? "",
+          baseQuantity: primaryQty,
+          gapProduct: sub.productName ?? "",
+          gapProductId: sub.productId ?? "",
+          gapQuantity: subQty,
+          missingSeats: missing,
+          category,
+        });
+      }
     }
   }
 
@@ -299,15 +315,9 @@ export function getRecommendations(
       const price = productPriceMap.get(gap.gapProduct.toLowerCase());
       const estimatedMrrUplift = price ? price * gap.missingSeats : null;
 
-      // Find product ID for the gap product
-      const matchedProduct = products?.find((p) =>
-        p.name.toLowerCase() === gap.gapProduct.toLowerCase()
-      );
-
-      // For seat gaps, we'd update the existing subscription, not create a new order
-      // But for simplicity, we suggest an order for the missing seats
-      const orderCommand = matchedProduct
-        ? `pax8 orders create --company ${companyId} --product ${matchedProduct.id} --quantity ${gap.missingSeats}`
+      // For seat gaps, use the product ID directly from the subscription
+      const orderCommand = gap.gapProductId
+        ? `pax8 orders create --company ${companyId} --product ${gap.gapProductId} --quantity ${gap.missingSeats}`
         : null;
 
       recommendations.push({
