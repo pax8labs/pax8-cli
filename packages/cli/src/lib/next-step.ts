@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import { createInterface } from "readline";
-import { execFile } from "child_process";
+import { spawn } from "child_process";
 
 export interface NextStep {
   key: string;
@@ -10,7 +10,7 @@ export interface NextStep {
 
 /**
  * Show a menu of next steps and let the user pick one by number.
- * Only shows in TTY mode. Runs the selected pax8 command as a child process.
+ * Only shows in TTY mode. Runs the selected pax8 command inline.
  */
 export async function promptNextSteps(steps: NextStep[]): Promise<void> {
   if (!process.stdin.isTTY) return;
@@ -18,7 +18,8 @@ export async function promptNextSteps(steps: NextStep[]): Promise<void> {
 
   process.stderr.write(chalk.dim("  What's next?\n"));
   for (const step of steps) {
-    process.stderr.write(`  ${chalk.cyan.bold(`[${step.key}]`)} ${step.label}\n`);
+    const cmdHint = chalk.dim(step.command.join(" "));
+    process.stderr.write(`  ${chalk.cyan.bold(`[${step.key}]`)} ${step.label}  ${cmdHint}\n`);
   }
   process.stderr.write(`  ${chalk.dim("[Enter]")} ${chalk.dim("Done")}\n`);
   process.stderr.write("\n");
@@ -41,18 +42,12 @@ export async function promptNextSteps(steps: NextStep[]): Promise<void> {
 
   process.stderr.write("\n");
 
-  // Run the command, inheriting stdio so it renders inline
+  // Run the command with inherited stdio so interactive prompts work
   return new Promise<void>((resolve) => {
-    const child = execFile(picked.command[0], picked.command.slice(1), {
-      timeout: 120_000,
+    const child = spawn(picked.command[0], picked.command.slice(1), {
+      stdio: "inherit",
       env: process.env,
     });
-    child.stdout?.pipe(process.stdout);
-    child.stderr?.pipe(process.stderr);
-    // For interactive prompts, pipe stdin through
-    if (process.stdin.isTTY) {
-      process.stdin.pipe(child.stdin!);
-    }
     child.on("close", () => resolve());
   });
 }
