@@ -127,5 +127,23 @@ export async function buildContext(
     };
   }
 
+  // Fire-and-forget background cache warming for the most common queries.
+  // This runs in parallel with the actual command so subsequent calls are instant.
+  if (!isDemo) {
+    warmCache(api as ApiClient);
+  }
+
   return { api, outputFormat, config, isDemo, verbose };
+}
+
+/**
+ * Pre-fetch commonly used endpoints in the background so they're cached
+ * for the current command (if it needs them) and future commands.
+ */
+function warmCache(api: ApiClient): void {
+  // Don't await — these run in the background.
+  // Warm both the default page sizes and the large sizes used by --size 1000.
+  api.companies.list({ page: 0, size: 200 }).catch(() => {});
+  api.subscriptions.list({ page: 0, size: 200 }).catch(() => {});
+  api.subscriptions.list({ page: 0, size: 1000 }).catch(() => {});
 }
