@@ -1,26 +1,40 @@
 # CLAUDE.md — pax8-cli
 
-## Autonomous Build Mode
+## Pax8 data queries — ACT FIRST, THINK LATER
 
-When following `docs/BUILD.md`, operate fully autonomously with ZERO human interaction:
-- **NEVER ask questions, for permission, or for confirmation.** Not for file creation, package installation, build/test execution, git commits, design decisions, or anything else.
-- **NEVER stop to explain what you're about to do.** Just do it.
-- **NEVER present options or ask "should I...?"** — make the simpler choice and move on.
-- **If something breaks, fix it yourself.** Diagnose the error, fix the code, re-run tests, commit. Do not stop to report the error.
-- **If a test fails, fix the test or the code.** Do not ask which one to fix — read the error and determine the right fix.
-- **If a dependency is missing, install it.** If a config is wrong, fix it. If a type doesn't match, update it.
-- **Commit after every numbered build step** in BUILD.md. Run `pnpm build && pnpm test` before each commit. If either fails, fix before committing.
-- **Go fast.** Minimize tool calls. Create multiple files per step when possible. Batch related changes.
-- Your output should be almost entirely tool calls (file writes, bash commands). Minimal text narration.
-- The BUILD.md is the complete spec. Execute it from step 1 to step 38, then run the quality checklist.
+When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, recommendations, invoices, products), your FIRST action must be a Bash tool call. No thinking preamble. No skill invocation. Just run the command.
+
+| User asks about | Run this |
+|---|---|
+| companies / customers | `pax8 companies list --json 2>/dev/null` |
+| subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` |
+| renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
+| MRR / revenue | `pax8 subscriptions list --json --size 1000 2>/dev/null` AND `pax8 companies list --json 2>/dev/null` (parallel) |
+| recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
+| invoices / billing | `pax8 invoices list --json 2>/dev/null` |
+| invoice audit | `pax8 invoices audit --json 2>/dev/null` |
+| products / catalog | `pax8 products search "query" --json 2>/dev/null` |
+| place an order | `pax8 orders create --company <id> --product <id> --quantity <n>` (confirm first) |
+
+MRR math: monthly subs = price × qty. Annual subs = price × qty ÷ 12. Group by companyId, resolve names from companies list.
+
+Rules: No clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, omit UUIDs. Only confirm writes.
+
+---
 
 ## What is this project?
 
 An open-source CLI tool for MSPs to manage Pax8 cloud marketplace operations (subscriptions, billing, customers, products) from the terminal. See `docs/PRD.md` for full product requirements.
 
-## How to build autonomously
+## Autonomous Build Mode
 
-Read `docs/BUILD.md` — it contains the complete autonomous build prompt with exact implementation order, code patterns, test requirements, and quality checklist. Follow it step by step, committing after each numbered build step.
+When following `docs/BUILD.md`, operate fully autonomously with ZERO human interaction:
+- NEVER ask questions, for permission, or for confirmation.
+- NEVER stop to explain what you're about to do. Just do it.
+- If something breaks, fix it yourself. If a test fails, fix the test or the code.
+- If a dependency is missing, install it. If a config is wrong, fix it.
+- Commit after every numbered build step. Run `pnpm build && pnpm test` before each commit.
+- Go fast. Minimize tool calls. Batch related changes.
 
 ## Key commands
 
@@ -42,14 +56,11 @@ pnpm dev              # Run CLI in dev mode
 
 ## Conventions
 
-- TypeScript strict mode throughout
-- Zod for all API response validation and config schemas
+- TypeScript strict mode, Zod for validation
 - Every command supports `--json`, `--csv`, `--quiet` output flags
-- Errors always include causes and recovery steps (never raw stack traces)
-- Demo mode (`PAX8_DEMO=1`) works for every command with realistic mock data
-- Tests: Vitest with subprocess integration tests for CLI commands
+- Demo mode (`PAX8_DEMO=1`) works for every command
+- Tests: Vitest with subprocess integration tests
 - Spinners on stderr, data on stdout (never mix)
-- OS keychain for credential storage, env vars as fallback
 
 ## Pax8 API Reference
 
@@ -57,29 +68,3 @@ pnpm dev              # Run CLI in dev mode
 - Auth: OAuth 2.0 client credentials → `POST /v1/token`
 - Rate limit: 1,000 calls/minute
 - Docs: https://devx.pax8.com/
-
-## Pax8 data queries (IMPORTANT — read this)
-
-When the user asks about their Pax8 data (companies, subscriptions, MRR, recommendations, invoices, products), **run `pax8` CLI commands directly via Bash. Do NOT use the /pax8 skill.** The `pax8` binary is on PATH.
-
-**Act immediately** — run the command in your FIRST response. No preamble, no "let me fetch that for you".
-
-Common commands (always add `--json` and pipe through `2>/dev/null`):
-```
-pax8 companies list --json
-pax8 subscriptions list --json --size 1000
-pax8 subscriptions renewals --json --within 30d
-pax8 invoices list --json
-pax8 invoices audit --json
-pax8 products search "query" --json
-pax8 recommendations list --json
-pax8 orders create --company <id> --product <id> --quantity <n>
-```
-
-For MRR: run `pax8 subscriptions list --json --size 1000` and `pax8 companies list --json` **in parallel**, then compute MRR (monthly: price×qty, annual: price×qty/12) and group by company.
-
-Rules:
-- **No clarifying questions.** Default to all companies, current month, 30 days.
-- **Parallel Bash calls** when you need data from multiple commands.
-- **Be concise.** Lead with the key number. Top 3-5 items in a short table. Omit UUIDs.
-- **Only confirm writes** (orders, updates). Reads need zero confirmation.
