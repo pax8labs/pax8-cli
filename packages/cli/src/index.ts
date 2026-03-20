@@ -78,11 +78,38 @@ export function createProgram(): Command {
 
 function showWelcomeScreen(): void {
   const version = typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0";
+  const W = 58;
+  const border = "\u2550".repeat(W);
+  const pad = (text: string, visLen: number) =>
+    chalk.cyan.bold("\u2551") + text + " ".repeat(W - visLen) + chalk.cyan.bold("\u2551");
+  const empty = pad("", 0);
+
+  const pax8Art = [
+    ["    ██████╗  █████╗ ██╗  ██╗ █████╗ ", 36],
+    ["    ██╔══██╗██╔══██╗╚██╗██╔╝██╔══██╗", 36],
+    ["    ██████╔╝███████║ ╚███╔╝ ╚█████╔╝", 36],
+    ["    ██╔═══╝ ██╔══██║ ██╔██╗ ██╔══██╗", 36],
+    ["    ██║     ██║  ██║██╔╝ ██╗╚█████╔╝", 36],
+    ["    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝ ╚════╝ ", 37],
+  ] as const;
+
+  const subtitle = "    C O M M A N D   L I N E";
+
+  const tagline = "   Manage your cloud marketplace from the terminal";
+  const versionLine = `   v${version} \u00b7 Open Source \u00b7 Pax8 Labs`;
+
   const lines = [
     "",
-    `  ${chalk.bold.cyan("pax8")} ${chalk.dim(`v${version}`)}`,
-    `  ${chalk.dim("Open source CLI for the Pax8 cloud marketplace")}`,
-    `  ${chalk.dim("Built by Pax8 Labs \u00b7 https://github.com/pax8labs/pax8-cli")}`,
+    chalk.cyan.bold("\u2554" + border + "\u2557"),
+    empty,
+    ...pax8Art.map(([text, len]) => pad(text, len as number)),
+    empty,
+    pad(subtitle, subtitle.length),
+    empty,
+    pad(tagline, tagline.length),
+    pad(versionLine, versionLine.length),
+    empty,
+    chalk.cyan.bold("\u255a" + border + "\u255d"),
     "",
     `  ${chalk.dim("Get started:")}`,
     `    ${chalk.cyan("pax8 auth login")}        ${chalk.dim("Set up API credentials")}`,
