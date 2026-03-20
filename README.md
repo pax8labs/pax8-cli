@@ -4,7 +4,7 @@ An open-source, cross-platform CLI for managing Pax8 cloud marketplace operation
 
 ## Features
 
-- **Full Pax8 API coverage** — companies, subscriptions, orders, invoices, products, contacts, quotes, webhooks
+- **Full Pax8 API coverage** — companies, subscriptions, orders, invoices, products, contacts [Planned], quotes [Planned], webhooks [Planned]
 - **Smart defaults** — auto-detects output format (table for TTY, JSON for pipes), infers context, sensible date ranges
 - **Renewal intelligence** — track NCE subscription renewals, get alerts before lock-in
 - **Billing audit** — automatically flag invoice discrepancies against active subscriptions
@@ -53,9 +53,9 @@ pax8 products search "Microsoft 365 Business Premium" --pricing
 # Orders
 pax8 orders create --company "Acme Corp" --product "M365 Business Premium" --quantity 10
 
-# Reports
-pax8 report mrr --by company
-pax8 report renewals --within 90d
+# Reports [Planned]
+pax8 report mrr --by company          # Coming soon
+pax8 report renewals --within 90d     # Coming soon
 
 # Pipe-friendly
 pax8 subscriptions list --json | jq '.[] | select(.quantity > 10)'
