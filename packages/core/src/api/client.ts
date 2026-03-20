@@ -1,12 +1,15 @@
 import { type ZodType } from "zod";
 import { ApiError, RateLimitError } from "./errors.js";
 import { PageSchema } from "./types.js";
+import { FileCache } from "../services/cache.js";
 
 export interface Pax8ClientOptions {
   tokenManager: { getToken(): Promise<string> };
   baseUrl?: string;
   timeout?: number;
   debug?: boolean;
+  /** Cache TTL in ms for GET requests. 0 disables caching. Default: 300000 (5 min). */
+  cacheTtlMs?: number;
 }
 
 const DEFAULT_BASE_URL = "https://api.pax8.com/v1";
@@ -18,16 +21,45 @@ export class Pax8Client {
   private readonly baseUrl: string;
   private readonly timeout: number;
   private readonly debug: boolean;
+  private readonly cache: FileCache | null;
+  private readonly cacheTtlMs: number;
 
   constructor(options: Pax8ClientOptions) {
     this.tokenManager = options.tokenManager;
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
     this.debug = options.debug ?? false;
+    this.cacheTtlMs = options.cacheTtlMs ?? 300_000; // 5 min default
+    this.cache = this.cacheTtlMs > 0 ? new FileCache() : null;
   }
 
   async get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+    if (this.cache) {
+      const cacheKey = this.buildCacheKey(path, params);
+      const cached = await this.cache.get<T>(cacheKey);
+      if (cached !== null) {
+        if (this.debug) {
+          process.stderr.write(`[pax8] CACHE HIT ${path}\n`);
+        }
+        return cached;
+      }
+      const result = await this.request<T>("GET", path, undefined, params);
+      await this.cache.set(cacheKey, result, this.cacheTtlMs).catch(() => {});
+      return result;
+    }
     return this.request<T>("GET", path, undefined, params);
+  }
+
+  private buildCacheKey(path: string, params?: Record<string, string | number | undefined>): string {
+    const normalized = path.replace(/^\/+/, "");
+    const paramStr = params
+      ? Object.entries(params)
+          .filter(([, v]) => v !== undefined)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([k, v]) => `${k}=${v}`)
+          .join("&")
+      : "";
+    return `${normalized}${paramStr ? "_" + paramStr : ""}`;
   }
 
   async post<T>(path: string, body: unknown): Promise<T> {
