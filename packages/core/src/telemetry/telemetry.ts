@@ -6,7 +6,7 @@ import { PostHog } from "posthog-node";
 import { loadConfig, saveConfig, getConfigDir } from "../config/loader.js";
 
 // PostHog project API key (public, write-only — safe to embed)
-const POSTHOG_API_KEY = "phc_pax8cli_placeholder";
+const POSTHOG_API_KEY = "phc_XKIa0EPGDACY1p4Cczk6IWXFa3n9";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
 export interface TelemetryEvent {

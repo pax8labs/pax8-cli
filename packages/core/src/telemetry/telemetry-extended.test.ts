@@ -118,26 +118,49 @@ describe("Telemetry — extended coverage", () => {
   });
 
   describe("enable/disable", () => {
-    it("enable sets enabled to true (may fail without config dir but tests the path)", async () => {
+    it("enable then disable roundtrip through real config", async () => {
       const t = new Telemetry();
-      // enable() writes to the real config, which may fail in test.
-      // We just verify it doesn't crash or we get a config-related error.
-      try {
-        await t.enable();
-        expect(t.isEnabled()).toBe(true);
-      } catch {
-        // Config write failure is acceptable in test environment
-      }
-    });
+      expect(t.isEnabled()).toBe(false);
 
-    it("disable sets enabled to false (may fail without config dir)", async () => {
-      const t = new Telemetry();
-      try {
-        await t.disable();
-        expect(t.isEnabled()).toBe(false);
-      } catch {
-        // Config write failure is acceptable in test environment
-      }
+      // Enable writes to ~/.pax8/config.yaml
+      await t.enable();
+      expect(t.isEnabled()).toBe(true);
+
+      // Disable reverts it
+      await t.disable();
+      expect(t.isEnabled()).toBe(false);
     });
+  });
+
+  it("loadEnabled falls back to false when config loading throws", async () => {
+    // Use a corrupted config to trigger the catch branch
+    const configDir = (await import("../config/loader.js")).getConfigDir();
+    const configFile = (await import("node:path")).join(configDir, "config.yaml");
+    const fsP = await import("node:fs/promises");
+
+    // Save original config
+    let originalContent: string | undefined;
+    try {
+      originalContent = await fsP.readFile(configFile, "utf-8");
+    } catch {
+      // no config file
+    }
+
+    try {
+      // Write invalid config
+      await fsP.mkdir(configDir, { recursive: true });
+      await fsP.writeFile(configFile, 'version: "invalid"\ngarbage: [[[', "utf-8");
+
+      const t2 = new Telemetry();
+      await t2.loadEnabled();
+      expect(t2.isEnabled()).toBe(false);
+    } finally {
+      // Restore original config
+      if (originalContent) {
+        await fsP.writeFile(configFile, originalContent, "utf-8");
+      } else {
+        await fsP.unlink(configFile).catch(() => {});
+      }
+    }
   });
 });

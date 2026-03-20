@@ -2,7 +2,7 @@
   "name": "pax8-cli-monorepo",
   "private": true,
   "version": "0.1.0",
-  "description": "CLI tool for MSPs to manage Pax8 cloud marketplace operations",
+  "description": "Pax8 open source CLI for MSPs to manage cloud marketplace operations",
   "scripts": {
     "build": "pnpm -r build",
     "test": "vitest run",

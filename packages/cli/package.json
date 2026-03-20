@@ -1,7 +1,7 @@
 {
   "name": "@pax8/cli",
   "version": "0.1.0",
-  "description": "CLI tool for MSPs to manage Pax8 cloud marketplace operations",
+  "description": "Pax8 open source CLI for MSPs to manage cloud marketplace operations",
   "type": "module",
   "bin": {
     "pax8": "./dist/index.js"

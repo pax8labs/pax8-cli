@@ -18,4 +18,5 @@ Examples:
     process.stdout.write(`pax8-cli ${version}\n`);
     process.stdout.write(`node     v${nodeVersion}\n`);
     process.stdout.write(`platform ${platform}\n`);
+    process.stdout.write(`\nhttps://github.com/pax8labs/pax8-cli\n`);
   });

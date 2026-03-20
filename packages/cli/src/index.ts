@@ -24,7 +24,7 @@ export function createProgram(): Command {
   const program = new Command();
   program
     .name("pax8")
-    .description("Manage Pax8 cloud marketplace operations from the terminal")
+    .description("Pax8 open source CLI \u2014 manage cloud marketplace operations from the terminal")
     .version(typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0")
     .option("--json", "Output as JSON")
     .option("--csv", "Output as CSV")
@@ -80,16 +80,17 @@ function showWelcomeScreen(): void {
   const version = typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0";
   const lines = [
     "",
-    `  ${chalk.bold(`pax8 v${version}`)}`,
-    `  ${chalk.dim("Manage your Pax8 marketplace from the terminal")}`,
+    `  ${chalk.bold.cyan("pax8")} ${chalk.dim(`v${version}`)}`,
+    `  ${chalk.dim("Open source CLI for the Pax8 cloud marketplace")}`,
+    `  ${chalk.dim("Built by Pax8 \u00b7 https://github.com/pax8labs/pax8-cli")}`,
     "",
     `  ${chalk.dim("Get started:")}`,
-    `    ${chalk.cyan("pax8 auth login")}        ${chalk.dim("Set up credentials")}`,
+    `    ${chalk.cyan("pax8 auth login")}        ${chalk.dim("Set up API credentials")}`,
     `    ${chalk.cyan("pax8 init --demo")}       ${chalk.dim("Try with sample data")}`,
     `    ${chalk.cyan("pax8 companies list")}    ${chalk.dim("List your customers")}`,
     `    ${chalk.cyan("pax8 doctor")}            ${chalk.dim("Check your setup")}`,
     "",
-    `  ${chalk.dim("Run pax8 --help for all commands.")}`,
+    `  ${chalk.dim("Run")} pax8 --help ${chalk.dim("for all commands.")}`,
     "",
   ];
   process.stdout.write(lines.join("\n"));
