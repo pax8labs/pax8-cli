@@ -64,7 +64,19 @@ Examples:
         size: parseInt(options.size, 10),
       });
 
-      await enrichProductNames(ctx, result.content as Record<string, unknown>[]);
+      const subs = result.content as Record<string, unknown>[];
+      // Enrich product and company names in parallel
+      const companiesPromise = ctx.api.companies.list({ size: 200 });
+      await enrichProductNames(ctx, subs);
+      try {
+        const companies = await companiesPromise;
+        const nameMap = new Map((companies.content as Array<{ id: string; name: string }>).map(c => [c.id, c.name]));
+        for (const sub of subs) {
+          if (!sub.companyName) {
+            sub.companyName = nameMap.get(String(sub.companyId)) ?? String(sub.companyId).slice(0, 8);
+          }
+        }
+      } catch { /* best effort */ }
 
       spinner.stop();
 

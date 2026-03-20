@@ -18,10 +18,23 @@ export class InvoicesApi {
     page?: number;
     size?: number;
     invoiceDate?: string;
+    month?: string;
     companyId?: string;
   }): Promise<PaginatedResponse<Invoice>> {
-    const raw = await this.client.get<unknown>("/invoices", params as Record<string, string | number | undefined>);
-    return PaginatedInvoiceSchema.parse(raw);
+    // Map 'month' to 'invoiceDate' for the API
+    const apiParams: Record<string, string | number | undefined> = { ...params };
+    if (params?.month && !params?.invoiceDate) {
+      apiParams.invoiceDate = params.month;
+    }
+    delete apiParams.month;
+    const raw = await this.client.get<unknown>("/invoices", apiParams);
+
+    // The Pax8 invoices endpoint omits `content` when there are no results
+    const obj = raw as Record<string, unknown>;
+    if (obj.page && !obj.content) {
+      obj.content = [];
+    }
+    return PaginatedInvoiceSchema.parse(obj);
   }
 
   async get(id: string): Promise<Invoice> {
