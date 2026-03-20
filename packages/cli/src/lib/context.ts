@@ -1,3 +1,4 @@
+import { Command } from "commander";
 import {
   MockPax8Client,
   Pax8Client,
@@ -44,7 +45,7 @@ export interface GlobalOptions {
   verbose?: boolean;
   noColor?: boolean;
   config?: string;
-  parent?: any;
+  parent?: Command;
 }
 
 export function getOutputFormat(

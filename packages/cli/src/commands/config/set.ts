@@ -8,17 +8,17 @@ import YAML from "yaml";
 const CONFIG_DIR = path.join(os.homedir(), ".pax8");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
 
-function setNestedValue(obj: any, keyPath: string, value: any): void {
+function setNestedValue(obj: Record<string, unknown>, keyPath: string, value: string): void {
   const keys = keyPath.split(".");
-  let current = obj;
+  let current: Record<string, unknown> = obj;
   for (let i = 0; i < keys.length - 1; i++) {
     if (current[keys[i]] === undefined || typeof current[keys[i]] !== "object") {
       current[keys[i]] = {};
     }
-    current = current[keys[i]];
+    current = current[keys[i]] as Record<string, unknown>;
   }
   // Attempt to parse value as number or boolean
-  let parsed: any = value;
+  let parsed: unknown = value;
   if (value === "true") parsed = true;
   else if (value === "false") parsed = false;
   else if (/^\d+$/.test(value)) parsed = parseInt(value, 10);
@@ -40,7 +40,7 @@ Examples:
   )
   .action(async (key: string, value: string) => {
     try {
-      let config: any = {};
+      let config: Record<string, unknown> = {};
       try {
         const content = await fs.readFile(CONFIG_FILE, "utf-8");
         config = YAML.parse(content) ?? {};

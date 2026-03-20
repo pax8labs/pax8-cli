@@ -45,13 +45,13 @@ Examples:
           key: "unitPrice",
           header: "Unit Price",
           width: 14,
-          format: (v: number) => formatCurrency(v),
+          format: (v) => formatCurrency(Number(v)),
         },
         {
           key: "total",
           header: "Subtotal",
           width: 14,
-          format: (v: number) => formatCurrency(v),
+          format: (v) => formatCurrency(Number(v)),
         },
       ];
 

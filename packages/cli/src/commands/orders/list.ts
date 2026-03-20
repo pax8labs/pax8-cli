@@ -9,8 +9,8 @@ import { formatStatus, formatDate } from "../../lib/formatters.js";
 const columns: Column[] = [
   { key: "id", header: "ID" },
   { key: "companyName", header: "Company" },
-  { key: "createdDate", header: "Date", format: (v: string) => formatDate(v) },
-  { key: "status", header: "Status", format: (v: string) => formatStatus(v) },
+  { key: "createdDate", header: "Date", format: (v) => formatDate(String(v)) },
+  { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
 ];
 
 export const ordersListCommand = new Command("list")
@@ -33,7 +33,7 @@ Examples:
 
     try {
       const ctx = await buildContext(allOpts);
-      const params: any = {
+      const params: { page: number; size: number; companyId?: string } = {
         page: parseInt(allOpts.page, 10),
         size: parseInt(allOpts.size, 10),
       };

@@ -40,32 +40,32 @@ Examples:
           key: "id",
           header: "ID",
           width: 12,
-          format: (v: string) => v.slice(0, 8),
+          format: (v) => String(v).slice(0, 8),
         },
         { key: "companyName", header: "Company", width: 22 },
         {
           key: "invoiceDate",
           header: "Date",
           width: 14,
-          format: (v: string) => formatDate(v),
+          format: (v) => formatDate(String(v)),
         },
         {
           key: "dueDate",
           header: "Due Date",
           width: 14,
-          format: (v: string) => formatDate(v),
+          format: (v) => formatDate(String(v)),
         },
         {
           key: "status",
           header: "Status",
           width: 14,
-          format: (v: string) => formatStatus(v),
+          format: (v) => formatStatus(String(v)),
         },
         {
           key: "total",
           header: "Total",
           width: 14,
-          format: (v: number) => formatCurrency(v),
+          format: (v) => formatCurrency(Number(v)),
         },
       ];
 

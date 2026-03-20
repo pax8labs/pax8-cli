@@ -12,7 +12,7 @@ import {
 } from "../../lib/formatters.js";
 
 const historyColumns: Column[] = [
-  { key: "date", header: "Date", format: (v: string) => formatDate(v) },
+  { key: "date", header: "Date", format: (v) => formatDate(String(v)) },
   { key: "field", header: "Field" },
   { key: "oldValue", header: "Old Value" },
   { key: "newValue", header: "New Value" },

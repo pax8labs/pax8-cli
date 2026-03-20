@@ -44,9 +44,9 @@ function extractFlagNames(options: Record<string, unknown>): string[] {
 
 export function instrumentedAction(
   commandName: string,
-  action: (options: any) => Promise<void>,
-): (options: any) => Promise<void> {
-  return async (options: any) => {
+  action: (options: Record<string, unknown>) => Promise<void>,
+): (options: Record<string, unknown>) => Promise<void> {
+  return async (options: Record<string, unknown>) => {
     const start = Date.now();
     const telemetry = getTelemetry();
 

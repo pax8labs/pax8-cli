@@ -43,7 +43,7 @@ Examples:
       // The auditor matches on subscriptionId first, falling back to companyId+productId.
       // Invoice items don't have subscriptionId, so we map subscriptions to use
       // companyId+productId matching by omitting the id field and setting subscriptionId undefined.
-      const normalizedSubs = subsResult.content.map((s: any) => {
+      const normalizedSubs = subsResult.content.map((s) => {
         const { id, ...rest } = s;
         return {
           ...rest,

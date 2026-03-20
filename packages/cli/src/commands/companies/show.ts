@@ -9,9 +9,9 @@ import { formatStatus } from "../../lib/formatters.js";
 const subscriptionColumns: Column[] = [
   { key: "productName", header: "Product" },
   { key: "quantity", header: "Qty" },
-  { key: "status", header: "Status", format: (v: string) => formatStatus(v) },
+  { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
   { key: "billingTerm", header: "Term" },
-  { key: "price", header: "Price", format: (v: number) => `$${Number(v).toFixed(2)}` },
+  { key: "price", header: "Price", format: (v) => `$${Number(v).toFixed(2)}` },
 ];
 
 export const companiesShowCommand = new Command("show")

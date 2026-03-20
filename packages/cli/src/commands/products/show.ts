@@ -46,7 +46,7 @@ Examples:
       spinner.stop();
 
       if (ctx.outputFormat === "json") {
-        const data: any = { ...product };
+        const data: Record<string, unknown> = { ...product };
         if (pricing) data.pricingDetails = pricing;
         if (provisioning) data.provisioningDetails = provisioning;
         if (dependencies) data.dependencies = dependencies;
@@ -81,13 +81,13 @@ Examples:
             key: "partnerBuyPrice",
             header: "Partner Price",
             width: 16,
-            format: (v: number) => formatCurrency(v),
+            format: (v) => formatCurrency(Number(v)),
           },
           {
             key: "suggestedRetailPrice",
             header: "Retail Price",
             width: 16,
-            format: (v: number) => formatCurrency(v),
+            format: (v) => formatCurrency(Number(v)),
           },
         ];
         output(pricing, { format: "table", columns: pricingColumns });

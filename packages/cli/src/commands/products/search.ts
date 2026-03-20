@@ -31,7 +31,7 @@ Examples:
       spinner.stop();
 
       const q = query.toLowerCase();
-      const matches = result.content.filter((p: any) =>
+      const matches = result.content.filter((p) =>
         p.name.toLowerCase().includes(q)
       );
 

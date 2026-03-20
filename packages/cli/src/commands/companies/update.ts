@@ -26,7 +26,7 @@ Examples:
     try {
       const ctx = await buildContext(allOpts);
 
-      const updates: Record<string, any> = {};
+      const updates: Record<string, unknown> = {};
       if (allOpts.name) updates.name = allOpts.name;
       if (allOpts.phone) updates.phone = allOpts.phone;
       if (allOpts.website) updates.website = allOpts.website;
