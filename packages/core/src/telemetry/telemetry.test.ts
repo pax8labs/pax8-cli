@@ -106,6 +106,8 @@ describe("Telemetry", () => {
     const t = new Telemetry();
     (t as any).enabled = true;
     (t as any).storageDir = tmpDir;
+    // Stub PostHog so flush doesn't make network calls
+    (t as any).posthog = { capture: () => {}, flush: async () => {}, shutdown: async () => {} };
 
     const event1 = makeEvent();
     const event2 = makeEvent({ command: "companies.get", success: false, error_code: "NOT_FOUND" });

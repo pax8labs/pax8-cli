@@ -16,6 +16,7 @@
     "dev": "tsup src/index.ts --format esm --dts --watch"
   },
   "dependencies": {
+    "posthog-node": "^5.28.4",
     "yaml": "^2.5.0",
     "zod": "^3.23.0"
   },
@@ -31,6 +32,13 @@
   },
   "homepage": "https://github.com/pax8labs/pax8-cli#readme",
   "bugs": "https://github.com/pax8labs/pax8-cli/issues",
-  "keywords": ["pax8", "msp", "cli", "cloud-marketplace", "subscriptions", "billing"],
+  "keywords": [
+    "pax8",
+    "msp",
+    "cli",
+    "cloud-marketplace",
+    "subscriptions",
+    "billing"
+  ],
   "license": "MIT"
 }

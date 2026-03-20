@@ -80,9 +80,10 @@ export function instrumentedAction(
 
       throw error; // Re-throw so normal error handling still works
     } finally {
-      // Best-effort flush
+      // Best-effort flush + shutdown PostHog client
       try {
         await telemetry.flush();
+        await telemetry.shutdown();
       } catch {
         // Never let telemetry failures break the CLI
       }
