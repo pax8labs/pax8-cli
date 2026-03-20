@@ -5,6 +5,7 @@ import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { formatStatus } from "../../lib/formatters.js";
+import { resolveCompanyId } from "../../lib/resolve-company.js";
 
 const subscriptionColumns: Column[] = [
   { key: "productName", header: "Product" },
@@ -16,22 +17,23 @@ const subscriptionColumns: Column[] = [
 
 export const companiesShowCommand = new Command("show")
   .description("Show company details")
-  .argument("<id>", "Company ID")
+  .argument("<id|name>", "Company ID or name")
   .option("--subscriptions", "Include company subscriptions")
   .addHelpText(
     "after",
     `
 Examples:
-  pax8 companies show a1b2c3d4-e5f6-7890-abcd-ef1234567890
-  pax8 companies show a1b2c3d4-e5f6-7890-abcd-ef1234567890 --subscriptions
+  pax8 companies show "Acme Corp"
+  pax8 companies show "Acme Corp" --subscriptions
   pax8 companies show a1b2c3d4-e5f6-7890-abcd-ef1234567890 --json`
   )
-  .action(async (id: string, options, command: Command) => {
+  .action(async (idOrName: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();
     const spinner = createSpinner("Fetching company...").start();
 
     try {
       const ctx = await buildContext(allOpts);
+      const id = await resolveCompanyId(ctx, idOrName);
       const company = await ctx.api.companies.get(id);
 
       spinner.stop();

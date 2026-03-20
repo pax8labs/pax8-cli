@@ -9,6 +9,7 @@ import {
   formatCurrency,
   formatCompanyName,
 } from "../../lib/formatters.js";
+import { resolveCompanyId } from "../../lib/resolve-company.js";
 
 const columns: Column[] = [
   {
@@ -34,7 +35,7 @@ const columns: Column[] = [
 
 export const subscriptionsListCommand = new Command("list")
   .description("List subscriptions")
-  .option("--company <id>", "Filter by company ID")
+  .option("--company <id|name>", "Filter by company ID or name")
   .option("--page <number>", "Page number", "0")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
@@ -53,8 +54,11 @@ Examples:
     const spinner = createSpinner("Fetching subscriptions...").start();
 
     try {
+      const companyId = options.company
+        ? await resolveCompanyId(ctx, options.company)
+        : undefined;
       const result = await ctx.api.subscriptions.list({
-        companyId: options.company,
+        companyId,
         page: parseInt(options.page, 10),
         size: parseInt(options.size, 10),
       });
