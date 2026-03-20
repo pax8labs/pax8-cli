@@ -126,36 +126,25 @@ function showWelcomeScreen(): void {
 
 async function startRepl(): Promise<void> {
   const { createInterface } = await import("node:readline");
+  const { spawn } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const { resolve: resolvePath } = await import("node:path");
 
-  // Prevent ANY unhandled error from killing the REPL
-  process.on("uncaughtException", (err) => {
-    process.stderr.write(chalk.red.bold(`\n  ✗ ${err.message}\n\n`));
-  });
-  process.on("unhandledRejection", (err) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== "process.exit intercepted") {
-      process.stderr.write(chalk.red.bold(`\n  ✗ ${msg}\n\n`));
-    }
-  });
+  const cliPath = resolvePath(fileURLToPath(import.meta.url), "../index.js");
 
   showWelcomeScreen();
   process.stdout.write(chalk.dim("  Type a command, or ") + chalk.cyan("help") + chalk.dim(" / ") + chalk.cyan("exit") + "\n\n");
 
   const rl = createInterface({
     input: process.stdin,
-    output: process.stderr, // prompt goes to stderr so stdout stays clean for piping
+    output: process.stderr,
     prompt: chalk.cyan.bold("pax8> "),
     terminal: process.stdin.isTTY ?? false,
   });
 
   rl.prompt();
 
-  // Process lines sequentially — readline doesn't await async callbacks,
-  // so we queue them and use a sync wrapper to avoid unhandled rejections.
-  let processing = false;
-  const lineQueue: string[] = [];
-
-  async function processLine(line: string): Promise<void> {
+  rl.on("line", (line: string) => {
     const input = line.trim();
 
     if (!input) {
@@ -176,66 +165,24 @@ async function startRepl(): Promise<void> {
       return;
     }
 
-    // Parse the input line into argv tokens (respects quoted strings)
     const args = tokenize(input);
-
-    // Strip leading "pax8" if the user types it — the REPL already adds it
     if (args[0] === "pax8") {
       args.shift();
     }
 
-    // Create a fresh program for each command to avoid stale state
-    const prog = createProgram();
-    prog.exitOverride(); // Don't call process.exit()
-    prog.configureOutput({
-      writeOut: (str: string) => process.stdout.write(str),
-      writeErr: (str: string) => process.stderr.write(str),
+    // Run each command as a child process so it can never crash the REPL
+    const child = spawn("node", [cliPath, ...args], {
+      env: { ...process.env, FORCE_COLOR: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
-    // Override process.exit with a no-op so commands don't kill the REPL.
-    // The error output is already written by handleCommandError before it
-    // calls process.exit, so we just need to swallow the exit.
-    const origExit = process.exit;
-    process.exit = (() => {}) as typeof process.exit;
+    child.stdout.pipe(process.stdout, { end: false });
+    child.stderr.pipe(process.stderr, { end: false });
 
-    try {
-      await prog.parseAsync(["node", "pax8", ...args]);
-    } catch (err: unknown) {
-      const e = err as { code?: string; message?: string };
-      // Suppress known non-error throws
-      if (e?.code === "commander.helpDisplayed" || e?.code === "commander.version") {
-        // Expected — help or version was printed
-      } else if (e?.message === "process.exit intercepted") {
-        // Expected — command error already printed, exit was swallowed
-      } else if (err instanceof Error) {
-        process.stderr.write(chalk.red.bold(`\n  \u2717 ${err.message}\n\n`));
-      }
-    } finally {
-      process.exit = origExit;
-    }
-
-    process.stdout.write("\n");
-    rl.prompt();
-  }
-
-  rl.on("line", (line: string) => {
-    lineQueue.push(line);
-    if (!processing) {
-      processing = true;
-      (async () => {
-        while (lineQueue.length > 0) {
-          const next = lineQueue.shift()!;
-          try {
-            await processLine(next);
-          } catch {
-            // Never let an error kill the REPL — just re-prompt
-            process.stdout.write("\n");
-            rl.prompt();
-          }
-        }
-        processing = false;
-      })();
-    }
+    child.on("close", () => {
+      process.stdout.write("\n");
+      rl.prompt();
+    });
   });
 
   return new Promise<void>((resolve) => {
@@ -248,7 +195,7 @@ async function startRepl(): Promise<void> {
 
 /**
  * Tokenize a command line string, respecting quoted strings.
- * "companies more "Acme Corp" --json" → ["companies", "more", "Acme Corp", "--json"]
+ * "companies more "Acme Corp" --json" -> ["companies", "more", "Acme Corp", "--json"]
  */
 function tokenize(input: string): string[] {
   const tokens: string[] = [];
