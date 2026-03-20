@@ -10,6 +10,7 @@ import {
   formatDate,
   formatQuantity,
 } from "../../lib/formatters.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 
 const historyColumns: Column[] = [
   { key: "date", header: "Date", format: (v) => formatDate(String(v)) },
@@ -37,6 +38,15 @@ Examples:
 
     try {
       const sub = await ctx.api.subscriptions.get(id);
+
+      // Enrich product and company names
+      await enrichProductNames(ctx, [sub as unknown as Record<string, unknown>]);
+      if (!sub.companyName) {
+        try {
+          const company = await ctx.api.companies.get(sub.companyId);
+          (sub as Record<string, unknown>).companyName = company.name;
+        } catch { /* best effort */ }
+      }
 
       spinner.stop();
 

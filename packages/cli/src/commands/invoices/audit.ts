@@ -26,18 +26,35 @@ Examples:
     try {
       spinner.start();
 
-      // Fetch all invoice items for the period
-      const itemsResult = await ctx.api.invoices.listItems({
-        month: options.month,
-        size: 500,
-      });
+      // Fetch invoices and active subscriptions in parallel
+      const [invoicesResult, subsResult] = await Promise.all([
+        ctx.api.invoices.list({ month: options.month, size: 200 }),
+        ctx.api.subscriptions.list({ size: 500 }),
+      ]);
 
-      // Fetch all active subscriptions
-      const subsResult = await ctx.api.subscriptions.list({
-        size: 500,
-      });
+      // Fetch items for each invoice in parallel
+      const allItems = (
+        await Promise.all(
+          invoicesResult.content.map((inv) =>
+            ctx.api.invoices.listItems(inv.id, { size: 500 }).catch(() => ({ content: [] }))
+          )
+        )
+      ).flatMap((r) => r.content);
 
       spinner.stop();
+
+      // If no invoices/items, short circuit
+      if (allItems.length === 0) {
+        if (ctx.outputFormat === "json") {
+          output([{ discrepancies: [], totalOvercharge: 0, totalUndercharge: 0, netImpact: 0 }], { format: "json" });
+        } else if (ctx.outputFormat !== "quiet") {
+          const monthLabel = options.month ? formatMonthLabel(options.month) : "current";
+          process.stdout.write(`\n  ${chalk.green("✓")} No invoices found for ${monthLabel} period.\n\n`);
+        }
+        return;
+      }
+
+      const itemsResult = { content: allItems };
 
       // Normalize subscriptions for audit matching:
       // The auditor matches on subscriptionId first, falling back to companyId+productId.
