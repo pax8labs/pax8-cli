@@ -103,7 +103,7 @@ Examples:
       }
       process.stderr.write("\n");
 
-      if (isReplMode()) {
+      if (isReplMode() && !allOpts.yes) {
         // Can't prompt in REPL — show the command to run with --yes
         const cmd = `orders create --company ${allOpts.company} --product ${allOpts.product} --quantity ${quantity}${commitmentTerm && commitmentTerm !== "Monthly" ? ` --commitment-term ${commitmentTerm}` : ""} --yes`;
         process.stderr.write(chalk.dim("  To confirm, run:\n"));
