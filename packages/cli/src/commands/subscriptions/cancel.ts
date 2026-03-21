@@ -6,6 +6,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { confirmDestructive } from "../../lib/confirm.js";
 import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
+import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 
 export const subscriptionsCancelCommand = new Command("cancel")
   .description("Cancel a subscription")
@@ -56,6 +57,7 @@ Examples:
 
       const cancelSpinner = createSpinner("Cancelling subscription...").start();
       await ctx.api.subscriptions.delete(id);
+      await invalidateCacheAfterWrite();
       cancelSpinner.succeed("Subscription cancelled");
 
       if (ctx.outputFormat === "json") {

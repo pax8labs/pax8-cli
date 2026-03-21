@@ -6,6 +6,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { confirm } from "../../lib/confirm.js";
 import { formatQuantity, formatCurrency, formatStatus } from "../../lib/formatters.js";
+import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 
 export const subscriptionsUpdateCommand = new Command("update")
   .description("Update a subscription")
@@ -63,6 +64,7 @@ Examples:
 
       const updateSpinner = createSpinner("Updating subscription...").start();
       const updated = await ctx.api.subscriptions.update(id, updateData);
+      await invalidateCacheAfterWrite();
       updateSpinner.succeed("Subscription updated");
 
       if (ctx.outputFormat === "json") {

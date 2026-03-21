@@ -157,4 +157,11 @@ function spawnCacheWarmer(): void {
     { detached: true, stdio: "ignore", env },
   );
   child2.unref();
+
+  const child3 = spawn(
+    "pax8",
+    ["products", "list", "--json", "--size", "500", "--quiet"],
+    { detached: true, stdio: "ignore", env },
+  );
+  child3.unref();
 }

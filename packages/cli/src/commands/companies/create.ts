@@ -4,6 +4,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
+import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 
 export const companiesCreateCommand = new Command("create")
   .description("Create a new company")
@@ -61,6 +62,7 @@ Examples:
         },
       });
 
+      await invalidateCacheAfterWrite();
       spinner.succeed("Company created 🎉");
 
       if (ctx.outputFormat === "json") {

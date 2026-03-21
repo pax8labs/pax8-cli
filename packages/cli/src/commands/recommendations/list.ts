@@ -250,11 +250,28 @@ Examples:
 
       // Show order commands for actionable recommendations
       const actionable = displayRecs.filter((r) => r.orderCommand);
+      const nonActionable = displayRecs.filter((r) => !r.orderCommand);
       if (actionable.length > 0) {
-        process.stderr.write(chalk.dim("\n  Take action:\n"));
+        process.stderr.write(chalk.dim(`\n  Take action (${actionable.length} of ${recs.length} ready to order):\n`));
         for (const r of actionable) {
           const idx = displayRecs.indexOf(r) + 1;
           process.stderr.write(`  ${chalk.cyan.bold(`#${idx}`)} ${chalk.cyan(r.orderCommand)}\n`);
+        }
+        if (nonActionable.length > 0) {
+          process.stderr.write(chalk.dim(`\n  ${nonActionable.length} recommendation${nonActionable.length > 1 ? "s" : ""} need a product match — search manually:\n`));
+          for (const r of nonActionable) {
+            const idx = displayRecs.indexOf(r) + 1;
+            const searchTerm = r.suggestedProducts?.[0] ?? r.title;
+            process.stderr.write(`  ${chalk.dim(`#${idx}`)} ${chalk.dim(`pax8 products search "${searchTerm}"`)}\n`);
+          }
+        }
+        process.stderr.write("\n");
+      } else if (nonActionable.length > 0) {
+        process.stderr.write(chalk.dim(`\n  No exact product matches found. Search manually:\n`));
+        for (const r of nonActionable) {
+          const idx = displayRecs.indexOf(r) + 1;
+          const searchTerm = r.suggestedProducts?.[0] ?? r.title;
+          process.stderr.write(`  ${chalk.dim(`#${idx}`)} ${chalk.dim(`pax8 products search "${searchTerm}"`)}\n`);
         }
         process.stderr.write("\n");
       } else {

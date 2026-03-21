@@ -5,6 +5,7 @@ import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
 import { formatStatus, formatDate } from "../../lib/formatters.js";
+import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import type { CreateOrderInput } from "@pax8/core";
 
 export const ordersCreateCommand = new Command("create")
@@ -69,6 +70,7 @@ Examples:
         ],
       };
       const order = await ctx.api.orders.create(orderInput);
+      await invalidateCacheAfterWrite();
 
       spinner.succeed("Order created 🎉");
 

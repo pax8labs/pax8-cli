@@ -4,6 +4,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
+import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 
 export const companiesUpdateCommand = new Command("update")
   .description("Update a company")
@@ -56,6 +57,7 @@ Examples:
 
       const company = await ctx.api.companies.update(id, updates);
 
+      await invalidateCacheAfterWrite();
       spinner.succeed("Company updated");
 
       if (ctx.outputFormat === "json") {

@@ -176,6 +176,9 @@ export class Pax8Client {
 
           if (!response.ok) {
             const errorBody = await safeJson(response);
+            if (this.debug && errorBody) {
+              process.stderr.write(`[pax8] ${method} ${path} error body: ${JSON.stringify(errorBody, null, 2)}\n`);
+            }
             throw new ApiError(
               `${response.status} ${response.statusText}`,
               response.status,

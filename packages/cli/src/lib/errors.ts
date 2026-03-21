@@ -27,6 +27,21 @@ function formatZodError(error: ZodError): string {
     .join("; ");
 }
 
+function extractErrorDetail(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const b = body as Record<string, unknown>;
+  // Pax8 API errors may use "message", "error", "detail", or "error_description"
+  for (const key of ["message", "error", "detail", "error_description"]) {
+    if (typeof b[key] === "string" && b[key]) return b[key] as string;
+  }
+  // Nested under "error" object
+  if (typeof b.error === "object" && b.error !== null) {
+    const inner = b.error as Record<string, unknown>;
+    if (typeof inner.message === "string") return inner.message;
+  }
+  return undefined;
+}
+
 export function handleCommandError(
   error: unknown,
   spinner?: Ora,
@@ -87,9 +102,14 @@ export function handleCommandError(
         chalk.yellow(`    → Your credentials may have expired. Run ${chalk.cyan("pax8 auth login")} to re-authenticate.\n\n`)
       );
     } else if (error.statusCode === 404) {
-      process.stderr.write(
-        chalk.yellow(`    → The resource was not found. Check the ID or name and try again.\n\n`)
-      );
+      const detail = extractErrorDetail(error.responseBody);
+      if (detail) {
+        process.stderr.write(chalk.yellow(`    → ${detail}\n\n`));
+      } else {
+        process.stderr.write(
+          chalk.yellow(`    → The resource was not found. Check the ID or name and try again.\n\n`)
+        );
+      }
     }
   } else if (error instanceof Error) {
     process.stderr.write(
