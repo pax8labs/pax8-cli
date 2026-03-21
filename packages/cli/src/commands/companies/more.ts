@@ -242,8 +242,7 @@ Examples:
 
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim("  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(`pax8 recommendations list --company "${company.name}"`)}  ${chalk.dim("growth opportunities")}\n`);
-        process.stderr.write(`    ${chalk.cyan("pax8 companies list")}                                ${chalk.dim("back to all customers")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`pax8 recommendations list --company "${company.name}"`)}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {
