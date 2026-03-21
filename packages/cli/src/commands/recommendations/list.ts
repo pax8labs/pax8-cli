@@ -254,17 +254,33 @@ Examples:
         process.stderr.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
       }
 
-      // Show next action for each rec
+      // Show next action for each rec — human-readable, no UUIDs
       process.stderr.write(chalk.dim("\n  Next steps:\n"));
-      for (const rec of displayRecs) {
-        const idx = displayRecs.indexOf(rec) + 1;
+      for (let i = 0; i < displayRecs.length; i++) {
+        const rec = displayRecs[i];
+        const product = rec.suggestedProducts?.[0] ?? "product";
+        const seats = rec.targetSeats ?? "?";
         if (rec.orderCommand) {
-          process.stderr.write(`  ${chalk.cyan.bold(`[${idx}]`)} ${rec.orderCommand}\n`);
+          process.stderr.write(`  ${chalk.cyan.bold(`[${i + 1}]`)} Order ${product} for ${rec.companyName} (${seats} seats)\n`);
         } else {
-          const searchTerm = rec.suggestedProducts?.[0] ?? rec.title.replace(/^Add /, "");
-          process.stderr.write(`  ${chalk.cyan.bold(`[${idx}]`)} products search "${searchTerm}"  ${chalk.dim("→ find product → orders create")}\n`);
+          process.stderr.write(`  ${chalk.cyan.bold(`[${i + 1}]`)} Find ${product} for ${rec.companyName}  ${chalk.dim("→ search catalog")}\n`);
         }
       }
+
+      // Save pending actions for REPL mode
+      try {
+        const { writeFileSync, mkdirSync } = require("fs");
+        const { homedir } = require("os");
+        const { join } = require("path");
+        const dir = join(homedir(), ".pax8");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(
+          displayRecs.map((r, i) => ({
+            key: String(i + 1),
+            rec: { companyId: r.companyId, companyName: r.companyName, title: r.title, orderCommand: r.orderCommand, suggestedProducts: r.suggestedProducts, targetSeats: r.targetSeats },
+          }))
+        ));
+      } catch { /* best effort */ }
 
       // Interactive prompt (non-REPL only)
       if (process.stdin.isTTY && process.env.PAX8_REPL !== "1") {

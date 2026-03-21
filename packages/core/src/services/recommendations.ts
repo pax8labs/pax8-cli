@@ -244,6 +244,29 @@ export function getRecommendations(
     }
   }
 
+  // Build a "peer product" lookup: for each category, find the most popular
+  // product (by company count) already in use across the account.
+  // This lets us recommend specific products for cross-sell without catalog search.
+  const categoryProducts = new Map<ProductCategory, { productId: string; productName: string; count: number }>();
+  for (const [, companySubs] of byCompany) {
+    const seen = new Set<string>(); // dedupe per company
+    for (const sub of companySubs) {
+      const name = sub.productName ?? "";
+      const pid = sub.productId ?? "";
+      if (!pid || seen.has(pid)) continue;
+      seen.add(pid);
+      const cats = categorizeProduct(name);
+      for (const cat of cats) {
+        const existing = categoryProducts.get(cat);
+        if (!existing || existing.count < 1) {
+          categoryProducts.set(cat, { productId: pid, productName: name, count: (existing?.count ?? 0) + 1 });
+        } else {
+          existing.count++;
+        }
+      }
+    }
+  }
+
   const recommendations: Recommendation[] = [];
 
   for (const [companyId, subs] of byCompany) {
@@ -299,6 +322,16 @@ export function getRecommendations(
           if (match) matchedProductId = match.id;
         }
 
+        // Fall back to peer product if catalog match failed
+        let resolvedProductName = suggestedName ?? rule.butMissing.replace(/_/g, " ");
+        if (!matchedProductId) {
+          const peer = categoryProducts.get(rule.butMissing);
+          if (peer && peer.productId) {
+            matchedProductId = peer.productId;
+            resolvedProductName = peer.productName;
+          }
+        }
+
         const orderCommand = matchedProductId
           ? `pax8 orders create --company ${companyId} --product ${matchedProductId} --quantity ${primaryQty}`
           : null;
@@ -308,9 +341,9 @@ export function getRecommendations(
           companyName,
           type: "cross_sell",
           priority: rule.priority,
-          title: `Add ${rule.butMissing.replace(/_/g, " ")} for ${companyName}`,
+          title: `Add ${resolvedProductName} for ${companyName}`,
           reason: rule.reason,
-          suggestedProducts: rule.suggestedProducts,
+          suggestedProducts: [resolvedProductName, ...rule.suggestedProducts.slice(1)],
           orderCommand,
           currentMrr,
           estimatedMrrUplift,

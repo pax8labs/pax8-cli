@@ -129,6 +129,9 @@ async function startRepl(): Promise<void> {
   const { spawn } = await import("node:child_process");
   const { fileURLToPath } = await import("node:url");
   const { resolve: resolvePath } = await import("node:path");
+  const path = await import("node:path");
+  const fs = await import("node:fs");
+  const { homedir } = await import("node:os");
 
   const cliPath = resolvePath(fileURLToPath(import.meta.url), "../index.js");
 
@@ -165,9 +168,27 @@ async function startRepl(): Promise<void> {
       return;
     }
 
-    const args = tokenize(input);
+    let args = tokenize(input);
     if (args[0] === "pax8") {
       args.shift();
+    }
+
+    // Handle bare number input — check for pending actions from recommendations
+    if (args.length === 1 && /^\d+$/.test(args[0])) {
+      try {
+        const actionsPath = path.join(homedir(), ".pax8", "pending-actions.json");
+        const actions = JSON.parse(fs.readFileSync(actionsPath, "utf-8"));
+        const picked = actions.find((a: { key: string }) => a.key === args[0]);
+        if (picked?.rec) {
+          if (picked.rec.orderCommand) {
+            // Parse order command into args
+            args = tokenize(picked.rec.orderCommand.replace(/^pax8\s+/, ""));
+          } else {
+            const searchTerm = picked.rec.suggestedProducts?.[0] ?? "product";
+            args = ["products", "search", searchTerm];
+          }
+        }
+      } catch { /* no pending actions, treat as normal command */ }
     }
 
     // Run each command as a child process so it can never crash the REPL.

@@ -29,7 +29,7 @@ export async function confirm(
   if (shouldAutoConfirm()) return true;
 
   const defaultVal = options?.default ?? false;
-  const hint = defaultVal ? "[Y/n]" : "[y/N]";
+  const hint = defaultVal ? "[y/n]" : "[y/n]";
   const answer = await prompt(`  ${message} ${hint} `);
 
   if (answer === "") return defaultVal;
