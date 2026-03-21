@@ -226,7 +226,7 @@ Examples:
       const filteredCompanyCount = new Set(recs.map((r) => r.companyId)).size;
       process.stderr.write(
         chalk.dim(
-          `\n  ${recs.length} recommendation${recs.length !== 1 ? "s" : ""} across ${filteredCompanyCount} company${filteredCompanyCount !== 1 ? "ies" : "y"}`
+          `\n  ${recs.length} recommendation${recs.length !== 1 ? "s" : ""} across ${filteredCompanyCount} ${filteredCompanyCount !== 1 ? "companies" : "company"}`
         )
       );
 
