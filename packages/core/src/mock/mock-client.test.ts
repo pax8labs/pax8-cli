@@ -169,6 +169,7 @@ describe("MockPax8Client", () => {
       expect(pricing.length).toBeGreaterThan(0);
       expect(pricing[0]).toHaveProperty("billingTerm");
       expect(pricing[0]).toHaveProperty("partnerBuyPrice");
+      expect(pricing[0]).toHaveProperty("commitmentTerm");
     });
   });
 

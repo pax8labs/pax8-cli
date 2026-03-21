@@ -2,7 +2,7 @@ import type { Pax8Client } from "./client.js";
 import { z } from "zod";
 import {
   ProductSchema,
-  ProductPricingSchema,
+  ProductPricingResponseSchema,
   ProvisioningDetailSchema,
   ProductDependencySchema,
   PaginatedResponseSchema,
@@ -34,8 +34,10 @@ export class ProductsApi {
 
   async getPricing(id: string): Promise<ProductPricing> {
     const raw = await this.client.get<unknown>(`/products/${id}/pricing`);
-    return ProductPricingSchema.parse(raw);
+    const parsed = ProductPricingResponseSchema.parse(raw);
+    return parsed.content;
   }
+
 
   async getProvisioningDetails(id: string): Promise<ProvisioningDetail> {
     const raw = await this.client.get<unknown>(`/products/${id}/provisioning-details`);

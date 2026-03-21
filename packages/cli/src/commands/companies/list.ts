@@ -70,6 +70,21 @@ Examples:
         }))
       );
 
+      // Save pending actions for REPL number input (typing "3" drills into company #3)
+      try {
+        const { writeFileSync, mkdirSync } = await import("fs");
+        const { homedir } = await import("os");
+        const { join } = await import("path");
+        const dir = join(homedir(), ".pax8");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(
+          result.content.map((c: Record<string, unknown>, i: number) => ({
+            key: String(startNum + i + 1),
+            command: `companies more ${startNum + i + 1}`,
+          }))
+        ));
+      } catch { /* best effort */ }
+
       output(numbered, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {

@@ -173,19 +173,24 @@ async function startRepl(): Promise<void> {
       args.shift();
     }
 
-    // Handle bare number input — check for pending actions from recommendations
+    // Handle bare number input — check for pending actions from last list/recommendations
     if (args.length === 1 && /^\d+$/.test(args[0])) {
       try {
         const actionsPath = path.join(homedir(), ".pax8", "pending-actions.json");
         const actions = JSON.parse(fs.readFileSync(actionsPath, "utf-8"));
         const picked = actions.find((a: { key: string }) => a.key === args[0]);
-        if (picked?.rec) {
-          if (picked.rec.orderCommand) {
-            // Parse order command into args
-            args = tokenize(picked.rec.orderCommand.replace(/^pax8\s+/, ""));
-          } else {
-            const searchTerm = picked.rec.suggestedProducts?.[0] ?? "product";
-            args = ["products", "search", searchTerm];
+        if (picked) {
+          if (picked.command) {
+            // Generic command template (e.g. from companies list)
+            args = tokenize(picked.command.replace(/^pax8\s+/, ""));
+          } else if (picked.rec) {
+            // Recommendation action
+            if (picked.rec.orderCommand) {
+              args = tokenize(picked.rec.orderCommand.replace(/^pax8\s+/, ""));
+            } else {
+              const searchTerm = picked.rec.suggestedProducts?.[0] ?? "product";
+              args = ["products", "search", searchTerm];
+            }
           }
         }
       } catch { /* no pending actions, treat as normal command */ }

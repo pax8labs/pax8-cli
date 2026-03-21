@@ -74,23 +74,30 @@ Examples:
       );
 
       if (pricing && pricing.length > 0) {
-        process.stdout.write(`\n  ${chalk.cyan.bold("Pricing Tiers")}\n`);
+        process.stdout.write(`\n  ${chalk.cyan.bold("Pricing Plans")}\n`);
+        const pricingRows = pricing.map((p) => ({
+          billingTerm: p.billingTerm,
+          commitmentTerm: p.commitmentTerm,
+          partnerBuyRate: p.rates[0]?.partnerBuyRate,
+          suggestedRetailPrice: p.rates[0]?.suggestedRetailPrice,
+        }));
         const pricingColumns = [
-          { key: "billingTerm", header: "Term", width: 12 },
+          { key: "billingTerm", header: "Billing", width: 10 },
+          { key: "commitmentTerm", header: "Commitment", width: 12 },
           {
-            key: "partnerBuyPrice",
+            key: "partnerBuyRate",
             header: "Partner Price",
             width: 16,
-            format: (v) => formatCurrency(Number(v)),
+            format: (v: unknown) => formatCurrency(Number(v)),
           },
           {
             key: "suggestedRetailPrice",
             header: "Retail Price",
             width: 16,
-            format: (v) => formatCurrency(Number(v)),
+            format: (v: unknown) => formatCurrency(Number(v)),
           },
         ];
-        output(pricing, { format: "table", columns: pricingColumns });
+        output(pricingRows, { format: "table", columns: pricingColumns });
       }
 
       if (provisioning) {

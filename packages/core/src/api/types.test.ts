@@ -7,7 +7,8 @@ import {
   CreateContactInputSchema,
   UpdateContactInputSchema,
   ProductSchema,
-  ProductPricingSchema,
+  ProductPricingResponseSchema,
+  ProductPricingPlanSchema,
   ProvisioningDetailSchema,
   OrderSchema,
   OrderLineItemSchema,
@@ -201,30 +202,41 @@ describe("ProductSchema", () => {
 
 // ─── Product Pricing ─────────────────────────────────────────────────────────
 
-describe("ProductPricingSchema", () => {
-  const valid = {
-    id: uuid,
-    productId: uuid2,
+describe("ProductPricingResponseSchema", () => {
+  const validPlan = {
+    productId: uuid,
+    billingTerm: "Monthly",
+    commitmentTerm: "Monthly",
+    commitmentTermInMonths: 1,
+    type: "Flat",
+    unitOfMeasurement: "User",
     rates: [
-      { minQuantity: 1, maxQuantity: 99, unitPrice: 22.0, flatPrice: 0, partnerBuyPrice: 18.0 },
-      { minQuantity: 100, unitPrice: 20.0, partnerBuyPrice: 16.0 },
+      { partnerBuyRate: 1.692, suggestedRetailPrice: 1.8, startQuantityRange: 0, chargeType: "Per Unit" },
     ],
   };
 
-  it("validates a correct payload", () => {
-    expect(ProductPricingSchema.parse(valid)).toEqual(valid);
+  it("validates a correct paginated pricing response", () => {
+    const response = { content: [validPlan] };
+    const parsed = ProductPricingResponseSchema.parse(response);
+    expect(parsed.content).toHaveLength(1);
+    expect(parsed.content[0].billingTerm).toBe("Monthly");
+    expect(parsed.content[0].commitmentTerm).toBe("Monthly");
+  });
+
+  it("validates a pricing plan", () => {
+    expect(ProductPricingPlanSchema.parse(validPlan)).toEqual(validPlan);
   });
 
   it("rejects missing rates", () => {
-    expect(() => ProductPricingSchema.parse({ id: uuid, productId: uuid2 })).toThrow();
+    expect(() => ProductPricingPlanSchema.parse({ productId: uuid, billingTerm: "Monthly", commitmentTerm: "Monthly" })).toThrow();
   });
 
-  it("rejects invalid rate (missing minQuantity)", () => {
+  it("rejects missing billingTerm", () => {
     expect(() =>
-      ProductPricingSchema.parse({
-        id: uuid,
-        productId: uuid2,
-        rates: [{ unitPrice: 22.0 }],
+      ProductPricingPlanSchema.parse({
+        productId: uuid,
+        commitmentTerm: "Monthly",
+        rates: [{ partnerBuyRate: 1.0, suggestedRetailPrice: 1.5 }],
       }),
     ).toThrow();
   });

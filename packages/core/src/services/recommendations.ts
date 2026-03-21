@@ -68,6 +68,8 @@ interface CrossSellRule {
   reason: string;
   priority: "high" | "medium" | "low";
   suggestedProducts: string[]; // Product name keywords to search for
+  /** Generic action title when no orderable product is available */
+  genericTitle: string;
 }
 
 const CROSS_SELL_RULES: CrossSellRule[] = [
@@ -77,6 +79,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     reason: "No backup solution — SaaS data is not backed up by default. A single accidental deletion or ransomware event could cause permanent data loss.",
     priority: "high",
     suggestedProducts: ["Acronis Cyber Backup", "Datto SaaS Protection", "Veeam Backup"],
+    genericTitle: "Consider adding a backup solution",
   },
   {
     ifHas: "productivity",
@@ -84,6 +87,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     reason: "No endpoint protection — users with productivity suites are high-value targets for phishing and malware.",
     priority: "high",
     suggestedProducts: ["Microsoft Defender for Business", "SentinelOne Singularity"],
+    genericTitle: "Consider adding endpoint protection",
   },
   {
     ifHas: "productivity",
@@ -91,6 +95,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     reason: "No identity management — without MFA and conditional access, compromised credentials are the #1 attack vector.",
     priority: "high",
     suggestedProducts: ["Azure AD Premium P1", "JumpCloud"],
+    genericTitle: "Consider adding identity management",
   },
   {
     ifHas: "email",
@@ -98,6 +103,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     reason: "Email without advanced security — email is the primary attack surface. Native filtering misses sophisticated threats.",
     priority: "medium",
     suggestedProducts: ["Microsoft Defender for Business", "Mimecast"],
+    genericTitle: "Consider adding email security",
   },
   {
     ifHas: "cloud_infrastructure",
@@ -105,6 +111,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     reason: "Cloud infrastructure without backup — cloud provider SLAs don't cover data loss from user error or ransomware.",
     priority: "medium",
     suggestedProducts: ["Acronis Cyber Backup", "Veeam Backup"],
+    genericTitle: "Consider adding a backup solution",
   },
   {
     ifHas: "cloud_infrastructure",
@@ -112,6 +119,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     reason: "Cloud infrastructure without security — workloads need threat detection and compliance monitoring.",
     priority: "medium",
     suggestedProducts: ["SentinelOne Singularity", "CrowdStrike Falcon"],
+    genericTitle: "Consider adding a security solution",
   },
   {
     ifHas: "security",
@@ -119,6 +127,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     reason: "Security without backup — even with endpoint protection, ransomware recovery requires clean backups.",
     priority: "low",
     suggestedProducts: ["Acronis Cyber Backup", "Datto SaaS Protection"],
+    genericTitle: "Consider adding a backup solution",
   },
 ];
 
@@ -205,6 +214,8 @@ export interface Recommendation {
   suggestedProducts: string[];
   /** The exact CLI command to execute this recommendation */
   orderCommand: string | null;
+  /** Whether the recommended product is available and orderable in the Pax8 catalog */
+  productAvailable: boolean;
   /** Current MRR for this company */
   currentMrr: number;
   /** Estimated additional MRR if recommendation is adopted */
@@ -332,19 +343,33 @@ export function getRecommendations(
           }
         }
 
+        const productAvailable = matchedProductId !== null;
         const orderCommand = matchedProductId
           ? `pax8 orders create --company ${companyId} --product ${matchedProductId} --quantity ${primaryQty}`
           : null;
+
+        // Demote to medium priority when the product isn't available/orderable
+        const effectivePriority: "high" | "medium" | "low" = productAvailable
+          ? rule.priority
+          : rule.priority === "high"
+            ? "medium"
+            : rule.priority;
+
+        // Use generic title when product isn't available; specific title when it is
+        const title = productAvailable
+          ? `Add ${resolvedProductName} for ${companyName}`
+          : `${rule.genericTitle} for ${companyName}`;
 
         recommendations.push({
           companyId,
           companyName,
           type: "cross_sell",
-          priority: rule.priority,
-          title: `Add ${resolvedProductName} for ${companyName}`,
+          priority: effectivePriority,
+          title,
           reason: rule.reason,
           suggestedProducts: [resolvedProductName, ...rule.suggestedProducts.slice(1)],
           orderCommand,
+          productAvailable,
           currentMrr,
           estimatedMrrUplift,
           targetSeats: primaryQty,
@@ -372,6 +397,7 @@ export function getRecommendations(
         reason: `${gap.baseProduct} covers ${gap.baseQuantity} seats but ${gap.gapProduct} only covers ${gap.gapQuantity}. ${gap.missingSeats} seats are unprotected.`,
         suggestedProducts: [gap.gapProduct],
         orderCommand,
+        productAvailable: true, // seat gaps reference products already in use
         currentMrr,
         estimatedMrrUplift,
         targetSeats: gap.missingSeats,

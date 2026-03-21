@@ -65,6 +65,7 @@ export interface Product {
 
 export interface ProductPricing {
   billingTerm: "Monthly" | "Annual";
+  commitmentTerm: "Monthly" | "1-Year" | "3-Year";
   partnerBuyPrice: number;
   suggestedRetailPrice: number;
   flatPrice?: number;
@@ -330,11 +331,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 18.0,
         suggestedRetailPrice: 22.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 16.5,
         suggestedRetailPrice: 22.0,
       },
@@ -351,11 +354,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 5.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 4.5,
         suggestedRetailPrice: 6.0,
       },
@@ -372,11 +377,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 32.0,
         suggestedRetailPrice: 36.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 29.0,
         suggestedRetailPrice: 36.0,
       },
@@ -393,11 +400,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 52.0,
         suggestedRetailPrice: 57.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 48.0,
         suggestedRetailPrice: 57.0,
       },
@@ -414,11 +423,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 3.5,
         suggestedRetailPrice: 4.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 3.0,
         suggestedRetailPrice: 4.0,
       },
@@ -435,11 +446,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 7.0,
         suggestedRetailPrice: 8.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 6.5,
         suggestedRetailPrice: 8.0,
       },
@@ -456,11 +469,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 2.5,
         suggestedRetailPrice: 3.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 2.0,
         suggestedRetailPrice: 3.0,
       },
@@ -477,11 +492,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 5.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 4.5,
         suggestedRetailPrice: 6.0,
       },
@@ -498,6 +515,7 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 6.0,
         suggestedRetailPrice: 8.5,
       },
@@ -514,11 +532,13 @@ export const products: Product[] = [
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 4.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 3.5,
         suggestedRetailPrice: 6.0,
       },

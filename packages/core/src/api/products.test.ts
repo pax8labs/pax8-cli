@@ -22,11 +22,19 @@ const sampleProduct = {
   sku: "M365-BP",
 };
 
-const samplePricing = {
-  id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-  productId: PRODUCT_ID,
-  rates: [
-    { minQuantity: 1, maxQuantity: 300, unitPrice: 22.0, partnerBuyPrice: 18.0 },
+const samplePricingResponse = {
+  content: [
+    {
+      productId: PRODUCT_ID,
+      billingTerm: "Monthly",
+      commitmentTerm: "Monthly",
+      commitmentTermInMonths: 1,
+      type: "Flat",
+      unitOfMeasurement: "User",
+      rates: [
+        { partnerBuyRate: 22.0, suggestedRetailPrice: 25.0, startQuantityRange: 0, chargeType: "Per Unit" },
+      ],
+    },
   ],
 };
 
@@ -71,14 +79,15 @@ describe("ProductsApi", () => {
     expect(result.vendorName).toBe("Microsoft");
   });
 
-  it("getPricing returns product pricing", async () => {
-    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePricing);
+  it("getPricing returns product pricing plans", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePricingResponse);
 
     const result = await api.getPricing(PRODUCT_ID);
 
     expect(client.get).toHaveBeenCalledWith(`/products/${PRODUCT_ID}/pricing`);
-    expect(result.rates).toHaveLength(1);
-    expect(result.rates[0].unitPrice).toBe(22.0);
+    expect(result).toHaveLength(1);
+    expect(result[0].billingTerm).toBe("Monthly");
+    expect(result[0].rates[0].partnerBuyRate).toBe(22.0);
   });
 
   it("getProvisioningDetails returns provisioning info", async () => {

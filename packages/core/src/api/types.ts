@@ -145,20 +145,32 @@ export type Product = z.infer<typeof ProductSchema>;
 // ─── Product Pricing ─────────────────────────────────────────────────────────
 
 export const ProductPricingRateSchema = z.object({
-  minQuantity: z.number(),
-  maxQuantity: z.number().optional(),
-  unitPrice: z.number(),
-  flatPrice: z.number().optional(),
-  partnerBuyPrice: z.number().optional(),
+  partnerBuyRate: z.number(),
+  suggestedRetailPrice: z.number(),
+  startQuantityRange: z.number().optional(),
+  chargeType: z.string().optional(),
 });
 export type ProductPricingRate = z.infer<typeof ProductPricingRateSchema>;
 
-export const ProductPricingSchema = z.object({
-  id: z.string().uuid(),
+export const ProductPricingPlanSchema = z.object({
   productId: z.string().uuid(),
+  productName: z.string().optional(),
+  billingTerm: z.string(),
+  commitmentTerm: z.string(),
+  commitmentTermInMonths: z.number().optional(),
+  type: z.string().optional(),
+  unitOfMeasurement: z.string().optional(),
   rates: z.array(ProductPricingRateSchema),
 });
-export type ProductPricing = z.infer<typeof ProductPricingSchema>;
+export type ProductPricingPlan = z.infer<typeof ProductPricingPlanSchema>;
+
+/** Product pricing is returned as a paginated list of pricing plans. */
+export const ProductPricingResponseSchema = z.object({
+  content: z.array(ProductPricingPlanSchema),
+});
+
+/** Convenience alias — an array of pricing plans for a product. */
+export type ProductPricing = ProductPricingPlan[];
 
 // ─── Provisioning Detail ─────────────────────────────────────────────────────
 
@@ -182,10 +194,18 @@ export type ProvisioningDetail = z.infer<typeof ProvisioningDetailSchema>;
 
 export const OrderLineItemProvisioningSchema = z.record(z.string(), z.unknown());
 
+export const CommitmentTermSchema = z.enum([
+  "Monthly",
+  "1-Year",
+  "3-Year",
+]);
+export type CommitmentTerm = z.infer<typeof CommitmentTermSchema>;
+
 export const OrderLineItemInputSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().int().min(1),
   billingTerm: BillingTermSchema.optional(),
+  commitmentTerm: CommitmentTermSchema.optional(),
   provisioningDetails: OrderLineItemProvisioningSchema.optional(),
 });
 export type OrderLineItemInput = z.infer<typeof OrderLineItemInputSchema>;

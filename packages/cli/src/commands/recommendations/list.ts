@@ -269,9 +269,9 @@ Examples:
 
       // Save pending actions for REPL mode
       try {
-        const { writeFileSync, mkdirSync } = require("fs");
-        const { homedir } = require("os");
-        const { join } = require("path");
+        const { writeFileSync, mkdirSync } = await import("fs");
+        const { homedir } = await import("os");
+        const { join } = await import("path");
         const dir = join(homedir(), ".pax8");
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(

@@ -6,7 +6,24 @@ import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
 import { formatStatus, formatDate } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { ApiError } from "@pax8/core";
 import type { CreateOrderInput } from "@pax8/core";
+
+/**
+ * Extract a human-readable detail string from an API error response body.
+ */
+function extractApiDetail(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const b = body as Record<string, unknown>;
+  for (const key of ["message", "error", "detail", "error_description"]) {
+    if (typeof b[key] === "string" && b[key]) return b[key] as string;
+  }
+  if (typeof b.error === "object" && b.error !== null) {
+    const inner = b.error as Record<string, unknown>;
+    if (typeof inner.message === "string") return inner.message;
+  }
+  return undefined;
+}
 
 export const ordersCreateCommand = new Command("create")
   .description("Create a new order")
@@ -14,6 +31,7 @@ export const ordersCreateCommand = new Command("create")
   .requiredOption("--product <id>", "Product ID (required)")
   .option("--quantity <number>", "Quantity", "1")
   .option("--billing-term <term>", "Billing term (Monthly or Annual)", "Monthly")
+  .option("--commitment-term <term>", "Commitment term (Monthly, 1-Year, or 3-Year)")
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
@@ -26,27 +44,42 @@ Examples:
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
 
+    // Hoist names so they're available in catch block for error messages
+    let productName: string = allOpts.product;
+    let companyName: string = allOpts.company;
+
     try {
       const ctx = await buildContext(allOpts);
       const quantity = parseInt(allOpts.quantity, 10);
 
-      // Resolve names for a human-friendly preview
-      let companyName = allOpts.company;
-      let productName = allOpts.product;
+      // Resolve names and pricing for a human-friendly preview
+      let commitmentTerm = allOpts.commitmentTerm;
       try {
-        const [company, product] = await Promise.all([
+        const [company, product, pricing] = await Promise.all([
           ctx.api.companies.get(allOpts.company).catch(() => null),
           ctx.api.products.get(allOpts.product).catch(() => null),
+          ctx.api.products.getPricing(allOpts.product).catch(() => null),
         ]);
         if (company?.name) companyName = company.name;
         if (product?.name) productName = product.name;
+
+        // Auto-resolve commitment term from pricing if not specified
+        if (!commitmentTerm && pricing && pricing.length > 0) {
+          const match = pricing.find((p) => p.billingTerm === allOpts.billingTerm);
+          if (match) {
+            commitmentTerm = match.commitmentTerm;
+          }
+        }
       } catch { /* best effort */ }
 
       process.stderr.write(chalk.bold("\n  📦 Order Preview:\n\n"));
-      process.stderr.write(`  ${chalk.dim("Company:")}      ${companyName}\n`);
-      process.stderr.write(`  ${chalk.dim("Product:")}      ${productName}\n`);
-      process.stderr.write(`  ${chalk.dim("Quantity:")}     ${quantity}\n`);
-      process.stderr.write(`  ${chalk.dim("Billing Term:")} ${allOpts.billingTerm}\n`);
+      process.stderr.write(`  ${chalk.dim("Company:")}         ${companyName}\n`);
+      process.stderr.write(`  ${chalk.dim("Product:")}         ${productName}\n`);
+      process.stderr.write(`  ${chalk.dim("Quantity:")}        ${quantity}\n`);
+      process.stderr.write(`  ${chalk.dim("Billing Term:")}    ${allOpts.billingTerm}\n`);
+      if (commitmentTerm) {
+        process.stderr.write(`  ${chalk.dim("Commitment Term:")} ${commitmentTerm}\n`);
+      }
       process.stderr.write("\n");
 
       const confirmed = await confirm("Place this order?", { default: true });
@@ -92,6 +125,66 @@ Examples:
       process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company ${allOpts.company}`)}  ${chalk.dim("view subscriptions")}\n`);
       process.stderr.write("\n");
     } catch (error) {
+      // Provide order-specific error messages with actionable guidance
+      if (error instanceof ApiError) {
+        const product = productName || allOpts.product;
+        const company = companyName || allOpts.company;
+
+        if (error.statusCode === 404) {
+          handleCommandError(
+            new CliError(
+              `Failed to create order for "${product}" under "${company}"`,
+              [
+                "Product may not be available in your catalog or region",
+                "The product ID or rate plan may no longer exist",
+              ],
+              [
+                `Verify the product: pax8 products show ${allOpts.product}`,
+                `Search for alternatives: pax8 products search ${product}`,
+                `Confirm company eligibility: pax8 companies show ${allOpts.company}`,
+              ],
+            ),
+          );
+        }
+
+        if (error.statusCode === 422) {
+          const detail = extractApiDetail(error.responseBody);
+          const causes = [
+            "Order validation failed -- check quantity, billing term, or provisioning requirements",
+          ];
+          if (detail) causes.push(`API detail: ${detail}`);
+
+          handleCommandError(
+            new CliError(
+              `Failed to create order for "${product}" under "${company}"`,
+              causes,
+              [
+                `Check available billing terms: pax8 products pricing ${allOpts.product}`,
+                "Ensure the quantity meets minimum/maximum seat requirements",
+                "Verify any required provisioning details for this product",
+              ],
+            ),
+          );
+        }
+
+        if (error.statusCode === 400) {
+          const detail = extractApiDetail(error.responseBody);
+          const causes = ["The Pax8 API rejected the order request"];
+          if (detail) causes.push(`API detail: ${detail}`);
+
+          handleCommandError(
+            new CliError(
+              `Failed to create order for "${product}" under "${company}"`,
+              causes,
+              [
+                "Double-check all order parameters (product ID, company ID, quantity)",
+                `View product details: pax8 products show ${allOpts.product}`,
+              ],
+            ),
+          );
+        }
+      }
+
       handleCommandError(error, undefined, "Failed to create order");
     }
   });
