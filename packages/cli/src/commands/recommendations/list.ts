@@ -218,9 +218,10 @@ Examples:
         process.stderr.write(chalk.dim(`\n  Showing top ${limit} of ${recs.length} recommendations`) + chalk.dim(` · use --limit ${recs.length} to see all\n`));
       }
 
+      const filteredCompanyCount = new Set(recs.map((r) => r.companyId)).size;
       process.stderr.write(
         chalk.dim(
-          `\n  ${recs.length} recommendations across ${report.companiesWithGaps} companies`
+          `\n  ${recs.length} recommendation${recs.length !== 1 ? "s" : ""} across ${filteredCompanyCount} company${filteredCompanyCount !== 1 ? "ies" : "y"}`
         )
       );
 
