@@ -29,7 +29,7 @@ const columns: Column[] = [
     format: (v) => formatCompanyName(String(v)),
   },
   { key: "productName", header: "Product" },
-  { key: "quantity", header: "Quantity", format: (v) => String(v) },
+  { key: "quantity", header: "Qty", format: (v) => String(v) },
   {
     key: "renewalDate",
     header: "Renews",

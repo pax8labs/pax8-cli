@@ -10,7 +10,7 @@ import { saveLastList } from "../../lib/last-list.js";
 const columns: Column[] = [
   { key: "_num", header: "#" },
   { key: "name", header: "Name", format: (v) => formatCompanyName(String(v), 30) },
-  { key: "id", header: "ID" },
+  { key: "id", header: "ID", format: (v) => chalk.dim(String(v).slice(0, 8)) },
   { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
 ];
 

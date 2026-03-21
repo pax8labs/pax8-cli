@@ -92,7 +92,7 @@ Examples:
       output(result.content, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stdout.write(
+        process.stderr.write(
           chalk.dim(`\n  ${result.page.totalElements} subscriptions\n\n`)
         );
       }

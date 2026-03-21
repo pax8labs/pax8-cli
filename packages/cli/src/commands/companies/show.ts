@@ -100,7 +100,7 @@ Examples:
           output(subs.content, { format: "table", columns: subscriptionColumns });
           process.stdout.write("\n");
         } else {
-          process.stdout.write(chalk.dim("  No subscriptions found.\n\n"));
+          process.stdout.write(chalk.dim("  No active subscriptions.\n\n"));
         }
       }
     } catch (error) {

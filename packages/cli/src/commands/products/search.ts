@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -39,8 +40,8 @@ Examples:
         if (ctx.outputFormat === "json") {
           output([], { format: "json" });
         } else if (ctx.outputFormat !== "quiet") {
-          process.stdout.write(
-            `\n  No products matching '${query}' found.\n\n`
+          process.stderr.write(
+            chalk.dim(`\n  No products matching "${query}". Try a broader search.\n\n`)
           );
         }
         return;

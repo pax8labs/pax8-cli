@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -80,8 +81,8 @@ Examples:
       output(result.content, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stdout.write(
-          `\n  ${result.page.totalElements} invoices\n\n`
+        process.stderr.write(
+          chalk.dim(`\n  ${result.page.totalElements} invoices\n\n`)
         );
       }
     } catch (error) {
