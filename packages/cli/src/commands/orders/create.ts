@@ -150,17 +150,17 @@ Examples:
         const company = companyName || allOpts.company;
 
         if (error.statusCode === 404) {
+          // Extract a short searchable name from the full product name
+          const shortName = product.replace(/\s*\[.*?\]\s*/g, "").replace(/\s*\(.*?\)\s*/g, "").trim().split(" ").slice(0, 4).join(" ");
           handleCommandError(
             new CliError(
-              `Failed to create order for "${product}" under "${company}"`,
+              `"${product}" can't be ordered for ${company}`,
               [
-                "Product may not be available in your catalog or region",
-                "The product ID or rate plan may no longer exist",
+                "This product may not be available in your region, or it may be restricted (e.g., non-profit only)",
               ],
               [
-                `Verify the product: pax8 products show ${allOpts.product}`,
-                `Search for alternatives: pax8 products search ${product}`,
-                `Confirm company eligibility: pax8 companies show ${allOpts.company}`,
+                `Search for alternatives: pax8 products search "${shortName}"`,
+                `View ${company}'s current subscriptions: pax8 companies more ${allOpts.company}`,
               ],
             ),
           );

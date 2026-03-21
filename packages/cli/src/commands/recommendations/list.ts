@@ -195,10 +195,15 @@ Examples:
         recs = recs.filter((r) => r.type === options.type.toLowerCase());
       }
 
+      // In table mode, only show actionable recs (product available) by default
+      // JSON mode returns all recs for programmatic consumers
       if (ctx.outputFormat === "json") {
         output(recs, { format: "json" });
         return;
       }
+
+      const unavailableCount = recs.filter((r) => !r.productAvailable).length;
+      recs = recs.filter((r) => r.productAvailable);
 
       if (ctx.outputFormat === "quiet") return;
 
@@ -208,9 +213,16 @@ Examples:
       }
 
       if (recs.length === 0) {
-        process.stdout.write(
-          chalk.green("\n  ✨ All customers look well-covered — nice work!\n\n")
-        );
+        if (unavailableCount > 0) {
+          process.stderr.write(
+            chalk.dim(`\n  ${unavailableCount} potential recommendation${unavailableCount > 1 ? "s" : ""} found but no matching products in your catalog.\n`) +
+            chalk.dim("  Contact your Pax8 rep to add endpoint protection, identity, or backup products.\n\n")
+          );
+        } else {
+          process.stdout.write(
+            chalk.green("\n  ✨ All customers look well-covered — nice work!\n\n")
+          );
+        }
         return;
       }
 
@@ -255,16 +267,16 @@ Examples:
       }
 
       // Show next action for each rec — human-readable, no UUIDs
-      process.stderr.write(chalk.dim("\n  Next steps:\n"));
+      process.stderr.write(chalk.dim("\n  Ready to order:\n"));
       for (let i = 0; i < displayRecs.length; i++) {
         const rec = displayRecs[i];
         const product = rec.suggestedProducts?.[0] ?? "product";
         const seats = rec.targetSeats ?? "?";
-        if (rec.orderCommand) {
-          process.stderr.write(`  ${chalk.cyan.bold(`[${i + 1}]`)} Order ${product} for ${rec.companyName} (${seats} seats)\n`);
-        } else {
-          process.stderr.write(`  ${chalk.cyan.bold(`[${i + 1}]`)} Find ${product} for ${rec.companyName}  ${chalk.dim("→ search catalog")}\n`);
-        }
+        process.stderr.write(`  ${chalk.cyan.bold(`[${i + 1}]`)} ${product} for ${rec.companyName} (${seats} seats)\n`);
+      }
+
+      if (unavailableCount > 0) {
+        process.stderr.write(chalk.dim(`\n  ${unavailableCount} more recommendation${unavailableCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet\n`));
       }
 
       // Save pending actions for REPL mode

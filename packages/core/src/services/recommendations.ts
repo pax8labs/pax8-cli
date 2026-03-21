@@ -257,7 +257,9 @@ export function getRecommendations(
 
   // Build a "peer product" lookup: for each category, find the most popular
   // product (by company count) already in use across the account.
-  // This lets us recommend specific products for cross-sell without catalog search.
+  // Skip charity/non-profit/GCC/education SKUs as they aren't orderable for commercial customers.
+  const RESTRICTED_PATTERNS = /non-profit|charity|gcc|education|faculty|student|government|\bAOS\b/i;
+
   const categoryProducts = new Map<ProductCategory, { productId: string; productName: string; count: number }>();
   for (const [, companySubs] of byCompany) {
     const seen = new Set<string>(); // dedupe per company
@@ -265,6 +267,7 @@ export function getRecommendations(
       const name = sub.productName ?? "";
       const pid = sub.productId ?? "";
       if (!pid || seen.has(pid)) continue;
+      if (RESTRICTED_PATTERNS.test(name)) continue; // Skip restricted SKUs
       seen.add(pid);
       const cats = categorizeProduct(name);
       for (const cat of cats) {
@@ -314,18 +317,20 @@ export function getRecommendations(
         }
 
         // Find a matching product ID for the order command
+        // Filter out restricted SKUs (non-profit, charity, GCC, education)
         let matchedProductId: string | null = null;
-        if (products && suggestedName) {
+        const orderableProducts = products?.filter((p) => !RESTRICTED_PATTERNS.test(p.name));
+        if (orderableProducts && suggestedName) {
           const sugLower = suggestedName.toLowerCase();
           // Try exact substring match first
-          let match = products.find((p) =>
+          let match = orderableProducts.find((p) =>
             p.name.toLowerCase().includes(sugLower) ||
             sugLower.includes(p.name.toLowerCase())
           );
           // Fall back to keyword matching (all significant words must appear)
           if (!match) {
             const keywords = sugLower.split(/\s+/).filter((w) => w.length > 2);
-            match = products.find((p) => {
+            match = orderableProducts.find((p) => {
               const pLower = p.name.toLowerCase();
               return keywords.every((kw) => pLower.includes(kw));
             });
