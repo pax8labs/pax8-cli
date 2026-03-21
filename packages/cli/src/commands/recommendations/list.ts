@@ -169,12 +169,13 @@ Examples:
 
       let recs = report.recommendations;
 
-      // Filter by company if specified
+      // Filter by company if specified (supports full ID, partial ID, or name substring)
       if (options.company) {
         const filter = options.company.toLowerCase();
         recs = recs.filter(
           (r) =>
             r.companyId === options.company ||
+            r.companyId.startsWith(filter) ||
             r.companyName.toLowerCase().includes(filter)
         );
       }
