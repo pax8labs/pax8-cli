@@ -117,9 +117,22 @@ Examples:
       if (urgentAnnual.length > 0) {
         process.stdout.write(
           chalk.yellow(
-            `\n  ⚠ ${urgentAnnual.length} annual subscription${urgentAnnual.length !== 1 ? "s" : ""} renewing within 14 days. Review quantities before lock-in.\n`
+            `\n  ⚠ ${urgentAnnual.length} annual subscription${urgentAnnual.length !== 1 ? "s" : ""} renewing within 14 days\n`
           )
         );
+        process.stdout.write(chalk.dim("    Before lock-in, you can:\n"));
+        process.stdout.write(chalk.dim("    • Reduce seats to match actual usage\n"));
+        process.stdout.write(chalk.dim("    • Switch billing term (monthly ↔ annual)\n"));
+        process.stdout.write(chalk.dim("    • Cancel if the customer is churning\n"));
+      }
+
+      // Show actionable commands for the most urgent items
+      if (ctx.outputFormat === "table" && report.items.length > 0) {
+        const top = report.items[0];
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(`subscriptions show ${top.subscriptionId}`)}  ${chalk.dim("view details")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`subscriptions update ${top.subscriptionId} --quantity <n>`)}  ${chalk.dim("adjust seats")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`companies more "${top.companyName}"`)}  ${chalk.dim("view company")}\n`);
       }
 
       process.stdout.write("\n");

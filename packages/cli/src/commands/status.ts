@@ -200,6 +200,16 @@ Examples:
           });
         }
 
+        for (const t of trials.slice(0, 1)) {
+          const trialCompany = String((t as Record<string, unknown>).companyName || (t as Record<string, unknown>).companyId);
+          const trialProduct = String((t as Record<string, unknown>).productName || "product");
+          actions.push({
+            urgency: 10, // between renewals and growth
+            line: `${chalk.yellow("~")} ${trialCompany} — ${trialProduct} trial expiring`,
+            cmd: replCmd(`pax8 companies more "${trialCompany}"`),
+          });
+        }
+
         for (const r of highRecs.slice(0, 2)) {
           const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
           actions.push({
