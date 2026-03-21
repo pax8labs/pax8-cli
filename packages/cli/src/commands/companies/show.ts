@@ -77,19 +77,19 @@ Examples:
       // Table / detail view
       process.stdout.write("\n");
       process.stdout.write(chalk.bold(`  ${company.name}\n\n`));
-      process.stdout.write(`  ${chalk.dim("ID:")}       ${company.id}\n`);
-      process.stdout.write(`  ${chalk.dim("Status:")}   ${formatStatus(company.status)}\n`);
-      process.stdout.write(`  ${chalk.dim("Phone:")}    ${company.phone || chalk.dim("—")}\n`);
-      process.stdout.write(`  ${chalk.dim("Website:")}  ${company.website || chalk.dim("—")}\n`);
+      process.stdout.write(`  ${chalk.dim("ID:".padEnd(18))}${company.id}\n`);
+      process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(company.status)}\n`);
+      process.stdout.write(`  ${chalk.dim("Phone:".padEnd(18))}${company.phone || chalk.dim("—")}\n`);
+      process.stdout.write(`  ${chalk.dim("Website:".padEnd(18))}${company.website || chalk.dim("—")}\n`);
       if (company.address) {
         const addr = company.address;
         const parts = [addr.city, addr.stateOrProvince, addr.postalCode, addr.country].filter(Boolean);
-        process.stdout.write(`  ${chalk.dim("Address:")}  ${addr.street || ""}\n`);
+        process.stdout.write(`  ${chalk.dim("Address:".padEnd(18))}${addr.street || ""}\n`);
         if (parts.length > 0) {
-          process.stdout.write(`             ${parts.join(", ")}\n`);
+          process.stdout.write(`  ${"".padEnd(18)}${parts.join(", ")}\n`);
         }
       }
-      process.stdout.write(`  ${chalk.dim("Created:")}  ${company.createdDate}\n`);
+      process.stdout.write(`  ${chalk.dim("Created:".padEnd(18))}${company.createdDate}\n`);
       process.stdout.write("\n");
 
       if (allOpts.subscriptions) {

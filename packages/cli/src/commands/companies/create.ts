@@ -61,7 +61,7 @@ Examples:
         },
       });
 
-      spinner.succeed("Company created");
+      spinner.succeed("Company created 🎉");
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(JSON.stringify(company, null, 2) + "\n");

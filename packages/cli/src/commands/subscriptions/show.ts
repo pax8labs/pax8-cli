@@ -90,7 +90,7 @@ Examples:
 
       for (const [label, value] of fields) {
         process.stdout.write(
-          `  ${chalk.bold(label.padEnd(18))} ${value}\n`
+          `  ${chalk.dim((label + ":").padEnd(18))}${value}\n`
         );
       }
       process.stdout.write("\n");

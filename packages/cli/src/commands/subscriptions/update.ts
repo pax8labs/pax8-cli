@@ -5,7 +5,7 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { confirm } from "../../lib/confirm.js";
-import { formatQuantity, formatCurrency } from "../../lib/formatters.js";
+import { formatQuantity, formatCurrency, formatStatus } from "../../lib/formatters.js";
 
 export const subscriptionsUpdateCommand = new Command("update")
   .description("Update a subscription")
@@ -73,21 +73,12 @@ Examples:
       if (ctx.outputFormat === "quiet") return;
 
       process.stdout.write("\n");
-      process.stdout.write(
-        `  ${chalk.bold("ID")}                ${updated.id}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.bold("Product")}           ${updated.productName}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.bold("Quantity")}          ${formatQuantity(updated.quantity)}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.bold("Billing Term")}      ${updated.billingTerm}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.bold("Price")}             ${formatCurrency(updated.price)}\n`
-      );
+      process.stdout.write(`  ${chalk.dim("ID:".padEnd(18))}${updated.id}\n`);
+      process.stdout.write(`  ${chalk.dim("Product:".padEnd(18))}${updated.productName}\n`);
+      process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(updated.status)}\n`);
+      process.stdout.write(`  ${chalk.dim("Quantity:".padEnd(18))}${formatQuantity(updated.quantity)}\n`);
+      process.stdout.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${updated.billingTerm}\n`);
+      process.stdout.write(`  ${chalk.dim("Price:".padEnd(18))}${formatCurrency(updated.price)}\n`);
       process.stdout.write("\n");
     } catch (error) {
       handleCommandError(error, undefined, "Failed to update subscription");

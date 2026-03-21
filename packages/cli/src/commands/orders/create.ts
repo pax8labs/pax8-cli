@@ -4,6 +4,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
+import { formatStatus, formatDate } from "../../lib/formatters.js";
 import type { CreateOrderInput } from "@pax8/core";
 
 export const ordersCreateCommand = new Command("create")
@@ -77,11 +78,11 @@ Examples:
       }
 
       process.stdout.write("\n");
-      process.stdout.write(chalk.bold(`  Order ${order.id}\n\n`));
-      process.stdout.write(`  ${chalk.dim("Status:")}  ${order.status}\n`);
-      process.stdout.write(`  ${chalk.dim("Date:")}    ${order.createdDate}\n`);
+      process.stdout.write(`  ${chalk.dim("Order ID:".padEnd(18))}${order.id}\n`);
+      if (order.status) process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(order.status)}\n`);
+      process.stdout.write(`  ${chalk.dim("Date:".padEnd(18))}${formatDate(order.createdDate)}\n`);
       if (order.lineItems && order.lineItems.length > 0) {
-        process.stdout.write(`  ${chalk.dim("Items:")}   ${order.lineItems.length}\n`);
+        process.stdout.write(`  ${chalk.dim("Items:".padEnd(18))}${order.lineItems.length}\n`);
       }
       process.stdout.write("\n");
     } catch (error) {

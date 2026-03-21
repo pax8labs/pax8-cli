@@ -50,26 +50,13 @@ Examples:
 
       // Human-readable output
       process.stdout.write("\n");
-      process.stdout.write(`  ${chalk.bold("Invoice")} ${invoice.id}\n`);
-      process.stdout.write(`  ${chalk.dim("Company:")} ${invoice.companyName}\n`);
-      process.stdout.write(
-        `  ${chalk.dim("Date:")} ${formatDate(invoice.invoiceDate)}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.dim("Due Date:")} ${formatDate(invoice.dueDate)}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.dim("Status:")} ${formatStatus(invoice.status)}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.dim("Total:")} ${formatCurrency(invoice.total)}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.dim("Balance:")} ${formatCurrency(invoice.balance)}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.dim("Currency:")} ${invoice.currency}\n`
-      );
+      process.stdout.write(chalk.bold(`  Invoice ${invoice.id}\n\n`));
+      process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${invoice.companyName}\n`);
+      process.stdout.write(`  ${chalk.dim("Date:".padEnd(18))}${formatDate(invoice.invoiceDate)}\n`);
+      process.stdout.write(`  ${chalk.dim("Due Date:".padEnd(18))}${formatDate(invoice.dueDate)}\n`);
+      process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(invoice.status)}\n`);
+      process.stdout.write(`  ${chalk.dim("Total:".padEnd(18))}${formatCurrency(invoice.total)}\n`);
+      process.stdout.write(`  ${chalk.dim("Balance:".padEnd(18))}${formatCurrency(invoice.balance)}\n`);
       process.stdout.write("\n");
     } catch (error) {
       handleCommandError(error, spinner, "Failed to show invoice");
