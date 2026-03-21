@@ -123,6 +123,7 @@ export const recommendationsListCommand = new Command("list")
   .option("--company <id|name>", "Filter to a specific company")
   .option("--priority <level>", "Filter by priority (high, medium, low)")
   .option("--type <type>", "Filter by type (seat_gap or cross_sell)")
+  .option("--include-all", "Show all recommendations including ones without orderable products")
   .option("--limit <number>", "Max rows to show in table (default 10)")
   .addHelpText(
     "after",
@@ -195,15 +196,16 @@ Examples:
         recs = recs.filter((r) => r.type === options.type.toLowerCase());
       }
 
-      // In table mode, only show actionable recs (product available) by default
-      // JSON mode returns all recs for programmatic consumers
       if (ctx.outputFormat === "json") {
         output(recs, { format: "json" });
         return;
       }
 
+      // In table mode, hide unavailable recs unless --include-all
       const unavailableCount = recs.filter((r) => !r.productAvailable).length;
-      recs = recs.filter((r) => r.productAvailable);
+      if (!options.includeAll) {
+        recs = recs.filter((r) => r.productAvailable);
+      }
 
       if (ctx.outputFormat === "quiet") return;
 
@@ -215,9 +217,16 @@ Examples:
       if (recs.length === 0) {
         if (unavailableCount > 0) {
           process.stderr.write(
-            chalk.dim(`\n  ${unavailableCount} potential recommendation${unavailableCount > 1 ? "s" : ""} found but no matching products in your catalog.\n`) +
-            chalk.dim("  Contact your Pax8 rep to add endpoint protection, identity, or backup products.\n\n")
+            chalk.yellow(`\n  ${unavailableCount} gap${unavailableCount > 1 ? "s" : ""} found but the needed products aren't in your catalog yet.\n\n`) +
+            chalk.dim("  Your customers could benefit from:\n")
           );
+          // Show what categories are missing
+          const missingCategories = new Set(report.recommendations.filter((r) => !r.productAvailable).map((r) => r.title.replace(/for .+$/, "").trim()));
+          for (const cat of missingCategories) {
+            process.stderr.write(chalk.dim(`    • ${cat}\n`));
+          }
+          process.stderr.write(chalk.dim(`\n  Ask your Pax8 rep to enable these product categories.\n`));
+          process.stderr.write(chalk.dim(`  Use ${chalk.cyan("--include-all")} to see details.\n\n`));
         } else {
           process.stdout.write(
             chalk.green("\n  ✨ All customers look well-covered — nice work!\n\n")
