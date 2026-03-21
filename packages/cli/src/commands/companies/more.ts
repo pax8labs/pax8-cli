@@ -203,7 +203,7 @@ Examples:
         process.stderr.write(
           chalk.dim("  Get started:\n") +
           `    ${chalk.cyan(`pax8 products search "Microsoft"`)}  ${chalk.dim("browse the catalog")}\n` +
-          `    ${chalk.cyan(`pax8 recommendations list --company ${company.id}`)}  ${chalk.dim("see suggestions")}\n\n`
+          `    ${chalk.cyan(`pax8 orders create --company ${company.id} --product <id> --quantity <n>`)}\n\n`
         );
         return;
       }
