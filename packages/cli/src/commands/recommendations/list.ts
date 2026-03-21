@@ -248,18 +248,13 @@ Examples:
         process.stderr.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
       }
 
-      // Show actionable commands for each recommendation
-      const hasActions = displayRecs.some((r) => r.orderCommand || r.suggestedProducts?.length);
-      if (hasActions) {
+      // Show order commands for actionable recommendations
+      const actionable = displayRecs.filter((r) => r.orderCommand);
+      if (actionable.length > 0) {
         process.stderr.write(chalk.dim("\n  Take action:\n"));
-        for (let i = 0; i < displayRecs.length; i++) {
-          const r = displayRecs[i];
-          if (r.orderCommand) {
-            process.stderr.write(`  ${chalk.cyan.bold(`#${i + 1}`)} ${chalk.cyan(r.orderCommand)}\n`);
-          } else if (r.suggestedProducts?.length) {
-            const searchTerm = r.suggestedProducts[0];
-            process.stderr.write(`  ${chalk.cyan.bold(`#${i + 1}`)} ${chalk.cyan(`pax8 products search "${searchTerm}"`)}  ${chalk.dim("find a product to order")}\n`);
-          }
+        for (const r of actionable) {
+          const idx = displayRecs.indexOf(r) + 1;
+          process.stderr.write(`  ${chalk.cyan.bold(`#${idx}`)} ${chalk.cyan(r.orderCommand)}\n`);
         }
         process.stderr.write("\n");
       } else {
