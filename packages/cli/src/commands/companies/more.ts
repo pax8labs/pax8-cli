@@ -114,13 +114,15 @@ Examples:
         const price = Number(s.price) || 0;
         const termEnd = s.commitmentTermEndDate as string | undefined;
         const rawName = s.productName as string | undefined;
+        const term = String(s.billingTerm ?? "Monthly");
+        const mrr = term.toLowerCase().includes("annual") ? (price * qty) / 12 : price * qty;
         return {
           productName: rawName || `Product ${String(s.productId ?? "unknown").slice(0, 8)}`,
           quantity: qty,
           price,
-          mrr: qty * price,
+          mrr,
           status: String(s.status),
-          billingTerm: String(s.billingTerm ?? "Unknown"),
+          billingTerm: term,
           renewsIn: termEnd ? formatDaysUntil(termEnd) : null,
           commitmentTermEndDate: termEnd,
         };
@@ -207,16 +209,23 @@ Examples:
       }
       process.stdout.write("\n");
 
-      // Subscriptions
+      // Subscriptions — show active first, then others
       process.stdout.write(chalk.dim("  SUBSCRIPTIONS\n"));
-      for (const sub of subscriptions) {
-        const statusIcon = sub.status === "Active" ? chalk.green("●")
-          : sub.status === "Trial" ? chalk.yellow("●")
-          : chalk.red("●");
+      for (const sub of activeSubs) {
         const renewal = sub.renewsIn ? chalk.dim(` · renews ${sub.renewsIn}`) : "";
         process.stdout.write(
-          `  ${statusIcon} ${sub.productName.padEnd(35)} ${chalk.bold(String(sub.quantity).padStart(4))} seats  ${formatCurrency(sub.mrr).padStart(10)}/mo${renewal}\n`
+          `  ${chalk.green("●")} ${sub.productName.padEnd(35)} ${chalk.bold(String(sub.quantity).padStart(4))} seats  ${formatCurrency(sub.mrr).padStart(10)}/mo${renewal}\n`
         );
+      }
+      const otherSubs = subscriptions.filter((s) => s.status !== "Active");
+      if (otherSubs.length > 0) {
+        process.stdout.write(chalk.dim(`\n  ${otherSubs.length} inactive:\n`));
+        for (const sub of otherSubs) {
+          const statusIcon = sub.status === "Trial" ? chalk.yellow("●") : chalk.red("●");
+          process.stdout.write(
+            chalk.dim(`  ${statusIcon} ${sub.productName.padEnd(35)} ${String(sub.quantity).padStart(4)} seats  ${sub.status}\n`)
+          );
+        }
       }
       process.stdout.write("\n");
 
