@@ -82,13 +82,17 @@ function notFound(resource: string, id: string): NotFoundError {
 
 class CompaniesResource {
   async list(
-    params?: ListParams & { filter?: string }
+    params?: ListParams & { filter?: string; status?: string }
   ): Promise<PaginatedResponse<Company>> {
     await randomDelay();
     let filtered = companies;
     if (params?.filter) {
       const q = params.filter.toLowerCase();
-      filtered = companies.filter((c) => c.name.toLowerCase().includes(q));
+      filtered = filtered.filter((c) => c.name.toLowerCase().includes(q));
+    }
+    if (params?.status) {
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((c) => c.status.toLowerCase() === s);
     }
     return paginate(filtered, params);
   }
@@ -135,12 +139,16 @@ class CompaniesResource {
 
 class SubscriptionsResource {
   async list(
-    params?: ListParams & { companyId?: string }
+    params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Subscription>> {
     await randomDelay();
     let filtered = subscriptions;
     if (params?.companyId) {
-      filtered = subscriptions.filter((s) => s.companyId === params.companyId);
+      filtered = filtered.filter((s) => s.companyId === params.companyId);
+    }
+    if (params?.status) {
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((sub) => sub.status.toLowerCase() === s);
     }
     return paginate(filtered, params);
   }
@@ -245,7 +253,7 @@ class ProductsResource {
 
 class InvoicesResource {
   async list(
-    params?: ListParams & { companyId?: string; month?: string }
+    params?: ListParams & { companyId?: string; month?: string; status?: string }
   ): Promise<PaginatedResponse<Invoice>> {
     await randomDelay();
     let filtered = invoices;
@@ -254,6 +262,10 @@ class InvoicesResource {
     }
     if (params?.month) {
       filtered = filtered.filter((i) => i.invoiceDate.startsWith(params.month!));
+    }
+    if (params?.status) {
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((i) => i.status.toLowerCase() === s);
     }
     return paginate(filtered, params);
   }
@@ -265,23 +277,44 @@ class InvoicesResource {
     return invoice;
   }
 
+  // Overloaded to support both real API style: listItems(id, params)
+  // and legacy mock style: listItems({ invoiceId, ... })
   async listItems(
-    params?: ListParams & { invoiceId?: string; companyId?: string; month?: string }
+    idOrParams?: string | (ListParams & { invoiceId?: string; companyId?: string; month?: string }),
+    params?: ListParams & { companyId?: string; month?: string },
   ): Promise<PaginatedResponse<InvoiceItem>> {
     await randomDelay();
     let filtered = invoiceItems;
-    if (params?.invoiceId) {
-      filtered = filtered.filter((ii) => ii.invoiceId === params.invoiceId);
+    let paginationParams: ListParams | undefined;
+
+    if (typeof idOrParams === "string") {
+      // Real API style: listItems(invoiceId, { size, ... })
+      filtered = filtered.filter((ii) => ii.invoiceId === idOrParams);
+      if (params?.companyId) {
+        filtered = filtered.filter((ii) => ii.companyId === params.companyId);
+      }
+      if (params?.month) {
+        filtered = filtered.filter((ii) =>
+          ii.billingPeriodStart.startsWith(params.month!)
+        );
+      }
+      paginationParams = params;
+    } else if (idOrParams) {
+      // Legacy mock style: listItems({ invoiceId, companyId, month, ... })
+      if (idOrParams.invoiceId) {
+        filtered = filtered.filter((ii) => ii.invoiceId === idOrParams.invoiceId);
+      }
+      if (idOrParams.companyId) {
+        filtered = filtered.filter((ii) => ii.companyId === idOrParams.companyId);
+      }
+      if (idOrParams.month) {
+        filtered = filtered.filter((ii) =>
+          ii.billingPeriodStart.startsWith(idOrParams.month!)
+        );
+      }
+      paginationParams = idOrParams;
     }
-    if (params?.companyId) {
-      filtered = filtered.filter((ii) => ii.companyId === params.companyId);
-    }
-    if (params?.month) {
-      filtered = filtered.filter((ii) =>
-        ii.billingPeriodStart.startsWith(params.month!)
-      );
-    }
-    return paginate(filtered, params);
+    return paginate(filtered, paginationParams);
   }
 
   async listDraftItems(
@@ -297,12 +330,16 @@ class OrdersResource {
   private createdOrders: Order[] = [];
 
   async list(
-    params?: ListParams & { companyId?: string }
+    params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Order>> {
     await randomDelay();
     let filtered = [...orders, ...this.createdOrders];
     if (params?.companyId) {
       filtered = filtered.filter((o) => o.companyId === params.companyId);
+    }
+    if (params?.status) {
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((o) => o.status.toLowerCase() === s);
     }
     return paginate(filtered, params);
   }

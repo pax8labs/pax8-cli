@@ -18,6 +18,7 @@ const columns: Column[] = [
 
 export const companiesListCommand = new Command("list")
   .description("List all companies")
+  .option("--status <status>", "Filter by status (Active, Inactive, Deleted)")
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
@@ -26,6 +27,7 @@ export const companiesListCommand = new Command("list")
     `
 Examples:
   pax8 companies list
+  pax8 companies list --status Active
   pax8 companies list --page 1 --size 25
   pax8 companies list --json
   pax8 companies list --csv
@@ -44,6 +46,7 @@ Examples:
       const result = await ctx.api.companies.list({
         page: apiPage,
         size: pageSize,
+        status: allOpts.status,
       });
 
       spinner.stop();

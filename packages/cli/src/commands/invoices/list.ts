@@ -5,11 +5,13 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
+import { resolveCompanyId } from "../../lib/resolve-company.js";
 
 export const invoicesListCommand = new Command("list")
   .description("List invoices")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
-  .option("--company <id>", "Filter by company ID")
+  .option("--company <id|name>", "Filter by company ID or name")
+  .option("--status <status>", "Filter by status (Unpaid, Paid, Void, Overdue)")
   .option("--page <number>", "Page number (0-based)", "0")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
@@ -19,7 +21,8 @@ export const invoicesListCommand = new Command("list")
 Examples:
   pax8 invoices list
   pax8 invoices list --month 2026-03
-  pax8 invoices list --company a1b2c3d4-e5f6-7890-abcd-ef1234567890
+  pax8 invoices list --company "Summit Healthcare"
+  pax8 invoices list --status Unpaid
   pax8 invoices list --json`
   )
   .action(async (options, command) => {
@@ -29,9 +32,13 @@ Examples:
 
     try {
       spinner.start();
+      const companyId = options.company
+        ? await resolveCompanyId(ctx, options.company)
+        : undefined;
       const result = await ctx.api.invoices.list({
         month: options.month,
-        companyId: options.company,
+        companyId,
+        status: options.status,
         page: parseInt(options.page, 10),
         size: parseInt(options.size, 10),
       });

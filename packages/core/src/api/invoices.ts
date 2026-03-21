@@ -20,6 +20,7 @@ export class InvoicesApi {
     invoiceDate?: string;
     month?: string;
     companyId?: string;
+    status?: string;
   }): Promise<PaginatedResponse<Invoice>> {
     // Map 'month' to 'invoiceDate' for the API
     const apiParams: Record<string, string | number | undefined> = { ...params };

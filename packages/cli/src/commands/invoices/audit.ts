@@ -6,16 +6,19 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
 import { auditInvoices } from "@pax8/core";
+import { resolveCompanyId } from "../../lib/resolve-company.js";
 
 export const invoicesAuditCommand = new Command("audit")
   .description("Audit invoices against active subscriptions")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
+  .option("--company <id|name>", "Filter by company ID or name")
   .addHelpText(
     "after",
     `
 Examples:
   pax8 invoices audit
   pax8 invoices audit --month 2026-03
+  pax8 invoices audit --company "Summit Healthcare"
   pax8 invoices audit --json`
   )
   .action(async (options, command) => {
@@ -26,10 +29,14 @@ Examples:
     try {
       spinner.start();
 
+      const companyId = options.company
+        ? await resolveCompanyId(ctx, options.company)
+        : undefined;
+
       // Fetch invoices and active subscriptions in parallel
       const [invoicesResult, subsResult] = await Promise.all([
-        ctx.api.invoices.list({ month: options.month, size: 200 }),
-        ctx.api.subscriptions.list({ size: 500 }),
+        ctx.api.invoices.list({ month: options.month, companyId, size: 200 }),
+        ctx.api.subscriptions.list({ companyId, size: 500 }),
       ]);
 
       // Fetch items for each invoice in parallel
