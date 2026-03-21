@@ -62,7 +62,11 @@ Examples:
         output([{ id: sub.id, status: "Cancelled" }], { format: "json" });
       }
 
-      process.stdout.write("\n");
+      // Next steps
+      process.stderr.write(chalk.dim("\n  Try next:\n"));
+      process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company ${sub.companyId}`)}  ${chalk.dim("remaining subscriptions")}\n`);
+      process.stderr.write(`    ${chalk.cyan(`pax8 orders create --company ${sub.companyId} --product <id>`)}  ${chalk.dim("order a replacement")}\n`);
+      process.stderr.write("\n");
     } catch (error) {
       handleCommandError(error, undefined, "Failed to cancel subscription");
     }

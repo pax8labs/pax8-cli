@@ -57,7 +57,13 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(invoice.status)}\n`);
       process.stdout.write(`  ${chalk.dim("Total:".padEnd(18))}${formatCurrency(invoice.total)}\n`);
       process.stdout.write(`  ${chalk.dim("Balance:".padEnd(18))}${formatCurrency(invoice.balance)}\n`);
-      process.stdout.write("\n");
+      // Next steps
+      if (ctx.outputFormat === "table") {
+        process.stderr.write(chalk.dim("  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(`pax8 invoices items ${invoice.id}`)}  ${chalk.dim("view line items")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`pax8 companies more ${invoice.companyId}`)}  ${chalk.dim("view company")}\n`);
+        process.stderr.write("\n");
+      }
     } catch (error) {
       handleCommandError(error, spinner, "Failed to show invoice");
     }

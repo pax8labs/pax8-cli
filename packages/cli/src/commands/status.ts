@@ -145,7 +145,7 @@ Examples:
           urgency: 100,
           icon: chalk.green("+"),
           label: `${r.companyName} — ${r.title}${r.estimatedMrrUplift ? ` (+${formatCurrency(r.estimatedMrrUplift)}/mo)` : ""}`,
-          command: `pax8 recommendations list --company "${r.companyName}"`,
+          command: `pax8 recommendations list --company ${r.companyId}`,
         });
       }
 

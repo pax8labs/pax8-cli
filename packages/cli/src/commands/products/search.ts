@@ -57,9 +57,14 @@ Examples:
       output(matches, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stdout.write(
-          `\n  ${matches.length} products\n\n`
-        );
+        process.stderr.write(chalk.dim(`\n  ${matches.length} products\n`));
+        if (matches.length > 0) {
+          const first = matches[0] as Record<string, unknown>;
+          process.stderr.write(chalk.dim("\n  Try next:\n"));
+          process.stderr.write(`    ${chalk.cyan(`pax8 products show ${first.id}`)}  ${chalk.dim("view details & pricing")}\n`);
+          process.stderr.write(`    ${chalk.cyan(`pax8 orders create --product <id> --company <id> --quantity <n>`)}  ${chalk.dim("place an order")}\n`);
+        }
+        process.stderr.write("\n");
       }
     } catch (error) {
       handleCommandError(error, spinner, "Failed to search products");

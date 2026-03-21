@@ -84,7 +84,11 @@ Examples:
       if (order.lineItems && order.lineItems.length > 0) {
         process.stdout.write(`  ${chalk.dim("Items:".padEnd(18))}${order.lineItems.length}\n`);
       }
-      process.stdout.write("\n");
+      // Next steps
+      process.stderr.write(chalk.dim("  Try next:\n"));
+      process.stderr.write(`    ${chalk.cyan(`pax8 orders show ${order.id}`)}  ${chalk.dim("check order status")}\n`);
+      process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company ${allOpts.company}`)}  ${chalk.dim("view subscriptions")}\n`);
+      process.stderr.write("\n");
     } catch (error) {
       handleCommandError(error, undefined, "Failed to create order");
     }

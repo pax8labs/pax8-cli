@@ -117,6 +117,7 @@ export const recommendationsListCommand = new Command("list")
   .description("Analyze customer portfolios and recommend products")
   .option("--company <id|name>", "Filter to a specific company")
   .option("--priority <level>", "Filter by priority (high, medium, low)")
+  .option("--type <type>", "Filter by type (seat_gap or cross_sell)")
   .option("--limit <number>", "Max rows to show in table (default 10)")
   .addHelpText(
     "after",
@@ -176,6 +177,11 @@ Examples:
       // Filter by priority if specified
       if (options.priority) {
         recs = recs.filter((r) => r.priority === options.priority.toLowerCase());
+      }
+
+      // Filter by type if specified
+      if (options.type) {
+        recs = recs.filter((r) => r.type === options.type.toLowerCase());
       }
 
       if (ctx.outputFormat === "json") {

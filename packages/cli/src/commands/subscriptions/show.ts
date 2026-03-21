@@ -109,6 +109,15 @@ Examples:
           process.stdout.write(chalk.dim("  No change history.\n\n"));
         }
       }
+
+      // Next steps
+      if (ctx.outputFormat === "table") {
+        process.stderr.write(chalk.dim("  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions update ${id} --quantity <n>`)}  ${chalk.dim("change seats")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions show ${id} --history`)}  ${chalk.dim("view changes")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`pax8 companies more ${sub.companyId}`)}  ${chalk.dim("view company")}\n`);
+        process.stderr.write("\n");
+      }
     } catch (error) {
       handleCommandError(error, spinner, "Failed to show subscription");
     }
