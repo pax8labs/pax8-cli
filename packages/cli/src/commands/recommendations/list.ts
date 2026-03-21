@@ -72,10 +72,15 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
     return;
   }
 
-  // Parse order command for IDs
+  // If no order command, run a product search to help the user find one
   if (!rec.orderCommand) {
-    process.stderr.write(chalk.yellow("  No order command available for this recommendation.\n"));
-    process.stderr.write(chalk.dim("  Search for a product manually: ") + chalk.cyan(`pax8 products search "${productName}"`) + "\n\n");
+    const searchTerm = rec.suggestedProducts?.[0] ?? productName;
+    process.stderr.write(chalk.dim(`  Searching for "${searchTerm}"...\n\n`));
+    await new Promise<void>((resolve) => {
+      const { spawn } = require("child_process");
+      const child = spawn("pax8", ["products", "search", searchTerm], { stdio: "inherit", env: process.env });
+      child.on("close", () => resolve());
+    });
     return;
   }
 
@@ -249,23 +254,29 @@ Examples:
         process.stderr.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
       }
 
-      // Interactive: ask user to pick one
-      const displayActionable = displayRecs.filter((r) => r.orderCommand).length;
+      // Show next action for each rec
+      process.stderr.write(chalk.dim("\n  Next steps:\n"));
+      for (const rec of displayRecs) {
+        const idx = displayRecs.indexOf(rec) + 1;
+        if (rec.orderCommand) {
+          process.stderr.write(`  ${chalk.cyan.bold(`[${idx}]`)} ${rec.orderCommand}\n`);
+        } else {
+          const searchTerm = rec.suggestedProducts?.[0] ?? rec.title.replace(/^Add /, "");
+          process.stderr.write(`  ${chalk.cyan.bold(`[${idx}]`)} products search "${searchTerm}"  ${chalk.dim("→ find product → orders create")}\n`);
+        }
+      }
+
+      // Interactive prompt (non-REPL only)
       if (process.stdin.isTTY && process.env.PAX8_REPL !== "1") {
-        process.stderr.write("\n");
-        if (displayActionable > 0) {
-          const answer = await promptLine(
-            `  ${chalk.bold("Act on a recommendation?")} Enter # (1-${displayRecs.length}), or press Enter to skip: `
-          );
-          if (answer !== "") {
-            const idx = parseInt(answer, 10) - 1;
-            if (idx >= 0 && idx < displayRecs.length) {
-              await executeRecommendation(displayRecs[idx], ctx);
-            } else {
-              process.stderr.write(chalk.yellow(`  Invalid selection.\n\n`));
-            }
+        const answer = await promptLine(
+          `\n  ${chalk.bold("Enter #")} to act, or press Enter to skip: `
+        );
+        if (answer !== "") {
+          const idx = parseInt(answer, 10) - 1;
+          if (idx >= 0 && idx < displayRecs.length) {
+            await executeRecommendation(displayRecs[idx], ctx);
           } else {
-            process.stderr.write("\n");
+            process.stderr.write(chalk.yellow(`  Invalid selection.\n\n`));
           }
         } else {
           process.stderr.write("\n");
