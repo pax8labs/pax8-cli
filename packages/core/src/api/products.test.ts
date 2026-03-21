@@ -17,7 +17,7 @@ const PRODUCT_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
 const sampleProduct = {
   id: PRODUCT_ID,
-  name: "Microsoft 365 Business Premium",
+  name: "Microsoft 365 Business Premium [New Commerce Experience]",
   vendorName: "Microsoft",
   sku: "M365-BP",
 };
@@ -67,7 +67,7 @@ describe("ProductsApi", () => {
 
     expect(client.get).toHaveBeenCalledWith("/products", { page: 0, size: 50, vendorName: "Microsoft" });
     expect(result.content).toHaveLength(1);
-    expect(result.content[0].name).toBe("Microsoft 365 Business Premium");
+    expect(result.content[0].name).toBe("Microsoft 365 Business Premium [New Commerce Experience]");
   });
 
   it("get returns a single product", async () => {

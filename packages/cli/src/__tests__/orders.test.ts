@@ -80,7 +80,7 @@ describe("pax8 orders", () => {
       ]);
       // Non-TTY defaults to JSON
       const data = JSON.parse(result.stdout);
-      expect(data.lineItems[0].productName).toBe("SentinelOne Singularity");
+      expect(data.lineItems[0].productName).toBe("CrowdStrike MSSP Complete Defend");
       expect(data.lineItems[0].quantity).toBe(85);
     });
 

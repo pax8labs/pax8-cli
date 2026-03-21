@@ -16,9 +16,9 @@ describe("E2E: Product discovery — search and pricing", () => {
     const data = JSON.parse(result.stdout);
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBeGreaterThan(0);
-    // All results should be from Microsoft
+    // All results should contain "Microsoft" in the product name
     for (const product of data) {
-      expect(product.vendorName.toLowerCase()).toContain("microsoft");
+      expect(product.name.toLowerCase()).toContain("microsoft");
     }
   });
 

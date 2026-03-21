@@ -6,7 +6,7 @@ function makeSub(overrides: Record<string, unknown> = {}) {
     companyId: "company-1",
     companyName: "Acme Corp",
     productId: "prod-m365",
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 50,
     price: 22,
     status: "Active",
@@ -28,7 +28,7 @@ describe("getRecommendations", () => {
   it("does NOT flag backup if company already has it", () => {
     const subs = [
       makeSub(),
-      makeSub({ productId: "prod-backup", productName: "Acronis Cyber Backup", price: 8 }),
+      makeSub({ productId: "prod-backup", productName: "AvePoint Cloud Backup for Microsoft 365", price: 8 }),
     ];
     const report = getRecommendations(subs);
     const backup = report.recommendations.filter((r) => r.title.toLowerCase().includes("backup") && r.type === "cross_sell");
@@ -40,11 +40,11 @@ describe("getRecommendations", () => {
       makeSub({ companyId: "c1", companyName: "Needs Identity", quantity: 50, price: 22 }),
       // Another company HAS identity — provides peer product and price
       makeSub({ companyId: "c2", companyName: "Has Identity", quantity: 10, price: 22 }),
-      makeSub({ companyId: "c2", companyName: "Has Identity", productId: "prod-aad", productName: "Azure AD Premium P1", quantity: 10, price: 6 }),
+      makeSub({ companyId: "c2", companyName: "Has Identity", productId: "prod-aad", productName: "Microsoft Entra ID P1 [New Commerce Experience]", quantity: 10, price: 6 }),
     ];
     const report = getRecommendations(subs);
     const identityRec = report.recommendations.find(
-      (r) => r.companyId === "c1" && r.title.toLowerCase().includes("azure ad")
+      (r) => r.companyId === "c1" && r.title.toLowerCase().includes("entra id")
     );
     expect(identityRec).toBeDefined();
     expect(identityRec!.estimatedMrrUplift).toBeGreaterThan(0);
@@ -95,8 +95,8 @@ describe("getRecommendations", () => {
 
   it("detects seat gaps within same category", () => {
     const subs = [
-      makeSub({ productId: "p1", productName: "Microsoft 365 E3", quantity: 100, price: 36 }),
-      makeSub({ productId: "p2", productName: "Microsoft 365 E5", quantity: 20, price: 57 }),
+      makeSub({ productId: "p1", productName: "Microsoft 365 E3 [New Commerce Experience]", quantity: 100, price: 36 }),
+      makeSub({ productId: "p2", productName: "Microsoft 365 E5 [New Commerce Experience]", quantity: 20, price: 57 }),
     ];
     const report = getRecommendations(subs);
     const gap = report.recommendations.find((r) => r.type === "seat_gap");

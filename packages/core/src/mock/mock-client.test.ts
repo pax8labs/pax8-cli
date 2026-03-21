@@ -66,7 +66,7 @@ describe("MockPax8Client", () => {
         companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         size: 100,
       });
-      expect(result.content.length).toBe(5);
+      expect(result.content.length).toBe(3);
       expect(
         result.content.every(
           (s) => s.companyId === "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -159,7 +159,7 @@ describe("MockPax8Client", () => {
 
     it("get returns correct product", async () => {
       const product = await client.products.get("prod-m365-biz-prem-0001");
-      expect(product.name).toBe("Microsoft 365 Business Premium");
+      expect(product.name).toBe("Microsoft 365 Business Premium [New Commerce Experience]");
     });
 
     it("getPricing returns pricing for product", async () => {

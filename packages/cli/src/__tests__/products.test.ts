@@ -18,13 +18,13 @@ describe("pax8 products", () => {
         "products",
         "list",
         "--vendor",
-        "Acronis",
+        "AvePoint",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
       expect(data.length).toBeGreaterThan(0);
       for (const p of data) {
-        expect(p.vendorName.toLowerCase()).toContain("acronis");
+        expect(p.vendorName.toLowerCase()).toContain("avepoint");
       }
     });
 
@@ -50,7 +50,7 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("name", "Microsoft 365 Business Premium");
+      expect(data[0]).toHaveProperty("name", "Microsoft 365 Business Premium [New Commerce Experience]");
       expect(data[0]).toHaveProperty("vendorName", "Microsoft");
     });
 
@@ -65,6 +65,13 @@ describe("pax8 products", () => {
       const data = JSON.parse(result.stdout);
       expect(data[0]).toHaveProperty("pricingDetails");
       expect(data[0].pricingDetails.length).toBeGreaterThan(0);
+      // Verify pricing plan includes billingTerm, commitmentTerm, and price fields
+      const plan = data[0].pricingDetails[0];
+      expect(plan).toHaveProperty("billingTerm");
+      expect(plan).toHaveProperty("commitmentTerm");
+      expect(plan).toHaveProperty("suggestedRetailPrice");
+      // Demo mode uses partnerBuyPrice; real API uses rates[].partnerBuyRate
+      expect(plan.partnerBuyPrice ?? plan.rates?.[0]?.partnerBuyRate).toBeDefined();
     });
 
     it("shows provisioning with --provisioning flag", async () => {
@@ -114,7 +121,7 @@ describe("pax8 products", () => {
         "search",
         "backup",
         "--vendor",
-        "Acronis",
+        "AvePoint",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);

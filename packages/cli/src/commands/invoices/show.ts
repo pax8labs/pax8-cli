@@ -61,7 +61,7 @@ Examples:
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim("  Try next:\n"));
         process.stderr.write(`    ${chalk.cyan(`pax8 invoices items ${invoice.id}`)}  ${chalk.dim("view line items")}\n`);
-        process.stderr.write(`    ${chalk.cyan(`pax8 companies more ${invoice.companyId}`)}  ${chalk.dim("view company")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`pax8 companies more "${invoice.companyName}"`)}  ${chalk.dim("view company")}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {

@@ -66,7 +66,8 @@ Examples:
 
       // Next steps
       process.stderr.write(chalk.dim("\n  Try next:\n"));
-      process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company ${sub.companyId}`)}  ${chalk.dim("remaining subscriptions")}\n`);
+      const coName = sub.companyName ?? sub.companyId;
+      process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company "${coName}"`)}  ${chalk.dim("remaining subscriptions")}\n`);
       process.stderr.write(`    ${chalk.cyan(`pax8 orders create --company ${sub.companyId} --product <id>`)}  ${chalk.dim("order a replacement")}\n`);
       process.stderr.write("\n");
     } catch (error) {

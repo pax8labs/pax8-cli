@@ -172,7 +172,7 @@ describe("UpdateContactInputSchema", () => {
 describe("ProductSchema", () => {
   const valid = {
     id: uuid,
-    name: "Microsoft 365 Business Premium",
+    name: "Microsoft 365 Business Premium [New Commerce Experience]",
     vendorName: "Microsoft",
     vendor: "microsoft",
     sku: "M365-BP",
@@ -347,7 +347,7 @@ describe("SubscriptionSchema", () => {
     billingTerm: "Annual",
     commitmentTermEndDate: "2025-01-01T00:00:00Z",
     companyName: "Acme Corp",
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
   };
 
   it("validates a correct payload", () => {
@@ -486,7 +486,7 @@ describe("InvoiceItemSchema", () => {
     unitPrice: 22.5,
     subtotal: 1012.5,
     companyId: uuid,
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     companyName: "Acme Corp",
   };
 

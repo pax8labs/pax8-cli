@@ -25,7 +25,7 @@ describe("orders create", () => {
     ]);
     expect(result.stderr).toContain("Order Preview");
     expect(result.stderr).toContain("Summit Healthcare Partners");
-    expect(result.stderr).toContain("Microsoft 365 Business Premium");
+    expect(result.stderr).toContain("Microsoft 365 Business Premium [New Commerce Experience]");
   });
 
   it("in REPL mode without --yes shows confirm command", async () => {

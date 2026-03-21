@@ -60,7 +60,7 @@ describe("pax8 subscriptions show", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(data[0].id).toBe("sub-summit-m365bp-001");
-    expect(data[0].productName).toBe("Microsoft 365 Business Premium");
+    expect(data[0].productName).toBe("Microsoft 365 Business Premium [New Commerce Experience]");
   });
 
   it("shows subscription with --history", async () => {
