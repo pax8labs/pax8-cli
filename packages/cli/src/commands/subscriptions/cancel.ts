@@ -7,6 +7,7 @@ import { handleCommandError } from "../../lib/errors.js";
 import { confirmDestructive } from "../../lib/confirm.js";
 import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { replCmd } from "../../lib/confirm.js";
 
 export const subscriptionsCancelCommand = new Command("cancel")
   .description("Cancel a subscription")
@@ -67,8 +68,8 @@ Examples:
       // Next steps
       process.stderr.write(chalk.dim("\n  Try next:\n"));
       const coName = sub.companyName ?? sub.companyId;
-      process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company "${coName}"`)}  ${chalk.dim("remaining subscriptions")}\n`);
-      process.stderr.write(`    ${chalk.cyan(`pax8 orders create --company ${sub.companyId} --product <id>`)}  ${chalk.dim("order a replacement")}\n`);
+      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${coName}"`))}  ${chalk.dim("remaining subscriptions")}\n`);
+      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders create --company ${sub.companyId} --product <id>`))}  ${chalk.dim("order a replacement")}\n`);
       process.stderr.write("\n");
     } catch (error) {
       handleCommandError(error, undefined, "Failed to cancel subscription");

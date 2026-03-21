@@ -3,7 +3,7 @@ import chalk from "chalk";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError, extractErrorDetail } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
-import { confirm, isReplMode } from "../../lib/confirm.js";
+import { confirm, isReplMode, replCmd } from "../../lib/confirm.js";
 import { formatStatus, formatDate, formatCurrency } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { ApiError } from "@pax8/core";
@@ -160,8 +160,8 @@ Examples:
       }
       // Next steps
       process.stderr.write(chalk.dim("  Try next:\n"));
-      process.stderr.write(`    ${chalk.cyan(`pax8 orders show ${order.id}`)}  ${chalk.dim("check order status")}\n`);
-      process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company "${companyName}"`)}  ${chalk.dim("view subscriptions")}\n`);
+      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders show ${order.id}`))}  ${chalk.dim("check order status")}\n`);
+      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${companyName}"`))}  ${chalk.dim("view subscriptions")}\n`);
       process.stderr.write("\n");
     } catch (error) {
       // Provide order-specific error messages with actionable guidance

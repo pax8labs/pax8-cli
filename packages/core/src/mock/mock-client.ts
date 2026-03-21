@@ -95,7 +95,9 @@ class CompaniesResource {
 
   async get(id: string): Promise<Company> {
     await randomDelay();
-    const company = companies.find((c) => c.id === id);
+    const company = companies.find((c) => c.id === id)
+      ?? companies.find((c) => c.name.toLowerCase() === id.toLowerCase())
+      ?? companies.find((c) => c.id.startsWith(id) || c.name.toLowerCase().includes(id.toLowerCase()));
     if (!company) throw notFound("Company", id);
     return company;
   }
@@ -208,7 +210,9 @@ class ProductsResource {
 
   async get(id: string): Promise<Product> {
     await randomDelay();
-    const product = products.find((p) => p.id === id);
+    const product = products.find((p) => p.id === id)
+      ?? products.find((p) => p.name.toLowerCase() === id.toLowerCase())
+      ?? products.find((p) => p.id.startsWith(id) || p.name.toLowerCase().includes(id.toLowerCase()));
     if (!product) throw notFound("Product", id);
     return product;
   }
@@ -290,20 +294,23 @@ class InvoicesResource {
 }
 
 class OrdersResource {
+  private createdOrders: Order[] = [];
+
   async list(
     params?: ListParams & { companyId?: string }
   ): Promise<PaginatedResponse<Order>> {
     await randomDelay();
-    let filtered = orders;
+    let filtered = [...orders, ...this.createdOrders];
     if (params?.companyId) {
-      filtered = orders.filter((o) => o.companyId === params.companyId);
+      filtered = filtered.filter((o) => o.companyId === params.companyId);
     }
     return paginate(filtered, params);
   }
 
   async get(id: string): Promise<Order> {
     await randomDelay();
-    const order = orders.find((o) => o.id === id);
+    const allOrders = [...orders, ...this.createdOrders];
+    const order = allOrders.find((o) => o.id === id);
     if (!order) throw notFound("Order", id);
     return order;
   }
@@ -327,6 +334,7 @@ class OrdersResource {
       })),
       status: "Processing",
     };
+    this.createdOrders.push(newOrder);
     return newOrder;
   }
 }

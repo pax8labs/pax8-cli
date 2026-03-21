@@ -8,6 +8,7 @@ import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscripti
 import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
 import type { Subscription } from "@pax8/core";
+import { replCmd } from "../lib/confirm.js";
 
 export const statusCommand = new Command("status")
   .description("Quick snapshot of your Pax8 business")
@@ -195,7 +196,7 @@ Examples:
           actions.push({
             urgency: days,
             line: `${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${r.companyName} — ${r.productName} renews in ${tag}`,
-            cmd: `pax8 subscriptions renewals`,
+            cmd: replCmd(`pax8 subscriptions renewals`),
           });
         }
 
@@ -204,7 +205,7 @@ Examples:
           actions.push({
             urgency: 100,
             line: `${chalk.green("+")} ${r.companyName} — ${r.suggestedProducts?.[0] ?? r.title}${upliftStr}`,
-            cmd: `pax8 recommendations list --company "${r.companyName}"`,
+            cmd: replCmd(`pax8 recommendations list --company "${r.companyName}"`),
           });
         }
 
@@ -217,15 +218,6 @@ Examples:
             out.write(`  ${a.line}\n`);
             out.write(chalk.dim(`    → ${a.cmd}\n`));
           }
-        }
-
-        // Hint at more detail
-        const hints: string[] = [];
-        if (topCustomers.length > 0) hints.push("--customers");
-        if (renewals.items.length > 0) hints.push("--renewals");
-        if (highRecs.length > 0) hints.push("--growth");
-        if (hints.length > 0) {
-          out.write(chalk.dim(`\n  Dig deeper: pax8 status ${hints.join(" ")}  or  pax8 status --all\n`));
         }
 
         if (alerts.length === 0 && top.length === 0) {
@@ -262,7 +254,7 @@ Examples:
         if (renewals.items.length > 10) {
           out.write(chalk.dim(`\n  … and ${renewals.items.length - 10} more\n`));
         }
-        out.write(chalk.dim(`\n    → pax8 subscriptions renewals\n`));
+        out.write(chalk.dim(`\n    → ${replCmd("pax8 subscriptions renewals")}\n`));
       }
 
       // ── Growth (--growth / --all) ────────────────────────────────
@@ -277,7 +269,7 @@ Examples:
         if (highRecs.length > 10) {
           out.write(chalk.dim(`\n  … and ${highRecs.length - 10} more\n`));
         }
-        out.write(chalk.dim(`\n    → pax8 recommendations list\n`));
+        out.write(chalk.dim(`\n    → ${replCmd("pax8 recommendations list")}\n`));
       }
 
       // ── Trials (shown in --all or if there are any and renewals/growth are shown) ──
@@ -290,7 +282,7 @@ Examples:
         if (trials.length > 5) {
           out.write(chalk.dim(`\n  … and ${trials.length - 5} more\n`));
         }
-        out.write(chalk.dim(`\n    → pax8 subscriptions list --status Trial\n`));
+        out.write(chalk.dim(`\n    → ${replCmd("pax8 subscriptions list --status Trial")}\n`));
       }
 
       out.write("\n");

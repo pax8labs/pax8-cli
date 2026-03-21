@@ -5,6 +5,7 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
+import { replCmd } from "../../lib/confirm.js";
 
 export const invoicesShowCommand = new Command("show")
   .description("Show invoice details")
@@ -60,8 +61,8 @@ Examples:
       // Next steps
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim("  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(`pax8 invoices items ${invoice.id}`)}  ${chalk.dim("view line items")}\n`);
-        process.stderr.write(`    ${chalk.cyan(`pax8 companies more "${invoice.companyName}"`)}  ${chalk.dim("view company")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 invoices items ${invoice.id}`))}  ${chalk.dim("view line items")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 companies more "${invoice.companyName}"`))}  ${chalk.dim("view company")}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {

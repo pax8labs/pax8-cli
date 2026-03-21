@@ -11,6 +11,7 @@ import {
   formatQuantity,
 } from "../../lib/formatters.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { replCmd } from "../../lib/confirm.js";
 
 const historyColumns: Column[] = [
   { key: "date", header: "Date", format: (v) => formatDate(String(v)) },
@@ -113,9 +114,9 @@ Examples:
       // Next steps
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim("  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions update ${id} --quantity <n>`)}  ${chalk.dim("change seats")}\n`);
-        process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions show ${id} --history`)}  ${chalk.dim("view changes")}\n`);
-        process.stderr.write(`    ${chalk.cyan(`pax8 companies more "${sub.companyName ?? sub.companyId}"`)}  ${chalk.dim("view company")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions update ${id} --quantity <n>`))}  ${chalk.dim("change seats")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions show ${id} --history`))}  ${chalk.dim("view changes")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 companies more "${sub.companyName ?? sub.companyId}"`))}  ${chalk.dim("view company")}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {

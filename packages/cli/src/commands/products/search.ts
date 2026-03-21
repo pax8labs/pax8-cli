@@ -4,6 +4,7 @@ import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
+import { replCmd } from "../../lib/confirm.js";
 
 export const productsSearchCommand = new Command("search")
   .description("Search products by name")
@@ -61,8 +62,8 @@ Examples:
         if (matches.length > 0) {
           const first = matches[0] as Record<string, unknown>;
           process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(`    ${chalk.cyan(`pax8 products show ${first.id}`)}  ${chalk.dim("view details & pricing")}\n`);
-          process.stderr.write(`    ${chalk.cyan(`pax8 orders create --product <id> --company <id> --quantity <n>`)}  ${chalk.dim("place an order")}\n`);
+          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 products show ${first.id}`))}  ${chalk.dim("view details & pricing")}\n`);
+          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders create --product <id> --company <id> --quantity <n>`))}  ${chalk.dim("place an order")}\n`);
         }
         process.stderr.write("\n");
       }

@@ -9,6 +9,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import { replCmd } from "../../lib/confirm.js";
 
 const columns: Column[] = [
   {
@@ -242,7 +243,9 @@ Examples:
       }
 
       // Number the recs for interactive selection, cap table output
-      const limit = parseInt(options.limit, 10) || 10;
+      // If total recs fit comfortably (≤15), show them all regardless of limit
+      const requestedLimit = parseInt(options.limit, 10) || 10;
+      const limit = recs.length <= 15 ? recs.length : requestedLimit;
       const displayRecs = recs.slice(0, limit);
       const numbered = displayRecs.map((r, i) => ({ ...r, _num: String(i + 1) }));
       output(numbered, { format: "table", columns });
@@ -281,16 +284,17 @@ Examples:
         process.stderr.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
       }
 
-      // Show actionable commands — copy-paste ready
+      // Show actionable commands — copy-paste ready (cap at 5)
+      const quickActionCount = Math.min(displayRecs.length, 5);
       process.stderr.write(chalk.dim("\n  Quick actions:\n\n"));
-      for (let i = 0; i < displayRecs.length; i++) {
+      for (let i = 0; i < quickActionCount; i++) {
         const rec = displayRecs[i];
         const product = rec.suggestedProducts?.[0] ?? "product";
         const seats = rec.targetSeats ?? "?";
         const uplift = rec.estimatedMrrUplift ? chalk.green(` +${formatCurrency(rec.estimatedMrrUplift)}/mo`) : "";
         process.stderr.write(`  ${chalk.cyan.bold(`${i + 1}.`)} ${product} for ${rec.companyName} (${seats} seats)${uplift}\n`);
         if (rec.orderCommand) {
-          process.stderr.write(chalk.dim(`     ${rec.orderCommand}\n\n`));
+          process.stderr.write(chalk.dim(`     ${replCmd(rec.orderCommand)}\n\n`));
         }
       }
 
