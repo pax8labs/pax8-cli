@@ -29,6 +29,7 @@ import {
   type WebhookLog,
 } from "./demo-data.js";
 import { NotFoundError } from "../api/errors.js";
+import type { CreateOrderInput } from "../api/types.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -307,16 +308,23 @@ class OrdersResource {
     return order;
   }
 
-  async create(data: Partial<Order>): Promise<Order> {
+  async create(data: CreateOrderInput): Promise<Order> {
     await randomDelay();
+    // Resolve company name from demo data
+    const company = companies.find((c) => c.id === data.companyId);
     const newOrder: Order = {
       id: `ord-demo-${Date.now()}`,
-      companyId: data.companyId ?? "",
-      companyName: data.companyName ?? "Unknown",
+      companyId: data.companyId,
+      companyName: company?.name ?? "Unknown",
       orderedBy: "Demo User",
       orderedByEmail: "demo@example.com",
       createdDate: new Date().toISOString().split("T")[0],
-      lineItems: data.lineItems ?? [],
+      lineItems: data.lineItems.map((li) => ({
+        productId: li.productId,
+        productName: products.find((p) => p.id === li.productId)?.name ?? "Unknown",
+        quantity: li.quantity,
+        billingTerm: (li.billingTerm ?? "Monthly") as "Monthly" | "Annual",
+      })),
       status: "Processing",
     };
     return newOrder;

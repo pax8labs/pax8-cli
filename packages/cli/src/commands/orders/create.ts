@@ -1,29 +1,13 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { createSpinner } from "../../lib/spinner.js";
-import { handleCommandError, CliError } from "../../lib/errors.js";
+import { handleCommandError, CliError, extractErrorDetail } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm, isReplMode } from "../../lib/confirm.js";
 import { formatStatus, formatDate, formatCurrency } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { ApiError } from "@pax8/core";
-import type { CreateOrderInput } from "@pax8/core";
-
-/**
- * Extract a human-readable detail string from an API error response body.
- */
-function extractApiDetail(body: unknown): string | undefined {
-  if (!body || typeof body !== "object") return undefined;
-  const b = body as Record<string, unknown>;
-  for (const key of ["message", "error", "detail", "error_description"]) {
-    if (typeof b[key] === "string" && b[key]) return b[key] as string;
-  }
-  if (typeof b.error === "object" && b.error !== null) {
-    const inner = b.error as Record<string, unknown>;
-    if (typeof inner.message === "string") return inner.message;
-  }
-  return undefined;
-}
+import type { CreateOrderInput, OrderLineItemInput, BillingTerm, CommitmentTerm } from "@pax8/core";
 
 export const ordersCreateCommand = new Command("create")
   .description("Create a new order")
@@ -60,16 +44,17 @@ Examples:
       const warnings: string[] = [];
 
       try {
-        const [company, product, pricing] = await Promise.all([
+        const [companyResult, productResult, pricing] = await Promise.all([
           ctx.api.companies.get(allOpts.company).catch(() => null),
           ctx.api.products.get(allOpts.product).catch(() => { productNotFound = true; return null; }),
           ctx.api.products.getPricing(allOpts.product).catch(() => null),
         ]);
-        if (company?.name) companyName = company.name;
-        if (product?.name) productName = product.name;
-        if ((product as any)?.requiresCommitment) requiresCommitment = true;
+        if (companyResult?.name) companyName = companyResult.name;
+        if (productResult?.name) productName = productResult.name;
 
         if (pricing && pricing.length > 0) {
+          // Infer commitment requirement: if every pricing plan has a commitmentTerm, the product requires one
+          if (pricing.every((p) => p.commitmentTerm)) requiresCommitment = true;
           // Find matching plan — prefer billing term + commitment
           let match = pricing.find((p) => p.billingTerm === allOpts.billingTerm && p.commitmentTerm);
           if (!match) match = pricing.find((p) => p.billingTerm === allOpts.billingTerm);
@@ -84,7 +69,9 @@ Examples:
             warnings.push(`No ${allOpts.billingTerm} pricing found. Available: ${available}`);
           }
         }
-      } catch { /* best effort */ }
+      } catch (err) {
+      if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] order pre-check failed: ${err}\n`);
+    }
 
       // Pre-flight checks
       if (productNotFound) warnings.push("Product not found in catalog — may not be orderable");
@@ -143,16 +130,16 @@ Examples:
 
       // Only pass fields defined in OrderLineItemInput — do not include
       // display-only fields like productName which are not part of the API input schema.
-      const lineItem: Record<string, unknown> = {
+      const lineItem: OrderLineItemInput = {
         productId: allOpts.product,
         quantity,
-        billingTerm: allOpts.billingTerm,
+        billingTerm: allOpts.billingTerm as BillingTerm,
+        ...(commitmentTerm ? { commitmentTerm: commitmentTerm as CommitmentTerm } : {}),
       };
-      if (commitmentTerm) lineItem.commitmentTerm = commitmentTerm;
 
       const orderInput: CreateOrderInput = {
         companyId: allOpts.company,
-        lineItems: [lineItem as any],
+        lineItems: [lineItem],
       };
       const order = await ctx.api.orders.create(orderInput);
       await invalidateCacheAfterWrite();
@@ -174,33 +161,33 @@ Examples:
       // Next steps
       process.stderr.write(chalk.dim("  Try next:\n"));
       process.stderr.write(`    ${chalk.cyan(`pax8 orders show ${order.id}`)}  ${chalk.dim("check order status")}\n`);
-      process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company ${allOpts.company}`)}  ${chalk.dim("view subscriptions")}\n`);
+      process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company "${companyName}"`)}  ${chalk.dim("view subscriptions")}\n`);
       process.stderr.write("\n");
     } catch (error) {
       // Provide order-specific error messages with actionable guidance
       if (error instanceof ApiError) {
-        const product = productName || allOpts.product;
-        const company = companyName || allOpts.company;
+        const displayProduct = productName || allOpts.product;
+        const displayCompany = companyName || allOpts.company;
 
         if (error.statusCode === 404) {
           // Extract a short searchable name from the full product name
-          const shortName = product.replace(/\s*\[.*?\]\s*/g, "").replace(/\s*\(.*?\)\s*/g, "").trim().split(" ").slice(0, 4).join(" ");
+          const shortName = displayProduct.replace(/\s*\[.*?\]\s*/g, "").replace(/\s*\(.*?\)\s*/g, "").trim().split(" ").slice(0, 4).join(" ");
           handleCommandError(
             new CliError(
-              `"${product}" can't be ordered for ${company}`,
+              `"${displayProduct}" can't be ordered for ${displayCompany}`,
               [
                 "This product may not be available in your region, or it may be restricted (e.g., non-profit only)",
               ],
               [
                 `Search for alternatives: pax8 products search "${shortName}"`,
-                `View ${company}'s current subscriptions: pax8 companies more ${allOpts.company}`,
+                `View ${displayCompany}'s current subscriptions: pax8 companies more "${displayCompany}"`,
               ],
             ),
           );
         }
 
         if (error.statusCode === 422) {
-          const detail = extractApiDetail(error.responseBody);
+          const detail = extractErrorDetail(error.responseBody);
           const causes: string[] = [];
           if (detail) causes.push(detail);
 
@@ -217,7 +204,7 @@ Examples:
 
           handleCommandError(
             new CliError(
-              `Can't order "${product}" for ${company}`,
+              `Can't order "${displayProduct}" for ${displayCompany}`,
               causes,
               steps,
             ),
@@ -225,7 +212,7 @@ Examples:
         }
 
         if (error.statusCode === 400) {
-          const detail = extractApiDetail(error.responseBody);
+          const detail = extractErrorDetail(error.responseBody);
           const causes: string[] = [];
           const steps: string[] = [];
 
@@ -241,7 +228,7 @@ Examples:
           steps.push(`View product details: pax8 products show ${allOpts.product}`);
 
           handleCommandError(
-            new CliError(`Can't order "${product}" for ${company}`, causes, steps),
+            new CliError(`Can't order "${displayProduct}" for ${displayCompany}`, causes, steps),
           );
         }
       }

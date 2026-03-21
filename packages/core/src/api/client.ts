@@ -44,7 +44,9 @@ export class Pax8Client {
         return cached;
       }
       const result = await this.request<T>("GET", path, undefined, params);
-      await this.cache.set(cacheKey, result, this.cacheTtlMs).catch(() => {});
+      await this.cache.set(cacheKey, result, this.cacheTtlMs).catch((err) => {
+        if (this.debug) process.stderr.write(`[pax8] cache write failed for ${path}: ${err}\n`);
+      });
       return result;
     }
     return this.request<T>("GET", path, undefined, params);

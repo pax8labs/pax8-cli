@@ -149,6 +149,9 @@ function spawnCacheWarmer(): void {
     ["companies", "list", "--json", "--size", "200", "--quiet"],
     { detached: true, stdio: "ignore", env },
   );
+  child.on("error", (err) => {
+    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (companies) failed: ${err}\n`);
+  });
   child.unref();
 
   const child2 = spawn(
@@ -156,6 +159,9 @@ function spawnCacheWarmer(): void {
     ["subscriptions", "list", "--json", "--size", "1000", "--quiet"],
     { detached: true, stdio: "ignore", env },
   );
+  child2.on("error", (err) => {
+    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (subscriptions) failed: ${err}\n`);
+  });
   child2.unref();
 
   const child3 = spawn(
@@ -163,5 +169,8 @@ function spawnCacheWarmer(): void {
     ["products", "list", "--json", "--size", "500", "--quiet"],
     { detached: true, stdio: "ignore", env },
   );
+  child3.on("error", (err) => {
+    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (products) failed: ${err}\n`);
+  });
   child3.unref();
 }

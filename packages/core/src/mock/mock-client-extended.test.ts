@@ -213,11 +213,17 @@ describe("MockPax8Client — extended coverage", () => {
     it("creates an order with provided data", async () => {
       const result = await client.orders.create({
         companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        companyName: "Summit Healthcare Partners",
+        lineItems: [{
+          productId: "11111111-1111-1111-1111-111111111111",
+          quantity: 5,
+          billingTerm: "Monthly",
+        }],
       });
       expect(result.id).toContain("ord-demo-");
       expect(result.companyName).toBe("Summit Healthcare Partners");
       expect(result.status).toBe("Processing");
+      expect(result.lineItems).toHaveLength(1);
+      expect(result.lineItems[0].quantity).toBe(5);
     });
   });
 

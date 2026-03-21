@@ -1,13 +1,14 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { createInterface } from "readline";
+import { spawn } from "child_process";
 import { getRecommendations, type Recommendation } from "@pax8/core";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName } from "../../lib/formatters.js";
-import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 
 const columns: Column[] = [
   {
@@ -77,7 +78,6 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
     const searchTerm = rec.suggestedProducts?.[0] ?? productName;
     process.stderr.write(chalk.dim(`  Searching for "${searchTerm}"...\n\n`));
     await new Promise<void>((resolve) => {
-      const { spawn } = require("child_process");
       const child = spawn("pax8", ["products", "search", searchTerm], { stdio: "inherit", env: process.env });
       child.on("close", () => resolve());
     });
@@ -157,29 +157,24 @@ Examples:
 
       // Build company name lookup
       const companyNames = new Map<string, string>();
-      for (const c of companiesResult.content as Array<{ id: string; name: string }>) {
+      for (const c of companiesResult.content) {
         companyNames.set(c.id, c.name);
       }
 
       // Enrich subscriptions with product names (individual lookups, cached)
-      const subs = subsResult.content as Record<string, unknown>[];
+      const subs = subsResult.content;
       await enrichProductNames(ctx, subs);
 
       // Also enrich company names on subscriptions
-      for (const sub of subs) {
-        if (!sub.companyName || String(sub.companyName) === sub.companyId) {
-          const name = companyNames.get(String(sub.companyId));
-          if (name) sub.companyName = name;
-        }
-      }
+      enrichCompanyNames(companyNames, subs);
 
       spinner.stop();
 
       // Fetch products for order command matching
       const productsResult = await ctx.api.products.list({ size: 200 });
       const report = getRecommendations(
-        subs as any,
-        productsResult.content as any,
+        subs,
+        productsResult.content,
       );
 
       let recs = report.recommendations;

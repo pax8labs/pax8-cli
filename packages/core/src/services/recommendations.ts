@@ -78,7 +78,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     butMissing: "backup",
     reason: "No backup solution — SaaS data is not backed up by default. A single accidental deletion or ransomware event could cause permanent data loss.",
     priority: "high",
-    suggestedProducts: ["Acronis Cyber Backup", "Datto SaaS Protection", "Veeam Backup"],
+    suggestedProducts: ["AvePoint Cloud Backup for Microsoft 365", "Datto SaaS Protection", "Veeam Backup"],
     genericTitle: "Consider adding a backup solution",
   },
   {
@@ -86,7 +86,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     butMissing: "endpoint_protection",
     reason: "No endpoint protection — users with productivity suites are high-value targets for phishing and malware.",
     priority: "high",
-    suggestedProducts: ["Microsoft Defender for Business", "SentinelOne Singularity"],
+    suggestedProducts: ["Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]", "CrowdStrike MSSP Complete Defend"],
     genericTitle: "Consider adding endpoint protection",
   },
   {
@@ -94,7 +94,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     butMissing: "identity",
     reason: "No identity management — without MFA and conditional access, compromised credentials are the #1 attack vector.",
     priority: "high",
-    suggestedProducts: ["Azure AD Premium P1", "JumpCloud"],
+    suggestedProducts: ["Microsoft Entra ID P1 [New Commerce Experience]", "JumpCloud"],
     genericTitle: "Consider adding identity management",
   },
   {
@@ -102,7 +102,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     butMissing: "security",
     reason: "Email without advanced security — email is the primary attack surface. Native filtering misses sophisticated threats.",
     priority: "medium",
-    suggestedProducts: ["Microsoft Defender for Business", "Mimecast"],
+    suggestedProducts: ["Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]", "Mimecast"],
     genericTitle: "Consider adding email security",
   },
   {
@@ -110,7 +110,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     butMissing: "backup",
     reason: "Cloud infrastructure without backup — cloud provider SLAs don't cover data loss from user error or ransomware.",
     priority: "medium",
-    suggestedProducts: ["Acronis Cyber Backup", "Veeam Backup"],
+    suggestedProducts: ["AvePoint Cloud Backup for Microsoft 365", "Veeam Backup"],
     genericTitle: "Consider adding a backup solution",
   },
   {
@@ -118,7 +118,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     butMissing: "security",
     reason: "Cloud infrastructure without security — workloads need threat detection and compliance monitoring.",
     priority: "medium",
-    suggestedProducts: ["SentinelOne Singularity", "CrowdStrike Falcon"],
+    suggestedProducts: ["CrowdStrike MSSP Complete Defend", "SentinelOne Singularity Complete"],
     genericTitle: "Consider adding a security solution",
   },
   {
@@ -126,7 +126,7 @@ const CROSS_SELL_RULES: CrossSellRule[] = [
     butMissing: "backup",
     reason: "Security without backup — even with endpoint protection, ransomware recovery requires clean backups.",
     priority: "low",
-    suggestedProducts: ["Acronis Cyber Backup", "Datto SaaS Protection"],
+    suggestedProducts: ["AvePoint Cloud Backup for Microsoft 365", "Datto SaaS Protection"],
     genericTitle: "Consider adding a backup solution",
   },
 ];

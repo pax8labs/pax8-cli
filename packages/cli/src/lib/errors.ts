@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { ZodError } from "zod";
+import { ZodError, ZodIssueCode } from "zod";
 import type { Ora } from "ora";
 import { ApiError } from "@pax8/core";
 
@@ -22,12 +22,24 @@ function formatZodError(error: ZodError): string {
   return error.issues
     .map((i) => {
       const path = i.path.length > 0 ? `"${i.path.join(".")}"` : "response";
-      return `${path}: expected ${(i as { expected?: string }).expected ?? i.code}, got ${(i as { received?: string }).received ?? "something else"}`;
+      if (i.code === ZodIssueCode.invalid_type) {
+        return `${path}: expected ${i.expected}, got ${i.received}`;
+      }
+      if (i.code === ZodIssueCode.invalid_literal) {
+        return `${path}: expected ${String(i.expected)}, got ${String(i.received)}`;
+      }
+      if (i.code === ZodIssueCode.invalid_enum_value) {
+        return `${path}: expected one of ${i.options.join(", ")}, got ${i.received}`;
+      }
+      if (i.code === ZodIssueCode.invalid_union_discriminator) {
+        return `${path}: expected one of ${i.options.join(", ")}`;
+      }
+      return `${path}: ${i.code} — ${i.message}`;
     })
     .join("; ");
 }
 
-function extractErrorDetail(body: unknown): string | undefined {
+export function extractErrorDetail(body: unknown): string | undefined {
   if (!body || typeof body !== "object") return undefined;
   const b = body as Record<string, unknown>;
   // Pax8 API errors may use "message", "error", "detail", or "error_description"
