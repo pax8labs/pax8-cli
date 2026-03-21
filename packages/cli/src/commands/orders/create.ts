@@ -52,32 +52,45 @@ Examples:
       const ctx = await buildContext(allOpts);
       const quantity = parseInt(allOpts.quantity, 10);
 
-      // Resolve names and pricing for a human-friendly preview
+      // Resolve names, pricing, and pre-check orderability
       let commitmentTerm = allOpts.commitmentTerm;
       let unitPrice: number | null = null;
+      let requiresCommitment = false;
+      let productNotFound = false;
+      const warnings: string[] = [];
+
       try {
         const [company, product, pricing] = await Promise.all([
           ctx.api.companies.get(allOpts.company).catch(() => null),
-          ctx.api.products.get(allOpts.product).catch(() => null),
+          ctx.api.products.get(allOpts.product).catch(() => { productNotFound = true; return null; }),
           ctx.api.products.getPricing(allOpts.product).catch(() => null),
         ]);
         if (company?.name) companyName = company.name;
         if (product?.name) productName = product.name;
+        if ((product as any)?.requiresCommitment) requiresCommitment = true;
 
-        // Find matching pricing plan — prefer plans WITH a commitment term
         if (pricing && pricing.length > 0) {
-          // First try: match billing term + has commitment (most orderable)
+          // Find matching plan — prefer billing term + commitment
           let match = pricing.find((p) => p.billingTerm === allOpts.billingTerm && p.commitmentTerm);
-          // Fallback: match billing term only
           if (!match) match = pricing.find((p) => p.billingTerm === allOpts.billingTerm);
           if (match) {
             if (!commitmentTerm && match.commitmentTerm) commitmentTerm = match.commitmentTerm;
             if (match.rates?.[0]?.suggestedRetailPrice) {
               unitPrice = match.rates[0].suggestedRetailPrice;
             }
+          } else {
+            // No plan matches the billing term
+            const available = [...new Set(pricing.map((p) => p.billingTerm))].join(", ");
+            warnings.push(`No ${allOpts.billingTerm} pricing found. Available: ${available}`);
           }
         }
       } catch { /* best effort */ }
+
+      // Pre-flight checks
+      if (productNotFound) warnings.push("Product not found in catalog — may not be orderable");
+      if (requiresCommitment && !commitmentTerm) {
+        warnings.push("Product requires a commitment term — order may fail without one");
+      }
 
       const totalPrice = unitPrice ? unitPrice * quantity : null;
       const mrr = totalPrice
@@ -101,6 +114,15 @@ Examples:
       if (mrr) {
         process.stderr.write(`  ${chalk.dim("MRR Impact:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(mrr) + "/mo")}\n`);
       }
+
+      // Show warnings
+      if (warnings.length > 0) {
+        process.stderr.write("\n");
+        for (const w of warnings) {
+          process.stderr.write(chalk.yellow(`  ⚠ ${w}\n`));
+        }
+      }
+
       process.stderr.write("\n");
 
       if (isReplMode() && !allOpts.yes) {
@@ -182,20 +204,25 @@ Examples:
 
         if (error.statusCode === 422) {
           const detail = extractApiDetail(error.responseBody);
-          const causes = [
-            "Order validation failed -- check quantity, billing term, or provisioning requirements",
-          ];
-          if (detail) causes.push(`API detail: ${detail}`);
+          const causes: string[] = [];
+          if (detail) causes.push(detail);
+
+          const steps: string[] = [];
+          if (detail?.includes("requires commitment")) {
+            causes.push("This product requires a Microsoft tenant commitment that may need to be set up in the Pax8 portal");
+            steps.push("Try adding --commitment-term 1-Year or --commitment-term Monthly");
+            steps.push("If that fails, provision the subscription through the Pax8 portal instead");
+          } else {
+            causes.push("Order validation failed — check quantity, billing term, or provisioning requirements");
+            steps.push("Ensure the quantity meets minimum/maximum seat requirements");
+          }
+          steps.push(`View product details: pax8 products show ${allOpts.product}`);
 
           handleCommandError(
             new CliError(
-              `Failed to create order for "${product}" under "${company}"`,
+              `Can't order "${product}" for ${company}`,
               causes,
-              [
-                `Check available billing terms: pax8 products pricing ${allOpts.product}`,
-                "Ensure the quantity meets minimum/maximum seat requirements",
-                "Verify any required provisioning details for this product",
-              ],
+              steps,
             ),
           );
         }
