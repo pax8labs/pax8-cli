@@ -282,10 +282,20 @@ export function getRecommendations(
         // Find a matching product ID for the order command
         let matchedProductId: string | null = null;
         if (products && suggestedName) {
-          const match = products.find((p) =>
-            p.name.toLowerCase().includes(suggestedName.toLowerCase()) ||
-            suggestedName.toLowerCase().includes(p.name.toLowerCase())
+          const sugLower = suggestedName.toLowerCase();
+          // Try exact substring match first
+          let match = products.find((p) =>
+            p.name.toLowerCase().includes(sugLower) ||
+            sugLower.includes(p.name.toLowerCase())
           );
+          // Fall back to keyword matching (all significant words must appear)
+          if (!match) {
+            const keywords = sugLower.split(/\s+/).filter((w) => w.length > 2);
+            match = products.find((p) => {
+              const pLower = p.name.toLowerCase();
+              return keywords.every((kw) => pLower.includes(kw));
+            });
+          }
           if (match) matchedProductId = match.id;
         }
 

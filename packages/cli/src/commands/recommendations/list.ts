@@ -160,7 +160,12 @@ Examples:
 
       spinner.stop();
 
-      const report = getRecommendations(subs as any);
+      // Fetch products for order command matching
+      const productsResult = await ctx.api.products.list({ size: 200 });
+      const report = getRecommendations(
+        subs as any,
+        productsResult.content as any,
+      );
 
       let recs = report.recommendations;
 
@@ -243,24 +248,20 @@ Examples:
         process.stderr.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
       }
 
-      // Interactive: ask user to pick one
-      const displayActionable = displayRecs.filter((r) => r.orderCommand).length;
-      if (displayActionable > 0 && process.stdin.isTTY) {
-        process.stderr.write("\n");
-        const answer = await promptLine(
-          `  ${chalk.bold("Act on a recommendation?")} Enter # (1-${displayRecs.length}) to order, or press Enter to skip: `
-        );
-
-        if (answer !== "") {
-          const idx = parseInt(answer, 10) - 1;
-          if (idx >= 0 && idx < displayRecs.length) {
-            await executeRecommendation(displayRecs[idx], ctx);
-          } else {
-            process.stderr.write(chalk.yellow(`  Invalid selection.\n\n`));
+      // Show actionable commands for each recommendation
+      const hasActions = displayRecs.some((r) => r.orderCommand || r.suggestedProducts?.length);
+      if (hasActions) {
+        process.stderr.write(chalk.dim("\n  Take action:\n"));
+        for (let i = 0; i < displayRecs.length; i++) {
+          const r = displayRecs[i];
+          if (r.orderCommand) {
+            process.stderr.write(`  ${chalk.cyan.bold(`#${i + 1}`)} ${chalk.cyan(r.orderCommand)}\n`);
+          } else if (r.suggestedProducts?.length) {
+            const searchTerm = r.suggestedProducts[0];
+            process.stderr.write(`  ${chalk.cyan.bold(`#${i + 1}`)} ${chalk.cyan(`pax8 products search "${searchTerm}"`)}  ${chalk.dim("find a product to order")}\n`);
           }
-        } else {
-          process.stderr.write("\n");
         }
+        process.stderr.write("\n");
       } else {
         process.stderr.write("\n");
       }
