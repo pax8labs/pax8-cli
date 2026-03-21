@@ -18,7 +18,7 @@ const columns: Column[] = [
 
 export const companiesListCommand = new Command("list")
   .description("List all companies")
-  .option("--page <number>", "Page number (zero-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
@@ -38,9 +38,12 @@ Examples:
 
     try {
       const ctx = await buildContext(allOpts);
+      const userPage = parseInt(allOpts.page, 10);
+      const pageSize = parseInt(allOpts.size, 10);
+      const apiPage = Math.max(userPage - 1, 0); // User sees 1-based, API is 0-based
       const result = await ctx.api.companies.list({
-        page: parseInt(allOpts.page, 10),
-        size: parseInt(allOpts.size, 10),
+        page: apiPage,
+        size: pageSize,
       });
 
       spinner.stop();
@@ -52,15 +55,16 @@ Examples:
         return;
       }
 
-      // Add row numbers and save for `companies more <#>` lookups
+      // Row numbers continue across pages (page 2 starts at 26, not 1)
+      const startNum = apiPage * pageSize;
       const numbered = result.content.map((c: Record<string, unknown>, i: number) => ({
         ...c,
-        _num: String(i + 1),
+        _num: String(startNum + i + 1),
       }));
 
       await saveLastList(
         result.content.map((c: Record<string, unknown>, i: number) => ({
-          index: i + 1,
+          index: startNum + i + 1,
           id: String(c.id),
           name: String(c.name),
         }))
@@ -69,10 +73,9 @@ Examples:
       output(numbered, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        const currentPage = result.page.number;
+        const currentPage = result.page.number; // 0-based from API
         const totalPages = result.page.totalPages;
         const totalElements = result.page.totalElements;
-        const pageSize = parseInt(allOpts.size, 10);
 
         let pageInfo = `${totalElements} companies`;
         if (totalPages > 1) {
@@ -82,7 +85,7 @@ Examples:
 
         if (totalPages > 1 && currentPage < totalPages - 1) {
           process.stderr.write(
-            chalk.dim("  Next page: ") + chalk.cyan(`pax8 companies list --page ${currentPage + 1}`) + "\n"
+            chalk.dim("  Next page: ") + chalk.cyan(`pax8 companies list --page ${currentPage + 2}`) + "\n"
           );
         }
 
