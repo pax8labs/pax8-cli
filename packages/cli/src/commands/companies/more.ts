@@ -11,7 +11,7 @@ import {
 } from "../../lib/formatters.js";
 import { resolveFromLastList } from "../../lib/last-list.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
-import { promptNextSteps } from "../../lib/next-step.js";
+
 
 interface SubSummary {
   productName: string;
@@ -241,10 +241,10 @@ Examples:
       }
 
       if (ctx.outputFormat === "table") {
-        await promptNextSteps([
-          { key: "1", label: "Find recommendations for this customer", command: ["pax8", "recommendations", "list", "--company", company.id] },
-          { key: "2", label: "Back to all customers", command: ["pax8", "companies", "list"] },
-        ]);
+        process.stderr.write(chalk.dim("  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(`pax8 recommendations list --company "${company.name}"`)}  ${chalk.dim("growth opportunities")}\n`);
+        process.stderr.write(`    ${chalk.cyan("pax8 companies list")}                                ${chalk.dim("back to all customers")}\n`);
+        process.stderr.write("\n");
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
