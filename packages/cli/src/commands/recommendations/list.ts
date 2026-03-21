@@ -134,8 +134,17 @@ Examples:
   pax8 recommendations list --company "Summit Healthcare"
   pax8 recommendations list --json`
   )
+  .allowExcessArguments(true)
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
+
+    // When the user forgets quotes (e.g. --company [DEMO] Client 52),
+    // Commander only captures "[DEMO]" and the rest become excess args.
+    // Rejoin them so the filter works as intended.
+    if (options.company && cmd.args.length > 0) {
+      options.company = [options.company, ...cmd.args].join(" ");
+    }
+
     const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Analyzing customer portfolios...").start();
 
@@ -175,7 +184,7 @@ Examples:
 
       let recs = report.recommendations;
 
-      // Filter by company if specified (exact name, exact/partial ID)
+      // Filter by company if specified (exact name, partial name/ID, or "contains" match)
       if (options.company) {
         const filter = options.company.toLowerCase();
         recs = recs.filter(
@@ -183,7 +192,8 @@ Examples:
             r.companyId === options.company ||
             r.companyId.startsWith(filter) ||
             r.companyName.toLowerCase() === filter ||
-            r.companyName.toLowerCase() === `[demo] ${filter}`
+            r.companyName.toLowerCase() === `[demo] ${filter}` ||
+            r.companyName.toLowerCase().includes(filter)
         );
       }
 
@@ -276,13 +286,17 @@ Examples:
         process.stderr.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
       }
 
-      // Show next action for each rec — human-readable, no UUIDs
-      process.stderr.write(chalk.dim("\n  Ready to order:\n"));
+      // Show actionable commands — copy-paste ready
+      process.stderr.write(chalk.dim("\n  Quick actions:\n\n"));
       for (let i = 0; i < displayRecs.length; i++) {
         const rec = displayRecs[i];
         const product = rec.suggestedProducts?.[0] ?? "product";
         const seats = rec.targetSeats ?? "?";
-        process.stderr.write(`  ${chalk.cyan.bold(`[${i + 1}]`)} ${product} for ${rec.companyName} (${seats} seats)\n`);
+        const uplift = rec.estimatedMrrUplift ? chalk.green(` +${formatCurrency(rec.estimatedMrrUplift)}/mo`) : "";
+        process.stderr.write(`  ${chalk.cyan.bold(`${i + 1}.`)} ${product} for ${rec.companyName} (${seats} seats)${uplift}\n`);
+        if (rec.orderCommand) {
+          process.stderr.write(chalk.dim(`     ${rec.orderCommand}\n\n`));
+        }
       }
 
       if (unavailableCount > 0) {
