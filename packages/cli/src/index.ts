@@ -193,7 +193,7 @@ async function startRepl(): Promise<void> {
             }
           }
         }
-      } catch { /* no pending actions, treat as normal command */ }
+      } catch { /* no pending actions */ }
     }
 
     // Run each command as a child process so it can never crash the REPL.

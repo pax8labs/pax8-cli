@@ -245,6 +245,7 @@ export function getRecommendations(
   }
 
   // Build product price lookup for MRR uplift estimates
+  // Source 1: product catalog pricing (if available)
   const productPriceMap = new Map<string, number>();
   if (products) {
     for (const p of products) {
@@ -252,6 +253,15 @@ export function getRecommendations(
       if (monthlyRate) {
         productPriceMap.set(p.name.toLowerCase(), monthlyRate.suggestedRetailPrice);
       }
+    }
+  }
+  // Source 2: actual subscription prices (always available, more accurate)
+  for (const sub of subscriptions) {
+    if (sub.status !== "Active") continue;
+    const name = (sub.productName ?? "").toLowerCase();
+    const price = sub.price ?? 0;
+    if (name && price > 0 && !productPriceMap.has(name)) {
+      productPriceMap.set(name, price);
     }
   }
 
