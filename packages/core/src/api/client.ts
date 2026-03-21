@@ -136,83 +136,87 @@ export class Pax8Client {
 
     let lastError: Error | undefined;
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        if (this.debug) {
-          process.stderr.write(`[pax8] ${method} ${path}\n`);
-        }
-
-        const response = await fetch(url.toString(), init);
-
-        if (this.debug) {
-          process.stderr.write(`[pax8] ${method} ${path} → ${response.status}\n`);
-        }
-
-        if (response.status === 429) {
-          if (attempt === MAX_RETRIES) {
-            throw new RateLimitError("Rate limit exceeded", path, (parseRetryAfter(response) ?? 60) * 1000);
+    try {
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          if (this.debug) {
+            process.stderr.write(`[pax8] ${method} ${path}\n`);
           }
-          const retryAfter = parseRetryAfter(response) ?? (attempt + 1);
-          await sleep(retryAfter * 1000);
-          continue;
-        }
 
-        if (response.status >= 500) {
-          if (attempt === MAX_RETRIES) {
+          const response = await fetch(url.toString(), init);
+
+          if (this.debug) {
+            process.stderr.write(`[pax8] ${method} ${path} → ${response.status}\n`);
+          }
+
+          if (response.status === 429) {
+            if (attempt === MAX_RETRIES) {
+              throw new RateLimitError("Rate limit exceeded", path, (parseRetryAfter(response) ?? 60) * 1000);
+            }
+            const retryAfter = parseRetryAfter(response) ?? (attempt + 1);
+            await sleep(retryAfter * 1000);
+            continue;
+          }
+
+          if (response.status >= 500) {
+            if (attempt === MAX_RETRIES) {
+              const errorBody = await safeJson(response);
+              throw new ApiError(
+                `Server error: ${response.status} ${response.statusText}`,
+                response.status,
+                path,
+                method,
+                errorBody,
+              );
+            }
+            const backoff = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+            await sleep(backoff);
+            continue;
+          }
+
+          if (!response.ok) {
             const errorBody = await safeJson(response);
             throw new ApiError(
-              `Server error: ${response.status} ${response.statusText}`,
+              `${response.status} ${response.statusText}`,
               response.status,
               path,
               method,
               errorBody,
             );
           }
-          const backoff = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+
+          // DELETE returns no body
+          if (response.status === 204 || method === "DELETE") {
+            return undefined as T;
+          }
+
+          const data = await response.json();
+          return data as T;
+        } catch (error) {
+          if (error instanceof ApiError || error instanceof RateLimitError) {
+            throw error;
+          }
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw new ApiError(`Request timed out after ${this.timeout}ms`, 0, path, method);
+          }
+          lastError = error as Error;
+          if (attempt === MAX_RETRIES) {
+            throw new ApiError(
+              `Network error: ${(error as Error).message}`,
+              0,
+              path,
+              method,
+            );
+          }
+          const backoff = Math.pow(2, attempt) * 1000;
           await sleep(backoff);
-          continue;
         }
-
-        if (!response.ok) {
-          const errorBody = await safeJson(response);
-          throw new ApiError(
-            `${response.status} ${response.statusText}`,
-            response.status,
-            path,
-            method,
-            errorBody,
-          );
-        }
-
-        // DELETE returns no body
-        if (response.status === 204 || method === "DELETE") {
-          return undefined as T;
-        }
-
-        const data = await response.json();
-        return data as T;
-      } catch (error) {
-        if (error instanceof ApiError || error instanceof RateLimitError) {
-          throw error;
-        }
-        if (error instanceof DOMException && error.name === "AbortError") {
-          throw new ApiError(`Request timed out after ${this.timeout}ms`, 0, path, method);
-        }
-        lastError = error as Error;
-        if (attempt === MAX_RETRIES) {
-          throw new ApiError(
-            `Network error: ${(error as Error).message}`,
-            0,
-            path,
-            method,
-          );
-        }
-        const backoff = Math.pow(2, attempt) * 1000;
-        await sleep(backoff);
       }
-    }
 
-    throw lastError ?? new Error("Unexpected error");
+      throw lastError ?? new Error("Unexpected error");
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   private buildUrl(path: string, params?: Record<string, string | number | undefined>): URL {
