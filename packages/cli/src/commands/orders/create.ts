@@ -3,7 +3,7 @@ import chalk from "chalk";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
-import { confirm } from "../../lib/confirm.js";
+import { confirm, isReplMode } from "../../lib/confirm.js";
 import { formatStatus, formatDate, formatCurrency } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { ApiError } from "@pax8/core";
@@ -64,12 +64,14 @@ Examples:
         if (company?.name) companyName = company.name;
         if (product?.name) productName = product.name;
 
-        // Find matching pricing plan
+        // Find matching pricing plan — prefer plans WITH a commitment term
         if (pricing && pricing.length > 0) {
-          const match = pricing.find((p) => p.billingTerm === allOpts.billingTerm);
+          // First try: match billing term + has commitment (most orderable)
+          let match = pricing.find((p) => p.billingTerm === allOpts.billingTerm && p.commitmentTerm);
+          // Fallback: match billing term only
+          if (!match) match = pricing.find((p) => p.billingTerm === allOpts.billingTerm);
           if (match) {
-            if (!commitmentTerm) commitmentTerm = match.commitmentTerm;
-            // Get suggested retail price from the first rate
+            if (!commitmentTerm && match.commitmentTerm) commitmentTerm = match.commitmentTerm;
             if (match.rates?.[0]?.suggestedRetailPrice) {
               unitPrice = match.rates[0].suggestedRetailPrice;
             }
@@ -101,6 +103,14 @@ Examples:
       }
       process.stderr.write("\n");
 
+      if (isReplMode()) {
+        // Can't prompt in REPL — show the command to run with --yes
+        const cmd = `orders create --company ${allOpts.company} --product ${allOpts.product} --quantity ${quantity}${commitmentTerm && commitmentTerm !== "Monthly" ? ` --commitment-term ${commitmentTerm}` : ""} --yes`;
+        process.stderr.write(chalk.dim("  To confirm, run:\n"));
+        process.stderr.write(`  ${chalk.cyan(cmd)}\n\n`);
+        return;
+      }
+
       const confirmed = await confirm("Place this order?", { default: true });
       if (!confirmed) {
         process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
@@ -111,15 +121,19 @@ Examples:
 
       // Only pass fields defined in OrderLineItemInput — do not include
       // display-only fields like productName which are not part of the API input schema.
+      const lineItem: Record<string, unknown> = {
+        productId: allOpts.product,
+        quantity,
+        billingTerm: allOpts.billingTerm,
+      };
+      // Only pass commitment term if it's a real commitment (not "Monthly" which is the default)
+      if (commitmentTerm && commitmentTerm !== "Monthly") {
+        lineItem.commitmentTerm = commitmentTerm;
+      }
+
       const orderInput: CreateOrderInput = {
         companyId: allOpts.company,
-        lineItems: [
-          {
-            productId: allOpts.product,
-            quantity,
-            billingTerm: allOpts.billingTerm,
-          },
-        ],
+        lineItems: [lineItem as any],
       };
       const order = await ctx.api.orders.create(orderInput);
       await invalidateCacheAfterWrite();

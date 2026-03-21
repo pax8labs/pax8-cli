@@ -156,7 +156,7 @@ export const ProductPricingPlanSchema = z.object({
   productId: z.string().uuid(),
   productName: z.string().optional(),
   billingTerm: z.string(),
-  commitmentTerm: z.string(),
+  commitmentTerm: z.string().optional(),
   commitmentTermInMonths: z.number().optional(),
   type: z.string().optional(),
   unitOfMeasurement: z.string().optional(),

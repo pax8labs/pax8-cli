@@ -8,6 +8,11 @@ function shouldAutoConfirm(): boolean {
   );
 }
 
+/** In REPL mode, stdin is shared and prompts don't work. */
+export function isReplMode(): boolean {
+  return process.env.PAX8_REPL === "1";
+}
+
 async function prompt(question: string): Promise<string> {
   const rl = createInterface({
     input: process.stdin,
