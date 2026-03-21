@@ -11,6 +11,7 @@ import {
 } from "../../lib/formatters.js";
 import { resolveFromLastList } from "../../lib/last-list.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { output, type Column } from "../../lib/output.js";
 
 
 interface SubSummary {
@@ -105,8 +106,15 @@ Examples:
 
       // Fetch subscriptions and enrich product names
       spinner.text = `Fetching subscriptions for ${company.name}...`;
-      const subs = await ctx.api.subscriptions.list({ companyId: company.id });
-      await enrichProductNames(ctx, subs.content as Record<string, unknown>[]);
+      let subs;
+      try {
+        subs = await ctx.api.subscriptions.list({ companyId: company.id });
+      } catch {
+        subs = { content: [], page: { number: 0, totalPages: 0, totalElements: 0 } };
+      }
+      if (subs.content.length > 0) {
+        await enrichProductNames(ctx, subs.content as Record<string, unknown>[]);
+      }
       spinner.succeed(`Loaded ${company.name}`);
 
       const subscriptions: SubSummary[] = subs.content.map((s: Record<string, unknown>) => {
@@ -188,6 +196,18 @@ Examples:
 
       // Summary bar
       process.stdout.write(`  ${line}\n`);
+
+      if (activeSubs.length === 0 && subscriptions.length === 0) {
+        process.stdout.write(chalk.dim(`  No subscriptions yet\n`));
+        process.stdout.write(`  ${line}\n\n`);
+        process.stderr.write(
+          chalk.dim("  Get started:\n") +
+          `    ${chalk.cyan(`pax8 products search "Microsoft"`)}  ${chalk.dim("browse the catalog")}\n` +
+          `    ${chalk.cyan(`pax8 recommendations list --company ${company.id}`)}  ${chalk.dim("see suggestions")}\n\n`
+        );
+        return;
+      }
+
       process.stdout.write(
         `  ${chalk.bold(String(activeSubs.length))} subscriptions` +
         `    ${chalk.bold(String(totalSeats))} seats` +
@@ -198,35 +218,39 @@ Examples:
       process.stdout.write("\n");
 
       // Vendor breakdown
-      process.stdout.write(chalk.dim("  VENDORS\n"));
-      for (const v of vendors) {
-        const pctBar = Math.round((v.mrr / totalMrr) * 20);
-        const bar = chalk.cyan("█".repeat(pctBar)) + chalk.dim("░".repeat(20 - pctBar));
-        const pct = Math.round((v.mrr / totalMrr) * 100);
-        process.stdout.write(
-          `  ${v.vendor.padEnd(14)} ${bar} ${chalk.bold(formatCurrency(v.mrr).padStart(10))}  ${chalk.dim(String(pct) + "%")}  ${chalk.dim(v.seats + " seats")}\n`
-        );
-      }
-      process.stdout.write("\n");
-
-      // Subscriptions — show active first, then others
-      process.stdout.write(chalk.dim("  SUBSCRIPTIONS\n"));
-      for (const sub of activeSubs) {
-        const renewal = sub.renewsIn ? chalk.dim(` · renews ${sub.renewsIn}`) : "";
-        process.stdout.write(
-          `  ${chalk.green("●")} ${sub.productName.padEnd(35)} ${chalk.bold(String(sub.quantity).padStart(4))} seats  ${formatCurrency(sub.mrr).padStart(10)}/mo${renewal}\n`
-        );
-      }
-      const otherSubs = subscriptions.filter((s) => s.status !== "Active");
-      if (otherSubs.length > 0) {
-        process.stdout.write(chalk.dim(`\n  ${otherSubs.length} inactive:\n`));
-        for (const sub of otherSubs) {
-          const statusIcon = sub.status === "Trial" ? chalk.yellow("●") : chalk.red("●");
+      if (vendors.length > 0) {
+        process.stdout.write(chalk.dim("  VENDORS\n"));
+        for (const v of vendors) {
+          const pctBar = totalMrr > 0 ? Math.round((v.mrr / totalMrr) * 20) : 0;
+          const bar = chalk.cyan("█".repeat(pctBar)) + chalk.dim("░".repeat(20 - pctBar));
+          const pct = totalMrr > 0 ? Math.round((v.mrr / totalMrr) * 100) : 0;
           process.stdout.write(
-            chalk.dim(`  ${statusIcon} ${sub.productName.padEnd(35)} ${String(sub.quantity).padStart(4)} seats  ${sub.status}\n`)
+            `  ${v.vendor.padEnd(14)} ${bar} ${chalk.bold(formatCurrency(v.mrr).padStart(10))}  ${chalk.dim(String(pct) + "%")}  ${chalk.dim(v.seats + " seats")}\n`
           );
         }
+        process.stdout.write("\n");
       }
+
+      // Subscriptions table
+      const subColumns: Column[] = [
+        { key: "statusIcon", header: "", format: (v) => String(v) },
+        { key: "productName", header: "Product" },
+        { key: "quantity", header: "Seats", format: (v) => String(v) },
+        { key: "mrrDisplay", header: "MRR", format: (v) => String(v) },
+        { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
+        { key: "renewsIn", header: "Renews", format: (v) => v ? String(v) : chalk.dim("—") },
+      ];
+
+      const subRows = subscriptions.map((sub) => ({
+        statusIcon: sub.status === "Active" ? chalk.green("●") : sub.status === "Trial" ? chalk.yellow("●") : chalk.red("●"),
+        productName: sub.productName,
+        quantity: sub.quantity,
+        mrrDisplay: formatCurrency(sub.mrr) + "/mo",
+        status: sub.status,
+        renewsIn: sub.renewsIn,
+      }));
+
+      output(subRows as Record<string, unknown>[], { format: "table", columns: subColumns });
       process.stdout.write("\n");
 
       // Issues
@@ -242,7 +266,8 @@ Examples:
 
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim("  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(`pax8 recommendations list --company "${company.name}"`)}\n`);
+        process.stderr.write(`    ${chalk.cyan(`pax8 recommendations list --company ${company.id}`)}  ${chalk.dim("growth opportunities")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company ${company.id}`)}  ${chalk.dim("all subscriptions")}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {
