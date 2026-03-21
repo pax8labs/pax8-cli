@@ -174,7 +174,7 @@ async function startRepl(): Promise<void> {
     // Use "inherit" for all stdio so the child gets the real TTY
     // (needed for table output detection and spinner animations).
     const child = spawn("node", [cliPath, ...args], {
-      env: { ...process.env, FORCE_COLOR: "1" },
+      env: { ...process.env, FORCE_COLOR: "1", PAX8_REPL: "1" },
       stdio: "inherit",
     });
 

@@ -11,6 +11,9 @@ export interface NextStep {
 /**
  * Show a menu of next steps and let the user pick one by number.
  * Only shows in TTY mode. Runs the selected pax8 command inline.
+ *
+ * When running as a REPL child process (detected by PAX8_REPL env),
+ * shows hints only — no interactive prompt, since stdin is shared.
  */
 export async function promptNextSteps(steps: NextStep[]): Promise<void> {
   if (!process.stdin.isTTY) return;
@@ -21,6 +24,13 @@ export async function promptNextSteps(steps: NextStep[]): Promise<void> {
     const cmdHint = chalk.dim(step.command.join(" "));
     process.stderr.write(`  ${chalk.cyan.bold(`[${step.key}]`)} ${step.label}  ${cmdHint}\n`);
   }
+
+  // If we're a child of the REPL, don't prompt — stdin is shared
+  if (process.env.PAX8_REPL === "1") {
+    process.stderr.write("\n");
+    return;
+  }
+
   process.stderr.write(`  ${chalk.dim("[Enter]")} ${chalk.dim("Done")}\n`);
   process.stderr.write("\n");
 
