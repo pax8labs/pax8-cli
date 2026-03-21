@@ -226,18 +226,22 @@ Examples:
 
         if (error.statusCode === 400) {
           const detail = extractApiDetail(error.responseBody);
-          const causes = ["The Pax8 API rejected the order request"];
-          if (detail) causes.push(`API detail: ${detail}`);
+          const causes: string[] = [];
+          const steps: string[] = [];
+
+          if (detail?.includes("commitmentTerm")) {
+            causes.push("This product doesn't support the commitment term format sent via API");
+            causes.push("New Commerce Experience (NCE) products may require provisioning through the Pax8 portal");
+            steps.push("Try placing this order in the Pax8 Marketplace portal instead");
+          } else {
+            causes.push("The Pax8 API rejected the order request");
+            if (detail) causes.push(detail);
+            steps.push("Double-check all order parameters (product ID, company ID, quantity)");
+          }
+          steps.push(`View product details: pax8 products show ${allOpts.product}`);
 
           handleCommandError(
-            new CliError(
-              `Failed to create order for "${product}" under "${company}"`,
-              causes,
-              [
-                "Double-check all order parameters (product ID, company ID, quantity)",
-                `View product details: pax8 products show ${allOpts.product}`,
-              ],
-            ),
+            new CliError(`Can't order "${product}" for ${company}`, causes, steps),
           );
         }
       }
