@@ -15,6 +15,7 @@ import {
   loadConfig,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
+import { spawn } from "node:child_process";
 import { CliError } from "./errors.js";
 
 export interface ApiClient {
@@ -127,23 +128,33 @@ export async function buildContext(
     };
   }
 
-  // Fire-and-forget background cache warming for the most common queries.
-  // This runs in parallel with the actual command so subsequent calls are instant.
-  if (!isDemo) {
-    warmCache(api as ApiClient);
+  // Spawn a detached background process to warm the cache.
+  // Skip if we're already a warmer child (prevents infinite recursion).
+  if (!isDemo && !process.env.PAX8_CACHE_WARMING) {
+    spawnCacheWarmer();
   }
 
   return { api, outputFormat, config, isDemo, verbose };
 }
 
 /**
- * Pre-fetch commonly used endpoints in the background so they're cached
- * for the current command (if it needs them) and future commands.
+ * Spawn a detached child process that runs common pax8 queries to warm the file cache.
+ * The child is fully detached (stdio ignored, unref'd) so the parent exits immediately.
  */
-function warmCache(api: ApiClient): void {
-  // Don't await — these run in the background.
-  // Warm both the default page sizes and the large sizes used by --size 1000.
-  api.companies.list({ page: 0, size: 200 }).catch(() => {});
-  api.subscriptions.list({ page: 0, size: 200 }).catch(() => {});
-  api.subscriptions.list({ page: 0, size: 1000 }).catch(() => {});
+function spawnCacheWarmer(): void {
+  const env = { ...process.env, PAX8_CACHE_WARMING: "1" };
+
+  const child = spawn(
+    "pax8",
+    ["companies", "list", "--json", "--size", "200", "--quiet"],
+    { detached: true, stdio: "ignore", env },
+  );
+  child.unref();
+
+  const child2 = spawn(
+    "pax8",
+    ["subscriptions", "list", "--json", "--size", "1000", "--quiet"],
+    { detached: true, stdio: "ignore", env },
+  );
+  child2.unref();
 }

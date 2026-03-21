@@ -8,7 +8,7 @@ export interface Pax8ClientOptions {
   baseUrl?: string;
   timeout?: number;
   debug?: boolean;
-  /** Cache TTL in ms for GET requests. 0 disables caching. Default: 300000 (5 min). */
+  /** Cache TTL in ms for GET requests. 0 disables caching. Default: 3600000 (1 hour). */
   cacheTtlMs?: number;
 }
 
@@ -29,7 +29,7 @@ export class Pax8Client {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
     this.debug = options.debug ?? false;
-    this.cacheTtlMs = options.cacheTtlMs ?? 300_000; // 5 min default
+    this.cacheTtlMs = options.cacheTtlMs ?? 3_600_000; // 1 hour default
     this.cache = this.cacheTtlMs > 0 ? new FileCache() : null;
   }
 
