@@ -248,32 +248,27 @@ Examples:
         process.stderr.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
       }
 
-      // Show order commands for actionable recommendations
-      const actionable = displayRecs.filter((r) => r.orderCommand);
-      const nonActionable = displayRecs.filter((r) => !r.orderCommand);
-      if (actionable.length > 0) {
-        process.stderr.write(chalk.dim(`\n  Take action (${actionable.length} of ${recs.length} ready to order):\n`));
-        for (const r of actionable) {
-          const idx = displayRecs.indexOf(r) + 1;
-          process.stderr.write(`  ${chalk.cyan.bold(`#${idx}`)} ${chalk.cyan(r.orderCommand)}\n`);
-        }
-        if (nonActionable.length > 0) {
-          process.stderr.write(chalk.dim(`\n  ${nonActionable.length} recommendation${nonActionable.length > 1 ? "s" : ""} need a product match — search manually:\n`));
-          for (const r of nonActionable) {
-            const idx = displayRecs.indexOf(r) + 1;
-            const searchTerm = r.suggestedProducts?.[0] ?? r.title;
-            process.stderr.write(`  ${chalk.dim(`#${idx}`)} ${chalk.dim(`pax8 products search "${searchTerm}"`)}\n`);
+      // Interactive: ask user to pick one
+      const displayActionable = displayRecs.filter((r) => r.orderCommand).length;
+      if (process.stdin.isTTY && process.env.PAX8_REPL !== "1") {
+        process.stderr.write("\n");
+        if (displayActionable > 0) {
+          const answer = await promptLine(
+            `  ${chalk.bold("Act on a recommendation?")} Enter # (1-${displayRecs.length}), or press Enter to skip: `
+          );
+          if (answer !== "") {
+            const idx = parseInt(answer, 10) - 1;
+            if (idx >= 0 && idx < displayRecs.length) {
+              await executeRecommendation(displayRecs[idx], ctx);
+            } else {
+              process.stderr.write(chalk.yellow(`  Invalid selection.\n\n`));
+            }
+          } else {
+            process.stderr.write("\n");
           }
+        } else {
+          process.stderr.write("\n");
         }
-        process.stderr.write("\n");
-      } else if (nonActionable.length > 0) {
-        process.stderr.write(chalk.dim(`\n  No exact product matches found. Search manually:\n`));
-        for (const r of nonActionable) {
-          const idx = displayRecs.indexOf(r) + 1;
-          const searchTerm = r.suggestedProducts?.[0] ?? r.title;
-          process.stderr.write(`  ${chalk.dim(`#${idx}`)} ${chalk.dim(`pax8 products search "${searchTerm}"`)}\n`);
-        }
-        process.stderr.write("\n");
       } else {
         process.stderr.write("\n");
       }

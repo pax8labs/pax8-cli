@@ -200,11 +200,10 @@ Examples:
       if (activeSubs.length === 0 && subscriptions.length === 0) {
         process.stdout.write(chalk.dim(`  No subscriptions yet\n`));
         process.stdout.write(`  ${line}\n\n`);
-        process.stderr.write(
-          chalk.dim("  Get started:\n") +
-          `    ${chalk.cyan(`pax8 products search "Microsoft"`)}  ${chalk.dim("browse the catalog")}\n` +
-          `    ${chalk.cyan(`pax8 orders create --company ${company.id} --product <id> --quantity <n>`)}\n\n`
-        );
+        process.stderr.write(chalk.dim("  Get started:\n"));
+        process.stderr.write(`    ${chalk.cyan(`pax8 products search "Microsoft 365"`)}  ${chalk.dim("browse the catalog")}\n`);
+        process.stderr.write(`    ${chalk.cyan(`pax8 products search "backup"`)}  ${chalk.dim("find backup solutions")}\n`);
+        process.stderr.write("\n");
         return;
       }
 
