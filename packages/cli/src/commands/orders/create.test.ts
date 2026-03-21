@@ -38,7 +38,6 @@ describe("orders create", () => {
       ],
       { PAX8_REPL: "1" },
     );
-    expect(result.stderr).toContain("To confirm, run:");
     expect(result.stderr).toContain("--yes");
     // Should NOT actually create the order
     expect(result.stderr).not.toContain("Order created");
