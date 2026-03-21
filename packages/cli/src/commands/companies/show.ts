@@ -20,6 +20,7 @@ const subscriptionColumns: Column[] = [
 export const companiesShowCommand = new Command("show")
   .description("Show company details")
   .argument("<id|name>", "Company ID or name")
+  .allowExcessArguments(true)
   .option("--subscriptions", "Include company subscriptions")
   .addHelpText(
     "after",
@@ -31,6 +32,11 @@ Examples:
   )
   .action(async (idOrName: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+
+    // Rejoin excess args when user forgets quotes
+    if (command.args.length > 1) {
+      idOrName = command.args.join(" ");
+    }
 
     // Resolve numbered reference from last `companies list`
     const fromList = await resolveFromLastList(idOrName);

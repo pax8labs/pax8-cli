@@ -54,6 +54,7 @@ function daysUntil(dateStr: string | undefined): number | null {
 export const companiesMoreCommand = new Command("more")
   .description("Full company summary — subscriptions, vendors, seats, MRR, and issues")
   .argument("<name-or-number>", "Company name, ID, or # from companies list")
+  .allowExcessArguments(true)
   .addHelpText(
     "after",
     `
@@ -64,6 +65,12 @@ Examples:
   )
   .action(async (idOrName: string, _options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+
+    // When the user forgets quotes (e.g. companies more [DEMO] Client 17),
+    // Commander only captures "[DEMO]" and the rest become excess args.
+    if (command.args.length > 1) {
+      idOrName = command.args.join(" ");
+    }
 
     // Resolve numbered reference from last `companies list`
     const fromList = await resolveFromLastList(idOrName);
