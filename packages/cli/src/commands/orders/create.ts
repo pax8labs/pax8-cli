@@ -4,7 +4,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
-import { formatStatus, formatDate } from "../../lib/formatters.js";
+import { formatStatus, formatDate, formatCurrency } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { ApiError } from "@pax8/core";
 import type { CreateOrderInput } from "@pax8/core";
@@ -54,6 +54,7 @@ Examples:
 
       // Resolve names and pricing for a human-friendly preview
       let commitmentTerm = allOpts.commitmentTerm;
+      let unitPrice: number | null = null;
       try {
         const [company, product, pricing] = await Promise.all([
           ctx.api.companies.get(allOpts.company).catch(() => null),
@@ -63,22 +64,40 @@ Examples:
         if (company?.name) companyName = company.name;
         if (product?.name) productName = product.name;
 
-        // Auto-resolve commitment term from pricing if not specified
-        if (!commitmentTerm && pricing && pricing.length > 0) {
+        // Find matching pricing plan
+        if (pricing && pricing.length > 0) {
           const match = pricing.find((p) => p.billingTerm === allOpts.billingTerm);
           if (match) {
-            commitmentTerm = match.commitmentTerm;
+            if (!commitmentTerm) commitmentTerm = match.commitmentTerm;
+            // Get suggested retail price from the first rate
+            if (match.rates?.[0]?.suggestedRetailPrice) {
+              unitPrice = match.rates[0].suggestedRetailPrice;
+            }
           }
         }
       } catch { /* best effort */ }
 
+      const totalPrice = unitPrice ? unitPrice * quantity : null;
+      const mrr = totalPrice
+        ? allOpts.billingTerm === "Annual" ? totalPrice / 12 : totalPrice
+        : null;
+
       process.stderr.write(chalk.bold("\n  📦 Order Preview:\n\n"));
-      process.stderr.write(`  ${chalk.dim("Company:")}         ${companyName}\n`);
-      process.stderr.write(`  ${chalk.dim("Product:")}         ${productName}\n`);
-      process.stderr.write(`  ${chalk.dim("Quantity:")}        ${quantity}\n`);
-      process.stderr.write(`  ${chalk.dim("Billing Term:")}    ${allOpts.billingTerm}\n`);
+      process.stderr.write(`  ${chalk.dim("Company:".padEnd(18))}${companyName}\n`);
+      process.stderr.write(`  ${chalk.dim("Product:".padEnd(18))}${productName}\n`);
+      process.stderr.write(`  ${chalk.dim("Quantity:".padEnd(18))}${quantity} seats\n`);
+      process.stderr.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${allOpts.billingTerm}\n`);
       if (commitmentTerm) {
-        process.stderr.write(`  ${chalk.dim("Commitment Term:")} ${commitmentTerm}\n`);
+        process.stderr.write(`  ${chalk.dim("Commitment:".padEnd(18))}${commitmentTerm}\n`);
+      }
+      if (unitPrice) {
+        process.stderr.write(`  ${chalk.dim("Unit Price:".padEnd(18))}${formatCurrency(unitPrice)}/seat/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
+      }
+      if (totalPrice) {
+        process.stderr.write(`\n  ${chalk.dim("Total:".padEnd(18))}${chalk.bold(formatCurrency(totalPrice))}/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
+      }
+      if (mrr) {
+        process.stderr.write(`  ${chalk.dim("MRR Impact:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(mrr) + "/mo")}\n`);
       }
       process.stderr.write("\n");
 
