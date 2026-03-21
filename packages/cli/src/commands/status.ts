@@ -4,7 +4,6 @@ import { buildContext } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency } from "../lib/formatters.js";
-import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
 
@@ -130,19 +129,19 @@ Examples:
 
       process.stdout.write("\n");
 
-      // Build dynamic next steps based on what needs attention
-      const nextSteps: NextStep[] = [];
+      // Show suggested next commands (always visible, no interactive prompt)
+      process.stderr.write(chalk.dim("  Try next:\n"));
       if (renewals.urgentCount > 0) {
-        nextSteps.push({ key: "1", label: `View urgent renewals (${renewals.urgentCount})`, command: ["pax8", "subscriptions", "renewals", "--within", "14"] });
+        process.stderr.write(`    ${chalk.cyan("pax8 subscriptions renewals --within 14")}  ${chalk.dim(`${renewals.urgentCount} urgent`)}\n`);
       } else if (renewals.items.length > 0) {
-        nextSteps.push({ key: "1", label: `View upcoming renewals (${renewals.items.length})`, command: ["pax8", "subscriptions", "renewals"] });
+        process.stderr.write(`    ${chalk.cyan("pax8 subscriptions renewals")}              ${chalk.dim(`${renewals.items.length} upcoming`)}\n`);
       }
       if (highRecs.length > 0) {
-        nextSteps.push({ key: String(nextSteps.length + 1), label: `View growth opportunities (${highRecs.length})`, command: ["pax8", "recommendations", "list", "--priority", "high"] });
+        process.stderr.write(`    ${chalk.cyan("pax8 recommendations list")}                ${chalk.dim(`${highRecs.length} opportunities`)}\n`);
       }
-      nextSteps.push({ key: String(nextSteps.length + 1), label: "View customers", command: ["pax8", "companies", "list"] });
-
-      await promptNextSteps(nextSteps);
+      process.stderr.write(`    ${chalk.cyan("pax8 companies list")}                      ${chalk.dim("browse customers")}\n`);
+      process.stderr.write(`    ${chalk.cyan("pax8 companies more <#>")}                  ${chalk.dim("drill into a customer")}\n`);
+      process.stderr.write("\n");
     } catch (error) {
       handleCommandError(error, spinner, "Failed to load status");
     }
