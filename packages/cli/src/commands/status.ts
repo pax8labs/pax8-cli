@@ -4,6 +4,7 @@ import { buildContext } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency } from "../lib/formatters.js";
+import { enrichProductNames } from "../lib/enrich-subscriptions.js";
 import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
 
@@ -21,15 +22,28 @@ Examples:
     try {
       // Fetch companies, subscriptions, and products in parallel
       const [companiesResult, subsResult, productsResult] = await Promise.all([
-        ctx.api.companies.list({ size: 1 }),
+        ctx.api.companies.list({ size: 200 }),
         ctx.api.subscriptions.list({ size: 1000 }),
         ctx.api.products.list({ size: 200 }),
       ]);
 
-      spinner.succeed("Dashboard loaded");
+      // Build company name lookup
+      const companyNames = new Map<string, string>();
+      for (const c of companiesResult.content as Array<{ id: string; name: string }>) {
+        companyNames.set(c.id, c.name);
+      }
 
-      // Compute MRR from active subs
+      // Enrich subscriptions with company and product names
       const allSubs = subsResult.content as Array<Record<string, unknown>>;
+      for (const sub of allSubs) {
+        if (!sub.companyName || sub.companyName === sub.companyId) {
+          const name = companyNames.get(String(sub.companyId));
+          if (name) sub.companyName = name;
+        }
+      }
+      await enrichProductNames(ctx, allSubs);
+
+      spinner.succeed("Dashboard loaded");
       const activeSubs = allSubs.filter((s) => String(s.status) === "Active");
       let mrr = 0;
       let totalSeats = 0;
