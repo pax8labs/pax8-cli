@@ -19,16 +19,13 @@ export async function promptNextSteps(steps: NextStep[]): Promise<void> {
   if (!process.stdin.isTTY) return;
   if (steps.length === 0) return;
 
+  // In REPL mode, skip the interactive menu — stdin is shared with the REPL
+  if (process.env.PAX8_REPL === "1") return;
+
   process.stderr.write(chalk.dim("  What's next?\n"));
   for (const step of steps) {
     const cmdHint = chalk.dim(step.command.join(" "));
     process.stderr.write(`  ${chalk.cyan.bold(`[${step.key}]`)} ${step.label}  ${cmdHint}\n`);
-  }
-
-  // If we're a child of the REPL, don't prompt — stdin is shared
-  if (process.env.PAX8_REPL === "1") {
-    process.stderr.write("\n");
-    return;
   }
 
   process.stderr.write(`  ${chalk.dim("[Enter]")} ${chalk.dim("Done")}\n`);
