@@ -120,28 +120,66 @@ Examples:
         );
       }
 
-      if (alerts.length > 0) {
+      // Top action items — mix of renewals, recs, and trials, sorted by urgency
+      interface ActionItem {
+        urgency: number; // lower = more urgent
+        icon: string;
+        label: string;
+        command: string;
+      }
+      const actions: ActionItem[] = [];
+
+      // Urgent renewals
+      for (const r of renewals.items.slice(0, 3)) {
+        actions.push({
+          urgency: r.daysUntilRenewal,
+          icon: r.daysUntilRenewal <= 7 ? chalk.red("!") : chalk.yellow("!"),
+          label: `${r.companyName} — ${r.productName} renews in ${r.daysUntilRenewal}d (${formatCurrency(r.mrrAtRisk)}/mo)`,
+          command: `pax8 subscriptions renewals --within ${Math.max(r.daysUntilRenewal + 1, 7)}d`,
+        });
+      }
+
+      // Top growth opportunities
+      for (const r of highRecs.slice(0, 3)) {
+        actions.push({
+          urgency: 100,
+          icon: chalk.green("+"),
+          label: `${r.companyName} — ${r.title}${r.estimatedMrrUplift ? ` (+${formatCurrency(r.estimatedMrrUplift)}/mo)` : ""}`,
+          command: `pax8 recommendations list --company "${r.companyName}"`,
+        });
+      }
+
+      // Trials
+      for (const t of trials.slice(0, 2)) {
+        actions.push({
+          urgency: 50,
+          icon: chalk.yellow("~"),
+          label: `${String((t as Record<string, unknown>).companyName || (t as Record<string, unknown>).companyId)} has a trial — convert or cancel`,
+          command: `pax8 subscriptions list --status Trial`,
+        });
+      }
+
+      // Sort by urgency, cap at 5
+      actions.sort((a, b) => a.urgency - b.urgency);
+      const topActions = actions.slice(0, 5);
+
+      if (topActions.length > 0) {
+        process.stdout.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
+        process.stdout.write(chalk.bold("  Action Items\n\n"));
+        topActions.forEach((a, i) => {
+          process.stdout.write(`  ${a.icon} ${a.label}\n`);
+          process.stdout.write(chalk.dim(`    → ${a.command}\n`));
+        });
+      } else if (alerts.length > 0) {
         process.stdout.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
         for (const alert of alerts) {
           process.stdout.write(alert + "\n");
         }
+      } else {
+        process.stdout.write(chalk.green("\n  ✨ Everything looks good!\n"));
       }
 
       process.stdout.write("\n");
-
-      // Show suggested next commands (always visible, no interactive prompt)
-      process.stderr.write(chalk.dim("  Try next:\n"));
-      if (renewals.urgentCount > 0) {
-        process.stderr.write(`    ${chalk.cyan("pax8 subscriptions renewals --within 14")}  ${chalk.dim(`${renewals.urgentCount} urgent`)}\n`);
-      } else if (renewals.items.length > 0) {
-        process.stderr.write(`    ${chalk.cyan("pax8 subscriptions renewals")}              ${chalk.dim(`${renewals.items.length} upcoming`)}\n`);
-      }
-      if (highRecs.length > 0) {
-        process.stderr.write(`    ${chalk.cyan("pax8 recommendations list")}                ${chalk.dim(`${highRecs.length} opportunities`)}\n`);
-      }
-      process.stderr.write(`    ${chalk.cyan("pax8 companies list")}                      ${chalk.dim("browse customers")}\n`);
-      process.stderr.write(`    ${chalk.cyan("pax8 companies more <#>")}                  ${chalk.dim("drill into a customer")}\n`);
-      process.stderr.write("\n");
     } catch (error) {
       handleCommandError(error, spinner, "Failed to load status");
     }
