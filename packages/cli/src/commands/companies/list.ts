@@ -69,9 +69,22 @@ Examples:
       output(numbered, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} companies\n`)
-        );
+        const currentPage = result.page.number;
+        const totalPages = result.page.totalPages;
+        const totalElements = result.page.totalElements;
+        const pageSize = parseInt(allOpts.size, 10);
+
+        let pageInfo = `${totalElements} companies`;
+        if (totalPages > 1) {
+          pageInfo += ` · page ${currentPage + 1}/${totalPages}`;
+        }
+        process.stderr.write(chalk.dim(`\n  ${pageInfo}\n`));
+
+        if (totalPages > 1 && currentPage < totalPages - 1) {
+          process.stderr.write(
+            chalk.dim("  Next page: ") + chalk.cyan(`pax8 companies list --page ${currentPage + 1}`) + "\n"
+          );
+        }
 
         // Interactive: pick a company to drill into
         if (process.stdin.isTTY && process.env.PAX8_REPL !== "1") {
