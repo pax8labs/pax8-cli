@@ -127,7 +127,7 @@ Examples:
 
       if (isReplMode() && !allOpts.yes) {
         // Can't prompt in REPL — show the command to run with --yes
-        const cmd = `orders create --company ${allOpts.company} --product ${allOpts.product} --quantity ${quantity}${commitmentTerm && commitmentTerm !== "Monthly" ? ` --commitment-term ${commitmentTerm}` : ""} --yes`;
+        const cmd = `orders create --company ${allOpts.company} --product ${allOpts.product} --quantity ${quantity}${commitmentTerm ? ` --commitment-term ${commitmentTerm}` : ""} --yes`;
         process.stderr.write(chalk.dim("  To confirm, run:\n"));
         process.stderr.write(`  ${chalk.cyan(cmd)}\n\n`);
         return;
@@ -148,10 +148,7 @@ Examples:
         quantity,
         billingTerm: allOpts.billingTerm,
       };
-      // Only pass commitment term if it's a real commitment (not "Monthly" which is the default)
-      if (commitmentTerm && commitmentTerm !== "Monthly") {
-        lineItem.commitmentTerm = commitmentTerm;
-      }
+      if (commitmentTerm) lineItem.commitmentTerm = commitmentTerm;
 
       const orderInput: CreateOrderInput = {
         companyId: allOpts.company,
