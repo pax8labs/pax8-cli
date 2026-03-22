@@ -88,6 +88,77 @@ async function checkTokenFetch(): Promise<CheckResult> {
   }
 }
 
+async function checkApiHealth(): Promise<CheckResult> {
+  const isDemo = process.env.PAX8_DEMO === "1";
+  if (isDemo) {
+    return { name: "API connectivity", passed: true, detail: "Demo mode — mock API" };
+  }
+
+  const store = new CredentialStore();
+  const creds = await store.getCredentials();
+  if (!creds) {
+    return { name: "API connectivity", passed: false, detail: "No credentials — skipped" };
+  }
+
+  try {
+    const { TokenManager, Pax8Client, CompaniesApi } = await import("@pax8/core");
+    const tm = new TokenManager({ clientId: creds.clientId, clientSecret: creds.clientSecret });
+    const client = new Pax8Client({ tokenManager: tm, cacheTtlMs: 0 });
+    const api = new CompaniesApi(client);
+
+    const start = Date.now();
+    const result = await api.list({ size: 1 });
+    const latency = Date.now() - start;
+
+    const speed = latency < 2000 ? "fast" : latency < 10000 ? "slow" : "very slow";
+    return {
+      name: "API connectivity",
+      passed: true,
+      detail: `${result.page.totalElements} companies · ${latency}ms ${latency > 5000 ? "⚠ " + speed : speed}`,
+    };
+  } catch (err) {
+    return {
+      name: "API connectivity",
+      passed: false,
+      detail: err instanceof Error ? err.message.slice(0, 80) : String(err),
+    };
+  }
+}
+
+async function checkMcpServer(): Promise<CheckResult> {
+  try {
+    const mcpPath = path.join(process.cwd(), ".mcp.json");
+    const content = await fs.readFile(mcpPath, "utf-8");
+    const config = JSON.parse(content);
+    const servers = Object.keys(config.mcpServers || {});
+    if (servers.length === 0) {
+      return { name: "MCP servers", passed: true, detail: "None configured" };
+    }
+    return {
+      name: "MCP servers",
+      passed: true,
+      detail: servers.join(", "),
+    };
+  } catch {
+    return { name: "MCP servers", passed: true, detail: "None configured" };
+  }
+}
+
+async function checkTelemetry(): Promise<CheckResult> {
+  try {
+    const { loadConfig } = await import("@pax8/core");
+    const config = await loadConfig();
+    const enabled = config.telemetry?.enabled === true;
+    return {
+      name: "Telemetry",
+      passed: true,
+      detail: enabled ? "Enabled — sending to PostHog" : "Disabled",
+    };
+  } catch {
+    return { name: "Telemetry", passed: true, detail: "Disabled" };
+  }
+}
+
 async function checkCacheDir(): Promise<CheckResult> {
   try {
     await fs.mkdir(CACHE_DIR, { recursive: true });
@@ -127,7 +198,10 @@ Examples:
       await checkConfigFile(),
       await checkAuth(),
       await checkTokenFetch(),
+      await checkApiHealth(),
       await checkCacheDir(),
+      await checkMcpServer(),
+      await checkTelemetry(),
     ];
 
     let allPassed = true;
