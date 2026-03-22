@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 subscriptions list", () => {
   it("lists subscriptions in demo mode", async () => {
@@ -141,6 +141,16 @@ describe("pax8 subscriptions update", () => {
     expect(result.stdout).toContain("--quantity");
     expect(result.stdout).toContain("--billing-term");
   });
+
+  it("warns when no changes specified", async () => {
+    const result = await runCli([
+      "subscriptions",
+      "update",
+      "sub-summit-m365bp-001",
+    ]);
+    const combined = result.stdout + result.stderr;
+    expect(combined).toMatch(/[Nn]o changes/);
+  });
 });
 
 describe("pax8 subscriptions cancel", () => {
@@ -151,6 +161,17 @@ describe("pax8 subscriptions cancel", () => {
       "--help",
     ]);
     expect(result.stdout).toContain("Cancel a subscription");
+  });
+
+  it("errors with invalid subscription ID", async () => {
+    const result = await runCliExpectFailure([
+      "subscriptions",
+      "cancel",
+      "totally-bogus-id-not-real",
+      "--yes",
+    ]);
+    const combined = result.stdout + result.stderr;
+    expect(combined.length).toBeGreaterThan(0);
   });
 });
 

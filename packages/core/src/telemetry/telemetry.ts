@@ -20,6 +20,28 @@ export interface TelemetryEvent {
   node_version: string;
   os: string;
   demo_mode: boolean;
+  /** Full subcommand path, e.g. "recommendations.list" */
+  subcommand?: string;
+  /** Number of companies the user has (segment size) */
+  company_count?: number;
+  /** For recommendations commands, how many recs were found */
+  rec_count?: number;
+  /** For order create, did the order actually succeed */
+  order_success?: boolean;
+  /** Revenue: order total in dollars (unit_price × quantity) */
+  order_total_dollars?: number;
+  /** Revenue: monthly MRR impact of the order */
+  order_mrr_impact?: number;
+  /** Revenue: number of seats ordered */
+  order_seats?: number;
+  /** For recommendations act: total recs presented */
+  recs_presented?: number;
+  /** For recommendations act: how many were ordered */
+  recs_ordered?: number;
+  /** For recommendations act: how many were skipped */
+  recs_skipped?: number;
+  /** For recommendations act: total MRR uplift of orders placed */
+  recs_mrr_captured?: number;
 }
 
 export const TELEMETRY_NOTICE = `
@@ -138,7 +160,7 @@ export class Telemetry {
       const today = new Date().toISOString().slice(0, 10);
       const filePath = path.join(this.storageDir, `${today}.jsonl`);
       const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
-      await fs.appendFile(filePath, lines, "utf-8");
+      await fs.appendFile(filePath, lines, { encoding: "utf-8", mode: 0o600 });
     } catch {
       // Local write failure is non-fatal
     }
@@ -160,6 +182,17 @@ export class Telemetry {
             node_version: event.node_version,
             os: event.os,
             demo_mode: event.demo_mode,
+            ...(event.subcommand !== undefined && { subcommand: event.subcommand }),
+            ...(event.company_count !== undefined && { company_count: event.company_count }),
+            ...(event.rec_count !== undefined && { rec_count: event.rec_count }),
+            ...(event.order_success !== undefined && { order_success: event.order_success }),
+            ...(event.order_total_dollars !== undefined && { order_total_dollars: event.order_total_dollars }),
+            ...(event.order_mrr_impact !== undefined && { order_mrr_impact: event.order_mrr_impact }),
+            ...(event.order_seats !== undefined && { order_seats: event.order_seats }),
+            ...(event.recs_presented !== undefined && { recs_presented: event.recs_presented }),
+            ...(event.recs_ordered !== undefined && { recs_ordered: event.recs_ordered }),
+            ...(event.recs_skipped !== undefined && { recs_skipped: event.recs_skipped }),
+            ...(event.recs_mrr_captured !== undefined && { recs_mrr_captured: event.recs_mrr_captured }),
           },
         });
       }

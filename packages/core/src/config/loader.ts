@@ -51,5 +51,5 @@ export async function saveConfig(config: Config, configPath?: string): Promise<v
 
   const validated = ConfigSchema.parse(config);
   const content = YAML.stringify(validated);
-  await fs.writeFile(filePath, content, "utf-8");
+  await fs.writeFile(filePath, content, { encoding: "utf-8", mode: 0o600 });
 }

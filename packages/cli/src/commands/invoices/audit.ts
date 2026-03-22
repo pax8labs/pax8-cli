@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext } from "../../lib/context.js";
+import { buildContext, ALL_SUBS_SIZE } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -36,7 +36,7 @@ Examples:
       // Fetch invoices and active subscriptions in parallel
       const [invoicesResult, subsResult] = await Promise.all([
         ctx.api.invoices.list({ month: options.month, companyId, size: 200 }),
-        ctx.api.subscriptions.list({ companyId, size: 500 }),
+        ctx.api.subscriptions.list({ companyId, size: ALL_SUBS_SIZE }),
       ]);
 
       // Fetch items for each invoice in parallel

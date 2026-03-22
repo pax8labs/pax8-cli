@@ -5,10 +5,11 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency } from "../../lib/formatters.js";
+import { resolveProduct } from "../../lib/resolve-product.js";
 
 export const productsShowCommand = new Command("show")
   .description("Show product details")
-  .argument("<id>", "Product ID")
+  .argument("<id|name>", "Product ID or name")
   .option("--pricing", "Show pricing tiers")
   .option("--provisioning", "Show provisioning requirements")
   .option("--dependencies", "Show product dependencies")
@@ -28,20 +29,20 @@ Examples:
 
     try {
       spinner.start();
-      const product = await ctx.api.products.get(id);
+      const product = await resolveProduct(ctx, id);
 
       let pricing = null;
       let provisioning = null;
       let dependencies = null;
 
       if (options.pricing) {
-        pricing = await ctx.api.products.getPricing(id);
+        pricing = await ctx.api.products.getPricing(product.id);
       }
       if (options.provisioning) {
-        provisioning = await ctx.api.products.getProvisioningDetails(id);
+        provisioning = await ctx.api.products.getProvisioningDetails(product.id);
       }
       if (options.dependencies) {
-        dependencies = await ctx.api.products.getDependencies(id);
+        dependencies = await ctx.api.products.getDependencies(product.id);
       }
       spinner.stop();
 

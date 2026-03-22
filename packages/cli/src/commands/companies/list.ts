@@ -3,11 +3,11 @@ import chalk from "chalk";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
+import { replCmd } from "../../lib/confirm.js";
 import { output, type Column } from "../../lib/output.js";
 import { formatStatus, formatCompanyName } from "../../lib/formatters.js";
 import { saveLastList } from "../../lib/last-list.js";
-import { createInterface } from "readline";
-import { spawn } from "child_process";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const columns: Column[] = [
   { key: "_num", header: "#" },
@@ -103,33 +103,19 @@ Examples:
 
         if (totalPages > 1 && currentPage < totalPages - 1) {
           process.stderr.write(
-            chalk.dim("  Next page: ") + chalk.cyan(`pax8 companies list --page ${currentPage + 2}`) + "\n"
+            chalk.dim("  Next page: ") + chalk.cyan(replCmd(`pax8 companies list --page ${currentPage + 2}`)) + "\n"
           );
         }
 
         // Interactive: pick a company to drill into
-        if (process.stdin.isTTY && process.env.PAX8_REPL !== "1") {
-          const rl = createInterface({ input: process.stdin, output: process.stderr });
-          const answer = await new Promise<string>((resolve) => {
-            rl.question(chalk.dim(`\n  Enter # to view details, or press Enter to skip: `), (a) => {
-              rl.close();
-              resolve(a.trim());
-            });
-          });
-
-          if (answer !== "") {
-            const idx = parseInt(answer, 10);
-            if (idx >= 1 && idx <= result.content.length) {
-              process.stderr.write("\n");
-              await new Promise<void>((resolve) => {
-                const child = spawn("pax8", ["companies", "more", String(idx)], { stdio: "inherit", env: process.env });
-                child.on("close", () => resolve());
-              });
-              return;
-            }
-          }
-          process.stderr.write("\n");
-        }
+        const steps: NextStep[] = result.content.map(
+          (c: Record<string, unknown>, i: number) => ({
+            key: String(startNum + i + 1),
+            label: String(c.name),
+            command: ["companies", "more", String(c.name)],
+          })
+        );
+        await promptNextSteps(steps);
       }
     } catch (error) {
       handleCommandError(error, spinner, "Failed to list companies");

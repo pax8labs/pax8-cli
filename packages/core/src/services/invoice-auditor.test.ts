@@ -107,7 +107,7 @@ describe("auditInvoices", () => {
     expect(report.netImpact).toBe(25); // 50 - 25
   });
 
-  it("should match by companyId + productId when no subscriptionId", () => {
+  it("should match by companyId + productId when invoice item lacks subscriptionId", () => {
     const invoiceItems = [
       { companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 12, unitPrice: 10 },
     ];
@@ -116,16 +116,11 @@ describe("auditInvoices", () => {
     ];
 
     const report = auditInvoices(invoiceItems, subscriptions);
-    // Invoice has no subscriptionId, so it matches by companyId + productId
-    // sub has subscriptionId "sub-x" so its key is "sub:sub-x", invoice key is "cp:co-1:p1"
-    // These won't match with the current key logic - invoice lacks subscriptionId so uses cp:, sub has id so uses sub:
-    // Actually checking the logic: matchKey checks if subscriptionId exists
-    // For invoice: subscriptionId is undefined -> uses cp:co-1:p1
-    // For sub: subscriptionId is "sub-x" -> uses sub:sub-x
-    // These won't match. Let me adjust expectation - this is expected behavior that
-    // both need to use the same key format.
-    // Let's use a sub without an id field to test companyId+productId matching.
-    expect(report.discrepancies.length).toBeGreaterThan(0);
+    // Invoice has no subscriptionId but falls back to companyId+productId match
+    expect(report.discrepancies).toHaveLength(1);
+    expect(report.discrepancies[0].type).toBe("overcharge");
+    expect(report.discrepancies[0].delta).toBe(2);
+    expect(report.discrepancies[0].dollarImpact).toBe(20);
   });
 
   it("should only consider active subscriptions", () => {

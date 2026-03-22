@@ -8,8 +8,10 @@ import {
   formatCurrency,
   formatDaysUntil,
   formatDate,
+  calculateMrr,
 } from "../../lib/formatters.js";
-import { resolveFromLastList } from "../../lib/last-list.js";
+import { resolveCompany } from "../../lib/resolve-company.js";
+import { replCmd } from "../../lib/confirm.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 import { output, type Column } from "../../lib/output.js";
 
@@ -72,50 +74,19 @@ Examples:
       idOrName = command.args.join(" ");
     }
 
-    // Resolve numbered reference from last `companies list`
-    const fromList = await resolveFromLastList(idOrName);
-    if (fromList) {
-      idOrName = fromList.id;
-    }
-
     const spinner = createSpinner("Fetching company...").start();
 
     try {
       const ctx = await buildContext(allOpts);
 
-      // Resolve company
-      let company;
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName);
-      if (isUuid) {
-        company = await ctx.api.companies.get(idOrName);
-      } else {
-        const result = await ctx.api.companies.list({ size: 100 });
-        const matches = result.content.filter(
-          (c: Record<string, unknown>) => (c.name as string).toLowerCase() === idOrName.toLowerCase()
-        );
-        if (matches.length === 0) {
-          const fuzzy = result.content.filter(
-            (c: Record<string, unknown>) => (c.name as string).toLowerCase().includes(idOrName.toLowerCase())
-          );
-          if (fuzzy.length === 1) {
-            company = fuzzy[0];
-          } else if (fuzzy.length > 1) {
-            throw new Error(
-              `Multiple companies match "${idOrName}": ${fuzzy.map((c: Record<string, unknown>) => c.name).join(", ")}. Use an exact name or ID.`
-            );
-          } else {
-            throw new Error(`Company not found: ${idOrName}`);
-          }
-        } else {
-          company = matches[0];
-        }
-      }
+      // Resolve company by number, UUID, or name
+      const company = await resolveCompany(ctx, idOrName);
 
       // Fetch subscriptions and enrich product names
       spinner.text = `Fetching subscriptions for ${company.name}...`;
       let subs;
       try {
-        subs = await ctx.api.subscriptions.list({ companyId: company.id });
+        subs = await ctx.api.subscriptions.list({ companyId: company.id, size: 200 });
       } catch {
         subs = { content: [], page: { number: 0, totalPages: 0, totalElements: 0 } };
       }
@@ -130,7 +101,7 @@ Examples:
         const termEnd = s.commitmentTermEndDate as string | undefined;
         const rawName = s.productName as string | undefined;
         const term = String(s.billingTerm ?? "Monthly");
-        const mrr = term.toLowerCase().includes("annual") ? (price * qty) / 12 : price * qty;
+        const mrr = calculateMrr(price, qty, term);
         return {
           productName: rawName || `Product ${String(s.productId ?? "unknown").slice(0, 8)}`,
           quantity: qty,
@@ -157,7 +128,7 @@ Examples:
         existing.mrr += sub.mrr;
         vendorMap.set(vendor, existing);
       }
-      const vendors = [...vendorMap.values()].sort((a, b) => b.mrr - a.mrr);
+      const vendors = [...vendorMap.values()].map((v) => ({ ...v, mrr: Number(v.mrr.toFixed(2)) })).sort((a, b) => b.mrr - a.mrr);
 
       // Issues
       const issues: string[] = [];
@@ -182,7 +153,7 @@ Examples:
       if (ctx.outputFormat === "json" || ctx.outputFormat === "csv") {
         const result = {
           company: { name: company.name, id: company.id, status: company.status },
-          summary: { active_subscriptions: activeSubs.length, total_seats: totalSeats, mrr: totalMrr, arr: totalMrr * 12 },
+          summary: { active_subscriptions: activeSubs.length, total_seats: totalSeats, mrr: Number(totalMrr.toFixed(2)), arr: Number((totalMrr * 12).toFixed(2)) },
           vendors,
           subscriptions: activeSubs,
           issues,
@@ -208,8 +179,8 @@ Examples:
         process.stdout.write(chalk.dim(`  No subscriptions yet\n`));
         process.stdout.write(`  ${line}\n\n`);
         process.stderr.write(chalk.dim("  Get started:\n"));
-        process.stderr.write(`    ${chalk.cyan(`pax8 products search "Microsoft 365"`)}  ${chalk.dim("browse the catalog")}\n`);
-        process.stderr.write(`    ${chalk.cyan(`pax8 products search "backup"`)}  ${chalk.dim("find backup solutions")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 products search "Microsoft 365"`))}  ${chalk.dim("browse the catalog")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 products search "backup"`))}  ${chalk.dim("find backup solutions")}\n`);
         process.stderr.write("\n");
         return;
       }
@@ -272,8 +243,8 @@ Examples:
 
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim("  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(`pax8 recommendations list --company "${company.name}"`)}  ${chalk.dim("growth opportunities")}\n`);
-        process.stderr.write(`    ${chalk.cyan(`pax8 subscriptions list --company "${company.name}"`)}  ${chalk.dim("all subscriptions")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 recommendations list --company "${company.name}"`))}  ${chalk.dim("growth opportunities")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${company.name}"`))}  ${chalk.dim("all subscriptions")}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {
@@ -283,7 +254,7 @@ Examples:
         process.stderr.write(
           chalk.red.bold(`\n  \u2717 Could not load company summary\n`) +
           chalk.dim(`    The company may not exist or the API returned no data.\n`) +
-          chalk.yellow(`    \u2192 Run ${chalk.cyan("pax8 companies list")} to see available companies\n\n`)
+          chalk.yellow(`    \u2192 Run ${chalk.cyan(replCmd("pax8 companies list"))} to see available companies\n\n`)
         );
         process.exit(1);
         throw new Error("process.exit intercepted");

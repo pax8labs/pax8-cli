@@ -358,9 +358,17 @@ export function getRecommendations(
           }
         }
 
+        // If initial price lookup failed but we resolved a real product name, retry lookup
+        if (!estimatedMrrUplift && resolvedProductName) {
+          const resolvedPrice = productPriceMap.get(resolvedProductName.toLowerCase());
+          if (resolvedPrice) {
+            estimatedMrrUplift = resolvedPrice * primaryQty;
+          }
+        }
+
         const productAvailable = matchedProductId !== null;
         const orderCommand = matchedProductId
-          ? `pax8 orders create --company ${companyId} --product ${matchedProductId} --quantity ${primaryQty} --commitment-term Monthly`
+          ? `pax8 orders create --company "${companyName}" --product "${resolvedProductName}" --quantity ${primaryQty}`
           : null;
 
         // Demote to medium priority when the product isn't available/orderable
@@ -385,8 +393,8 @@ export function getRecommendations(
           suggestedProducts: [resolvedProductName, ...rule.suggestedProducts.slice(1)],
           orderCommand,
           productAvailable,
-          currentMrr,
-          estimatedMrrUplift,
+          currentMrr: Number(currentMrr.toFixed(2)),
+          estimatedMrrUplift: estimatedMrrUplift !== null ? Number(estimatedMrrUplift.toFixed(2)) : null,
           targetSeats: primaryQty,
         });
       }
@@ -400,7 +408,7 @@ export function getRecommendations(
 
       // For seat gaps, use the product ID directly from the subscription
       const orderCommand = gap.gapProductId
-        ? `pax8 orders create --company ${companyId} --product ${gap.gapProductId} --quantity ${gap.missingSeats} --commitment-term Monthly`
+        ? `pax8 orders create --company "${companyName}" --product "${gap.gapProduct}" --quantity ${gap.missingSeats}`
         : null;
 
       recommendations.push({
@@ -413,8 +421,8 @@ export function getRecommendations(
         suggestedProducts: [gap.gapProduct],
         orderCommand,
         productAvailable: true, // seat gaps reference products already in use
-        currentMrr,
-        estimatedMrrUplift,
+        currentMrr: Number(currentMrr.toFixed(2)),
+        estimatedMrrUplift: estimatedMrrUplift !== null ? Number(estimatedMrrUplift.toFixed(2)) : null,
         targetSeats: gap.missingSeats,
       });
     }
@@ -442,7 +450,7 @@ export function getRecommendations(
   });
 
   const companiesWithGaps = new Set(deduped.map((r) => r.companyId)).size;
-  const estimatedTotalMrrUplift = deduped.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+  const estimatedTotalMrrUplift = Number(deduped.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0).toFixed(2));
 
   return {
     recommendations: deduped,

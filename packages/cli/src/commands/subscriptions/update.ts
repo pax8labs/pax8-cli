@@ -4,7 +4,7 @@ import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { confirm } from "../../lib/confirm.js";
+import { confirmWithChange } from "../../lib/confirm.js";
 import { formatQuantity, formatCurrency, formatStatus } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 
@@ -35,18 +35,21 @@ Examples:
       const updateData: Record<string, unknown> = {};
 
       if (options.quantity !== undefined) {
-        const newQty = parseInt(options.quantity, 10);
+        let newQty = parseInt(options.quantity, 10);
 
-        // Warn on quantity reduction
-        if (newQty < sub.quantity) {
-          const confirmed = await confirm(
-            `This will reduce from ${sub.quantity} to ${newQty} seats. Continue?`
-          );
-          if (!confirmed) {
-            process.stderr.write(chalk.yellow("\n  Update cancelled.\n\n"));
-            return;
-          }
+        // Confirm quantity change (with option to adjust)
+        const confirmedQty = await confirmWithChange(
+          newQty < sub.quantity
+            ? `Reduce from ${formatQuantity(sub.quantity)} to ${formatQuantity(newQty)}?`
+            : `Update from ${formatQuantity(sub.quantity)} to ${formatQuantity(newQty)}?`,
+          newQty,
+          { label: "New quantity" },
+        );
+        if (confirmedQty === null) {
+          process.stderr.write(chalk.yellow("\n  Update cancelled.\n\n"));
+          return;
         }
+        newQty = confirmedQty;
 
         updateData.quantity = newQty;
       }

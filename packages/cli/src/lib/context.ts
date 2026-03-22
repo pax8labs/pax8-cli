@@ -17,6 +17,10 @@ import {
 import type { Config } from "@pax8/core";
 import { spawn } from "node:child_process";
 import { CliError } from "./errors.js";
+import { replCmd } from "./confirm.js";
+
+/** Page size for fetching "all" subscriptions in aggregate commands. */
+export const ALL_SUBS_SIZE = 1000;
 
 export interface ApiClient {
   companies: CompaniesApi;
@@ -96,10 +100,10 @@ export async function buildContext(
         "Not authenticated",
         ["No Pax8 API credentials found"],
         [
-          "Run: pax8 auth login --client-id <id> --client-secret <secret>",
+          `Run: ${replCmd("pax8 auth login")} --client-id <id> --client-secret <secret>`,
           "Or set environment variables: export PAX8_CLIENT_ID=... && export PAX8_CLIENT_SECRET=... (macOS/Linux)",
           "  PowerShell: $env:PAX8_CLIENT_ID=\"...\"; $env:PAX8_CLIENT_SECRET=\"...\"",
-          "Or use demo mode: PAX8_DEMO=1 pax8 <command> (macOS/Linux) or $env:PAX8_DEMO=\"1\"; pax8 <command> (PowerShell)",
+          `Or use demo mode: PAX8_DEMO=1 ${replCmd("pax8")} <command> (macOS/Linux) or $env:PAX8_DEMO="1"; ${replCmd("pax8")} <command> (PowerShell)`,
         ],
         "https://devx.pax8.com/",
       );

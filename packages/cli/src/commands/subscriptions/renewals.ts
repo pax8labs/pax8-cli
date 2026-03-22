@@ -10,7 +10,7 @@ import {
   formatCurrency,
   formatCompanyName,
 } from "../../lib/formatters.js";
-import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 
 function parseWithinDays(within: string): number {
@@ -60,11 +60,21 @@ Examples:
     try {
       const withinDays = parseWithinDays(options.within);
 
-      // Fetch subscriptions, optionally filtered by company
+      // Fetch subscriptions and companies in parallel
       const companyId = options.company
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
-      const result = await ctx.api.subscriptions.list({ size: 1000, companyId });
+      const [result, companiesResult] = await Promise.all([
+        ctx.api.subscriptions.list({ size: 1000, companyId }),
+        ctx.api.companies.list({ size: 200 }),
+      ]);
+
+      // Enrich with product and company names
+      const companyNames = new Map<string, string>();
+      for (const c of companiesResult.content) {
+        companyNames.set(c.id, c.name);
+      }
+      enrichCompanyNames(companyNames, result.content);
       await enrichProductNames(ctx, result.content as Record<string, unknown>[]);
       const allSubs = result.content;
 
@@ -76,6 +86,7 @@ Examples:
         output(
           report.items.map((item) => ({
             ...item,
+            mrrAtRisk: Number(item.mrrAtRisk.toFixed(2)),
             renewalDate: item.renewalDate.toISOString().split("T")[0],
           })),
           { format: "json" }
@@ -98,8 +109,14 @@ Examples:
 
       if (report.items.length === 0) {
         process.stdout.write(
-          chalk.green(`\n  🎉 No subscriptions renewing within ${withinDays} days. Smooth sailing!\n\n`)
+          chalk.green(`\n  🎉 No subscriptions renewing within ${withinDays} days. Smooth sailing!\n`)
         );
+        if (report.skippedNoDate > 0) {
+          process.stdout.write(
+            chalk.dim(`  ℹ ${report.skippedNoDate} subscription${report.skippedNoDate !== 1 ? "s have" : " has"} no renewal date set — these may be month-to-month.\n`)
+          );
+        }
+        process.stdout.write("\n");
         return;
       }
 

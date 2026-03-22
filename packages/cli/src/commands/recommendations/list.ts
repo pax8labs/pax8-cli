@@ -1,7 +1,5 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { createInterface } from "readline";
-import { spawn } from "child_process";
 import { getRecommendations, type Recommendation } from "@pax8/core";
 import { buildContext, ALL_SUBS_SIZE, type CommandContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
@@ -9,7 +7,9 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName, formatQuantity } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import { filterRecommendations } from "./filter.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const columns: Column[] = [
   {
@@ -41,6 +41,7 @@ const columns: Column[] = [
 ];
 
 async function promptLine(question: string): Promise<string> {
+  const { createInterface } = await import("readline");
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   return new Promise((resolve) => {
     rl.question(question, (answer) => {
@@ -60,6 +61,7 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
     process.stderr.write(chalk.bold(`\n  📦 ${productName} for ${companyName}\n\n`));
     const searchTerm = rec.suggestedProducts?.[0] ?? productName;
     process.stderr.write(chalk.dim(`  Searching for "${searchTerm}"...\n\n`));
+    const { spawn } = await import("child_process");
     await new Promise<void>((resolve) => {
       const child = spawn("pax8", ["products", "search", searchTerm], { stdio: "inherit", env: process.env });
       child.on("close", () => resolve());
@@ -137,7 +139,20 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
       }],
     });
     spinner.succeed("Order created 🎉");
-    process.stdout.write(`\n  Order ID: ${order.id}\n\n`);
+
+    process.stdout.write("\n");
+    process.stdout.write(`  ${chalk.dim("Order ID:".padEnd(18))}${order.id}\n`);
+    process.stdout.write(`  ${chalk.dim("Product:".padEnd(18))}${productName}\n`);
+    process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${companyName}\n`);
+    process.stdout.write(`  ${chalk.dim("Seats:".padEnd(18))}${quantity}\n`);
+    if (rec.estimatedMrrUplift) {
+      // Scale MRR estimate proportionally if quantity was changed
+      const mrrEstimate = rec.targetSeats && quantity !== rec.targetSeats
+        ? rec.estimatedMrrUplift * (quantity / rec.targetSeats)
+        : rec.estimatedMrrUplift;
+      process.stdout.write(`  ${chalk.dim("Est. MRR:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(mrrEstimate) + "/mo")} (${chalk.green("+" + formatCurrency(mrrEstimate * 12) + "/yr")})\n`);
+    }
+    process.stdout.write("\n");
   } catch (error) {
     spinner.fail("Order failed");
     const msg = error instanceof Error ? error.message : String(error);
@@ -150,6 +165,7 @@ export const recommendationsListCommand = new Command("list")
   .option("--company <id|name>", "Filter to a specific company")
   .option("--priority <level>", "Filter by priority (high, medium, low)")
   .option("--type <type>", "Filter by type (seat_gap or cross_sell)")
+  .option("--product <name>", "Filter by product name (e.g. 'AvePoint', 'Entra')")
   .option("--include-all", "Show all recommendations including ones without orderable products")
   .option("--limit <number>", "Max rows to show in table (default 10)")
   .addHelpText(
@@ -206,28 +222,7 @@ Examples:
 
       let recs = report.recommendations;
 
-      // Filter by company if specified (exact name, partial name/ID, or "contains" match)
-      if (options.company) {
-        const filter = options.company.toLowerCase();
-        recs = recs.filter(
-          (r) =>
-            r.companyId === options.company ||
-            r.companyId.startsWith(filter) ||
-            r.companyName.toLowerCase() === filter ||
-            r.companyName.toLowerCase() === `[demo] ${filter}` ||
-            r.companyName.toLowerCase().includes(filter)
-        );
-      }
-
-      // Filter by priority if specified
-      if (options.priority) {
-        recs = recs.filter((r) => r.priority === options.priority.toLowerCase());
-      }
-
-      // Filter by type if specified
-      if (options.type) {
-        recs = recs.filter((r) => r.type === options.type.toLowerCase());
-      }
+      recs = filterRecommendations(recs, options);
 
       if (ctx.outputFormat === "json") {
         output(recs, { format: "json" });
@@ -346,24 +341,25 @@ Examples:
         ));
       } catch { /* best effort */ }
 
-      // Interactive prompt
-      if (process.stdin.isTTY) {
-        const answer = await promptLine(
-          `\n  ${chalk.bold("Enter #")} to act, or press Enter to skip: `
-        );
-        if (answer !== "") {
-          const idx = parseInt(answer, 10) - 1;
-          if (idx >= 0 && idx < displayRecs.length) {
-            await executeRecommendation(displayRecs[idx], ctx);
-          } else {
-            process.stderr.write(chalk.yellow(`  Invalid selection.\n\n`));
-          }
-        } else {
-          process.stderr.write("\n");
+      // Interactive prompt — use shared promptNextSteps
+      const steps: NextStep[] = displayRecs.map((r, i) => {
+        if (r.orderCommand) {
+          // Tokenize orderCommand, strip leading "pax8" if present
+          const tokens = r.orderCommand.match(/"[^"]*"|\S+/g) ?? [];
+          const command = tokens[0] === "pax8" ? tokens.slice(1) : tokens;
+          return {
+            key: String(i + 1),
+            label: `${r.suggestedProducts?.[0] ?? "product"} for ${r.companyName}`,
+            command,
+          };
         }
-      } else {
-        process.stderr.write("\n");
-      }
+        return {
+          key: String(i + 1),
+          label: `Search for ${r.suggestedProducts?.[0] ?? "product"}`,
+          command: ["products", "search", r.suggestedProducts?.[0] ?? "product"],
+        };
+      });
+      await promptNextSteps(steps);
     } catch (error) {
       handleCommandError(error, spinner, "Failed to generate recommendations");
     }

@@ -67,6 +67,14 @@ export function formatDate(iso: string | Date): string {
   });
 }
 
+export function calculateMrr(price: number, quantity: number, billingTerm: string): number {
+  const term = billingTerm.toLowerCase();
+  const monthly = term.includes("annual") || term.includes("yearly")
+    ? (price * quantity) / 12
+    : price * quantity;
+  return Number(monthly.toFixed(2));
+}
+
 export function formatDaysUntil(date: string | Date): string {
   const now = new Date();
   const target = typeof date === "string" ? new Date(date) : date;

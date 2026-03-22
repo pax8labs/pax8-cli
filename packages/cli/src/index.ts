@@ -20,7 +20,47 @@ import { handleCommandError } from "./lib/errors.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
-import { loadConfig } from "@pax8/core";
+import { loadConfig, getTelemetry } from "@pax8/core";
+import type { Command as CommandType } from "commander";
+import { classifyError } from "./lib/instrumented-action.js";
+
+/**
+ * Build the full dotted command name from a Commander command,
+ * e.g. "companies.list", "subscriptions.show", "auth.login"
+ */
+function getFullCommandName(cmd: CommandType): string {
+  const parts: string[] = [];
+  let current: CommandType | null = cmd;
+  while (current) {
+    const name = current.name();
+    if (name && name !== "pax8") {
+      parts.unshift(name);
+    }
+    current = current.parent;
+  }
+  return parts.join(".") || "unknown";
+}
+
+/**
+ * Extract active flag names from a Commander command's options.
+ * Only includes flags that were explicitly set (not defaults).
+ */
+function extractCommandFlags(cmd: CommandType): string[] {
+  const flags: string[] = [];
+  try {
+    const opts = cmd.opts();
+    for (const key of Object.keys(opts)) {
+      const val = opts[key];
+      if (val !== undefined && val !== false) {
+        const flag = "--" + key.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+        flags.push(flag);
+      }
+    }
+  } catch {
+    // If opts() throws, return empty
+  }
+  return flags.sort();
+}
 
 export function createProgram(): Command {
   const program = new Command();
@@ -55,8 +95,14 @@ export function createProgram(): Command {
   program.addCommand(mooCommand, { hidden: true });
   program.addCommand(coffeeCommand, { hidden: true });
 
+  // ── Telemetry: record start time before every command ───────────────
+  const commandStartTimes = new WeakMap<CommandType, number>();
+
   // Time-based quip hook and demo mode banner
-  program.hook("preAction", async () => {
+  program.hook("preAction", async (_thisCommand, actionCommand) => {
+    // Record start time for duration tracking
+    commandStartTimes.set(actionCommand, Date.now());
+
     const quip = getTimeQuip();
     if (quip) {
       console.error(quip);
@@ -74,6 +120,45 @@ export function createProgram(): Command {
     }
     if (isDemo) {
       process.stderr.write(chalk.dim("  \u2728 Demo mode \u2014 showing sample data\n"));
+    }
+
+    // Load telemetry enabled state (reads config once)
+    try {
+      const telemetry = getTelemetry();
+      await telemetry.loadEnabled();
+    } catch {
+      // Never block the CLI on telemetry init
+    }
+  });
+
+  // ── Telemetry: track successful command execution ──────────────────
+  program.hook("postAction", async (_thisCommand, actionCommand) => {
+    try {
+      const telemetry = getTelemetry();
+      if (!telemetry.isEnabled()) return;
+
+      const startTime = commandStartTimes.get(actionCommand) ?? Date.now();
+      const subcommand = getFullCommandName(actionCommand);
+      const flags = extractCommandFlags(actionCommand);
+      const isDemo = process.env.PAX8_DEMO === "1" || false;
+
+      telemetry.track({
+        event: "command_executed",
+        command: subcommand.split(".")[0] ?? subcommand,
+        subcommand,
+        flags,
+        duration_ms: Date.now() - startTime,
+        success: true,
+        cli_version: typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0",
+        node_version: process.version,
+        os: process.platform,
+        demo_mode: isDemo,
+      });
+
+      // Fire-and-forget flush
+      telemetry.flush().then(() => telemetry.shutdown()).catch(() => {});
+    } catch {
+      // Telemetry must never crash the CLI
     }
   });
 
@@ -113,12 +198,12 @@ function showWelcomeScreen(): void {
     `  ${rule}`,
     "",
     `  ${chalk.dim("Get started:")}`,
-    `    ${chalk.cyan("pax8 auth login")}        ${chalk.dim("Set up API credentials")}`,
-    `    ${chalk.cyan("pax8 init --demo")}       ${chalk.dim("Try with sample data")}`,
-    `    ${chalk.cyan("pax8 companies list")}    ${chalk.dim("List your customers")}`,
-    `    ${chalk.cyan("pax8 doctor")}            ${chalk.dim("Check your setup")}`,
+    `    ${chalk.cyan("auth login")}        ${chalk.dim("Set up API credentials")}`,
+    `    ${chalk.cyan("init --demo")}       ${chalk.dim("Try with sample data")}`,
+    `    ${chalk.cyan("companies list")}    ${chalk.dim("List your customers")}`,
+    `    ${chalk.cyan("doctor")}            ${chalk.dim("Check your setup")}`,
     "",
-    `  ${chalk.dim("Run")} pax8 --help ${chalk.dim("for all commands.")}`,
+    `  ${chalk.dim("Run")} help ${chalk.dim("for all commands.")}`,
     "",
   ];
   process.stdout.write(lines.join("\n"));
@@ -177,15 +262,24 @@ async function startRepl(): Promise<void> {
     if (args.length === 1 && /^\d+$/.test(args[0])) {
       try {
         const actionsPath = path.join(homedir(), ".pax8", "pending-actions.json");
-        const actions = JSON.parse(fs.readFileSync(actionsPath, "utf-8"));
-        const picked = actions.find((a: { key: string }) => a.key === args[0]);
+        const raw = JSON.parse(fs.readFileSync(actionsPath, "utf-8"));
+        // Validate shape before trusting — prevent command injection via file tampering
+        const actions = Array.isArray(raw) ? raw.filter(
+          (a: unknown): a is { key: string; command?: string; rec?: { orderCommand?: string; suggestedProducts?: string[] } } =>
+            typeof a === "object" && a !== null &&
+            typeof (a as Record<string, unknown>).key === "string" &&
+            ((a as Record<string, unknown>).command === undefined || typeof (a as Record<string, unknown>).command === "string") &&
+            ((a as Record<string, unknown>).rec === undefined || typeof (a as Record<string, unknown>).rec === "object")
+        ) : [];
+        const picked = actions.find((a) => a.key === args[0]);
         if (picked) {
-          if (picked.command) {
-            // Generic command template (e.g. from companies list)
+          if (picked.command && /^pax8\s+\w/.test(picked.command)) {
+            // Generic command template (e.g. from companies list) — must start with "pax8 <subcommand>"
             args = tokenize(picked.command.replace(/^pax8\s+/, ""));
           } else if (picked.rec) {
             // Recommendation action
-            if (picked.rec.orderCommand) {
+            if (picked.rec.orderCommand && /^pax8\s+orders\s+create\b/.test(picked.rec.orderCommand)) {
+              // Only allow order create commands from recommendations
               args = tokenize(picked.rec.orderCommand.replace(/^pax8\s+/, ""));
             } else {
               const searchTerm = picked.rec.suggestedProducts?.[0] ?? "product";
@@ -199,6 +293,9 @@ async function startRepl(): Promise<void> {
     // Run each command as a child process so it can never crash the REPL.
     // Use "inherit" for all stdio so the child gets the real TTY
     // (needed for table output detection and spinner animations).
+    // Pause the REPL readline while the child runs so stdin input
+    // (like "y" for confirmations) doesn't leak back to the REPL.
+    rl.pause();
     const child = spawn("node", [cliPath, ...args], {
       env: { ...process.env, FORCE_COLOR: "1", PAX8_REPL: "1" },
       stdio: "inherit",
@@ -206,6 +303,7 @@ async function startRepl(): Promise<void> {
 
     child.on("close", () => {
       process.stdout.write("\n");
+      rl.resume();
       rl.prompt();
     });
   });
@@ -258,7 +356,36 @@ async function main(): Promise<void> {
     }
   } else {
     const program = createProgram();
-    await program.parseAsync(process.argv).catch((err) => {
+    await program.parseAsync(process.argv).catch(async (err) => {
+      // Track failed command execution via telemetry
+      try {
+        const telemetry = getTelemetry();
+        if (telemetry.isEnabled()) {
+          // Determine which command was attempted from argv
+          const args = process.argv.slice(2).filter((a) => !a.startsWith("-"));
+          const subcommand = args.join(".") || "unknown";
+
+          telemetry.track({
+            event: "command_executed",
+            command: args[0] ?? "unknown",
+            subcommand,
+            flags: process.argv.slice(2).filter((a) => a.startsWith("--")).sort(),
+            duration_ms: 0, // Duration not available for top-level errors
+            success: false,
+            error_code: classifyError(err),
+            cli_version: typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0",
+            node_version: process.version,
+            os: process.platform,
+            demo_mode: process.env.PAX8_DEMO === "1",
+          });
+
+          await telemetry.flush().catch(() => {});
+          await telemetry.shutdown().catch(() => {});
+        }
+      } catch {
+        // Telemetry must never interfere with error handling
+      }
+
       handleCommandError(err);
     });
   }

@@ -132,14 +132,15 @@ export class Pax8Client {
       init.body = JSON.stringify(body);
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-    init.signal = controller.signal;
-
     let lastError: Error | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     try {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        const controller = new AbortController();
+        timeoutId = setTimeout(() => controller.abort(), this.timeout);
+        init.signal = controller.signal;
+
         try {
           if (this.debug) {
             process.stderr.write(`[pax8] ${method} ${path}\n`);
@@ -152,6 +153,7 @@ export class Pax8Client {
           }
 
           if (response.status === 429) {
+            clearTimeout(timeoutId);
             if (attempt === MAX_RETRIES) {
               throw new RateLimitError("Rate limit exceeded", path, (parseRetryAfter(response) ?? 60) * 1000);
             }
@@ -161,6 +163,7 @@ export class Pax8Client {
           }
 
           if (response.status >= 500) {
+            clearTimeout(timeoutId);
             if (attempt === MAX_RETRIES) {
               const errorBody = await safeJson(response);
               throw new ApiError(
@@ -198,11 +201,18 @@ export class Pax8Client {
           const data = await response.json();
           return data as T;
         } catch (error) {
+          clearTimeout(timeoutId);
           if (error instanceof ApiError || error instanceof RateLimitError) {
             throw error;
           }
           if (error instanceof DOMException && error.name === "AbortError") {
-            throw new ApiError(`Request timed out after ${this.timeout}ms`, 0, path, method);
+            if (attempt === MAX_RETRIES) {
+              throw new ApiError(`Request timed out after ${this.timeout}ms`, 0, path, method);
+            }
+            lastError = error as Error;
+            const backoff = Math.pow(2, attempt) * 1000;
+            await sleep(backoff);
+            continue;
           }
           lastError = error as Error;
           if (attempt === MAX_RETRIES) {

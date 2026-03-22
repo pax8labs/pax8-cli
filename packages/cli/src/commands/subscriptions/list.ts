@@ -10,7 +10,7 @@ import {
   formatCompanyName,
 } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
-import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 
 const columns: Column[] = [
   {
@@ -73,11 +73,7 @@ Examples:
       try {
         const companies = await companiesPromise;
         const nameMap = new Map((companies.content as Array<{ id: string; name: string }>).map(c => [c.id, c.name]));
-        for (const sub of subs) {
-          if (!sub.companyName) {
-            sub.companyName = nameMap.get(String(sub.companyId)) ?? String(sub.companyId).slice(0, 8);
-          }
-        }
+        enrichCompanyNames(nameMap, subs);
       } catch { /* best effort */ }
 
       spinner.stop();

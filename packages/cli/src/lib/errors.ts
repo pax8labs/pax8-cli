@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { ZodError, ZodIssueCode } from "zod";
 import type { Ora } from "ora";
 import { ApiError } from "@pax8/core";
+import { replCmd } from "./confirm.js";
 
 export class CliError extends Error {
   constructor(
@@ -103,7 +104,7 @@ export function handleCommandError(
       chalk.red(`  The Pax8 API returned an unexpected response.\n`) +
       chalk.dim(`    ${formatZodError(error)}\n\n`) +
       chalk.yellow(`    → This usually means no data was found, or the API format has changed.\n`) +
-      chalk.yellow(`    → Try a different query, or run ${chalk.cyan("pax8 doctor")} to check your setup.\n\n`)
+      chalk.yellow(`    → Try a different query, or run ${chalk.cyan(replCmd("pax8 doctor"))} to check your setup.\n\n`)
     );
   } else if (error instanceof ApiError) {
     process.stderr.write(
@@ -111,7 +112,7 @@ export function handleCommandError(
     );
     if (error.statusCode === 401 || error.statusCode === 403) {
       process.stderr.write(
-        chalk.yellow(`    → Your credentials may have expired. Run ${chalk.cyan("pax8 auth login")} to re-authenticate.\n\n`)
+        chalk.yellow(`    → Your credentials may have expired. Run ${chalk.cyan(replCmd("pax8 auth login"))} to re-authenticate.\n\n`)
       );
     } else if (error.statusCode === 404) {
       const detail = extractErrorDetail(error.responseBody);

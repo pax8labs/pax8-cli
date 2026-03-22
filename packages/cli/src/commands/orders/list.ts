@@ -3,8 +3,10 @@ import chalk from "chalk";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
+import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { output, type Column } from "../../lib/output.js";
 import { formatStatus, formatDate } from "../../lib/formatters.js";
+import { enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 
 const columns: Column[] = [
   { key: "id", header: "ID", format: (v) => chalk.dim(String(v).slice(0, 8)) },
@@ -17,7 +19,7 @@ const columns: Column[] = [
 
 export const ordersListCommand = new Command("list")
   .description("List orders")
-  .option("--company <id>", "Filter by company ID")
+  .option("--company <id|name>", "Filter by company ID or name")
   .option("--status <status>", "Filter by status (Completed, Processing, Failed, PendingManual)")
   .option("--page <number>", "Page number (zero-based)", "0")
   .option("--size <number>", "Page size", "25")
@@ -43,7 +45,7 @@ Examples:
         size: parseInt(allOpts.size, 10),
       };
       if (allOpts.company) {
-        params.companyId = allOpts.company;
+        params.companyId = await resolveCompanyId(ctx, allOpts.company);
       }
       if (allOpts.status) {
         params.status = allOpts.status;
@@ -56,11 +58,7 @@ Examples:
 
       // Enrich company names
       const nameMap = new Map((companiesResult.content as Array<{ id: string; name: string }>).map(c => [c.id, c.name]));
-      for (const order of result.content as Record<string, unknown>[]) {
-        if (!order.companyName) {
-          order.companyName = nameMap.get(String(order.companyId)) ?? String(order.companyId).slice(0, 8);
-        }
-      }
+      enrichCompanyNames(nameMap, result.content as Record<string, unknown>[]);
 
       spinner.stop();
 

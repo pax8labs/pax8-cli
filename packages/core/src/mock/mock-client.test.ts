@@ -46,6 +46,16 @@ describe("MockPax8Client", () => {
       expect(company.id).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     });
 
+    it("resolves company by exact name", async () => {
+      const company = await client.companies.get("Summit Healthcare Partners");
+      expect(company.name).toBe("Summit Healthcare Partners");
+    });
+
+    it("resolves company by partial name match", async () => {
+      const company = await client.companies.get("Summit");
+      expect(company.name).toBe("Summit Healthcare Partners");
+    });
+
     it("throws 404 for unknown ID", async () => {
       await expect(client.companies.get("nonexistent")).rejects.toThrow(
         "Company not found"

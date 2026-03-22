@@ -3,16 +3,18 @@ import chalk from "chalk";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError, extractErrorDetail } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
-import { confirm, isReplMode, replCmd } from "../../lib/confirm.js";
-import { formatStatus, formatDate, formatCurrency } from "../../lib/formatters.js";
+import { confirmWithChange, replCmd } from "../../lib/confirm.js";
+import { formatStatus, formatDate, formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
-import { ApiError } from "@pax8/core";
+import { ApiError, getTelemetry } from "@pax8/core";
 import type { CreateOrderInput, OrderLineItemInput, BillingTerm, CommitmentTerm } from "@pax8/core";
+import { resolveCompany } from "../../lib/resolve-company.js";
+import { resolveProduct } from "../../lib/resolve-product.js";
 
 export const ordersCreateCommand = new Command("create")
   .description("Create a new order")
-  .requiredOption("--company <id>", "Company ID (required)")
-  .requiredOption("--product <id>", "Product ID (required)")
+  .requiredOption("--company <id|name>", "Company ID or name (required)")
+  .requiredOption("--product <id|name>", "Product ID or name (required)")
   .option("--quantity <number>", "Quantity", "1")
   .option("--billing-term <term>", "Billing term (Monthly or Annual)", "Monthly")
   .option("--commitment-term <term>", "Commitment term (Monthly, 1-Year, or 3-Year)")
@@ -36,6 +38,14 @@ Examples:
       const ctx = await buildContext(allOpts);
       const quantity = parseInt(allOpts.quantity, 10);
 
+      if (isNaN(quantity) || quantity <= 0) {
+        throw new CliError(
+          `Invalid quantity: "${allOpts.quantity}"`,
+          ["Quantity must be a positive integer (1 or greater)"],
+          [`Example: ${replCmd("pax8 orders create")} --company <id> --product <id> --quantity 5`],
+        );
+      }
+
       // Resolve names, pricing, and pre-check orderability
       let commitmentTerm = allOpts.commitmentTerm;
       let unitPrice: number | null = null;
@@ -43,14 +53,18 @@ Examples:
       let productNotFound = false;
       const warnings: string[] = [];
 
+      // Resolve company (hard requirement — will throw on failure)
+      const companyResult = await resolveCompany(ctx, allOpts.company);
+      companyName = companyResult.name;
+      const resolvedCompanyId = companyResult.id;
+
+      // Resolve product (best effort — warn but continue if not found)
+      let resolvedProductId = allOpts.product;
+      const productResult = await resolveProduct(ctx, allOpts.product).catch(() => { productNotFound = true; return null; });
+      if (productResult) { productName = productResult.name; resolvedProductId = productResult.id; }
+
       try {
-        const [companyResult, productResult, pricing] = await Promise.all([
-          ctx.api.companies.get(allOpts.company).catch(() => null),
-          ctx.api.products.get(allOpts.product).catch(() => { productNotFound = true; return null; }),
-          ctx.api.products.getPricing(allOpts.product).catch(() => null),
-        ]);
-        if (companyResult?.name) companyName = companyResult.name;
-        if (productResult?.name) productName = productResult.name;
+        const pricing = await ctx.api.products.getPricing(resolvedProductId).catch(() => null);
 
         if (pricing && pricing.length > 0) {
           // Infer commitment requirement: if every pricing plan has a commitmentTerm, the product requires one
@@ -60,9 +74,9 @@ Examples:
           if (!match) match = pricing.find((p) => p.billingTerm === allOpts.billingTerm);
           if (match) {
             if (!commitmentTerm && match.commitmentTerm) commitmentTerm = match.commitmentTerm;
-            if (match.rates?.[0]?.suggestedRetailPrice) {
-              unitPrice = match.rates[0].suggestedRetailPrice;
-            }
+            const ratePrice = match.rates?.[0]?.suggestedRetailPrice
+              ?? (match as Record<string, unknown>).suggestedRetailPrice as number | undefined;
+            if (ratePrice) unitPrice = ratePrice;
           } else {
             // No plan matches the billing term
             const available = [...new Set(pricing.map((p) => p.billingTerm))].join(", ");
@@ -70,8 +84,8 @@ Examples:
           }
         }
       } catch (err) {
-      if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] order pre-check failed: ${err}\n`);
-    }
+        if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] order pre-check failed: ${err}\n`);
+      }
 
       // Pre-flight checks
       if (productNotFound) warnings.push("Product not found in catalog — may not be orderable");
@@ -81,13 +95,13 @@ Examples:
 
       const totalPrice = unitPrice ? unitPrice * quantity : null;
       const mrr = totalPrice
-        ? allOpts.billingTerm === "Annual" ? totalPrice / 12 : totalPrice
+        ? calculateMrr(unitPrice!, quantity, allOpts.billingTerm)
         : null;
 
       process.stderr.write(chalk.bold("\n  📦 Order Preview:\n\n"));
       process.stderr.write(`  ${chalk.dim("Company:".padEnd(18))}${companyName}\n`);
       process.stderr.write(`  ${chalk.dim("Product:".padEnd(18))}${productName}\n`);
-      process.stderr.write(`  ${chalk.dim("Quantity:".padEnd(18))}${quantity} seats\n`);
+      process.stderr.write(`  ${chalk.dim("Quantity:".padEnd(18))}${formatQuantity(quantity)}\n`);
       process.stderr.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${allOpts.billingTerm}\n`);
       if (commitmentTerm) {
         process.stderr.write(`  ${chalk.dim("Commitment:".padEnd(18))}${commitmentTerm}\n`);
@@ -112,14 +126,11 @@ Examples:
 
       process.stderr.write("\n");
 
-      if (isReplMode() && !allOpts.yes) {
-        // Can't prompt in REPL — tell user to add --yes
-        process.stderr.write(chalk.dim("  Add ") + chalk.cyan("--yes") + chalk.dim(" to your command to place this order.\n\n"));
-        return;
-      }
-
-      const confirmed = await confirm("Place this order?", { default: true });
-      if (!confirmed) {
+      const confirmedQty = await confirmWithChange(
+        `Place order for ${formatQuantity(quantity)}?`,
+        quantity,
+      );
+      if (confirmedQty === null) {
         process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
         return;
       }
@@ -129,14 +140,14 @@ Examples:
       // Only pass fields defined in OrderLineItemInput — do not include
       // display-only fields like productName which are not part of the API input schema.
       const lineItem: OrderLineItemInput = {
-        productId: allOpts.product,
-        quantity,
+        productId: resolvedProductId,
+        quantity: confirmedQty,
         billingTerm: allOpts.billingTerm as BillingTerm,
         ...(commitmentTerm ? { commitmentTerm: commitmentTerm as CommitmentTerm } : {}),
       };
 
       const orderInput: CreateOrderInput = {
-        companyId: allOpts.company,
+        companyId: resolvedCompanyId,
         lineItems: [lineItem],
       };
       const order = await ctx.api.orders.create(orderInput);
@@ -144,18 +155,52 @@ Examples:
 
       spinner.succeed("Order created 🎉");
 
+      // Track revenue
+      try {
+        const tel = getTelemetry();
+        const orderMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : undefined;
+        tel.track({
+          event: "command_executed",
+          command: "orders.create",
+          flags: [],
+          duration_ms: 0,
+          success: true,
+          cli_version: "0.1.0",
+          node_version: process.version,
+          os: process.platform,
+          demo_mode: process.env.PAX8_DEMO === "1",
+          order_success: true,
+          order_total_dollars: unitPrice ? unitPrice * confirmedQty : undefined,
+          order_mrr_impact: orderMrr ?? undefined,
+          order_seats: confirmedQty,
+        });
+      } catch { /* telemetry never breaks the CLI */ }
+
       if (ctx.outputFormat === "json") {
         process.stdout.write(JSON.stringify(order, null, 2) + "\n");
         return;
       }
 
+      // Post-order summary with financial impact
+      const finalMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : null;
+      const finalTotal = unitPrice ? unitPrice * confirmedQty : null;
+
       process.stdout.write("\n");
       process.stdout.write(`  ${chalk.dim("Order ID:".padEnd(18))}${order.id}\n`);
       if (order.status) process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(order.status)}\n`);
-      process.stdout.write(`  ${chalk.dim("Date:".padEnd(18))}${formatDate(order.createdDate)}\n`);
-      if (order.lineItems && order.lineItems.length > 0) {
-        process.stdout.write(`  ${chalk.dim("Items:".padEnd(18))}${order.lineItems.length}\n`);
+      process.stdout.write(`  ${chalk.dim("Product:".padEnd(18))}${productName}\n`);
+      process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${companyName}\n`);
+      process.stdout.write(`  ${chalk.dim("Seats:".padEnd(18))}${formatQuantity(confirmedQty)}\n`);
+      if (unitPrice) {
+        process.stdout.write(`  ${chalk.dim("Unit Price:".padEnd(18))}${formatCurrency(unitPrice)}/seat/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
       }
+      if (finalTotal) {
+        process.stdout.write(`  ${chalk.dim("Total:".padEnd(18))}${formatCurrency(finalTotal)}/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
+      }
+      if (finalMrr) {
+        process.stdout.write(`  ${chalk.dim("Est. MRR:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(finalMrr) + "/mo")} (${chalk.green("+" + formatCurrency(finalMrr * 12) + "/yr")})\n`);
+      }
+      process.stdout.write("\n");
       // Next steps
       process.stderr.write(chalk.dim("  Try next:\n"));
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders show ${order.id}`))}  ${chalk.dim("check order status")}\n`);
@@ -177,8 +222,8 @@ Examples:
                 "This product may not be available in your region, or it may be restricted (e.g., non-profit only)",
               ],
               [
-                `Search for alternatives: pax8 products search "${shortName}"`,
-                `View ${displayCompany}'s current subscriptions: pax8 companies more "${displayCompany}"`,
+                `Search for alternatives: ${replCmd("pax8 products search")} "${shortName}"`,
+                `View ${displayCompany}'s current subscriptions: ${replCmd("pax8 companies more")} "${displayCompany}"`,
               ],
             ),
           );
@@ -198,7 +243,7 @@ Examples:
             causes.push("Order validation failed — check quantity, billing term, or provisioning requirements");
             steps.push("Ensure the quantity meets minimum/maximum seat requirements");
           }
-          steps.push(`View product details: pax8 products show ${allOpts.product}`);
+          steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
 
           handleCommandError(
             new CliError(
@@ -223,7 +268,7 @@ Examples:
             if (detail) causes.push(detail);
             steps.push("Double-check all order parameters (product ID, company ID, quantity)");
           }
-          steps.push(`View product details: pax8 products show ${allOpts.product}`);
+          steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
 
           handleCommandError(
             new CliError(`Can't order "${displayProduct}" for ${displayCompany}`, causes, steps),

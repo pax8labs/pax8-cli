@@ -3,6 +3,7 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
+import { replCmd } from "../lib/confirm.js";
 import { CredentialStore } from "@pax8/core";
 
 const CONFIG_DIR = path.join(os.homedir(), ".pax8");
@@ -33,7 +34,7 @@ async function checkConfigFile(): Promise<CheckResult> {
     return {
       name: "Config file exists",
       passed: false,
-      detail: `Not found. Run: pax8 config init`,
+      detail: `Not found. Run: ${replCmd("pax8 config init")}`,
     };
   }
 }
@@ -56,7 +57,7 @@ async function checkAuth(): Promise<CheckResult> {
   return {
     name: "Authentication configured",
     passed: false,
-    detail: "No credentials found. Run: pax8 auth login",
+    detail: `No credentials found. Run: ${replCmd("pax8 auth login")}`,
   };
 }
 

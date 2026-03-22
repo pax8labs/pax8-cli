@@ -63,7 +63,7 @@ describe("getRecommendations", () => {
       (r) => r.companyId === "c1" && r.title.includes("Datto")
     );
     expect(rec).toBeDefined();
-    expect(rec!.orderCommand).toContain("prod-bk");
+    expect(rec!.orderCommand).toContain("Datto SaaS Protection");
     expect(rec!.productAvailable).toBe(true);
   });
 
@@ -102,6 +102,24 @@ describe("getRecommendations", () => {
     const gap = report.recommendations.find((r) => r.type === "seat_gap");
     expect(gap).toBeDefined();
     expect(gap!.targetSeats).toBe(80); // 100 - 20
+  });
+
+  it("rounds MRR values to 2 decimal places", () => {
+    // Use a price that causes floating-point issues: 22.99 * 3 / 12 = 5.7475
+    const subs = [
+      makeSub({ price: 22.99, quantity: 3, billingTerm: "Annual" }),
+    ];
+    const report = getRecommendations(subs);
+    for (const rec of report.recommendations) {
+      if (rec.currentMrr != null) {
+        const decimals = String(rec.currentMrr).split(".")[1] ?? "";
+        expect(decimals.length).toBeLessThanOrEqual(2);
+      }
+      if (rec.estimatedMrrUplift != null) {
+        const decimals = String(rec.estimatedMrrUplift).split(".")[1] ?? "";
+        expect(decimals.length).toBeLessThanOrEqual(2);
+      }
+    }
   });
 
   it("deduplicates recommendations", () => {

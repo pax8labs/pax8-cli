@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { loadConfig, saveConfig } from "@pax8/core";
+import { replCmd } from "../lib/confirm.js";
 
 export const initCommand = new Command("init")
   .description("Initialize configuration (or enable demo mode)")
@@ -40,10 +41,10 @@ Examples:
           config.demo = true;
           await saveConfig(config);
           process.stdout.write(
-            chalk.green("\n  \u2713 Demo mode enabled. Try: pax8 companies list\n")
+            chalk.green(`\n  \u2713 Demo mode enabled. Try: ${replCmd("pax8 companies list")}\n`)
           );
           process.stdout.write(
-            chalk.dim("  Disable with: pax8 init --demo off\n\n")
+            chalk.dim(`  Disable with: ${replCmd("pax8 init --demo off")}\n\n`)
           );
         }
         return;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runCli, runCliExpectSuccess } from "./test-utils.js";
+import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 orders", () => {
   describe("orders list", () => {
@@ -123,6 +123,44 @@ describe("pax8 orders", () => {
       expect(result.stdout).toContain("--company");
       expect(result.stdout).toContain("--product");
       expect(result.stdout).toContain("Examples:");
+    });
+  });
+
+  describe("orders create validation", () => {
+    it("errors when --company flag is missing", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--product",
+        "prod-m365-biz-prem-0001",
+      ]);
+      expect(result.stderr).toContain("--company");
+    });
+
+    it("errors when --product flag is missing", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      ]);
+      expect(result.stderr).toContain("--product");
+    });
+
+    it("errors with invalid quantity", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--product",
+        "prod-m365-biz-prem-0001",
+        "--quantity",
+        "-5",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/[Ii]nvalid quantity/);
     });
   });
 });

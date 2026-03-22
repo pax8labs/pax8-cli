@@ -1,12 +1,13 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { createInterface } from "readline";
-import { getRecommendations, type Recommendation } from "@pax8/core";
+import { getRecommendations, getTelemetry, type Recommendation } from "@pax8/core";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import { filterRecommendations } from "./filter.js";
 
 async function prompt(question: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
@@ -29,33 +30,68 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
     return "skipped";
   }
 
-  const answer = await prompt(`\n  ${chalk.cyan("[y]")} order  ${chalk.dim("[s] skip")}  ${chalk.dim("[q] quit")}  > `);
+  const answer = await prompt(`\n  ${chalk.cyan("[y]")} order  ${chalk.dim("[c] change qty")}  ${chalk.dim("[s] skip")}  ${chalk.dim("[q] quit")}  > `);
 
   if (answer === "q" || answer === "quit") return "quit";
-  if (answer !== "y" && answer !== "yes" && answer !== "") return "skipped";
+  if (answer !== "y" && answer !== "yes" && answer !== "c" && answer !== "change" && answer !== "") return "skipped";
 
   // Parse and execute order
-  const companyMatch = rec.orderCommand.match(/--company\s+(\S+)/);
-  const productMatch = rec.orderCommand.match(/--product\s+(\S+)/);
+  const companyMatch = rec.orderCommand.match(/--company\s+"([^"]+)"|--company\s+(\S+)/);
+  const productMatch = rec.orderCommand.match(/--product\s+"([^"]+)"|--product\s+(\S+)/);
   const qtyMatch = rec.orderCommand.match(/--quantity\s+(\S+)/);
   if (!companyMatch || !productMatch) {
     process.stderr.write(chalk.red("  Could not parse order.\n"));
     return "skipped";
   }
 
-  const quantity = parseInt(qtyMatch?.[1] ?? String(rec.targetSeats ?? 1), 10);
+  let quantity = parseInt(qtyMatch?.[1] ?? String(rec.targetSeats ?? 1), 10);
+
+  if (answer === "c" || answer === "change") {
+    const qtyAnswer = await prompt(`  Quantity? [${quantity}] `);
+    if (qtyAnswer !== "") {
+      const parsed = parseInt(qtyAnswer, 10);
+      if (isNaN(parsed) || parsed <= 0) {
+        process.stderr.write(chalk.yellow("  Cancelled.\n"));
+        return "skipped";
+      }
+      quantity = parsed;
+    }
+  }
+
+  // Use companyId directly from the rec (already resolved)
+  // Resolve product: try the matched value as a product ID first, fall back to search
+  const matchedProduct = productMatch[1] ?? productMatch[2];
+  let productId = matchedProduct;
+  // If it doesn't look like a UUID/ID, resolve by name
+  if (matchedProduct && !/^[0-9a-f-]{8,}$/i.test(matchedProduct) && !matchedProduct.startsWith("prod-")) {
+    try {
+      const searchResult = await ctx.api.products.search(matchedProduct);
+      const match = searchResult.content.find(
+        (p: { name: string; id: string }) => p.name.toLowerCase() === matchedProduct.toLowerCase()
+      );
+      if (match) productId = match.id;
+    } catch { /* use as-is */ }
+  }
 
   const spinner = createSpinner("Creating order...").start();
   try {
     const order = await ctx.api.orders.create({
-      companyId: companyMatch[1],
+      companyId: rec.companyId,
       lineItems: [{
-        productId: productMatch[1],
+        productId,
         quantity,
         billingTerm: "Monthly",
       }],
     });
-    spinner.succeed(`Ordered ${product} for ${rec.companyName} (${quantity} seats)`);
+    // Show financial impact
+    let mrrLine = "";
+    if (rec.estimatedMrrUplift) {
+      const mrrEstimate = rec.targetSeats && quantity !== rec.targetSeats
+        ? rec.estimatedMrrUplift * (quantity / rec.targetSeats)
+        : rec.estimatedMrrUplift;
+      mrrLine = chalk.green(` +${formatCurrency(mrrEstimate)}/mo`);
+    }
+    spinner.succeed(`Ordered ${product} for ${rec.companyName} (${quantity} seats)${mrrLine}`);
     return "ordered";
   } catch (error) {
     spinner.fail("Order failed");
@@ -109,30 +145,7 @@ Examples:
       const report = getRecommendations(subs, productsResult.content);
 
       let recs = report.recommendations.filter((r) => r.productAvailable);
-
-      if (options.company) {
-        const filter = options.company.toLowerCase();
-        recs = recs.filter(
-          (r) =>
-            r.companyId === options.company ||
-            r.companyId.startsWith(filter) ||
-            r.companyName.toLowerCase() === filter ||
-            r.companyName.toLowerCase() === `[demo] ${filter}` ||
-            r.companyName.toLowerCase().includes(filter)
-        );
-      }
-
-      if (options.priority) {
-        recs = recs.filter((r) => r.priority === options.priority.toLowerCase());
-      }
-
-      if (options.product) {
-        const pFilter = options.product.toLowerCase();
-        recs = recs.filter((r) =>
-          (r.suggestedProducts?.[0] ?? "").toLowerCase().includes(pFilter) ||
-          r.title.toLowerCase().includes(pFilter)
-        );
-      }
+      recs = filterRecommendations(recs, options);
 
       spinner.stop();
 
@@ -146,10 +159,14 @@ Examples:
 
       let ordered = 0;
       let skipped = 0;
+      let mrrCaptured = 0;
 
       for (let i = 0; i < recs.length; i++) {
         const result = await actOnRec(recs[i], i, recs.length, ctx);
-        if (result === "ordered") ordered++;
+        if (result === "ordered") {
+          ordered++;
+          mrrCaptured += recs[i].estimatedMrrUplift ?? 0;
+        }
         if (result === "skipped") skipped++;
         if (result === "quit") break;
       }
@@ -158,7 +175,28 @@ Examples:
       process.stderr.write(chalk.dim("\n  ─────────────────────────────\n"));
       process.stderr.write(`  ${chalk.green.bold(`${ordered} ordered`)}`);
       if (skipped > 0) process.stderr.write(chalk.dim(` · ${skipped} skipped`));
+      if (mrrCaptured > 0) process.stderr.write(chalk.green(` · ${formatCurrency(mrrCaptured)}/mo MRR captured`));
       process.stderr.write("\n\n");
+
+      // Track recommendation flow
+      try {
+        const tel = getTelemetry();
+        tel.track({
+          event: "command_executed",
+          command: "recommendations.act",
+          flags: [],
+          duration_ms: 0,
+          success: true,
+          cli_version: "0.1.0",
+          node_version: process.version,
+          os: process.platform,
+          demo_mode: process.env.PAX8_DEMO === "1",
+          recs_presented: recs.length,
+          recs_ordered: ordered,
+          recs_skipped: skipped,
+          recs_mrr_captured: mrrCaptured > 0 ? mrrCaptured : undefined,
+        });
+      } catch { /* telemetry never breaks the CLI */ }
     } catch (error) {
       handleCommandError(error, spinner, "Failed to process recommendations");
     }

@@ -28,7 +28,32 @@ describe("orders create", () => {
     expect(result.stderr).toContain("Microsoft 365 Business Premium [New Commerce Experience]");
   });
 
-  it("in REPL mode without --yes shows confirm command", async () => {
+  it("rejects quantity 0 with clear error", async () => {
+    const result = await runCli([
+      "orders", "create",
+      "--company", "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "--product", "prod-m365-biz-prem-0001",
+      "--quantity", "0",
+      "--yes",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Invalid quantity");
+    expect(result.stderr).not.toContain("Order Preview");
+  });
+
+  it("rejects negative quantity with clear error", async () => {
+    const result = await runCli([
+      "orders", "create",
+      "--company", "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "--product", "prod-m365-biz-prem-0001",
+      "--quantity", "-5",
+      "--yes",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Invalid quantity");
+  });
+
+  it("in REPL mode without --yes shows order preview but does not create", async () => {
     const result = await runCli(
       [
         "orders", "create",
@@ -38,8 +63,8 @@ describe("orders create", () => {
       ],
       { PAX8_REPL: "1" },
     );
-    expect(result.stderr).toContain("--yes");
-    // Should NOT actually create the order
+    expect(result.stderr).toContain("Order Preview");
+    // Without --yes and no TTY input, order should not be created
     expect(result.stderr).not.toContain("Order created");
   });
 

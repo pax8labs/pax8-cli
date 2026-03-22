@@ -78,27 +78,37 @@ function normalizeSubscription(sub: AuditSubscriptionInput): NormalizedSubscript
   };
 }
 
-function matchKey(item: { subscriptionId?: string; companyId: string; productId?: string }): string {
-  if (item.subscriptionId) return `sub:${item.subscriptionId}`;
-  return `cp:${item.companyId}:${item.productId ?? ""}`;
+function subKey(subscriptionId: string): string {
+  return `sub:${subscriptionId}`;
+}
+
+function cpKey(companyId: string, productId?: string): string {
+  return `cp:${companyId}:${productId ?? ""}`;
 }
 
 export function auditInvoices(invoiceItems: AuditInvoiceItemInput[], subscriptions: AuditSubscriptionInput[]): AuditReport {
   const normalizedInvoices = invoiceItems.map(normalizeInvoiceItem);
   const normalizedSubs = subscriptions.map(normalizeSubscription).filter((s) => s.status === "active");
 
+  // Index each subscription under both its sub: key and cp: key so that
+  // invoice items can match regardless of whether they carry a subscriptionId.
   const subMap = new Map<string, NormalizedSubscription>();
   for (const sub of normalizedSubs) {
-    subMap.set(matchKey(sub), sub);
+    if (sub.subscriptionId) {
+      subMap.set(subKey(sub.subscriptionId), sub);
+    }
+    subMap.set(cpKey(sub.companyId, sub.productId), sub);
   }
 
-  const matchedSubKeys = new Set<string>();
+  const matchedSubs = new Set<NormalizedSubscription>();
   const discrepancies: AuditDiscrepancy[] = [];
 
   // Check each invoice item against subscriptions
   for (const inv of normalizedInvoices) {
-    const key = matchKey(inv);
-    const sub = subMap.get(key);
+    // Try sub: key first (most specific), then fall back to cp: key
+    const sub =
+      (inv.subscriptionId ? subMap.get(subKey(inv.subscriptionId)) : undefined) ??
+      subMap.get(cpKey(inv.companyId, inv.productId));
 
     if (!sub) {
       // Invoiced but no active subscription
@@ -115,7 +125,7 @@ export function auditInvoices(invoiceItems: AuditInvoiceItemInput[], subscriptio
       continue;
     }
 
-    matchedSubKeys.add(key);
+    matchedSubs.add(sub);
 
     const delta = inv.quantity - sub.quantity;
     if (delta === 0) continue;
@@ -135,8 +145,7 @@ export function auditInvoices(invoiceItems: AuditInvoiceItemInput[], subscriptio
 
   // Check for active subscriptions not invoiced
   for (const sub of normalizedSubs) {
-    const key = matchKey(sub);
-    if (!matchedSubKeys.has(key) && !normalizedInvoices.some((inv) => matchKey(inv) === key)) {
+    if (!matchedSubs.has(sub)) {
       discrepancies.push({
         companyId: sub.companyId,
         companyName: sub.companyName,

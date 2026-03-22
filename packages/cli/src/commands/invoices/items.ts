@@ -5,11 +5,12 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency } from "../../lib/formatters.js";
+import { resolveCompanyId } from "../../lib/resolve-company.js";
 
 export const invoicesItemsCommand = new Command("items")
   .description("List invoice line items")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
-  .option("--company <id>", "Filter by company ID")
+  .option("--company <id|name>", "Filter by company ID or name")
   .option("--invoice-id <id>", "Filter by invoice ID")
   .option("--page <number>", "Page number (0-based)", "0")
   .option("--size <number>", "Page size", "25")
@@ -29,9 +30,12 @@ Examples:
 
     try {
       spinner.start();
+      const companyId = options.company
+        ? await resolveCompanyId(ctx, options.company)
+        : undefined;
       const result = await ctx.api.invoices.listItems({
         month: options.month,
-        companyId: options.company,
+        companyId,
         invoiceId: options.invoiceId,
         page: parseInt(options.page, 10),
         size: parseInt(options.size, 10),

@@ -25,6 +25,7 @@ export interface RenewalReport {
   annualCount: number;
   monthlyCount: number;
   urgentCount: number; // within 14 days
+  skippedNoDate: number; // subscriptions with no commitmentTermEndDate
 }
 
 function daysBetween(a: Date, b: Date): number {
@@ -45,10 +46,14 @@ function computeMrrAtRisk(price: number, quantity: number, billingTerm: string):
 export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], withinDays: number): RenewalReport {
   const now = new Date();
   const items: RenewalItem[] = [];
+  let skippedNoDate = 0;
 
   for (const sub of subscriptions) {
     const endDateRaw = sub.commitmentTermEndDate ?? sub.commitmentTerm?.endDate;
-    if (!endDateRaw) continue;
+    if (!endDateRaw) {
+      skippedNoDate++;
+      continue;
+    }
 
     const renewalDate = new Date(endDateRaw);
     if (isNaN(renewalDate.getTime())) continue;
@@ -90,5 +95,6 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
     annualCount,
     monthlyCount,
     urgentCount,
+    skippedNoDate,
   };
 }

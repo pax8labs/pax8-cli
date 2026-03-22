@@ -94,11 +94,26 @@ Examples:
     const spinner = createSpinner("Loading dashboard...").start();
 
     try {
-      const [companiesResult, subsResult, productsResult] = await Promise.all([
+      const [companiesSettled, subsSettled, productsSettled] = await Promise.allSettled([
         ctx.api.companies.list({ size: 200 }),
         ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE }),
         ctx.api.products.list({ size: 200 }),
       ]);
+
+      const emptyPage = { number: 0, totalPages: 0, totalElements: 0 };
+      const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as any[], page: { ...emptyPage } };
+      const subsResult = subsSettled.status === 'fulfilled' ? subsSettled.value : { content: [] as any[], page: { ...emptyPage } };
+      const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as any[], page: { ...emptyPage } };
+
+      if (companiesSettled.status === 'rejected') {
+        process.stderr.write(chalk.yellow("  ⚠ Could not load companies\n"));
+      }
+      if (subsSettled.status === 'rejected') {
+        process.stderr.write(chalk.yellow("  ⚠ Could not load subscriptions\n"));
+      }
+      if (productsSettled.status === 'rejected') {
+        process.stderr.write(chalk.yellow("  ⚠ Could not load products\n"));
+      }
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) {
