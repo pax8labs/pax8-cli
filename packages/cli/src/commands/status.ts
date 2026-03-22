@@ -190,13 +190,22 @@ Examples:
         interface ActionItem { urgency: number; line: string; cmd: string }
         const actions: ActionItem[] = [];
 
-        for (const r of renewals.items.slice(0, 2)) {
+        // Dedupe renewals by company — show one per company
+        const renewalCompanies = new Set<string>();
+        for (const r of renewals.items) {
+          if (renewalCompanies.size >= 2) break;
+          if (renewalCompanies.has(r.companyId)) continue;
+          renewalCompanies.add(r.companyId);
+          const companyRenewals = renewals.items.filter((x) => x.companyId === r.companyId);
           const days = r.daysUntilRenewal;
           const tag = days <= 7 ? chalk.red.bold(`${days}d`) : chalk.yellow(`${days}d`);
+          const label = companyRenewals.length > 1
+            ? `${r.companyName} — ${companyRenewals.length} subscriptions renew in ${tag}`
+            : `${r.companyName} — ${r.productName} renews in ${tag}`;
           actions.push({
             urgency: days,
-            line: `${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${r.companyName} — ${r.productName} renews in ${tag}`,
-            cmd: replCmd(`pax8 subscriptions renewals`),
+            line: `${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${label}`,
+            cmd: replCmd(`pax8 subscriptions renewals --company "${r.companyName}"`),
           });
         }
 

@@ -11,6 +11,7 @@ import {
   formatCompanyName,
 } from "../../lib/formatters.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { resolveCompanyId } from "../../lib/resolve-company.js";
 
 function parseWithinDays(within: string): number {
   const match = within.match(/^(\d+)d$/);
@@ -41,13 +42,14 @@ const columns: Column[] = [
 export const subscriptionsRenewalsCommand = new Command("renewals")
   .description("Show upcoming subscription renewals")
   .option("--within <period>", "Time window (e.g. 7d, 14d, 30d, 90d)", "30d")
+  .option("--company <id|name>", "Filter by company")
   .addHelpText(
     "after",
     `
 Examples:
   pax8 subscriptions renewals
   pax8 subscriptions renewals --within 7d
-  pax8 subscriptions renewals --within 90d
+  pax8 subscriptions renewals --company "Summit Healthcare"
   pax8 subscriptions renewals --json`
   )
   .action(async (options, cmd) => {
@@ -58,8 +60,11 @@ Examples:
     try {
       const withinDays = parseWithinDays(options.within);
 
-      // Fetch all subscriptions (large page to get them all)
-      const result = await ctx.api.subscriptions.list({ size: 1000 });
+      // Fetch subscriptions, optionally filtered by company
+      const companyId = options.company
+        ? await resolveCompanyId(ctx, options.company)
+        : undefined;
+      const result = await ctx.api.subscriptions.list({ size: 1000, companyId });
       await enrichProductNames(ctx, result.content as Record<string, unknown>[]);
       const allSubs = result.content;
 
