@@ -3,11 +3,11 @@ import chalk from "chalk";
 import { createInterface } from "readline";
 import { spawn } from "child_process";
 import { getRecommendations, type Recommendation } from "@pax8/core";
-import { buildContext, type CommandContext } from "../../lib/context.js";
+import { buildContext, ALL_SUBS_SIZE, type CommandContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { formatCurrency, formatCompanyName } from "../../lib/formatters.js";
+import { formatCurrency, formatCompanyName, formatQuantity } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { replCmd } from "../../lib/confirm.js";
 
@@ -55,27 +55,9 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
   let companyName = rec.companyName;
   let productName = rec.suggestedProducts[0] ?? "Unknown";
 
-  process.stderr.write(chalk.bold(`\n  📦 Order Preview:\n\n`));
-  process.stderr.write(`  ${chalk.dim("Company:")}  ${companyName}\n`);
-  process.stderr.write(`  ${chalk.dim("Product:")}  ${rec.title}\n`);
-  process.stderr.write(`  ${chalk.dim("Seats:")}    ${rec.targetSeats}\n`);
-  if (rec.estimatedMrrUplift) {
-    process.stderr.write(`  ${chalk.dim("Est. MRR:")} ${chalk.green("+" + formatCurrency(rec.estimatedMrrUplift) + "/mo")}\n`);
-  }
-  process.stderr.write("\n");
-
-  // Ask for quantity (default to suggested)
-  const qtyAnswer = await promptLine(
-    `  Quantity? [${rec.targetSeats}] `
-  );
-  const quantity = qtyAnswer === "" ? rec.targetSeats! : parseInt(qtyAnswer, 10);
-  if (isNaN(quantity) || quantity <= 0) {
-    process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
-    return;
-  }
-
   // If no order command, run a product search to help the user find one
   if (!rec.orderCommand) {
+    process.stderr.write(chalk.bold(`\n  📦 ${productName} for ${companyName}\n\n`));
     const searchTerm = rec.suggestedProducts?.[0] ?? productName;
     process.stderr.write(chalk.dim(`  Searching for "${searchTerm}"...\n\n`));
     await new Promise<void>((resolve) => {
@@ -85,27 +67,71 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
     return;
   }
 
-  const companyMatch = rec.orderCommand.match(/--company\s+(\S+)/);
-  const productMatch = rec.orderCommand.match(/--product\s+(\S+)/);
+  const companyMatch = rec.orderCommand.match(/--company\s+"([^"]+)"|--company\s+(\S+)/);
+  const productMatch = rec.orderCommand.match(/--product\s+"([^"]+)"|--product\s+(\S+)/);
   if (!companyMatch || !productMatch) {
     process.stderr.write(chalk.red("  Could not parse order command.\n\n"));
     return;
   }
 
+  let quantity = rec.targetSeats ?? 1;
+
+  process.stderr.write(chalk.bold(`\n  📦 Order Preview:\n\n`));
+  process.stderr.write(`  ${chalk.dim("Company:")}  ${companyName}\n`);
+  process.stderr.write(`  ${chalk.dim("Product:")}  ${productName}\n`);
+  process.stderr.write(`  ${chalk.dim("Seats:")}    ${quantity}\n`);
+  if (rec.estimatedMrrUplift) {
+    process.stderr.write(`  ${chalk.dim("Est. MRR:")} ${chalk.green("+" + formatCurrency(rec.estimatedMrrUplift) + "/mo")}\n`);
+  }
+  process.stderr.write("\n");
+
   const confirmAnswer = await promptLine(
-    `  Place order for ${quantity} seats? [Y/n] `
+    `  Place order for ${formatQuantity(quantity)}? [y/n/c] `
   );
-  if (confirmAnswer !== "" && !confirmAnswer.toLowerCase().startsWith("y")) {
+  const answer = confirmAnswer.toLowerCase();
+  if (answer === "c" || answer === "change") {
+    const qtyAnswer = await promptLine(`  Quantity? [${quantity}] `);
+    if (qtyAnswer === "") {
+      // keep default
+    } else {
+      const parsed = parseInt(qtyAnswer, 10);
+      if (isNaN(parsed) || parsed <= 0) {
+        process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
+        return;
+      }
+      quantity = parsed;
+    }
+    // Confirm with new quantity
+    const reconfirm = await promptLine(`  Place order for ${formatQuantity(quantity)}? [y/n] `);
+    if (reconfirm !== "" && !reconfirm.toLowerCase().startsWith("y")) {
+      process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
+      return;
+    }
+  } else if (answer !== "" && !answer.startsWith("y")) {
     process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
     return;
+  }
+
+  // Use companyId directly from the rec (already resolved)
+  // Resolve product: try the matched value as an ID first, fall back to search by name
+  const matchedProductVal = productMatch[1] ?? productMatch[2];
+  let productId = matchedProductVal;
+  if (matchedProductVal && !/^[0-9a-f-]{8,}$/i.test(matchedProductVal) && !matchedProductVal.startsWith("prod-")) {
+    try {
+      const searchResult = await ctx.api.products.search(matchedProductVal);
+      const found = searchResult.content.find(
+        (p: { name: string; id: string }) => p.name.toLowerCase() === matchedProductVal.toLowerCase()
+      );
+      if (found) productId = found.id;
+    } catch { /* use as-is */ }
   }
 
   const spinner = createSpinner("Creating order...").start();
   try {
     const order = await ctx.api.orders.create({
-      companyId: companyMatch[1],
+      companyId: rec.companyId,
       lineItems: [{
-        productId: productMatch[1],
+        productId,
         quantity,
         billingTerm: "Monthly",
       }],
@@ -152,7 +178,7 @@ Examples:
     try {
       // Fetch subscriptions, companies, and enrich product names — all in parallel where possible
       const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: 1000, status: "Active" }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE, status: "Active" }),
         ctx.api.companies.list({ size: 200 }),
       ]);
 
@@ -299,8 +325,11 @@ Examples:
       }
 
       if (unavailableCount > 0) {
-        process.stderr.write(chalk.dim(`\n  ${unavailableCount} more recommendation${unavailableCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet\n`));
+        process.stderr.write(chalk.dim(`  ${unavailableCount} more recommendation${unavailableCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet\n`));
       }
+
+      // Suggest recommendations act
+      process.stderr.write(chalk.dim(`  Walk through all: `) + chalk.cyan(replCmd("pax8 recommendations act")) + "\n");
 
       // Save pending actions for REPL mode
       try {
@@ -317,8 +346,8 @@ Examples:
         ));
       } catch { /* best effort */ }
 
-      // Interactive prompt (non-REPL only)
-      if (process.stdin.isTTY && process.env.PAX8_REPL !== "1") {
+      // Interactive prompt
+      if (process.stdin.isTTY) {
         const answer = await promptLine(
           `\n  ${chalk.bold("Enter #")} to act, or press Enter to skip: `
         );

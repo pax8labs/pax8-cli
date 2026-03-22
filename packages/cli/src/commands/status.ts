@@ -1,14 +1,79 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext } from "../lib/context.js";
+import { buildContext, ALL_SUBS_SIZE } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
-import { formatCurrency } from "../lib/formatters.js";
+import { formatCurrency, calculateMrr } from "../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
 import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
 import type { Subscription } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../lib/next-step.js";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+interface CompanyStats {
+  name: string;
+  mrr: number;
+  seats: number;
+  subs: number;
+}
+
+function computePortfolioStats(activeSubs: Subscription[]) {
+  let mrr = 0;
+  let totalSeats = 0;
+  const companyIds = new Set<string>();
+  const companyMap = new Map<string, CompanyStats>();
+
+  for (const sub of activeSubs) {
+    const price = sub.price ?? 0;
+    const qty = sub.quantity ?? 0;
+    const term = String(sub.billingTerm ?? "Monthly");
+    const subMrr = calculateMrr(price, qty, term);
+
+    mrr += subMrr;
+    totalSeats += qty;
+    companyIds.add(sub.companyId);
+
+    const coId = sub.companyId;
+    const existing = companyMap.get(coId) ?? { name: sub.companyName ?? coId, mrr: 0, seats: 0, subs: 0 };
+    existing.mrr += subMrr;
+    existing.seats += qty;
+    existing.subs += 1;
+    companyMap.set(coId, existing);
+  }
+
+  const topCustomers = [...companyMap.values()]
+    .sort((a, b) => b.mrr - a.mrr)
+    .slice(0, 5);
+
+  return { mrr, totalSeats, companyIds, topCustomers };
+}
+
+function tokenizeCmd(cmd: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let inQuote = false;
+  let quoteChar = "";
+  for (const ch of cmd) {
+    if (inQuote) {
+      if (ch === quoteChar) { inQuote = false; }
+      else { current += ch; }
+    } else if (ch === '"' || ch === "'") {
+      inQuote = true;
+      quoteChar = ch;
+    } else if (ch === " ") {
+      if (current) { args.push(current); current = ""; }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) args.push(current);
+  return args;
+}
+
+// ── Command ──────────────────────────────────────────────────────────────────
 
 export const statusCommand = new Command("status")
   .description("Quick snapshot of your Pax8 business")
@@ -29,71 +94,31 @@ Examples:
     const spinner = createSpinner("Loading dashboard...").start();
 
     try {
-      // Fetch companies, subscriptions, and products in parallel
       const [companiesResult, subsResult, productsResult] = await Promise.all([
         ctx.api.companies.list({ size: 200 }),
-        ctx.api.subscriptions.list({ size: 1000 }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE }),
         ctx.api.products.list({ size: 200 }),
       ]);
 
-      // Build company name lookup
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) {
         companyNames.set(c.id, c.name);
       }
 
-      // Enrich subscriptions with company and product names
       const allSubs = subsResult.content;
       enrichCompanyNames(companyNames, allSubs);
       await enrichProductNames(ctx, allSubs);
 
       spinner.succeed("Dashboard loaded");
+
       const activeSubs = allSubs.filter((s) => s.status === "Active");
-      let mrr = 0;
-      let totalSeats = 0;
-      const companyIds = new Set<string>();
-      for (const sub of activeSubs) {
-        const price = sub.price ?? 0;
-        const qty = sub.quantity ?? 0;
-        const term = String(sub.billingTerm ?? "Monthly");
-        mrr += term.toLowerCase().includes("annual") ? (price * qty) / 12 : price * qty;
-        totalSeats += qty;
-        companyIds.add(sub.companyId);
-      }
-
-      // Renewals in next 30 days
+      const { mrr, totalSeats, companyIds, topCustomers } = computePortfolioStats(activeSubs);
       const renewals = getUpcomingRenewals(allSubs, 30);
-
-      // Recommendations
-      const recsReport = getRecommendations(
-        activeSubs,
-        productsResult.content,
-      );
+      const recsReport = getRecommendations(activeSubs, productsResult.content);
       const highRecs = recsReport.recommendations.filter((r) => r.priority === "high");
-
-      // Trials
       const trials = allSubs.filter((s) => s.status === "Trial");
 
-      // Compute per-company MRR for top customers
-      const companyMrrMap = new Map<string, { name: string; mrr: number; seats: number; subs: number }>();
-      for (const sub of activeSubs) {
-        const coId = sub.companyId;
-        const coName = sub.companyName ?? coId;
-        const price = sub.price ?? 0;
-        const qty = sub.quantity ?? 0;
-        const term = String(sub.billingTerm ?? "Monthly");
-        const subMrr = term.toLowerCase().includes("annual") ? (price * qty) / 12 : price * qty;
-
-        const existing = companyMrrMap.get(coId) ?? { name: coName, mrr: 0, seats: 0, subs: 0 };
-        existing.mrr += subMrr;
-        existing.seats += qty;
-        existing.subs += 1;
-        companyMrrMap.set(coId, existing);
-      }
-      const topCustomers = [...companyMrrMap.values()]
-        .sort((a, b) => b.mrr - a.mrr)
-        .slice(0, 5);
-
+      // ── JSON output ──────────────────────────────────────────────
       if (ctx.outputFormat === "json") {
         process.stdout.write(JSON.stringify({
           totalCompanies: companiesResult.page.totalElements,
@@ -126,7 +151,7 @@ Examples:
 
       if (ctx.outputFormat === "quiet") return;
 
-      // Determine which sections to show
+      // ── Display flags ────────────────────────────────────────────
       const showAll = options.all;
       const showCustomers = showAll || options.customers;
       const showRenewals = showAll || options.renewals;
@@ -135,11 +160,11 @@ Examples:
 
       const arr = mrr * 12;
       const out = process.stdout;
-
-      out.write("\n");
-      out.write(chalk.bold("  Pax8 Business Snapshot\n\n"));
+      const divider = () => out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
 
       // ── Revenue headline ─────────────────────────────────────────
+      out.write("\n");
+      out.write(chalk.bold("  Pax8 Business Snapshot\n\n"));
       out.write(`  ${chalk.cyan.bold(formatCurrency(mrr))}/mo MRR  ·  ${chalk.cyan.bold(formatCurrency(arr))}/yr ARR\n\n`);
       out.write(`  ${chalk.dim("Companies:")}     ${companiesResult.page.totalElements}\n`);
       out.write(`  ${chalk.dim("Active subs:")}   ${activeSubs.length} across ${companyIds.size} companies\n`);
@@ -148,105 +173,92 @@ Examples:
         out.write(`  ${chalk.dim("Avg MRR/co:")}    ${formatCurrency(mrr / companyIds.size)}\n`);
       }
 
-      // ── Compact alerts (default mode) ────────────────────────────
+      // ── Default mode: alerts + quick actions ─────────────────────
       if (isDefault) {
         const alerts: string[] = [];
 
         if (renewals.urgentCount > 0) {
-          alerts.push(
-            chalk.red(`  ! ${renewals.urgentCount} renewal${renewals.urgentCount > 1 ? "s" : ""} due within 14d`) +
-            chalk.dim(` — ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk`)
-          );
+          alerts.push(chalk.red(`  ! ${renewals.urgentCount} renewal${renewals.urgentCount > 1 ? "s" : ""} due within 14d`) + chalk.dim(` — ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk`));
         } else if (renewals.items.length > 0) {
-          alerts.push(
-            chalk.yellow(`  ! ${renewals.items.length} renewal${renewals.items.length > 1 ? "s" : ""} in next 30d`) +
-            chalk.dim(` — ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk`)
-          );
+          alerts.push(chalk.yellow(`  ! ${renewals.items.length} renewal${renewals.items.length > 1 ? "s" : ""} in next 30d`) + chalk.dim(` — ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk`));
+        } else if (renewals.skippedNoDate > 0) {
+          alerts.push(chalk.dim(`  ℹ ${renewals.skippedNoDate} subscription${renewals.skippedNoDate !== 1 ? "s" : ""} with no renewal date (likely month-to-month)`));
         }
 
         if (highRecs.length > 0) {
           const uplift = highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0);
-          alerts.push(
-            chalk.green(`  + ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"}`) +
-            chalk.green.bold(` — ${formatCurrency(uplift)}/mo potential`)
-          );
+          alerts.push(chalk.green(`  + ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"}`) + chalk.green.bold(` — ${formatCurrency(uplift)}/mo potential`));
         }
 
         if (trials.length > 0) {
-          alerts.push(
-            chalk.yellow(`  ~ ${trials.length} trial${trials.length > 1 ? "s" : ""}`) +
-            chalk.dim(" to convert or cancel")
-          );
+          alerts.push(chalk.yellow(`  ~ ${trials.length} trial${trials.length > 1 ? "s" : ""}`) + chalk.dim(" to convert or cancel"));
         }
 
         if (alerts.length > 0) {
-          out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
-          for (const a of alerts) {
-            out.write(a + "\n");
-          }
+          divider();
+          for (const a of alerts) out.write(a + "\n");
         }
 
-        // Top 3 action items
-        interface ActionItem { urgency: number; line: string; cmd: string }
-        const actions: ActionItem[] = [];
+        // Build quick actions
+        const quickActions: NextStep[] = [];
 
-        // Dedupe renewals by company — show one per company
-        const renewalCompanies = new Set<string>();
+        // Renewals (dedupe by company)
+        const seenCompanies = new Set<string>();
         for (const r of renewals.items) {
-          if (renewalCompanies.size >= 2) break;
-          if (renewalCompanies.has(r.companyId)) continue;
-          renewalCompanies.add(r.companyId);
-          const companyRenewals = renewals.items.filter((x) => x.companyId === r.companyId);
+          if (seenCompanies.size >= 2) break;
+          if (seenCompanies.has(r.companyId)) continue;
+          seenCompanies.add(r.companyId);
           const days = r.daysUntilRenewal;
           const tag = days <= 7 ? chalk.red.bold(`${days}d`) : chalk.yellow(`${days}d`);
+          const companyRenewals = renewals.items.filter((x) => x.companyId === r.companyId);
           const label = companyRenewals.length > 1
-            ? `${r.companyName} — ${companyRenewals.length} subscriptions renew in ${tag}`
+            ? `${r.companyName} — ${companyRenewals.length} subs renew in ${tag}`
             : `${r.companyName} — ${r.productName} renews in ${tag}`;
-          actions.push({
-            urgency: days,
-            line: `${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${label}`,
-            cmd: replCmd(`pax8 subscriptions renewals --company "${r.companyName}"`),
+          quickActions.push({
+            key: String(quickActions.length + 1),
+            label: `${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${label}`,
+            command: ["subscriptions", "renewals"],
           });
         }
 
+        // Trials
         for (const t of trials.slice(0, 1)) {
-          const trialCompany = String((t as Record<string, unknown>).companyName || (t as Record<string, unknown>).companyId);
-          const trialProduct = String((t as Record<string, unknown>).productName || "product");
-          actions.push({
-            urgency: 10, // between renewals and growth
-            line: `${chalk.yellow("~")} ${trialCompany} — ${trialProduct} trial expiring`,
-            cmd: replCmd(`pax8 companies more "${trialCompany}"`),
+          const coName = t.companyName || t.companyId;
+          const prodName = t.productName || "product";
+          quickActions.push({
+            key: String(quickActions.length + 1),
+            label: `${chalk.yellow("~")} ${coName} — ${prodName} trial expiring`,
+            command: ["companies", "more", coName],
           });
         }
 
+        // Growth recs — link directly to order when available
         for (const r of highRecs.slice(0, 2)) {
           const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
-          actions.push({
-            urgency: 100,
-            line: `${chalk.green("+")} ${r.companyName} — ${r.suggestedProducts?.[0] ?? r.title}${upliftStr}`,
-            cmd: replCmd(`pax8 recommendations list --company "${r.companyName}"`),
+          const cmd = r.orderCommand
+            ? r.orderCommand.replace(/^pax8\s+/, "")
+            : `recommendations list --company "${r.companyName}"`;
+          quickActions.push({
+            key: String(quickActions.length + 1),
+            label: `${chalk.green("+")} ${r.companyName} — ${r.suggestedProducts?.[0] ?? r.title}${upliftStr}`,
+            command: tokenizeCmd(cmd),
           });
         }
 
-        actions.sort((a, b) => a.urgency - b.urgency);
-        const top = actions.slice(0, 5);
-        if (top.length > 0) {
-          out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
-          out.write(chalk.bold("  Next Steps\n\n"));
-          for (const a of top) {
-            out.write(`  ${a.line}\n`);
-            out.write(chalk.dim(`    → ${a.cmd}\n`));
-          }
+        if (quickActions.length > 0) {
+          divider();
+          out.write(chalk.bold("  Quick Actions\n\n"));
+          await promptNextSteps(quickActions);
         }
 
-        if (alerts.length === 0 && top.length === 0) {
+        if (alerts.length === 0 && quickActions.length === 0) {
           out.write(chalk.green("\n  ✨ Everything looks good!\n"));
         }
       }
 
       // ── Top Customers (--customers / --all) ──────────────────────
       if (showCustomers && topCustomers.length > 0) {
-        out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
+        divider();
         out.write(chalk.bold("  Top Customers\n\n"));
         const maxNameLen = Math.min(Math.max(...topCustomers.map((c) => c.name.length)), 28);
         for (const c of topCustomers) {
@@ -258,7 +270,7 @@ Examples:
 
       // ── Renewals (--renewals / --all) ────────────────────────────
       if (showRenewals && renewals.items.length > 0) {
-        out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
+        divider();
         const urgent = renewals.items.filter((r) => r.daysUntilRenewal <= 14);
         const upcoming = renewals.items.filter((r) => r.daysUntilRenewal > 14);
         const header = urgent.length > 0
@@ -279,7 +291,7 @@ Examples:
       // ── Growth (--growth / --all) ────────────────────────────────
       if (showGrowth && highRecs.length > 0) {
         const uplift = highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0);
-        out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
+        divider();
         out.write(chalk.bold(`  Growth Opportunities  `) + chalk.green.bold(`${formatCurrency(uplift)}/mo`) + chalk.dim(` potential uplift\n\n`));
         for (const r of highRecs.slice(0, 10)) {
           const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
@@ -288,12 +300,12 @@ Examples:
         if (highRecs.length > 10) {
           out.write(chalk.dim(`\n  … and ${highRecs.length - 10} more\n`));
         }
-        out.write(chalk.dim(`\n    → ${replCmd("pax8 recommendations list")}\n`));
+        out.write(chalk.dim(`\n    → ${replCmd("pax8 recommendations act")}  walk through and order\n`));
       }
 
-      // ── Trials (shown in --all or if there are any and renewals/growth are shown) ──
+      // ── Trials (--all only) ──────────────────────────────────────
       if (showAll && trials.length > 0) {
-        out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
+        divider();
         out.write(chalk.bold(`  Active Trials  `) + chalk.yellow(`${trials.length} to convert or cancel\n\n`));
         for (const t of trials.slice(0, 5)) {
           out.write(`  ${chalk.yellow("~")} ${t.companyName || t.companyId} — ${t.productName || "Unknown product"}\n`);
