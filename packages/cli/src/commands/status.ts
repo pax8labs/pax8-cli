@@ -220,7 +220,7 @@ Examples:
         }
 
         actions.sort((a, b) => a.urgency - b.urgency);
-        const top = actions.slice(0, 3);
+        const top = actions.slice(0, 5);
         if (top.length > 0) {
           out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
           out.write(chalk.bold("  Next Steps\n\n"));
