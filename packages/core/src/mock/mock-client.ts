@@ -1,6 +1,9 @@
 // MockPax8Client — drop-in replacement for the real API client in demo mode.
 // Returns demo data with simulated pagination, latency, and filtering.
 
+import * as nodeFs from "node:fs";
+import * as nodePath from "node:path";
+import { homedir as nodeHomedir } from "node:os";
 import {
   companies,
   subscriptions,
@@ -326,14 +329,33 @@ class InvoicesResource {
   }
 }
 
+const DEMO_ORDERS_FILE = nodePath.join(nodeHomedir(), ".pax8", "demo-orders.json");
+
 class OrdersResource {
-  private createdOrders: Order[] = [];
+  private createdOrders: Order[] | null = null;
+
+  private loadCreated(): Order[] {
+    if (this.createdOrders !== null) return this.createdOrders;
+    try {
+      this.createdOrders = JSON.parse(nodeFs.readFileSync(DEMO_ORDERS_FILE, "utf-8"));
+    } catch {
+      this.createdOrders = [];
+    }
+    return this.createdOrders!;
+  }
+
+  private saveCreated(): void {
+    try {
+      nodeFs.mkdirSync(nodePath.dirname(DEMO_ORDERS_FILE), { recursive: true });
+      nodeFs.writeFileSync(DEMO_ORDERS_FILE, JSON.stringify(this.createdOrders));
+    } catch { /* best effort */ }
+  }
 
   async list(
     params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Order>> {
     await randomDelay();
-    let filtered = [...orders, ...this.createdOrders];
+    let filtered = [...orders, ...this.loadCreated()];
     if (params?.companyId) {
       filtered = filtered.filter((o) => o.companyId === params.companyId);
     }
@@ -346,7 +368,7 @@ class OrdersResource {
 
   async get(id: string): Promise<Order> {
     await randomDelay();
-    const allOrders = [...orders, ...this.createdOrders];
+    const allOrders = [...orders, ...this.loadCreated()];
     const order = allOrders.find((o) => o.id === id);
     if (!order) throw notFound("Order", id);
     return order;
@@ -371,7 +393,8 @@ class OrdersResource {
       })),
       status: "Processing",
     };
-    this.createdOrders.push(newOrder);
+    this.loadCreated().push(newOrder);
+    this.saveCreated();
     return newOrder;
   }
 }
