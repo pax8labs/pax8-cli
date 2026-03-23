@@ -4,11 +4,19 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import { replCmd } from "../lib/confirm.js";
-import { CredentialStore } from "@pax8/core";
+import { CredentialStore, loadConfig } from "@pax8/core";
 
 const CONFIG_DIR = path.join(os.homedir(), ".pax8");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
 const CACHE_DIR = path.join(CONFIG_DIR, "cache");
+
+async function isDemoMode(): Promise<boolean> {
+  if (process.env.PAX8_DEMO === "1") return true;
+  try {
+    const config = await loadConfig();
+    return config.demo === true;
+  } catch { return false; }
+}
 
 interface CheckResult {
   name: string;
@@ -40,7 +48,7 @@ async function checkConfigFile(): Promise<CheckResult> {
 }
 
 async function checkAuth(): Promise<CheckResult> {
-  const isDemo = process.env.PAX8_DEMO === "1";
+  const isDemo = await isDemoMode();
   if (isDemo) {
     return { name: "Authentication configured", passed: true, detail: "Demo mode" };
   }
@@ -62,7 +70,7 @@ async function checkAuth(): Promise<CheckResult> {
 }
 
 async function checkTokenFetch(): Promise<CheckResult> {
-  const isDemo = process.env.PAX8_DEMO === "1";
+  const isDemo = await isDemoMode();
   if (isDemo) {
     return { name: "Token fetch", passed: true, detail: "Skipped (demo mode)" };
   }
@@ -89,7 +97,7 @@ async function checkTokenFetch(): Promise<CheckResult> {
 }
 
 async function checkApiHealth(): Promise<CheckResult[]> {
-  const isDemo = process.env.PAX8_DEMO === "1";
+  const isDemo = await isDemoMode();
   if (isDemo) {
     return [{ name: "API endpoints", passed: true, detail: "Demo mode — mock API" }];
   }
