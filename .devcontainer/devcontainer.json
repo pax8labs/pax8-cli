@@ -1,10 +1,9 @@
 {
   "name": "Pax8 CLI Demo",
-  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+  "image": "ghcr.io/pax8labs/pax8-cli-demo:latest",
   "containerEnv": {
     "PAX8_DEMO": "1"
   },
-  "postCreateCommand": "npm i -g pnpm && pnpm install && pnpm build && pnpm link --global packages/cli",
   "postStartCommand": "echo '\n  ✨ Pax8 CLI is ready in demo mode!\n\n  Try these commands:\n    pax8 status\n    pax8 companies list\n    pax8 subscriptions list\n    pax8 recommendations list\n    pax8 status --all\n'",
   "customizations": {
     "vscode": {
