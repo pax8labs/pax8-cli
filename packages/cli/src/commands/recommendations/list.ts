@@ -234,7 +234,7 @@ Examples:
             command: r.orderCommand!,
             description: `${r.title} for ${r.companyName}`,
           }));
-        process.stdout.write(JSON.stringify({ recommendations: recs, nextActions }, null, 2) + "\n");
+        process.stdout.write(JSON.stringify({ recommendations: recs, nextActions, unmatchedProducts: report.unmatchedProducts }, null, 2) + "\n");
         return;
       }
 

@@ -232,6 +232,8 @@ export interface Recommendation {
   estimatedMrrUplift: number | null;
   /** How many seats the recommendation targets */
   targetSeats: number | null;
+  /** Indicates the MRR uplift estimate is an upper bound, not a forecast */
+  estimateType: "upper_bound";
 }
 
 export interface RecommendationReport {
@@ -239,6 +241,8 @@ export interface RecommendationReport {
   totalCompanies: number;
   companiesWithGaps: number;
   estimatedTotalMrrUplift: number;
+  /** Suggested products that could not be matched to any catalog product */
+  unmatchedProducts: string[];
 }
 
 export interface CompanyCoverage {
@@ -364,6 +368,7 @@ export function getRecommendations(
   }
 
   const recommendations: Recommendation[] = [];
+  const unmatchedProducts = new Set<string>();
 
   for (const [companyId, subs] of byCompany) {
     const companyName = subs[0]?.companyName ?? companyId;
@@ -439,6 +444,9 @@ export function getRecommendations(
         }
 
         const productAvailable = matchedProductId !== null;
+        if (!productAvailable && suggestedName) {
+          unmatchedProducts.add(suggestedName);
+        }
         const orderCommand = matchedProductId
           ? `pax8 orders create --company "${companyName}" --product "${resolvedProductName}" --quantity ${primaryQty}`
           : null;
@@ -468,6 +476,7 @@ export function getRecommendations(
           currentMrr: Number(currentMrr.toFixed(2)),
           estimatedMrrUplift: estimatedMrrUplift !== null ? Number(estimatedMrrUplift.toFixed(2)) : null,
           targetSeats: primaryQty,
+          estimateType: "upper_bound",
         });
       }
     }
@@ -496,6 +505,7 @@ export function getRecommendations(
         currentMrr: Number(currentMrr.toFixed(2)),
         estimatedMrrUplift: estimatedMrrUplift !== null ? Number(estimatedMrrUplift.toFixed(2)) : null,
         targetSeats: gap.missingSeats,
+        estimateType: "upper_bound",
       });
     }
   }
@@ -529,5 +539,6 @@ export function getRecommendations(
     totalCompanies: byCompany.size,
     companiesWithGaps,
     estimatedTotalMrrUplift,
+    unmatchedProducts: [...unmatchedProducts],
   };
 }
