@@ -88,41 +88,57 @@ async function checkTokenFetch(): Promise<CheckResult> {
   }
 }
 
-async function checkApiHealth(): Promise<CheckResult> {
+async function checkApiHealth(): Promise<CheckResult[]> {
   const isDemo = process.env.PAX8_DEMO === "1";
   if (isDemo) {
-    return { name: "API connectivity", passed: true, detail: "Demo mode — mock API" };
+    return [{ name: "API endpoints", passed: true, detail: "Demo mode — mock API" }];
   }
 
   const store = new CredentialStore();
   const creds = await store.getCredentials();
   if (!creds) {
-    return { name: "API connectivity", passed: false, detail: "No credentials — skipped" };
+    return [{ name: "API endpoints", passed: false, detail: "No credentials — skipped" }];
   }
 
-  try {
-    const { TokenManager, Pax8Client, CompaniesApi } = await import("@pax8/core");
-    const tm = new TokenManager({ clientId: creds.clientId, clientSecret: creds.clientSecret });
-    const client = new Pax8Client({ tokenManager: tm, cacheTtlMs: 0 });
-    const api = new CompaniesApi(client);
+  const { TokenManager, Pax8Client, CompaniesApi, SubscriptionsApi, ProductsApi, InvoicesApi, OrdersApi } = await import("@pax8/core");
+  const tm = new TokenManager({ clientId: creds.clientId, clientSecret: creds.clientSecret });
+  const client = new Pax8Client({ tokenManager: tm, cacheTtlMs: 0 });
 
+  const endpoints: Array<{ name: string; fn: () => Promise<unknown> }> = [
+    { name: "Companies", fn: () => new CompaniesApi(client).list({ size: 1 }) },
+    { name: "Subscriptions", fn: () => new SubscriptionsApi(client).list({ size: 1 }) },
+    { name: "Products", fn: () => new ProductsApi(client).list({ size: 1 }) },
+    { name: "Invoices", fn: () => new InvoicesApi(client).list({ size: 1 }) },
+    { name: "Orders", fn: () => new OrdersApi(client).list({ size: 1 }) },
+  ];
+
+  const results: CheckResult[] = [];
+  let passed = 0;
+  let total = endpoints.length;
+  let totalLatency = 0;
+
+  for (const ep of endpoints) {
     const start = Date.now();
-    const result = await api.list({ size: 1 });
-    const latency = Date.now() - start;
-
-    const speed = latency < 2000 ? "fast" : latency < 10000 ? "slow" : "very slow";
-    return {
-      name: "API connectivity",
-      passed: true,
-      detail: `${result.page.totalElements} companies · ${latency}ms ${latency > 5000 ? "⚠ " + speed : speed}`,
-    };
-  } catch (err) {
-    return {
-      name: "API connectivity",
-      passed: false,
-      detail: err instanceof Error ? err.message.slice(0, 80) : String(err),
-    };
+    try {
+      await ep.fn();
+      const latency = Date.now() - start;
+      totalLatency += latency;
+      passed++;
+    } catch {
+      // Count as failed but don't stop
+    }
   }
+
+  const avgLatency = passed > 0 ? Math.round(totalLatency / passed) : 0;
+  const speed = avgLatency < 2000 ? "fast" : avgLatency < 10000 ? "slow" : "very slow";
+
+  results.push({
+    name: "API endpoints",
+    passed: passed === total,
+    detail: `${passed}/${total} reachable · avg ${avgLatency}ms ${avgLatency > 5000 ? "⚠ " + speed : speed}`,
+  });
+
+  return results;
 }
 
 async function checkMcpServer(): Promise<CheckResult> {
@@ -193,12 +209,13 @@ Examples:
   .action(async () => {
     process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));
 
+    const apiChecks = await checkApiHealth();
     const checks: CheckResult[] = [
       await checkNodeVersion(),
       await checkConfigFile(),
       await checkAuth(),
       await checkTokenFetch(),
-      await checkApiHealth(),
+      ...apiChecks,
       await checkCacheDir(),
       await checkMcpServer(),
       await checkTelemetry(),
