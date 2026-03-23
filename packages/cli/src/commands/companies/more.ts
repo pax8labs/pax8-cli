@@ -186,7 +186,7 @@ Examples:
       }
 
       process.stdout.write(
-        `  ${chalk.bold(String(activeSubs.length))} subscriptions` +
+        `  ${chalk.bold(String(activeSubs.length))} subscription${activeSubs.length !== 1 ? "s" : ""}` +
         `    ${chalk.bold(String(totalSeats))} seats` +
         `    ${chalk.bold.green(formatCurrency(totalMrr))}/mo` +
         `    ${chalk.dim(formatCurrency(totalMrr * 12) + "/yr")}\n`
