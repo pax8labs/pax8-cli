@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getOutputFormat, buildContext, type GlobalOptions } from "./context.js";
+import { getOutputFormat, buildContext, warnIfTruncated, type GlobalOptions } from "./context.js";
 
 describe("getOutputFormat", () => {
   const originalIsTTY = process.stdout.isTTY;
@@ -51,6 +51,24 @@ describe("getOutputFormat", () => {
   it("explicit --csv flag overrides config default", () => {
     Object.defineProperty(process.stdout, "isTTY", { value: true, writable: true });
     expect(getOutputFormat({ csv: true }, "json")).toBe("csv");
+  });
+});
+
+describe("warnIfTruncated", () => {
+  it("writes warning to stderr when result hits the page size limit", () => {
+    const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    warnIfTruncated({ content: new Array(1000) }, 1000);
+    expect(writeSpy).toHaveBeenCalledOnce();
+    expect(writeSpy.mock.calls[0][0]).toContain("1000 subscriptions (page limit)");
+    expect(writeSpy.mock.calls[0][0]).toContain("results may be incomplete");
+    writeSpy.mockRestore();
+  });
+
+  it("does not warn when result count is below the page size", () => {
+    const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    warnIfTruncated({ content: new Array(500) }, 1000);
+    expect(writeSpy).not.toHaveBeenCalled();
+    writeSpy.mockRestore();
   });
 });
 
