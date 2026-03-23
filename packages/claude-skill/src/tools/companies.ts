@@ -3,7 +3,7 @@ import { execCli } from "../index.js";
 export const pax8_companies_list = {
   name: "pax8_companies_list",
   description:
-    "List all companies managed through Pax8. Returns company name, ID, and status.",
+    "List all companies managed through Pax8. Returns id, name, status, city, and stateOrProvince for each company. Supports pagination with page/size. Use the company id from results to filter subscriptions, invoices, and recommendations.",
   parameters: {
     type: "object" as const,
     properties: {
@@ -25,7 +25,7 @@ export const pax8_companies_list = {
 export const pax8_companies_show = {
   name: "pax8_companies_show",
   description:
-    "Show details for a specific company including name, address, status. Optionally include active subscriptions.",
+    "Show details for a specific company including name, address, status, website, phone, and external ID. Pass --subscriptions to also return the company's active subscriptions inline. Accepts a company UUID or exact name.",
   parameters: {
     type: "object" as const,
     properties: {

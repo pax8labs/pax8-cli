@@ -19,7 +19,7 @@ interface Company {
 export const pax8_report_mrr = {
   name: "pax8_report_mrr",
   description:
-    "Calculate Monthly Recurring Revenue (MRR) with breakdown by company name. Returns a pre-calculated summary — no follow-up calls needed. Use this for any MRR, ARR, or revenue question.",
+    "Calculate Monthly Recurring Revenue (MRR) with breakdown by company. Returns totalMRR, projectedARR, monthlyMRR, annualMRR_amortized, subscription counts, totalSeats, and a companiesByMRR array sorted descending with companyName, mrr, subscriptions, and seats. Pre-calculated — no follow-up calls needed. Optionally filter by companyId.",
   parameters: {
     type: "object" as const,
     properties: {
