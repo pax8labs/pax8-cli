@@ -49,7 +49,17 @@ const CATEGORY_RULES: CategoryRule[] = [
   },
 ];
 
-function categorizeProduct(productName: string): ProductCategory[] {
+export const ALL_CATEGORIES: ProductCategory[] = [
+  "productivity",
+  "email",
+  "security",
+  "endpoint_protection",
+  "identity",
+  "backup",
+  "cloud_infrastructure",
+];
+
+export function categorizeProduct(productName: string): ProductCategory[] {
   const categories: ProductCategory[] = [];
   for (const rule of CATEGORY_RULES) {
     if (rule.patterns.some((p) => p.test(productName))) {
@@ -229,6 +239,68 @@ export interface RecommendationReport {
   totalCompanies: number;
   companiesWithGaps: number;
   estimatedTotalMrrUplift: number;
+}
+
+export interface CompanyCoverage {
+  companyId: string;
+  companyName: string;
+  coveredCategories: ProductCategory[];
+  missingCategories: ProductCategory[];
+  coverage: string; // e.g. "3/7"
+  estimatedUplift: number;
+}
+
+/**
+ * Compute portfolio coverage per company: which of the 7 product categories
+ * each company already has, which are missing, and estimated MRR uplift from
+ * filling the gaps (using the recommendations engine).
+ */
+export function getPortfolioCoverage(
+  subscriptions: SubscriptionInput[],
+  recommendations?: Recommendation[],
+): Map<string, CompanyCoverage> {
+  const result = new Map<string, CompanyCoverage>();
+
+  // Group active subs by company
+  const byCompany = new Map<string, SubscriptionInput[]>();
+  for (const sub of subscriptions) {
+    if (sub.status !== "Active" || !sub.companyId) continue;
+    const list = byCompany.get(sub.companyId) ?? [];
+    list.push(sub);
+    byCompany.set(sub.companyId, list);
+  }
+
+  // Aggregate recommendations uplift per company
+  const upliftByCompany = new Map<string, number>();
+  if (recommendations) {
+    for (const rec of recommendations) {
+      const existing = upliftByCompany.get(rec.companyId) ?? 0;
+      upliftByCompany.set(rec.companyId, existing + (rec.estimatedMrrUplift ?? 0));
+    }
+  }
+
+  for (const [companyId, subs] of byCompany) {
+    const companyName = subs[0]?.companyName ?? companyId;
+    const covered = new Set<ProductCategory>();
+    for (const sub of subs) {
+      const cats = categorizeProduct(sub.productName ?? "");
+      for (const c of cats) covered.add(c);
+    }
+
+    const coveredCategories = ALL_CATEGORIES.filter((c) => covered.has(c));
+    const missingCategories = ALL_CATEGORIES.filter((c) => !covered.has(c));
+
+    result.set(companyId, {
+      companyId,
+      companyName,
+      coveredCategories,
+      missingCategories,
+      coverage: `${coveredCategories.length}/${ALL_CATEGORIES.length}`,
+      estimatedUplift: Number((upliftByCompany.get(companyId) ?? 0).toFixed(2)),
+    });
+  }
+
+  return result;
 }
 
 export function getRecommendations(

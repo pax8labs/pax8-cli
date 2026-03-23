@@ -25,7 +25,7 @@ describe("pax8 companies", () => {
       const result = await runCliExpectSuccess(["companies", "list", "--csv"]);
       const lines = result.stdout.trim().split("\n");
       // First line is header
-      expect(lines[0]).toContain("Name");
+      expect(lines[0]).toContain("Company");
       expect(lines[0]).toContain("ID");
       expect(lines[0]).toContain("Status");
       // Data rows
