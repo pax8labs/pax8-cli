@@ -3,7 +3,7 @@ import chalk from "chalk";
 import { buildContext, ALL_SUBS_SIZE } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
-import { formatCurrency, calculateMrr } from "../lib/formatters.js";
+import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
 import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
@@ -73,6 +73,18 @@ function tokenizeCmd(cmd: string): string[] {
   return args;
 }
 
+function brailleBar(value: number, max: number, width: number): { bar: string; len: number } {
+  const full = "\u28FF"; // ⣿ (both columns)
+  const half = "\u2847"; // ⡇ (left column only)
+  const ratio = max > 0 ? value / max : 0;
+  const filled = ratio * width * 2; // 2 sub-positions per character
+  const wholeChars = Math.floor(filled / 2);
+  const hasHalf = Math.round(filled) % 2 === 1;
+  const len = wholeChars + (hasHalf && wholeChars < width ? 1 : 0);
+  const bar = full.repeat(wholeChars) + (hasHalf && wholeChars < width ? half : "");
+  return { bar, len };
+}
+
 // ── Command ──────────────────────────────────────────────────────────────────
 
 export const statusCommand = new Command("status")
@@ -94,16 +106,18 @@ Examples:
     const spinner = createSpinner("Loading dashboard...").start();
 
     try {
-      const [companiesSettled, subsSettled, productsSettled] = await Promise.allSettled([
+      const [companiesSettled, subsSettled, productsSettled, ordersSettled] = await Promise.allSettled([
         ctx.api.companies.list({ size: 200 }),
         ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE }),
         ctx.api.products.list({ size: 200 }),
+        ctx.api.orders.list({ size: 200 }),
       ]);
 
       const emptyPage = { number: 0, totalPages: 0, totalElements: 0 };
       const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as any[], page: { ...emptyPage } };
       const subsResult = subsSettled.status === 'fulfilled' ? subsSettled.value : { content: [] as any[], page: { ...emptyPage } };
       const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as any[], page: { ...emptyPage } };
+      const ordersResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [] as any[], page: { ...emptyPage } };
 
       if (companiesSettled.status === 'rejected') {
         process.stderr.write(chalk.yellow("  ⚠ Could not load companies\n"));
@@ -125,6 +139,17 @@ Examples:
       await enrichProductNames(ctx, allSubs);
 
       spinner.succeed("Dashboard loaded");
+
+      // Recent orders (today)
+      const today = new Date().toISOString().slice(0, 10);
+      const recentOrders = ordersResult.content
+        .filter((o) => o.createdDate.startsWith(today))
+        .map((o) => ({
+          ...o,
+          companyName: (o as Record<string, unknown>).companyName as string
+            ?? companyNames.get(o.companyId)
+            ?? o.companyId,
+        }));
 
       const activeSubs = allSubs.filter((s) => s.status === "Active");
       const { mrr, totalSeats, companyIds, topCustomers } = computePortfolioStats(activeSubs);
@@ -160,6 +185,15 @@ Examples:
           highPriorityRecs: highRecs.length,
           potentialMrrUplift: Number(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0).toFixed(2)),
           activeTrials: trials.length,
+          recentOrders: recentOrders.map((o) => ({
+            companyName: o.companyName,
+            status: o.status,
+            createdDate: o.createdDate,
+            lineItems: o.lineItems?.map((li) => ({
+              productName: (li as Record<string, unknown>).productName ?? li.productId,
+              quantity: li.quantity,
+            })),
+          })),
         }, null, 2) + "\n");
         return;
       }
@@ -186,6 +220,23 @@ Examples:
       out.write(`  ${chalk.dim("Total seats:")}   ${totalSeats.toLocaleString()}\n`);
       if (companyIds.size > 0) {
         out.write(`  ${chalk.dim("Avg MRR/co:")}    ${formatCurrency(mrr / companyIds.size)}\n`);
+      }
+
+      // ── Recent Activity ──────────────────────────────────────────
+      if (recentOrders.length > 0) {
+        divider();
+        out.write(chalk.bold("  Recent Activity\n\n"));
+        for (const o of recentOrders.slice(0, 5)) {
+          const items = o.lineItems ?? [];
+          const productDesc = items.length > 0
+            ? items.map((li) => {
+                const name = (li as Record<string, unknown>).productName ?? "product";
+                return `${name} (${li.quantity} seats)`;
+              }).join(", ")
+            : "order placed";
+          const ago = formatTimeAgo(new Date(o.createdDate));
+          out.write(`  ${chalk.green("✓")} ${o.companyName} — ${productDesc}  ${chalk.dim(ago)}\n`);
+        }
       }
 
       // ── Default mode: alerts + quick actions ─────────────────────
@@ -276,10 +327,15 @@ Examples:
         divider();
         out.write(chalk.bold("  Top Customers\n\n"));
         const maxNameLen = Math.min(Math.max(...topCustomers.map((c) => c.name.length)), 28);
+        const maxMrr = topCustomers[0]?.mrr ?? 0;
+        const barWidth = 18;
         for (const c of topCustomers) {
           const name = c.name.length > maxNameLen ? c.name.slice(0, maxNameLen - 1) + "\u2026" : c.name.padEnd(maxNameLen);
-          const pct = mrr > 0 ? ` (${((c.mrr / mrr) * 100).toFixed(0)}%)` : "";
-          out.write(`  ${chalk.bold(name)}  ${formatCurrency(c.mrr).padStart(12)}/mo  ${String(c.seats).padStart(5)} seats${chalk.dim(pct)}\n`);
+          const pctNum = mrr > 0 ? ((c.mrr / mrr) * 100) : 0;
+          const pctStr = `${pctNum.toFixed(0)}%`;
+          const { bar, len } = brailleBar(c.mrr, maxMrr, barWidth);
+          const pad = barWidth - len;
+          out.write(`  ${chalk.bold(name)}  ${formatCurrency(c.mrr).padStart(10)}/mo  ${chalk.cyan(bar)}${chalk.dim("\u2800".repeat(pad))}  ${chalk.dim(pctStr.padStart(4))}\n`);
         }
       }
 
