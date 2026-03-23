@@ -48,13 +48,15 @@ describe("E2E: Subscription management — daily workflows", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
+    expect(data).toHaveProperty("renewals");
+    expect(data).toHaveProperty("nextActions");
+    expect(Array.isArray(data.renewals)).toBe(true);
     // Each item should have renewal-specific fields
-    if (data.length > 0) {
-      expect(data[0]).toHaveProperty("subscriptionId");
-      expect(data[0]).toHaveProperty("renewalDate");
-      expect(data[0]).toHaveProperty("mrrAtRisk");
-      expect(data[0]).toHaveProperty("daysUntilRenewal");
+    if (data.renewals.length > 0) {
+      expect(data.renewals[0]).toHaveProperty("subscriptionId");
+      expect(data.renewals[0]).toHaveProperty("renewalDate");
+      expect(data.renewals[0]).toHaveProperty("mrrAtRisk");
+      expect(data.renewals[0]).toHaveProperty("daysUntilRenewal");
     }
   });
 });

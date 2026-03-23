@@ -83,14 +83,18 @@ Examples:
       const report = getUpcomingRenewals(allSubs, withinDays);
 
       if (ctx.outputFormat === "json") {
-        output(
-          report.items.map((item) => ({
-            ...item,
-            mrrAtRisk: Number(item.mrrAtRisk.toFixed(2)),
-            renewalDate: item.renewalDate.toISOString().split("T")[0],
-          })),
-          { format: "json" }
-        );
+        const renewalItems = report.items.map((item) => ({
+          ...item,
+          mrrAtRisk: Number(item.mrrAtRisk.toFixed(2)),
+          renewalDate: item.renewalDate.toISOString().split("T")[0],
+        }));
+        const nextActions = report.items
+          .slice(0, 5)
+          .map((item) => ({
+            command: `pax8 subscriptions show ${item.subscriptionId}`,
+            description: `View renewal details for ${item.companyName} — ${item.productName} (${item.daysUntilRenewal}d)`,
+          }));
+        process.stdout.write(JSON.stringify({ renewals: renewalItems, nextActions }, null, 2) + "\n");
         return;
       }
 
