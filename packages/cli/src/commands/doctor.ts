@@ -115,21 +115,17 @@ async function checkApiHealth(): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   let passed = 0;
   let total = endpoints.length;
-  let totalLatency = 0;
 
-  for (const ep of endpoints) {
-    const start = Date.now();
-    try {
-      await ep.fn();
-      const latency = Date.now() - start;
-      totalLatency += latency;
-      passed++;
-    } catch {
-      // Count as failed but don't stop
-    }
+  // Run all endpoint checks in parallel
+  const start = Date.now();
+  const settled = await Promise.allSettled(endpoints.map((ep) => ep.fn()));
+  const wallTime = Date.now() - start;
+
+  for (const s of settled) {
+    if (s.status === "fulfilled") passed++;
   }
 
-  const avgLatency = passed > 0 ? Math.round(totalLatency / passed) : 0;
+  const avgLatency = Math.round(wallTime / total);
   const speed = avgLatency < 2000 ? "fast" : avgLatency < 10000 ? "slow" : "very slow";
 
   results.push({
@@ -209,17 +205,18 @@ Examples:
   .action(async () => {
     process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));
 
-    const apiChecks = await checkApiHealth();
-    const checks: CheckResult[] = [
-      await checkNodeVersion(),
-      await checkConfigFile(),
-      await checkAuth(),
-      await checkTokenFetch(),
-      ...apiChecks,
-      await checkCacheDir(),
-      await checkMcpServer(),
-      await checkTelemetry(),
-    ];
+    // Run all checks in parallel for speed
+    const [nodeV, configF, authC, tokenC, apiCs, cacheC, mcpC, telC] = await Promise.all([
+      checkNodeVersion(),
+      checkConfigFile(),
+      checkAuth(),
+      checkTokenFetch(),
+      checkApiHealth(),
+      checkCacheDir(),
+      checkMcpServer(),
+      checkTelemetry(),
+    ]);
+    const checks: CheckResult[] = [nodeV, configF, authC, tokenC, ...apiCs, cacheC, mcpC, telC];
 
     let allPassed = true;
     for (const check of checks) {
