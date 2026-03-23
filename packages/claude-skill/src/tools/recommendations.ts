@@ -3,7 +3,7 @@ import { execCli } from "../index.js";
 export const pax8_recommendations = {
   name: "pax8_recommendations",
   description:
-    "Analyze customer portfolios and recommend products they should consider. Returns cross-sell opportunities (missing product categories like backup, security, identity) and seat gaps (partial coverage). Each recommendation includes the exact CLI command to place the order. Use this when users ask about upsell opportunities, what products customers need, or how to grow revenue.",
+    "Analyze customer portfolios and recommend products they should consider. Returns type (cross-sell or seat-gap), companyName, productName, priority (high/medium/low), reason, estimatedMRR, and orderCommand for each recommendation. Filter by companyId (name or UUID) and/or priority level. Use this for upsell opportunities, product gaps, or revenue growth questions.",
   parameters: {
     type: "object" as const,
     properties: {

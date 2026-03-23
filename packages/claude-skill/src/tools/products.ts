@@ -3,7 +3,7 @@ import { execCli } from "../index.js";
 export const pax8_products_search = {
   name: "pax8_products_search",
   description:
-    "Search the Pax8 product catalog by keyword. Returns product name, vendor, SKU, and pricing information.",
+    "Search the Pax8 product catalog by keyword. Returns id, name, vendorName, sku, unitOfMeasure, and pricing for each match. Query matches product name, vendor name, or keyword. Optionally filter by vendorId to narrow within a vendor.",
   parameters: {
     type: "object" as const,
     properties: {
