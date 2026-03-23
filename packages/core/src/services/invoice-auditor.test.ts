@@ -253,6 +253,84 @@ describe("auditInvoices", () => {
     expect(report.totalUndercharge).toBe(25); // 5 * 5
   });
 
+  it("should sum quantities for two subscriptions with same company+product (#63)", () => {
+    const invoiceItems = [
+      { companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 25, unitPrice: 10 },
+    ];
+    const subscriptions = [
+      { id: "s1", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 10, price: 10, status: "Active" },
+      { id: "s2", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 15, price: 10, status: "Active" },
+    ];
+
+    const report = auditInvoices(invoiceItems, subscriptions);
+    // 10 + 15 = 25 active, 25 invoiced => no discrepancy
+    expect(report.discrepancies).toHaveLength(0);
+  });
+
+  it("should sum quantities for three subscriptions with same company+product (#63)", () => {
+    const invoiceItems = [
+      { companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 30, unitPrice: 10 },
+    ];
+    const subscriptions = [
+      { id: "s1", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 10, price: 10, status: "Active" },
+      { id: "s2", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 8, price: 10, status: "Active" },
+      { id: "s3", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 12, price: 10, status: "Active" },
+    ];
+
+    const report = auditInvoices(invoiceItems, subscriptions);
+    // 10 + 8 + 12 = 30 active, 30 invoiced => no discrepancy
+    expect(report.discrepancies).toHaveLength(0);
+  });
+
+  it("should handle mixed: some products have duplicate subs, some don't (#63)", () => {
+    const invoiceItems = [
+      { companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 20, unitPrice: 10 },
+      { subscriptionId: "s3", companyId: "co-1", companyName: "Acme", productName: "Teams", quantity: 5, unitPrice: 20 },
+    ];
+    const subscriptions = [
+      { id: "s1", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 12, price: 10, status: "Active" },
+      { id: "s2", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 8, price: 10, status: "Active" },
+      { id: "s3", companyId: "co-1", productId: "p2", companyName: "Acme", productName: "Teams", quantity: 5, price: 20, status: "Active" },
+    ];
+
+    const report = auditInvoices(invoiceItems, subscriptions);
+    // M365: 12 + 8 = 20 active vs 20 invoiced => match
+    // Teams: 5 active vs 5 invoiced => match
+    expect(report.discrepancies).toHaveLength(0);
+  });
+
+  it("should detect overcharge when aggregated subs are less than invoiced (#63)", () => {
+    const invoiceItems = [
+      { companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 30, unitPrice: 10 },
+    ];
+    const subscriptions = [
+      { id: "s1", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 10, price: 10, status: "Active" },
+      { id: "s2", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 8, price: 10, status: "Active" },
+    ];
+
+    const report = auditInvoices(invoiceItems, subscriptions);
+    // 10 + 8 = 18 active, 30 invoiced => overcharge by 12
+    expect(report.discrepancies).toHaveLength(1);
+    expect(report.discrepancies[0].type).toBe("overcharge");
+    expect(report.discrepancies[0].activeQuantity).toBe(18);
+    expect(report.discrepancies[0].delta).toBe(12);
+    expect(report.discrepancies[0].dollarImpact).toBe(120);
+  });
+
+  it("should not report duplicate subs as missing when matched via cp: key (#63)", () => {
+    const invoiceItems = [
+      { companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 18, unitPrice: 10 },
+    ];
+    const subscriptions = [
+      { id: "s1", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 10, price: 10, status: "Active" },
+      { id: "s2", companyId: "co-1", productId: "p1", companyName: "Acme", productName: "M365", quantity: 8, price: 10, status: "Active" },
+    ];
+
+    const report = auditInvoices(invoiceItems, subscriptions);
+    // Quantities match exactly, and neither sub should appear as "missing"
+    expect(report.discrepancies).toHaveLength(0);
+  });
+
   it("should handle large quantities (1000+ seats)", () => {
     const invoiceItems = [
       { subscriptionId: "s1", companyId: "co-1", companyName: "BigCorp", productName: "M365", quantity: 1500, unitPrice: 12 },
