@@ -225,7 +225,14 @@ Examples:
       recs = filterRecommendations(recs, options);
 
       if (ctx.outputFormat === "json") {
-        output(recs, { format: "json" });
+        const nextActions = recs
+          .filter((r) => r.orderCommand)
+          .slice(0, 5)
+          .map((r) => ({
+            command: r.orderCommand!,
+            description: `${r.title} for ${r.companyName}`,
+          }));
+        process.stdout.write(JSON.stringify({ recommendations: recs, nextActions }, null, 2) + "\n");
         return;
       }
 

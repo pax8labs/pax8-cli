@@ -81,7 +81,13 @@ Examples:
 
       // JSON output
       if (ctx.outputFormat === "json") {
-        output([report], { format: "json" });
+        const nextActions = report.discrepancies
+          .slice(0, 5)
+          .map((d) => ({
+            command: `pax8 subscriptions list --company "${d.companyName}" --json`,
+            description: `Investigate ${d.type} for ${d.companyName} — ${d.productName} (Δ${d.delta > 0 ? "+" : ""}${d.delta})`,
+          }));
+        output([{ ...report, nextActions }], { format: "json" });
         return;
       }
 

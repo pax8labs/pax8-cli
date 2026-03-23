@@ -135,6 +135,42 @@ Examples:
 
       // ── JSON output ──────────────────────────────────────────────
       if (ctx.outputFormat === "json") {
+        const nextActions: { command: string; description: string }[] = [];
+
+        if (renewals.urgentCount > 0) {
+          nextActions.push({
+            command: "pax8 subscriptions renewals --json",
+            description: `Review ${renewals.urgentCount} urgent renewal${renewals.urgentCount > 1 ? "s" : ""} (${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk)`,
+          });
+        } else if (renewals.items.length > 0) {
+          nextActions.push({
+            command: "pax8 subscriptions renewals --json",
+            description: `Review ${renewals.items.length} upcoming renewal${renewals.items.length > 1 ? "s" : ""}`,
+          });
+        }
+
+        if (highRecs.length > 0) {
+          nextActions.push({
+            command: "pax8 recommendations list --json",
+            description: `Explore ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"} (${formatCurrency(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0))}/mo potential)`,
+          });
+        }
+
+        if (trials.length > 0) {
+          nextActions.push({
+            command: "pax8 subscriptions list --status Trial --json",
+            description: `Review ${trials.length} active trial${trials.length > 1 ? "s" : ""} to convert or cancel`,
+          });
+        }
+
+        // Add top customer drilldown
+        if (topCustomers.length > 0) {
+          nextActions.push({
+            command: `pax8 companies more "${topCustomers[0].name}" --json`,
+            description: `Drill into top customer ${topCustomers[0].name}`,
+          });
+        }
+
         process.stdout.write(JSON.stringify({
           totalCompanies: companiesResult.page.totalElements,
           activeSubscriptions: activeSubs.length,
@@ -160,6 +196,7 @@ Examples:
           highPriorityRecs: highRecs.length,
           potentialMrrUplift: Number(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0).toFixed(2)),
           activeTrials: trials.length,
+          nextActions,
         }, null, 2) + "\n");
         return;
       }
