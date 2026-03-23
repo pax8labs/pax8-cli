@@ -1,19 +1,35 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { getRecommendations, getPortfolioCoverage } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { buildContext } from "../../lib/context.js";
+import { buildContext, ALL_SUBS_SIZE } from "../../lib/context.js";
 import { replCmd } from "../../lib/confirm.js";
 import { output, type Column } from "../../lib/output.js";
-import { formatStatus, formatCompanyName } from "../../lib/formatters.js";
+import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/formatters.js";
 import { saveLastList } from "../../lib/last-list.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 
-const columns: Column[] = [
+const baseColumns: Column[] = [
   { key: "_num", header: "#" },
-  { key: "name", header: "Name", format: (v) => formatCompanyName(String(v), 30) },
+  { key: "name", header: "Company", format: (v) => formatCompanyName(String(v), 30) },
   { key: "id", header: "ID", format: (v) => chalk.dim(String(v).slice(0, 8)) },
   { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
+];
+
+const coverageColumns: Column[] = [
+  ...baseColumns,
+  { key: "_coverage", header: "Coverage" },
+  { key: "_missing", header: "Missing" },
+  {
+    key: "_potential",
+    header: "Potential",
+    format: (v) => {
+      const n = v as number;
+      return n > 0 ? chalk.green(`+${formatCurrency(n)}/mo`) : chalk.dim("—");
+    },
+  },
 ];
 
 export const companiesListCommand = new Command("list")
@@ -22,6 +38,7 @@ export const companiesListCommand = new Command("list")
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
+  .option("--coverage", "Include portfolio coverage analysis")
   .addHelpText(
     "after",
     `
@@ -29,6 +46,7 @@ Examples:
   pax8 companies list
   pax8 companies list --status Active
   pax8 companies list --page 1 --size 25
+  pax8 companies list --coverage
   pax8 companies list --json
   pax8 companies list --csv
   pax8 companies list --ids-only
@@ -49,21 +67,92 @@ Examples:
         status: allOpts.status,
       });
 
-      spinner.stop();
-
       if (allOpts.idsOnly) {
+        spinner.stop();
         for (const item of result.content) {
           process.stdout.write(item.id + "\n");
         }
         return;
       }
 
+      // Determine if we should fetch coverage data
+      const wantsCoverage = allOpts.coverage || ctx.outputFormat === "json";
+
+      // Build coverage map if requested
+      let coverageMap: Map<string, { coverage: string; missingCategories: string[]; estimatedUplift: number; coveredCategories: string[] }> | null = null;
+
+      if (wantsCoverage) {
+        spinner.text = "Analyzing portfolio coverage...";
+
+        // Fetch all subscriptions for the listed companies
+        const companyIds = result.content.map((c: Record<string, unknown>) => String(c.id));
+        const subsResult = await ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE, status: "Active" });
+        const subs = subsResult.content;
+
+        // Enrich product names
+        await enrichProductNames(ctx, subs);
+
+        // Build company name lookup
+        const companyNames = new Map<string, string>();
+        for (const c of result.content) {
+          companyNames.set(c.id, c.name);
+        }
+        enrichCompanyNames(companyNames, subs);
+
+        // Get recommendations for uplift estimates
+        const report = getRecommendations(subs);
+        const portfolioCoverage = getPortfolioCoverage(subs, report.recommendations);
+
+        coverageMap = new Map();
+        for (const companyId of companyIds) {
+          const cov = portfolioCoverage.get(companyId);
+          if (cov) {
+            coverageMap.set(companyId, {
+              coverage: cov.coverage,
+              missingCategories: cov.missingCategories,
+              estimatedUplift: cov.estimatedUplift,
+              coveredCategories: cov.coveredCategories,
+            });
+          } else {
+            // Company has no active subscriptions
+            coverageMap.set(companyId, {
+              coverage: "0/7",
+              missingCategories: [],
+              estimatedUplift: 0,
+              coveredCategories: [],
+            });
+          }
+        }
+      }
+
+      spinner.stop();
+
       // Row numbers continue across pages (page 2 starts at 26, not 1)
       const startNum = apiPage * pageSize;
-      const numbered = result.content.map((c: Record<string, unknown>, i: number) => ({
-        ...c,
-        _num: String(startNum + i + 1),
-      }));
+      const numbered = result.content.map((c: Record<string, unknown>, i: number) => {
+        const row: Record<string, unknown> = {
+          ...c,
+          _num: String(startNum + i + 1),
+        };
+
+        if (coverageMap) {
+          const cov = coverageMap.get(String(c.id));
+          if (cov) {
+            row._coverage = cov.coverage;
+            row._missing = cov.missingCategories.length > 0
+              ? cov.missingCategories.map((c) => c.replace(/_/g, " ")).join(", ")
+              : "";
+            row._potential = cov.estimatedUplift;
+            // For JSON output, include structured fields
+            row.coverage = cov.coverage;
+            row.coveredCategories = cov.coveredCategories;
+            row.missingCategories = cov.missingCategories;
+            row.estimatedUplift = cov.estimatedUplift;
+          }
+        }
+
+        return row;
+      });
 
       await saveLastList(
         result.content.map((c: Record<string, unknown>, i: number) => ({
@@ -88,6 +177,7 @@ Examples:
         ));
       } catch { /* best effort */ }
 
+      const columns = coverageMap ? coverageColumns : baseColumns;
       output(numbered, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
@@ -104,6 +194,12 @@ Examples:
         if (totalPages > 1 && currentPage < totalPages - 1) {
           process.stderr.write(
             chalk.dim("  Next page: ") + chalk.cyan(replCmd(`pax8 companies list --page ${currentPage + 2}`)) + "\n"
+          );
+        }
+
+        if (!allOpts.coverage) {
+          process.stderr.write(
+            chalk.dim("  Add ") + chalk.cyan("--coverage") + chalk.dim(" to see portfolio gaps and revenue opportunities\n")
           );
         }
 

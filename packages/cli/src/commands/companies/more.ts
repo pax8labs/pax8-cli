@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { categorizeProduct, ALL_CATEGORIES, getRecommendations, getPortfolioCoverage, type ProductCategory } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
@@ -12,7 +13,7 @@ import {
 } from "../../lib/formatters.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
-import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { output, type Column } from "../../lib/output.js";
 
 
@@ -149,12 +150,45 @@ Examples:
         issues.push(`${s.productName} is on trial — convert or cancel`);
       }
 
+      // Portfolio coverage analysis
+      const coveredCategories = new Set<ProductCategory>();
+      for (const sub of activeSubs) {
+        const cats = categorizeProduct(sub.productName);
+        for (const c of cats) coveredCategories.add(c);
+      }
+      const covered = ALL_CATEGORIES.filter((c) => coveredCategories.has(c));
+      const missing = ALL_CATEGORIES.filter((c) => !coveredCategories.has(c));
+
+      // Get estimated uplift from recommendations engine
+      const subsForRecs = subs.content.map((s: Record<string, unknown>) => ({
+        companyId: String(s.companyId ?? company.id),
+        companyName: company.name,
+        productName: String(s.productName ?? ""),
+        productId: String(s.productId ?? ""),
+        quantity: Number(s.quantity) || 0,
+        price: Number(s.price) || 0,
+        billingTerm: String(s.billingTerm ?? "Monthly"),
+        status: String(s.status ?? ""),
+      }));
+      const recsReport = getRecommendations(subsForRecs);
+      const companyUplift = recsReport.recommendations
+        .filter((r) => r.companyId === company.id)
+        .reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+
+      const coverageInfo = {
+        coverage: `${covered.length}/${ALL_CATEGORIES.length}`,
+        coveredCategories: covered,
+        missingCategories: missing,
+        estimatedUplift: Number(companyUplift.toFixed(2)),
+      };
+
       // JSON output
       if (ctx.outputFormat === "json" || ctx.outputFormat === "csv") {
         const result = {
           company: { name: company.name, id: company.id, status: company.status },
           summary: { active_subscriptions: activeSubs.length, total_seats: totalSeats, mrr: Number(totalMrr.toFixed(2)), arr: Number((totalMrr * 12).toFixed(2)) },
           vendors,
+          coverage: coverageInfo,
           subscriptions: activeSubs,
           issues,
         };
@@ -207,6 +241,21 @@ Examples:
         }
         process.stdout.write("\n");
       }
+
+      // Portfolio coverage
+      process.stdout.write(chalk.dim("  PORTFOLIO COVERAGE") + chalk.dim(`  ${coverageInfo.coverage}\n`));
+      if (covered.length > 0) {
+        const coveredStr = covered.map((c) => chalk.green(c.replace(/_/g, " "))).join(chalk.dim(", "));
+        process.stdout.write(chalk.dim("  Covered:  ") + coveredStr + "\n");
+      }
+      if (missing.length > 0) {
+        const missingStr = missing.map((c) => chalk.yellow(c.replace(/_/g, " "))).join(chalk.dim(", "));
+        process.stdout.write(chalk.dim("  Missing:  ") + missingStr + "\n");
+      }
+      if (coverageInfo.estimatedUplift > 0) {
+        process.stdout.write(chalk.dim("  Potential: ") + chalk.green(`+${formatCurrency(coverageInfo.estimatedUplift)}/mo`) + "\n");
+      }
+      process.stdout.write("\n");
 
       // Subscriptions table
       const subColumns: Column[] = [
