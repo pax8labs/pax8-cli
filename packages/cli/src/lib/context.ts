@@ -22,6 +22,21 @@ import { replCmd } from "./confirm.js";
 /** Page size for fetching "all" subscriptions in aggregate commands. */
 export const ALL_SUBS_SIZE = 1000;
 
+/**
+ * Emit a stderr warning when a paginated result hits the page size limit,
+ * indicating that results may be incomplete.
+ */
+export function warnIfTruncated(
+  result: { content: unknown[] },
+  pageSize: number,
+): void {
+  if (result.content.length >= pageSize) {
+    process.stderr.write(
+      `\n  ⚠ Returned ${result.content.length} subscriptions (page limit) — results may be incomplete. Use --size to increase.\n`,
+    );
+  }
+}
+
 export interface ApiClient {
   companies: CompaniesApi;
   subscriptions: SubscriptionsApi;

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext, ALL_SUBS_SIZE } from "../../lib/context.js";
+import { buildContext, ALL_SUBS_SIZE, warnIfTruncated } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -38,6 +38,8 @@ Examples:
         ctx.api.invoices.list({ month: options.month, companyId, size: 200 }),
         ctx.api.subscriptions.list({ companyId, size: ALL_SUBS_SIZE }),
       ]);
+
+      warnIfTruncated(subsResult, ALL_SUBS_SIZE);
 
       // Fetch items for each invoice in parallel
       const allItems = (

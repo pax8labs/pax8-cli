@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { getRecommendations, type Recommendation } from "@pax8/core";
-import { buildContext, ALL_SUBS_SIZE, type CommandContext } from "../../lib/context.js";
+import { buildContext, ALL_SUBS_SIZE, warnIfTruncated, type CommandContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -197,6 +197,8 @@ Examples:
         ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE, status: "Active" }),
         ctx.api.companies.list({ size: 200 }),
       ]);
+
+      warnIfTruncated(subsResult, ALL_SUBS_SIZE);
 
       // Build company name lookup
       const companyNames = new Map<string, string>();

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext, ALL_SUBS_SIZE } from "../lib/context.js";
+import { buildContext, ALL_SUBS_SIZE, warnIfTruncated } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency, calculateMrr } from "../lib/formatters.js";
@@ -119,6 +119,8 @@ Examples:
       for (const c of companiesResult.content) {
         companyNames.set(c.id, c.name);
       }
+
+      warnIfTruncated(subsResult, ALL_SUBS_SIZE);
 
       const allSubs = subsResult.content;
       enrichCompanyNames(companyNames, allSubs);
