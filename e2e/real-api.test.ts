@@ -137,8 +137,8 @@ describeReal("Real API integration tests", () => {
       expect(data).toBeTruthy();
       expect(typeof data).toBe("object");
       // Status should have some known keys
-      expect(data).toHaveProperty("companies");
-      expect(data).toHaveProperty("subscriptions");
+      expect(data).toHaveProperty("totalCompanies");
+      expect(data).toHaveProperty("activeSubscriptions");
     },
     30_000
   );
