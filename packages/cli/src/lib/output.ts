@@ -25,7 +25,36 @@ function escapeCSV(value: string): string {
   return value;
 }
 
+/**
+ * Strip ANSI escape sequences from a string to get its visible length.
+ */
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+export function stripAnsi(str: string): string {
+  return str.replace(ANSI_RE, "");
+}
+
+/**
+ * Get the effective terminal width, accounting for the 2-char indent we add.
+ * Returns Infinity when not running in a TTY (no wrapping needed).
+ */
+export function getTerminalWidth(): number {
+  if (process.stdout.columns && process.stdout.columns > 0) {
+    // Subtract 2 for the indent we add to every table line
+    return process.stdout.columns - 2;
+  }
+  return Infinity;
+}
+
 function formatTable(data: Record<string, unknown>[], columns: Column[]): void {
+  const termWidth = getTerminalWidth();
+
+  // Build column widths: use explicit widths where specified,
+  // and let cli-table3 auto-size the rest. If the total exceeds
+  // terminal width, we'll set wordWrap to prevent overflow.
+  const colWidths = columns.map((col) => col.width ?? null);
+  const wrapEnabled = termWidth < Infinity;
+
   const table = new Table({
     head: columns.map((col) => chalk.cyan.bold(col.header)),
     style: {
@@ -34,7 +63,8 @@ function formatTable(data: Record<string, unknown>[], columns: Column[]): void {
       "padding-left": 1,
       "padding-right": 1,
     },
-    colWidths: columns.map((col) => col.width ?? null),
+    colWidths,
+    wordWrap: wrapEnabled,
   });
 
   for (const row of data) {

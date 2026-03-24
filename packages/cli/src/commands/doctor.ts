@@ -145,6 +145,16 @@ async function checkApiHealth(): Promise<CheckResult[]> {
   return results;
 }
 
+async function checkCredentialPermissions(): Promise<CheckResult> {
+  const store = new CredentialStore();
+  const result = await store.checkPermissions();
+  return {
+    name: "Credential file permissions",
+    passed: result.secure,
+    detail: result.detail,
+  };
+}
+
 async function checkMcpServer(): Promise<CheckResult> {
   try {
     const mcpPath = path.join(process.cwd(), ".mcp.json");
@@ -214,17 +224,18 @@ Examples:
     process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));
 
     // Run all checks in parallel for speed
-    const [nodeV, configF, authC, tokenC, apiCs, cacheC, mcpC, telC] = await Promise.all([
+    const [nodeV, configF, authC, credPerms, tokenC, apiCs, cacheC, mcpC, telC] = await Promise.all([
       checkNodeVersion(),
       checkConfigFile(),
       checkAuth(),
+      checkCredentialPermissions(),
       checkTokenFetch(),
       checkApiHealth(),
       checkCacheDir(),
       checkMcpServer(),
       checkTelemetry(),
     ]);
-    const checks: CheckResult[] = [nodeV, configF, authC, tokenC, ...apiCs, cacheC, mcpC, telC];
+    const checks: CheckResult[] = [nodeV, configF, authC, credPerms, tokenC, ...apiCs, cacheC, mcpC, telC];
 
     let allPassed = true;
     for (const check of checks) {

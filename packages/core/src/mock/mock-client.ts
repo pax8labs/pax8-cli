@@ -54,7 +54,13 @@ export interface ListParams {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function randomDelay(): Promise<void> {
-  const ms = 50 + Math.floor(Math.random() * 150); // 50–200ms
+  // Skip delays entirely when running in test/CI or when PAX8_FAST_MOCK is set.
+  // In demo mode, use a short delay (5–20ms) so spinners still feel real
+  // without making multi-call commands painfully slow.
+  if (process.env.PAX8_TEST || process.env.CI || process.env.PAX8_FAST_MOCK) {
+    return Promise.resolve();
+  }
+  const ms = 5 + Math.floor(Math.random() * 15); // 5–20ms
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 

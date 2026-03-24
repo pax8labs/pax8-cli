@@ -5,7 +5,7 @@ import { buildContext, ALL_SUBS_SIZE, warnIfTruncated, type CommandContext } fro
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { formatCurrency, formatCompanyName, formatQuantity } from "../../lib/formatters.js";
+import { formatCurrency, formatCompanyName, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { filterRecommendations } from "./filter.js";
 import { replCmd } from "../../lib/confirm.js";
@@ -140,17 +140,50 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
     });
     spinner.succeed("Order created 🎉");
 
+    // Look up unit price from product pricing
+    let unitPrice: number | null = null;
+    try {
+      const pricing = await ctx.api.products.getPricing(productId).catch(() => null);
+      if (pricing && pricing.length > 0) {
+        const match = pricing.find((p: { billingTerm: string }) => p.billingTerm === "Monthly")
+          ?? pricing[0];
+        const ratePrice = match.rates?.[0]?.suggestedRetailPrice
+          ?? (match as Record<string, unknown>).suggestedRetailPrice as number | undefined;
+        if (ratePrice) unitPrice = ratePrice;
+      }
+    } catch { /* best effort */ }
+
+    // Calculate cost impact
+    const monthlyCost = unitPrice ? calculateMrr(unitPrice, quantity, "Monthly") : null;
+    const annualCost = monthlyCost ? Number((monthlyCost * 12).toFixed(2)) : null;
+
+    // Fall back to recommendation's MRR estimate if no pricing found
+    const displayMrr = monthlyCost ?? (rec.estimatedMrrUplift
+      ? (rec.targetSeats && quantity !== rec.targetSeats
+        ? Number((rec.estimatedMrrUplift * (quantity / rec.targetSeats)).toFixed(2))
+        : rec.estimatedMrrUplift)
+      : null);
+    const displayAnnual = annualCost ?? (displayMrr ? Number((displayMrr * 12).toFixed(2)) : null);
+
     process.stdout.write("\n");
     process.stdout.write(`  ${chalk.dim("Order ID:".padEnd(18))}${order.id}\n`);
     process.stdout.write(`  ${chalk.dim("Product:".padEnd(18))}${productName}\n`);
     process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${companyName}\n`);
-    process.stdout.write(`  ${chalk.dim("Seats:".padEnd(18))}${quantity}\n`);
-    if (rec.estimatedMrrUplift) {
-      // Scale MRR estimate proportionally if quantity was changed
-      const mrrEstimate = rec.targetSeats && quantity !== rec.targetSeats
-        ? rec.estimatedMrrUplift * (quantity / rec.targetSeats)
-        : rec.estimatedMrrUplift;
-      process.stdout.write(`  ${chalk.dim("Est. MRR:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(mrrEstimate) + "/mo")} (${chalk.green("+" + formatCurrency(mrrEstimate * 12) + "/yr")})\n`);
+    process.stdout.write(`  ${chalk.dim("Seats:".padEnd(18))}${formatQuantity(quantity)}\n`);
+    if (unitPrice) {
+      process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${formatCurrency(unitPrice)}/seat/mo\n`);
+    } else {
+      process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${chalk.dim("—")}\n`);
+    }
+    if (displayMrr) {
+      process.stdout.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.green.bold(formatCurrency(displayMrr) + "/mo")}\n`);
+    } else {
+      process.stdout.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.dim("—")}\n`);
+    }
+    if (displayAnnual) {
+      process.stdout.write(`  ${chalk.dim("Annual cost:".padEnd(18))}${chalk.green(formatCurrency(displayAnnual) + "/yr")}\n`);
+    } else {
+      process.stdout.write(`  ${chalk.dim("Annual cost:".padEnd(18))}${chalk.dim("—")}\n`);
     }
     process.stdout.write("\n");
   } catch (error) {
@@ -220,6 +253,7 @@ Examples:
       const report = getRecommendations(
         subs,
         productsResult.content,
+        companiesResult.content,
       );
 
       let recs = report.recommendations;
@@ -239,10 +273,15 @@ Examples:
       }
 
       // In table mode, hide unavailable recs unless --include-all
-      const unavailableCount = recs.filter((r) => !r.productAvailable).length;
+      // Count hidden items BEFORE filtering so we can show "N hidden" message
+      const hiddenCount = options.includeAll ? 0 : recs.filter((r) => !r.productAvailable).length;
       if (!options.includeAll) {
         recs = recs.filter((r) => r.productAvailable);
       }
+
+      // From this point, `recs` contains only the VISIBLE recommendations.
+      // All summary counts must use `recs` (not `report.recommendations`) to
+      // ensure the numbers the user sees match the items actually displayed.
 
       if (ctx.outputFormat === "quiet") return;
 
@@ -252,9 +291,9 @@ Examples:
       }
 
       if (recs.length === 0) {
-        if (unavailableCount > 0) {
+        if (hiddenCount > 0) {
           process.stderr.write(
-            chalk.yellow(`\n  ${unavailableCount} gap${unavailableCount > 1 ? "s" : ""} found but the needed products aren't in your catalog yet.\n\n`) +
+            chalk.yellow(`\n  ${hiddenCount} gap${hiddenCount > 1 ? "s" : ""} found but the needed products aren't in your catalog yet.\n\n`) +
             chalk.dim("  Your customers could benefit from:\n")
           );
           // Show what categories are missing
@@ -280,7 +319,7 @@ Examples:
       const numbered = displayRecs.map((r, i) => ({ ...r, _num: String(i + 1) }));
       output(numbered, { format: "table", columns });
 
-      // Summary footer
+      // Summary footer — all counts derived from visible `recs` only
       const highCount = recs.filter((r) => r.priority === "high").length;
       const totalUplift = recs.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
       const actionableCount = recs.filter((r) => r.orderCommand).length;
@@ -289,10 +328,10 @@ Examples:
         process.stderr.write(chalk.dim(`\n  Showing top ${limit} of ${recs.length} recommendations`) + chalk.dim(` · use --limit ${recs.length} to see all\n`));
       }
 
-      const filteredCompanyCount = new Set(recs.map((r) => r.companyId)).size;
+      const visibleCompanyCount = new Set(recs.map((r) => r.companyId)).size;
       process.stderr.write(
         chalk.dim(
-          `\n  ${recs.length} recommendation${recs.length !== 1 ? "s" : ""} across ${filteredCompanyCount} ${filteredCompanyCount !== 1 ? "companies" : "company"}`
+          `\n  ${recs.length} recommendation${recs.length !== 1 ? "s" : ""} across ${visibleCompanyCount} ${visibleCompanyCount !== 1 ? "companies" : "company"}`
         )
       );
 
@@ -328,8 +367,8 @@ Examples:
         }
       }
 
-      if (unavailableCount > 0) {
-        process.stderr.write(chalk.dim(`  ${unavailableCount} more recommendation${unavailableCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet\n`));
+      if (hiddenCount > 0) {
+        process.stderr.write(chalk.dim(`  ${hiddenCount} more recommendation${hiddenCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet\n`));
       }
 
       // Suggest recommendations act

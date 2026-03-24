@@ -177,13 +177,22 @@ Examples:
       } catch { /* telemetry never breaks the CLI */ }
 
       if (ctx.outputFormat === "json") {
-        process.stdout.write(JSON.stringify(order, null, 2) + "\n");
+        const jsonMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : null;
+        const monthlyCost = jsonMrr; // MRR is by definition the monthly cost
+        const annualCost = jsonMrr ? Number((jsonMrr * 12).toFixed(2)) : null;
+        const enriched = {
+          ...order,
+          unitPrice: unitPrice ?? null,
+          monthlyCost: monthlyCost ?? null,
+          annualCost: annualCost ?? null,
+        };
+        process.stdout.write(JSON.stringify(enriched, null, 2) + "\n");
         return;
       }
 
       // Post-order summary with financial impact
       const finalMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : null;
-      const finalTotal = unitPrice ? unitPrice * confirmedQty : null;
+      const finalAnnual = finalMrr ? Number((finalMrr * 12).toFixed(2)) : null;
 
       process.stdout.write("\n");
       process.stdout.write(`  ${chalk.dim("Order ID:".padEnd(18))}${order.id}\n`);
@@ -192,13 +201,19 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${companyName}\n`);
       process.stdout.write(`  ${chalk.dim("Seats:".padEnd(18))}${formatQuantity(confirmedQty)}\n`);
       if (unitPrice) {
-        process.stdout.write(`  ${chalk.dim("Unit Price:".padEnd(18))}${formatCurrency(unitPrice)}/seat/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
-      }
-      if (finalTotal) {
-        process.stdout.write(`  ${chalk.dim("Total:".padEnd(18))}${formatCurrency(finalTotal)}/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
+        process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${formatCurrency(unitPrice)}/seat/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
+      } else {
+        process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${chalk.dim("—")}\n`);
       }
       if (finalMrr) {
-        process.stdout.write(`  ${chalk.dim("Est. MRR:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(finalMrr) + "/mo")} (${chalk.green("+" + formatCurrency(finalMrr * 12) + "/yr")})\n`);
+        process.stdout.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.green.bold(formatCurrency(finalMrr) + "/mo")}\n`);
+      } else {
+        process.stdout.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.dim("—")}\n`);
+      }
+      if (finalAnnual) {
+        process.stdout.write(`  ${chalk.dim("Annual cost:".padEnd(18))}${chalk.green(formatCurrency(finalAnnual) + "/yr")}\n`);
+      } else {
+        process.stdout.write(`  ${chalk.dim("Annual cost:".padEnd(18))}${chalk.dim("—")}\n`);
       }
       process.stdout.write("\n");
       // Next steps

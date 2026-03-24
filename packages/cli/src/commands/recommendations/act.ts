@@ -5,7 +5,7 @@ import { getRecommendations, getTelemetry, type Recommendation } from "@pax8/cor
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { formatCurrency, formatCompanyName } from "../../lib/formatters.js";
+import { formatCurrency, formatCompanyName, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { filterRecommendations } from "./filter.js";
 
@@ -83,15 +83,55 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
         billingTerm: "Monthly",
       }],
     });
-    // Show financial impact
-    let mrrLine = "";
-    if (rec.estimatedMrrUplift) {
-      const mrrEstimate = rec.targetSeats && quantity !== rec.targetSeats
-        ? rec.estimatedMrrUplift * (quantity / rec.targetSeats)
-        : rec.estimatedMrrUplift;
-      mrrLine = chalk.green(` +${formatCurrency(mrrEstimate)}/mo`);
+
+    // Look up unit price from product pricing
+    let unitPrice: number | null = null;
+    try {
+      const pricing = await ctx.api.products.getPricing(productId).catch(() => null);
+      if (pricing && pricing.length > 0) {
+        const match = pricing.find((p: { billingTerm: string }) => p.billingTerm === "Monthly")
+          ?? pricing[0];
+        const ratePrice = match.rates?.[0]?.suggestedRetailPrice
+          ?? (match as Record<string, unknown>).suggestedRetailPrice as number | undefined;
+        if (ratePrice) unitPrice = ratePrice;
+      }
+    } catch { /* best effort */ }
+
+    // Calculate cost impact
+    const monthlyCost = unitPrice ? calculateMrr(unitPrice, quantity, "Monthly") : null;
+    const annualCost = monthlyCost ? Number((monthlyCost * 12).toFixed(2)) : null;
+
+    // Fall back to recommendation's MRR estimate if no pricing found
+    const displayMrr = monthlyCost ?? (rec.estimatedMrrUplift
+      ? (rec.targetSeats && quantity !== rec.targetSeats
+        ? Number((rec.estimatedMrrUplift * (quantity / rec.targetSeats)).toFixed(2))
+        : rec.estimatedMrrUplift)
+      : null);
+    const displayAnnual = annualCost ?? (displayMrr ? Number((displayMrr * 12).toFixed(2)) : null);
+
+    spinner.succeed(`Ordered ${product} for ${rec.companyName} (${quantity} seats)`);
+
+    process.stderr.write("\n");
+    process.stderr.write(`  ${chalk.dim("Order ID:".padEnd(18))}${order.id}\n`);
+    process.stderr.write(`  ${chalk.dim("Product:".padEnd(18))}${product}\n`);
+    process.stderr.write(`  ${chalk.dim("Company:".padEnd(18))}${rec.companyName}\n`);
+    process.stderr.write(`  ${chalk.dim("Seats:".padEnd(18))}${formatQuantity(quantity)}\n`);
+    if (unitPrice) {
+      process.stderr.write(`  ${chalk.dim("Unit price:".padEnd(18))}${formatCurrency(unitPrice)}/seat/mo\n`);
+    } else {
+      process.stderr.write(`  ${chalk.dim("Unit price:".padEnd(18))}${chalk.dim("—")}\n`);
     }
-    spinner.succeed(`Ordered ${product} for ${rec.companyName} (${quantity} seats)${mrrLine}`);
+    if (displayMrr) {
+      process.stderr.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.green.bold(formatCurrency(displayMrr) + "/mo")}\n`);
+    } else {
+      process.stderr.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.dim("—")}\n`);
+    }
+    if (displayAnnual) {
+      process.stderr.write(`  ${chalk.dim("Annual cost:".padEnd(18))}${chalk.green(formatCurrency(displayAnnual) + "/yr")}\n`);
+    } else {
+      process.stderr.write(`  ${chalk.dim("Annual cost:".padEnd(18))}${chalk.dim("—")}\n`);
+    }
+    process.stderr.write("\n");
     return "ordered";
   } catch (error) {
     spinner.fail("Order failed");

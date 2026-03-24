@@ -13,6 +13,10 @@ describe("orders create", () => {
     const order = JSON.parse(result.stdout);
     expect(order).toHaveProperty("id");
     expect(order.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    // Issue #57: JSON output includes cost impact fields
+    expect(order).toHaveProperty("unitPrice");
+    expect(order).toHaveProperty("monthlyCost");
+    expect(order).toHaveProperty("annualCost");
   });
 
   it("shows company and product names in preview", async () => {
@@ -26,6 +30,24 @@ describe("orders create", () => {
     expect(result.stderr).toContain("Order Preview");
     expect(result.stderr).toContain("Summit Healthcare Partners");
     expect(result.stderr).toContain("Microsoft 365 Business Premium [New Commerce Experience]");
+  });
+
+  it("includes cost impact in JSON output after order creation", async () => {
+    const result = await runCliExpectSuccess([
+      "orders", "create",
+      "--company", "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "--product", "prod-m365-biz-prem-0001",
+      "--quantity", "10",
+      "--yes", "--json",
+    ]);
+    const order = JSON.parse(result.stdout);
+    // Issue #57: JSON output includes cost impact fields
+    expect(order.unitPrice).toBeTypeOf("number");
+    expect(order.unitPrice).toBeGreaterThan(0);
+    expect(order.monthlyCost).toBeTypeOf("number");
+    expect(order.monthlyCost).toBeGreaterThan(0);
+    expect(order.annualCost).toBeTypeOf("number");
+    expect(order.annualCost).toBe(order.monthlyCost * 12);
   });
 
   it("rejects quantity 0 with clear error", async () => {

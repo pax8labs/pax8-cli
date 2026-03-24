@@ -23,12 +23,15 @@ export interface GrowthReport {
   averageGrowth: number;
 }
 
-function subscriptionMrr(sub: AnalyticsSubscriptionInput): number {
-  const price: number = sub.price ?? 0;
-  const quantity: number = sub.quantity ?? 1;
-  const billingTerm: string = (sub.billingTerm ?? "monthly").toLowerCase();
-
-  if (billingTerm.includes("annual") || billingTerm.includes("yearly")) {
+/**
+ * Calculate the Monthly Recurring Revenue for a single subscription.
+ * Annual/yearly terms are divided by 12 to normalize to monthly.
+ *
+ * This is the single source of truth for MRR calculation across the codebase.
+ */
+export function subscriptionMrr(price: number, quantity: number, billingTerm: string): number {
+  const normalizedTerm = billingTerm.toLowerCase();
+  if (normalizedTerm.includes("annual") || normalizedTerm.includes("yearly")) {
     return (price * quantity) / 12;
   }
   return price * quantity;
@@ -46,7 +49,7 @@ export function computeMrr(subscriptions: AnalyticsSubscriptionInput[]): MrrRepo
   const vendorMap = new Map<string, { vendorName: string; mrr: number }>();
 
   for (const sub of activeSubs) {
-    const mrr = subscriptionMrr(sub);
+    const mrr = subscriptionMrr(sub.price ?? 0, sub.quantity ?? 1, (sub.billingTerm ?? "monthly"));
     totalMrr += mrr;
 
     const companyId: string = sub.companyId ?? "";

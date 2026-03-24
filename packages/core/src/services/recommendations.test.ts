@@ -130,4 +130,48 @@ describe("getRecommendations", () => {
     const uniqueTitles = new Set(titles);
     expect(titles.length).toBe(uniqueTitles.size);
   });
+
+  it("flags companies with zero active subscriptions", () => {
+    const subs = [makeSub({ companyId: "c1", companyName: "Active Co" })];
+    const companies = [
+      { id: "c1", name: "Active Co" },
+      { id: "c2", name: "Ghost Co" },
+    ];
+    const report = getRecommendations(subs, undefined, companies);
+    const zeroSub = report.recommendations.find(
+      (r) => r.companyId === "c2" && r.title.includes("No active subscriptions")
+    );
+    expect(zeroSub).toBeDefined();
+    expect(zeroSub!.type).toBe("cross_sell");
+    expect(zeroSub!.priority).toBe("high");
+    expect(zeroSub!.companyName).toBe("Ghost Co");
+    expect(zeroSub!.reason).toContain("no active subscriptions");
+    expect(zeroSub!.suggestedProducts).toEqual([]);
+    expect(zeroSub!.orderCommand).toBeNull();
+    expect(zeroSub!.productAvailable).toBe(false);
+    expect(zeroSub!.currentMrr).toBe(0);
+    expect(zeroSub!.estimatedMrrUplift).toBeNull();
+    expect(zeroSub!.targetSeats).toBeNull();
+    expect(zeroSub!.estimateType).toBe("upper_bound");
+  });
+
+  it("does NOT flag zero-sub companies when companies param is omitted", () => {
+    const subs = [makeSub({ companyId: "c1", companyName: "Active Co" })];
+    const report = getRecommendations(subs);
+    const zeroSub = report.recommendations.find(
+      (r) => r.title.includes("No active subscriptions")
+    );
+    expect(zeroSub).toBeUndefined();
+  });
+
+  it("includes zero-sub companies in totalCompanies count", () => {
+    const subs = [makeSub({ companyId: "c1", companyName: "Active Co" })];
+    const companies = [
+      { id: "c1", name: "Active Co" },
+      { id: "c2", name: "Ghost Co" },
+      { id: "c3", name: "Another Ghost" },
+    ];
+    const report = getRecommendations(subs, undefined, companies);
+    expect(report.totalCompanies).toBe(3);
+  });
 });

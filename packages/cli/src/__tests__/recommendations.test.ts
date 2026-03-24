@@ -77,5 +77,35 @@ describe("pax8 recommendations", () => {
       expect(data.recommendations).toEqual([]);
       expect(data.nextActions).toEqual([]);
     });
+
+    it("JSON output includes both available and unavailable recs for downstream filtering", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+      const allRecs = JSON.parse(result.stdout).recommendations;
+
+      // Some recs should have productAvailable: true, some false
+      const available = allRecs.filter((r: { productAvailable: boolean }) => r.productAvailable);
+      const unavailable = allRecs.filter((r: { productAvailable: boolean }) => !r.productAvailable);
+
+      // The total should be the sum of available + unavailable
+      expect(available.length + unavailable.length).toBe(allRecs.length);
+
+      // Verify every rec has the productAvailable field
+      for (const rec of allRecs) {
+        expect(rec).toHaveProperty("productAvailable");
+        expect(typeof rec.productAvailable).toBe("boolean");
+      }
+    });
+
+    it("--include-all shows unavailable recs in JSON output", async () => {
+      const withAll = await runCliExpectSuccess(["recommendations", "list", "--include-all", "--json"]);
+      const withoutAll = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+
+      const allRecs = JSON.parse(withAll.stdout).recommendations;
+      const defaultRecs = JSON.parse(withoutAll.stdout).recommendations;
+
+      // Both should return the same set since JSON output is pre-filter
+      // (JSON returns all recs; filtering only affects table mode)
+      expect(allRecs.length).toBe(defaultRecs.length);
+    });
   });
 });

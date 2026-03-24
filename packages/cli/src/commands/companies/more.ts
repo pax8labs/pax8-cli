@@ -9,6 +9,7 @@ import {
   formatCurrency,
   formatDaysUntil,
   formatDate,
+  formatQuantity,
   calculateMrr,
 } from "../../lib/formatters.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
@@ -137,7 +138,7 @@ Examples:
         const days = daysUntil(sub.commitmentTermEndDate);
         if (days !== null && days <= 30 && days > 0 && sub.billingTerm === "Annual") {
           issues.push(
-            `${sub.productName} (${sub.quantity} seats) renews ${sub.renewsIn} — review before auto-renewal`
+            `${sub.productName} (${formatQuantity(sub.quantity)}) renews ${sub.renewsIn} — review before auto-renewal`
           );
         }
       }

@@ -1,4 +1,5 @@
 import type { Subscription } from "../api/types.js";
+import { subscriptionMrr } from "./analytics.js";
 
 // ─── Product Categories ─────────────────────────────────────────────────────
 // Maps keyword patterns in product names to categories.
@@ -310,6 +311,7 @@ export function getPortfolioCoverage(
 export function getRecommendations(
   subscriptions: SubscriptionInput[],
   products?: Array<{ id: string; name: string; vendorName?: string; pricing?: Array<{ billingTerm: string; suggestedRetailPrice: number }> }>,
+  companies?: Array<{ id: string; name: string }>,
 ): RecommendationReport {
   // Group subscriptions by company
   const byCompany = new Map<string, SubscriptionInput[]>();
@@ -383,10 +385,7 @@ export function getRecommendations(
     // Calculate current MRR
     let currentMrr = 0;
     for (const sub of subs) {
-      const price = sub.price ?? 0;
-      const qty = sub.quantity ?? 0;
-      const term = sub.billingTerm ?? "Monthly";
-      currentMrr += term.toLowerCase().includes("annual") ? (price * qty) / 12 : price * qty;
+      currentMrr += subscriptionMrr(sub.price ?? 0, sub.quantity ?? 0, sub.billingTerm ?? "Monthly");
     }
 
     // Check cross-sell rules
@@ -510,6 +509,29 @@ export function getRecommendations(
     }
   }
 
+  // Flag companies with zero active subscriptions
+  if (companies) {
+    for (const company of companies) {
+      if (!byCompany.has(company.id)) {
+        recommendations.push({
+          companyId: company.id,
+          companyName: company.name,
+          type: "cross_sell",
+          priority: "high",
+          title: `No active subscriptions for ${company.name}`,
+          reason: "This customer has no active subscriptions. Consider reaching out to discuss their needs.",
+          suggestedProducts: [],
+          orderCommand: null,
+          productAvailable: false,
+          currentMrr: 0,
+          estimatedMrrUplift: null,
+          targetSeats: null,
+          estimateType: "upper_bound",
+        });
+      }
+    }
+  }
+
   // Deduplicate: if the same company + missing category appears from multiple rules, keep highest priority
   const seen = new Set<string>();
   const deduped: Recommendation[] = [];
@@ -531,12 +553,18 @@ export function getRecommendations(
     return (b.estimatedMrrUplift ?? 0) - (a.estimatedMrrUplift ?? 0);
   });
 
+  // Count total companies: union of companies with subs + companies passed in
+  const allCompanyIds = new Set(byCompany.keys());
+  if (companies) {
+    for (const c of companies) allCompanyIds.add(c.id);
+  }
+
   const companiesWithGaps = new Set(deduped.map((r) => r.companyId)).size;
   const estimatedTotalMrrUplift = Number(deduped.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0).toFixed(2));
 
   return {
     recommendations: deduped,
-    totalCompanies: byCompany.size,
+    totalCompanies: allCompanyIds.size,
     companiesWithGaps,
     estimatedTotalMrrUplift,
     unmatchedProducts: [...unmatchedProducts],

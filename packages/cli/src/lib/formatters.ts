@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { subscriptionMrr } from "@pax8/core";
 
 export function formatTimeAgo(date: Date | string): string {
   const now = new Date();
@@ -68,11 +69,7 @@ export function formatDate(iso: string | Date): string {
 }
 
 export function calculateMrr(price: number, quantity: number, billingTerm: string): number {
-  const term = billingTerm.toLowerCase();
-  const monthly = term.includes("annual") || term.includes("yearly")
-    ? (price * quantity) / 12
-    : price * quantity;
-  return Number(monthly.toFixed(2));
+  return Number(subscriptionMrr(price, quantity, billingTerm).toFixed(2));
 }
 
 export function formatDaysUntil(date: string | Date): string {

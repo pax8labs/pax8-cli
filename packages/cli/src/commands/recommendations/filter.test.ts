@@ -149,4 +149,66 @@ describe("filterRecommendations", () => {
       expect(result).toHaveLength(0);
     });
   });
+
+  describe("summary counts match visible items (issue #51)", () => {
+    const mixedRecs: Recommendation[] = [
+      makeRec({
+        companyId: "company-1",
+        companyName: "Summit Healthcare Partners",
+        priority: "high",
+        productAvailable: true,
+        estimatedMrrUplift: 100,
+      }),
+      makeRec({
+        companyId: "company-2",
+        companyName: "Pinnacle Financial Group",
+        priority: "high",
+        productAvailable: false, // hidden by default
+        estimatedMrrUplift: 200,
+      }),
+      makeRec({
+        companyId: "company-3",
+        companyName: "Bright Minds Academy",
+        priority: "medium",
+        productAvailable: true,
+        estimatedMrrUplift: 50,
+      }),
+      makeRec({
+        companyId: "company-3",
+        companyName: "Bright Minds Academy",
+        priority: "low",
+        productAvailable: false, // hidden by default
+        estimatedMrrUplift: 75,
+      }),
+    ];
+
+    it("filtering out unavailable recs changes counts correctly", () => {
+      // Simulate what list.ts does: filter out unavailable items
+      const hiddenCount = mixedRecs.filter((r) => !r.productAvailable).length;
+      const visible = mixedRecs.filter((r) => r.productAvailable);
+
+      // Summary counts should reflect VISIBLE items only
+      const visibleCompanies = new Set(visible.map((r) => r.companyId)).size;
+      const highCount = visible.filter((r) => r.priority === "high").length;
+      const totalUplift = visible.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+
+      expect(visible).toHaveLength(2);
+      expect(hiddenCount).toBe(2);
+      expect(visibleCompanies).toBe(2); // company-1 and company-3
+      expect(highCount).toBe(1); // only company-1's high-priority rec is visible
+      expect(totalUplift).toBe(150); // 100 + 50, NOT 100 + 200 + 50 + 75
+    });
+
+    it("--include-all would show all recs and counts", () => {
+      // When --include-all is used, no items are hidden
+      const allCompanies = new Set(mixedRecs.map((r) => r.companyId)).size;
+      const allHighCount = mixedRecs.filter((r) => r.priority === "high").length;
+      const allUplift = mixedRecs.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+
+      expect(mixedRecs).toHaveLength(4);
+      expect(allCompanies).toBe(3); // 3 distinct companies
+      expect(allHighCount).toBe(2); // both high-priority recs
+      expect(allUplift).toBe(425); // all uplifts summed
+    });
+  });
 });
