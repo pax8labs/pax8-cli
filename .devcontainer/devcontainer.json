@@ -1,6 +1,9 @@
 {
   "name": "Pax8 CLI Demo",
-  "image": "ghcr.io/pax8labs/pax8-cli-demo:latest",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
   "containerEnv": {
     "PAX8_DEMO": "1"
   },
