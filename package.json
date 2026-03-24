@@ -10,7 +10,8 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint packages/*/src/**/*.ts",
     "format": "prettier --write .",
-    "dev": "pnpm --filter @pax8/cli dev"
+    "dev": "pnpm --filter @pax8/cli dev",
+    "test:real": "vitest run e2e/real-api.test.ts"
   },
   "engines": {
     "node": ">=20.0.0"
