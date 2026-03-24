@@ -8,8 +8,21 @@ An open-source CLI for managing Pax8 cloud marketplace operations. Built for MSP
 - **Recommendation engine** — analyzes customer portfolios, flags missing products (backup, security, identity), and estimates MRR uplift
 - **Act on recommendations** — `pax8 recommendations act` walks through opportunities one by one and places orders
 - **Full Pax8 API coverage** — companies, subscriptions, orders, invoices, products
-- **Claude AI integration** — natural language queries over your Pax8 data via MCP server
+- **Claude AI integration** — agents get structured access to renewals, audits, recommendations, and MRR via MCP server
 - **Smart UX** — interactive drill-downs, copy-paste order commands, actionable error messages
+
+## Why This Exists
+
+The Pax8 API is a CRUD layer — it returns raw subscriptions, invoices, and products. It doesn't answer the questions MSPs actually ask: *Which renewals are coming up? Am I being overbilled? Which customers are missing backup?*
+
+This CLI computes what the API doesn't:
+
+- **Renewal tracking** — no renewals endpoint exists; the CLI parses commitment dates, calculates MRR at risk, and sorts by urgency
+- **Invoice auditing** — cross-references invoice line items against active subscriptions to flag overcharges and undercharges with dollar impact
+- **Upsell recommendations** — analyzes each customer's stack, identifies gaps, estimates MRR uplift, and returns ready-to-execute order commands
+- **MRR analytics** — aggregation by company/product/vendor with annual-to-monthly amortization
+
+Every command supports `--json`, so humans and AI agents use the same tool.
 
 ## Quick Start
 
@@ -147,7 +160,7 @@ No `pax8` prefix needed. Numbered shortcuts work after list commands.
 ## Authentication
 
 ```bash
-# Interactive (stores in OS keychain)
+# Interactive (stores in ~/.pax8/credentials.json)
 pax8 auth login
 
 # Non-interactive
@@ -158,7 +171,7 @@ export PAX8_CLIENT_ID=your-client-id
 export PAX8_CLIENT_SECRET=your-client-secret
 ```
 
-Generate API credentials in the [Pax8 Integrations Hub](https://app.pax8.com).
+Generate API credentials in the [Pax8 Integrations Hub](https://app.pax8.com). For detailed setup instructions, see the [Credential Setup Guide](docs/credential-setup.md).
 
 ## Demo Mode
 
@@ -173,15 +186,40 @@ Or enable persistently: `pax8 init --demo`
 
 ## Claude AI Integration
 
-The CLI includes an MCP server for Claude Code, enabling natural language queries:
+The CLI includes an MCP server and a Claude Code skill, so AI agents get the same computed intelligence as human operators — without reimplementing business logic or wrestling with raw API calls.
+
+### What agents get
+
+An agent asking "Am I being overbilled?" doesn't need to make 13+ API calls, join invoice line items against subscriptions, and compute deltas. It runs `pax8 invoices audit --json` and gets categorized discrepancies with dollar impact in one call.
+
+Available tools: companies, subscriptions, renewals, invoices, invoice audits, recommendations, MRR reports, and product search — all returning structured JSON.
+
+### Setup (Claude Code)
+
+Add to your Claude Code MCP config:
+
+```json
+{
+  "mcpServers": {
+    "pax8": {
+      "command": "pax8",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Or use the Claude Code skill directly — it wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible).
+
+### Example
 
 ```
-> "How's my business doing?"
-> "Which customers should consider backup?"
-> "Add AvePoint backup to all customers missing it"
+You: "Which customers are missing backup and what's the revenue opportunity?"
+Claude: runs pax8 recommendations list --json, returns prioritized gaps
+        with estimated MRR uplift and ready-to-execute order commands
 ```
 
-The recommendation engine powers both the CLI and the MCP server — Claude can analyze portfolios, find growth opportunities, and place orders through natural conversation.
+Works with Claude Code, Cursor, Copilot, and any agent framework that can run shell commands.
 
 ## Performance
 
@@ -196,7 +234,7 @@ git clone https://github.com/pax8labs/pax8-cli.git
 cd pax8-cli
 pnpm install
 pnpm build
-pnpm test              # 700+ tests
+pnpm test              # 700+ tests (739 and counting)
 pnpm test:coverage
 ```
 
@@ -217,7 +255,9 @@ pax8 telemetry disable   # Opt out
 
 ## Documentation
 
+- [Credential Setup Guide](docs/credential-setup.md)
 - [Product Requirements](docs/PRD.md)
+- [Credential Setup Guide](docs/credential-setup.md)
 - [Build Prompt](docs/BUILD.md)
 - [Pax8 API Reference](https://devx.pax8.com/)
 
