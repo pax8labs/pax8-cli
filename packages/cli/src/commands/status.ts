@@ -426,6 +426,41 @@ Examples:
         out.write(chalk.dim(`\n    → ${replCmd("pax8 subscriptions list --status Trial")}\n`));
       }
 
+      // ── Quick Actions (--all) ─────────────────────────────────────
+      if (showAll) {
+        const allActions: NextStep[] = [];
+
+        if (renewals.items.length > 0) {
+          allActions.push({
+            key: String(allActions.length + 1),
+            label: `${chalk.yellow("!")} ${renewals.items.length} renewal${renewals.items.length > 1 ? "s" : ""} in the next 30 days`,
+            command: ["subscriptions", "renewals"],
+          });
+        }
+
+        if (highRecs.length > 0) {
+          allActions.push({
+            key: String(allActions.length + 1),
+            label: `${chalk.green("+")} Walk through ${highRecs.length} growth opportunities`,
+            command: ["recommendations", "act"],
+          });
+        }
+
+        if (topCustomers.length > 0) {
+          allActions.push({
+            key: String(allActions.length + 1),
+            label: `Drill into ${topCustomers[0].name}`,
+            command: tokenizeCmd(`companies more "${topCustomers[0].name}"`),
+          });
+        }
+
+        if (allActions.length > 0) {
+          divider();
+          out.write(chalk.bold("  Quick Actions\n\n"));
+          await promptNextSteps(allActions);
+        }
+      }
+
       out.write("\n");
     } catch (error) {
       handleCommandError(error, spinner, "Failed to load status");

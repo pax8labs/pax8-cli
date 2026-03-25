@@ -205,7 +205,7 @@ export const OrderLineItemInputSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().int().min(1),
   billingTerm: BillingTermSchema.optional(),
-  commitmentTerm: CommitmentTermSchema.optional(),
+  commitmentTermId: z.string().uuid().optional(),
   provisioningDetails: OrderLineItemProvisioningSchema.optional(),
 });
 export type OrderLineItemInput = z.infer<typeof OrderLineItemInputSchema>;
@@ -238,6 +238,13 @@ export type CreateOrderInput = z.infer<typeof CreateOrderInputSchema>;
 
 // ─── Subscription ────────────────────────────────────────────────────────────
 
+export const CommitmentSchema = z.object({
+  id: z.string().uuid().optional(),
+  term: z.string().optional(),
+  endDate: z.string().optional(),
+});
+export type Commitment = z.infer<typeof CommitmentSchema>;
+
 export const SubscriptionSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
@@ -250,6 +257,7 @@ export const SubscriptionSchema = z.object({
   status: SubscriptionStatusSchema,
   price: z.number().optional(),
   billingTerm: BillingTermSchema.optional(),
+  commitment: CommitmentSchema.optional(),
   commitmentTermEndDate: z.string().optional(),
   companyName: z.string().optional(),
   productName: z.string().optional(),

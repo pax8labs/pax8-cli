@@ -7,7 +7,7 @@ import { confirmWithChange, replCmd } from "../../lib/confirm.js";
 import { formatStatus, formatDate, formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { ApiError, getTelemetry } from "@pax8/core";
-import type { CreateOrderInput, OrderLineItemInput, BillingTerm, CommitmentTerm } from "@pax8/core";
+import type { CreateOrderInput, OrderLineItemInput, BillingTerm } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 
@@ -17,7 +17,8 @@ export const ordersCreateCommand = new Command("create")
   .requiredOption("--product <id|name>", "Product ID or name (required)")
   .option("--quantity <number>", "Quantity", "1")
   .option("--billing-term <term>", "Billing term (Monthly or Annual)", "Monthly")
-  .option("--commitment-term <term>", "Commitment term (Monthly, 1-Year, or 3-Year)")
+  .option("--commitment-term <term>", "Commitment term (Monthly, 1-Year, or 3-Year) — auto-resolves to UUID from existing subscription")
+  .option("--commitment-term-id <uuid>", "Commitment term UUID (from subscription commitment.id)")
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
@@ -48,6 +49,7 @@ Examples:
 
       // Resolve names, pricing, and pre-check orderability
       let commitmentTerm = allOpts.commitmentTerm;
+      let commitmentTermId: string | undefined = allOpts.commitmentTermId;
       let unitPrice: number | null = null;
       let requiresCommitment = false;
       let productNotFound = false;
@@ -58,10 +60,23 @@ Examples:
       companyName = companyResult.name;
       const resolvedCompanyId = companyResult.id;
 
-      // Resolve product (best effort — warn but continue if not found)
+      // Resolve product — required for order creation
       let resolvedProductId = allOpts.product;
       const productResult = await resolveProduct(ctx, allOpts.product).catch(() => { productNotFound = true; return null; });
-      if (productResult) { productName = productResult.name; resolvedProductId = productResult.id; }
+      if (productResult) {
+        productName = productResult.name;
+        resolvedProductId = productResult.id;
+      } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(allOpts.product)) {
+        // Input isn't a UUID and couldn't be resolved — can't proceed
+        throw new CliError(
+          `Product not found: "${allOpts.product}"`,
+          ["Could not resolve product name to a product ID"],
+          [
+            `Search the catalog: ${replCmd("pax8 products search")} "${allOpts.product}"`,
+            `Then use the product ID: ${replCmd("pax8 orders create")} --product <product-id> ...`,
+          ],
+        );
+      }
 
       try {
         const pricing = await ctx.api.products.getPricing(resolvedProductId).catch(() => null);
@@ -87,10 +102,39 @@ Examples:
         if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] order pre-check failed: ${err}\n`);
       }
 
+      // Resolve commitmentTermId from existing subscription for the SAME product.
+      // commitmentTermId UUIDs are product-specific and cannot be reused across products.
+      if (!commitmentTermId && (commitmentTerm || requiresCommitment)) {
+        try {
+          const subs = await ctx.api.subscriptions.list({
+            companyId: resolvedCompanyId,
+            status: "Active",
+          });
+          // Only match subscriptions for the same product
+          const matches = subs.content.filter((s) =>
+            s.productId === resolvedProductId && s.commitment?.id
+          );
+          // Prefer matching commitment term label if specified
+          const match = (commitmentTerm
+            ? matches.find((s) => s.commitment?.term === commitmentTerm)
+            : null
+          ) ?? matches[0];
+          if (match?.commitment?.id) {
+            commitmentTermId = match.commitment.id;
+            if (!commitmentTerm) commitmentTerm = match.commitment.term;
+            if (process.env.PAX8_DEBUG) {
+              process.stderr.write(`[debug] resolved commitmentTermId=${commitmentTermId} from subscription ${match.id}\n`);
+            }
+          }
+        } catch (err) {
+          if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] subscription lookup for commitmentTermId failed: ${err}\n`);
+        }
+      }
+
       // Pre-flight checks
       if (productNotFound) warnings.push("Product not found in catalog — may not be orderable");
-      if (requiresCommitment && !commitmentTerm) {
-        warnings.push("Product requires a commitment term — order may fail without one");
+      if (requiresCommitment && !commitmentTermId) {
+        warnings.push("Product requires a commitment term but no commitmentTermId could be resolved — order may fail. Use --commitment-term-id <uuid> to provide one directly.");
       }
 
       const totalPrice = unitPrice ? unitPrice * quantity : null;
@@ -143,7 +187,7 @@ Examples:
         productId: resolvedProductId,
         quantity: confirmedQty,
         billingTerm: allOpts.billingTerm as BillingTerm,
-        ...(commitmentTerm ? { commitmentTerm: commitmentTerm as CommitmentTerm } : {}),
+        ...(commitmentTermId ? { commitmentTermId } : {}),
       };
 
       const orderInput: CreateOrderInput = {
@@ -250,10 +294,11 @@ Examples:
           if (detail) causes.push(detail);
 
           const steps: string[] = [];
-          if (detail?.includes("requires commitment")) {
-            causes.push("This product requires a Microsoft tenant commitment that may need to be set up in the Pax8 portal");
-            steps.push("Try adding --commitment-term 1-Year or --commitment-term Monthly");
-            steps.push("If that fails, provision the subscription through the Pax8 portal instead");
+          if (detail?.includes("requires commitment") || detail?.includes("commitmentTerm")) {
+            causes.push("This product requires a commitment term ID that couldn't be auto-resolved");
+            steps.push("If the company has an existing subscription, try: --commitment-term Monthly or --commitment-term 1-Year");
+            steps.push("Or provide the UUID directly: --commitment-term-id <uuid> (from subscription commitment.id)");
+            steps.push("If no existing subscription, provision the first one through the Pax8 portal");
           } else {
             causes.push("Order validation failed — check quantity, billing term, or provisioning requirements");
             steps.push("Ensure the quantity meets minimum/maximum seat requirements");
@@ -275,9 +320,9 @@ Examples:
           const steps: string[] = [];
 
           if (detail?.includes("commitmentTerm")) {
-            causes.push("This product doesn't support the commitment term format sent via API");
-            causes.push("New Commerce Experience (NCE) products may require provisioning through the Pax8 portal");
-            steps.push("Try placing this order in the Pax8 Marketplace portal instead");
+            causes.push("Invalid commitmentTermId — the UUID may not match this product or company");
+            steps.push("Check the company's existing subscriptions for a valid commitment.id");
+            steps.push("Or provide the UUID directly: --commitment-term-id <uuid>");
           } else {
             causes.push("The Pax8 API rejected the order request");
             if (detail) causes.push(detail);

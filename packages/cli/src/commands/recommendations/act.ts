@@ -75,12 +75,26 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
 
   const spinner = createSpinner("Creating order...").start();
   try {
+    // Resolve commitmentTermId from existing subscription for the SAME product
+    let commitmentTermId: string | undefined;
+    try {
+      const subs = await ctx.api.subscriptions.list({
+        companyId: rec.companyId,
+        status: "Active",
+      });
+      const match = subs.content.find((s) =>
+        s.productId === productId && s.commitment?.id
+      );
+      if (match?.commitment?.id) commitmentTermId = match.commitment.id;
+    } catch { /* best effort */ }
+
     const order = await ctx.api.orders.create({
       companyId: rec.companyId,
       lineItems: [{
         productId,
         quantity,
         billingTerm: "Monthly",
+        ...(commitmentTermId ? { commitmentTermId } : {}),
       }],
     });
 

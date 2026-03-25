@@ -447,7 +447,7 @@ export function getRecommendations(
           unmatchedProducts.add(suggestedName);
         }
         const orderCommand = matchedProductId
-          ? `pax8 orders create --company "${companyName}" --product "${resolvedProductName}" --quantity ${primaryQty}`
+          ? `pax8 orders create --company "${companyName}" --product ${matchedProductId} --quantity ${primaryQty}`
           : null;
 
         // Demote to medium priority when the product isn't available/orderable
@@ -488,7 +488,7 @@ export function getRecommendations(
 
       // For seat gaps, use the product ID directly from the subscription
       const orderCommand = gap.gapProductId
-        ? `pax8 orders create --company "${companyName}" --product "${gap.gapProduct}" --quantity ${gap.missingSeats}`
+        ? `pax8 orders create --company "${companyName}" --product ${gap.gapProductId} --quantity ${gap.missingSeats}`
         : null;
 
       recommendations.push({

@@ -128,6 +128,19 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
     } catch { /* use as-is */ }
   }
 
+  // Resolve commitmentTermId from existing subscription for the SAME product
+  let commitmentTermId: string | undefined;
+  try {
+    const subs = await ctx.api.subscriptions.list({
+      companyId: rec.companyId,
+      status: "Active",
+    });
+    const match = subs.content.find((s) =>
+      s.productId === productId && s.commitment?.id
+    );
+    if (match?.commitment?.id) commitmentTermId = match.commitment.id;
+  } catch { /* best effort */ }
+
   const spinner = createSpinner("Creating order...").start();
   try {
     const order = await ctx.api.orders.create({
@@ -136,6 +149,7 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
         productId,
         quantity,
         billingTerm: "Monthly",
+        ...(commitmentTermId ? { commitmentTermId } : {}),
       }],
     });
     spinner.succeed("Order created 🎉");
@@ -393,7 +407,9 @@ Examples:
       const steps: NextStep[] = displayRecs.map((r, i) => {
         if (r.orderCommand) {
           // Tokenize orderCommand, strip leading "pax8" if present
-          const tokens = r.orderCommand.match(/"[^"]*"|\S+/g) ?? [];
+          const tokens = (r.orderCommand.match(/"[^"]*"|\S+/g) ?? []).map(
+            (t) => t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t
+          );
           const command = tokens[0] === "pax8" ? tokens.slice(1) : tokens;
           return {
             key: String(i + 1),
