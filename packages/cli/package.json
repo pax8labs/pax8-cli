@@ -17,7 +17,7 @@
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "ora": "^8.1.0",
-    "yaml": "^2.5.0",
+    "yaml": "^2.8.3",
     "zod": "^3.23.0"
   },
   "devDependencies": {
