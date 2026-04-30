@@ -19,9 +19,6 @@ import { spawn } from "node:child_process";
 import { CliError } from "./errors.js";
 import { replCmd } from "./confirm.js";
 
-/** Page size for fetching "all" subscriptions in aggregate commands. */
-export const ALL_SUBS_SIZE = 1000;
-
 /**
  * Emit a stderr warning when a paginated result hits the page size limit,
  * indicating that results may be incomplete.

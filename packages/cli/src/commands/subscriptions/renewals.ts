@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { getUpcomingRenewals } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -65,7 +65,7 @@ Examples:
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
       const [result, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: 1000, companyId }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId }),
         ctx.api.companies.list({ size: 200 }),
       ]);
 

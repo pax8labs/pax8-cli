@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext, ALL_SUBS_SIZE, warnIfTruncated } from "../../lib/context.js";
+import { buildContext, warnIfTruncated } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
-import { auditInvoices } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, auditInvoices } from "@pax8/core";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 
 export const invoicesAuditCommand = new Command("audit")
@@ -36,10 +36,10 @@ Examples:
       // Fetch invoices and active subscriptions in parallel
       const [invoicesResult, subsResult] = await Promise.all([
         ctx.api.invoices.list({ month: options.month, companyId, size: 200 }),
-        ctx.api.subscriptions.list({ companyId, size: ALL_SUBS_SIZE }),
+        ctx.api.subscriptions.list({ companyId, size: ALL_SUBS_PAGE_SIZE }),
       ]);
 
-      warnIfTruncated(subsResult, ALL_SUBS_SIZE);
+      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
       // Fetch items for each invoice in parallel
       const allItems = (

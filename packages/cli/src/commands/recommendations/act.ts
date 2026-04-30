@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { createInterface } from "readline";
-import { getRecommendations, getTelemetry, type Recommendation } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, getRecommendations, getTelemetry, type Recommendation } from "@pax8/core";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -182,7 +182,7 @@ Examples:
 
     try {
       const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: 1000, status: "Active" }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
         ctx.api.companies.list({ size: 200 }),
       ]);
 

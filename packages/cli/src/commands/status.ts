@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext, ALL_SUBS_SIZE, warnIfTruncated } from "../lib/context.js";
+import { buildContext, warnIfTruncated } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
-import { getUpcomingRenewals } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
 import type { Subscription } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
@@ -108,7 +108,7 @@ Examples:
     try {
       const [companiesSettled, subsSettled, productsSettled, ordersSettled] = await Promise.allSettled([
         ctx.api.companies.list({ size: 200 }),
-        ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE }),
         ctx.api.products.list({ size: 200 }),
         ctx.api.orders.list({ size: 200 }),
       ]);
@@ -134,7 +134,7 @@ Examples:
         companyNames.set(c.id, c.name);
       }
 
-      warnIfTruncated(subsResult, ALL_SUBS_SIZE);
+      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
       const allSubs = subsResult.content;
       enrichCompanyNames(companyNames, allSubs);
