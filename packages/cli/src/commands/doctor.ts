@@ -155,25 +155,6 @@ async function checkCredentialPermissions(): Promise<CheckResult> {
   };
 }
 
-async function checkMcpServer(): Promise<CheckResult> {
-  try {
-    const mcpPath = path.join(process.cwd(), ".mcp.json");
-    const content = await fs.readFile(mcpPath, "utf-8");
-    const config = JSON.parse(content);
-    const servers = Object.keys(config.mcpServers || {});
-    if (servers.length === 0) {
-      return { name: "MCP servers", passed: true, detail: "None configured" };
-    }
-    return {
-      name: "MCP servers",
-      passed: true,
-      detail: servers.join(", "),
-    };
-  } catch {
-    return { name: "MCP servers", passed: true, detail: "None configured" };
-  }
-}
-
 async function checkTelemetry(): Promise<CheckResult> {
   try {
     const { loadConfig } = await import("@pax8/core");
@@ -224,7 +205,7 @@ Examples:
     process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));
 
     // Run all checks in parallel for speed
-    const [nodeV, configF, authC, credPerms, tokenC, apiCs, cacheC, mcpC, telC] = await Promise.all([
+    const [nodeV, configF, authC, credPerms, tokenC, apiCs, cacheC, telC] = await Promise.all([
       checkNodeVersion(),
       checkConfigFile(),
       checkAuth(),
@@ -232,10 +213,9 @@ Examples:
       checkTokenFetch(),
       checkApiHealth(),
       checkCacheDir(),
-      checkMcpServer(),
       checkTelemetry(),
     ]);
-    const checks: CheckResult[] = [nodeV, configF, authC, credPerms, tokenC, ...apiCs, cacheC, mcpC, telC];
+    const checks: CheckResult[] = [nodeV, configF, authC, credPerms, tokenC, ...apiCs, cacheC, telC];
 
     let allPassed = true;
     for (const check of checks) {

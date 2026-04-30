@@ -8,7 +8,7 @@ An open-source CLI for managing Pax8 cloud marketplace operations. Built for MSP
 - **Recommendation engine** — analyzes customer portfolios, flags missing products (backup, security, identity), and estimates MRR uplift
 - **Act on recommendations** — `pax8 recommendations act` walks through opportunities one by one and places orders
 - **Full Pax8 API coverage** — companies, subscriptions, orders, invoices, products
-- **Claude AI integration** — agents get structured access to renewals, audits, recommendations, and MRR via MCP server
+- **Claude AI integration** — agents get structured access to renewals, audits, recommendations, and MRR via the Claude Code skill
 - **Smart UX** — interactive drill-downs, copy-paste order commands, actionable error messages
 
 ## Why This Exists
@@ -123,7 +123,7 @@ pax8 products show <id>                                # Product details + prici
 ### Diagnostics
 
 ```bash
-pax8 doctor                    # Node, auth, API endpoints (5/5), cache, MCP, telemetry
+pax8 doctor                    # Node, auth, API endpoints (5/5), cache, telemetry
 pax8 auth status               # Check credentials
 ```
 
@@ -186,7 +186,7 @@ Or enable persistently: `pax8 init --demo`
 
 ## Claude AI Integration
 
-The CLI includes an MCP server and a Claude Code skill, so AI agents get the same computed intelligence as human operators — without reimplementing business logic or wrestling with raw API calls.
+The CLI ships with a Claude Code skill, so AI agents get the same computed intelligence as human operators — without reimplementing business logic or wrestling with raw API calls.
 
 ### What agents get
 
@@ -196,20 +196,7 @@ Available tools: companies, subscriptions, renewals, invoices, invoice audits, r
 
 ### Setup (Claude Code)
 
-Add to your Claude Code MCP config:
-
-```json
-{
-  "mcpServers": {
-    "pax8": {
-      "command": "pax8",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Or use the Claude Code skill directly — it wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible).
+The skill wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible). See `packages/claude-skill/skill.md`.
 
 ### Example
 
@@ -242,7 +229,7 @@ pnpm test:coverage
 
 - **`packages/core`** — API client, auth, recommendation engine, types (zero CLI dependencies)
 - **`packages/cli`** — Commander.js commands, formatting, interactive UX
-- **`packages/claude-skill`** — Claude Code MCP skill
+- **`packages/claude-skill`** — Claude Code skill
 
 ### Telemetry
 
