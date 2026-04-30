@@ -212,15 +212,26 @@ class SubscriptionsResource {
 
 class ProductsResource {
   async list(
-    params?: ListParams & { vendorName?: string }
+    params?: ListParams & { vendorName?: string; search?: string }
   ): Promise<PaginatedResponse<Product>> {
     await randomDelay();
     let filtered = products;
     if (params?.vendorName) {
       const v = params.vendorName.toLowerCase();
-      filtered = products.filter((p) =>
+      filtered = filtered.filter((p) =>
         p.vendorName.toLowerCase().includes(v)
       );
+    }
+    if (params?.search) {
+      // Real Pax8 API treats the entire `search` value as a single keyword:
+      // substring-matches it against the product name, but multi-word
+      // values silently return zero. Mirror that here so tests catch the
+      // multi-word footgun rather than masking it with looser matching.
+      const s = params.search.toLowerCase();
+      const isSingleWord = !/\s/.test(s);
+      filtered = isSingleWord
+        ? filtered.filter((p) => p.name.toLowerCase().includes(s))
+        : [];
     }
     return paginate(filtered, params);
   }

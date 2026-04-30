@@ -22,6 +22,7 @@ export class ProductsApi {
     page?: number;
     size?: number;
     vendorName?: string;
+    search?: string;
   }): Promise<PaginatedResponse<Product>> {
     const raw = await this.client.get<unknown>("/products", params as Record<string, string | number | undefined>);
     return PaginatedProductSchema.parse(raw);

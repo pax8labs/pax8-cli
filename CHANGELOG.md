@@ -15,6 +15,7 @@
 - **Credential setup guide** — step-by-step docs for API credential configuration (#41, #42)
 
 ### Fixes
+- **Live-API product name resolution** — `resolveProduct()` and `pax8 products search` now extract a single keyword and (when detected) a vendor for the API call, then fuzzy-match client-side. Fixes failures against the 2,600+ product live catalog where multi-word `?search=` returns 0 results and the page size capped lookups at 200 (#76)
 - **Invoice auditor** — correctly aggregates quantities when a company has multiple subscriptions for the same product (#63)
 - **Recommendations summary counts** — visible item counts now match what's actually displayed (#51)
 - **MRR uplift estimates** — labeled as upper-bound projections, not forecasts (#72)
