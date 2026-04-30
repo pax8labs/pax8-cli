@@ -9,8 +9,10 @@ function daysFromNow(days: number): string {
 }
 
 function monthsAgo(months: number): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() - months);
+  // Use UTC and the 1st of the month to avoid end-of-month rollover bugs
+  // (e.g. on April 30, naive `setMonth(month - 2)` would land on March 2, not February).
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
   return d.toISOString().split("T")[0];
 }
 
@@ -862,17 +864,10 @@ export const subscriptions: Subscription[] = [
 //   - Bright Minds: Entra ID P1 on invoice (25 seats, $150) but NO subscription (unexpected)
 // Total overcharge: ~$235/mo | Total undercharge: ~$2,850/mo | Net: MSP losing $2,615/mo
 
-const currentMonth = new Date().toISOString().slice(0, 7); // e.g. "2026-03"
-const lastMonth = (() => {
-  const d = new Date();
-  d.setMonth(d.getMonth() - 1);
-  return d.toISOString().slice(0, 7);
-})();
-const twoMonthsAgo = (() => {
-  const d = new Date();
-  d.setMonth(d.getMonth() - 2);
-  return d.toISOString().slice(0, 7);
-})();
+// `monthsAgo` returns YYYY-MM-DD; slice to YYYY-MM for invoice month grouping.
+const currentMonth = monthsAgo(0).slice(0, 7); // e.g. "2026-04"
+const lastMonth = monthsAgo(1).slice(0, 7);
+const twoMonthsAgo = monthsAgo(2).slice(0, 7);
 
 // Summit current month invoice line item totals:
 // M365 BP: 95 * 22 = 2,090 (OVERCHARGE: should be 85 * 22 = 1,870)
