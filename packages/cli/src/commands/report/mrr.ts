@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext, ALL_SUBS_SIZE, warnIfTruncated } from "../../lib/context.js";
+import { buildContext, warnIfTruncated } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName } from "../../lib/formatters.js";
 import { enrichCompanyNames, enrichProductNames } from "../../lib/enrich-subscriptions.js";
-import { computeMrr } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, computeMrr } from "@pax8/core";
 import { output } from "../../lib/output.js";
 
 export const reportMrrCommand = new Command("mrr")
@@ -23,11 +23,11 @@ Examples:
     try {
       // Fetch subscriptions and companies in parallel
       const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE }),
         ctx.api.companies.list({ size: 200 }),
       ]);
 
-      warnIfTruncated(subsResult, ALL_SUBS_SIZE);
+      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
       // Build company name lookup and enrich
       const companyNames = new Map<string, string>();

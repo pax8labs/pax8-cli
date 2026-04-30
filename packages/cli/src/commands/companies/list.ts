@@ -3,7 +3,8 @@ import chalk from "chalk";
 import { getRecommendations, getPortfolioCoverage } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { buildContext, ALL_SUBS_SIZE } from "../../lib/context.js";
+import { buildContext } from "../../lib/context.js";
+import { ALL_SUBS_PAGE_SIZE } from "@pax8/core";
 import { replCmd } from "../../lib/confirm.js";
 import { output, type Column } from "../../lib/output.js";
 import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/formatters.js";
@@ -86,7 +87,7 @@ Examples:
 
         // Fetch all subscriptions for the listed companies
         const companyIds = result.content.map((c: Record<string, unknown>) => String(c.id));
-        const subsResult = await ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE, status: "Active" });
+        const subsResult = await ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" });
         const subs = subsResult.content;
 
         // Enrich product names

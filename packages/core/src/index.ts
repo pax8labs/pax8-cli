@@ -1,6 +1,7 @@
 // API types, schemas, client, and resource modules
 export * from "./api/types.js";
 export * from "./api/errors.js";
+export * from "./api/constants.js";
 export { Pax8Client } from "./api/client.js";
 export type { Pax8ClientOptions } from "./api/client.js";
 export { CompaniesApi } from "./api/companies.js";
