@@ -18,7 +18,7 @@ export const quotesListCommand = new Command("list")
   .description("List sales quotes")
   .option("--company <id|name>", "Filter by company ID or name")
   .option("--status <status>", "Filter by status (Draft, Sent, Accepted, Declined)")
-  .option("--page <number>", "Page number (0-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "50")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
@@ -28,33 +28,36 @@ Examples:
   pax8 quotes list
   pax8 quotes list --company "Summit Healthcare Partners"
   pax8 quotes list --status Sent
-  pax8 quotes list --json`
+  pax8 quotes list --json
+  pax8 quotes list --csv
+  pax8 quotes list --ids-only | xargs -I{} pax8 quotes show {}`
   )
   .action(async (options, command) => {
-    const globalOpts = command.optsWithGlobals();
-    const ctx = await buildContext(globalOpts);
+    const allOpts = command.optsWithGlobals();
+    const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Fetching quotes...");
 
     try {
       spinner.start();
-      const companyId = options.company
-        ? await resolveCompanyId(ctx, options.company)
+      const companyId = allOpts.company
+        ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
+      const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
       const result = await ctx.api.quotes.list({
         companyId,
-        page: parseInt(options.page, 10),
-        size: parseInt(options.size, 10),
+        page: apiPage,
+        size: parseInt(allOpts.size, 10),
       });
       spinner.stop();
 
       // The Pax8 API doesn't expose a status filter on quotes list,
       // so honor --status client-side.
-      const status: string | undefined = options.status;
+      const status: string | undefined = allOpts.status;
       const quotes = status
         ? result.content.filter((q) => q.status?.toLowerCase() === status.toLowerCase())
         : result.content;
 
-      if (globalOpts.idsOnly) {
+      if (allOpts.idsOnly) {
         for (const item of quotes) {
           process.stdout.write(item.id + "\n");
         }
