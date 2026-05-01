@@ -41,7 +41,7 @@ describe("pax8 orders", () => {
         "orders",
         "list",
         "--page",
-        "0",
+        "1",
         "--size",
         "2",
         "--json",

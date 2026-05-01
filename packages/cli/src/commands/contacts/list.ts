@@ -10,7 +10,7 @@ import { replCmd } from "../../lib/confirm.js";
 export const contactsListCommand = new Command("list")
   .description("List contacts for a company")
   .option("--company <id|name>", "Company ID or name (required)")
-  .option("--page <number>", "Page number (0-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "50")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
@@ -19,15 +19,17 @@ export const contactsListCommand = new Command("list")
 Examples:
   pax8 contacts list --company "Summit Healthcare Partners"
   pax8 contacts list --company a1b2c3d4-e5f6-7890-abcd-ef1234567890
-  pax8 contacts list --company "Summit Healthcare Partners" --json`
+  pax8 contacts list --company "Summit Healthcare Partners" --json
+  pax8 contacts list --company "Summit Healthcare Partners" --csv
+  pax8 contacts list --company "Summit Healthcare Partners" --ids-only | xargs -I{} pax8 contacts show {}`
   )
   .action(async (options, command) => {
-    const globalOpts = command.optsWithGlobals();
-    const ctx = await buildContext(globalOpts);
+    const allOpts = command.optsWithGlobals();
+    const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Fetching contacts...");
 
     try {
-      if (!options.company) {
+      if (!allOpts.company) {
         throw new CliError(
           "--company is required",
           ["The Pax8 contacts API is scoped to a single company"],
@@ -39,14 +41,15 @@ Examples:
       }
 
       spinner.start();
-      const company = await resolveCompany(ctx, options.company);
+      const company = await resolveCompany(ctx, allOpts.company);
+      const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
       const result = await ctx.api.contacts.list(company.id, {
-        page: parseInt(options.page, 10),
-        size: parseInt(options.size, 10),
+        page: apiPage,
+        size: parseInt(allOpts.size, 10),
       });
       spinner.stop();
 
-      if (globalOpts.idsOnly) {
+      if (allOpts.idsOnly) {
         for (const item of result.content) {
           process.stdout.write(item.id + "\n");
         }

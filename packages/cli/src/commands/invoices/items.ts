@@ -12,7 +12,7 @@ export const invoicesItemsCommand = new Command("items")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
   .option("--company <id|name>", "Filter by company ID or name")
   .option("--invoice-id <id>", "Filter by invoice ID")
-  .option("--page <number>", "Page number (0-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .addHelpText(
     "after",
@@ -33,11 +33,12 @@ Examples:
       const companyId = options.company
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
+      const apiPage = Math.max(parseInt(options.page, 10) - 1, 0);
       const result = await ctx.api.invoices.listItems({
         month: options.month,
         companyId,
         invoiceId: options.invoiceId,
-        page: parseInt(options.page, 10),
+        page: apiPage,
         size: parseInt(options.size, 10),
       });
       spinner.stop();

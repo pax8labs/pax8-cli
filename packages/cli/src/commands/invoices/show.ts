@@ -15,7 +15,8 @@ export const invoicesShowCommand = new Command("show")
     `
 Examples:
   pax8 invoices show inv-summit-curr-001
-  pax8 invoices show inv-summit-curr-001 --json`
+  pax8 invoices show inv-summit-curr-001 --json
+  pax8 invoices show inv-summit-curr-001 --csv`
   )
   .action(async (id, options, command) => {
     const globalOpts = command.optsWithGlobals();

@@ -15,7 +15,8 @@ export const quotesShowCommand = new Command("show")
     `
 Examples:
   pax8 quotes show quote-summit-001
-  pax8 quotes show quote-summit-001 --json`
+  pax8 quotes show quote-summit-001 --json
+  pax8 quotes show quote-summit-001 --csv`
   )
   .action(async (id, _options, command) => {
     const globalOpts = command.optsWithGlobals();

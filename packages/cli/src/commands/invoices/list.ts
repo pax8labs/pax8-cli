@@ -12,7 +12,7 @@ export const invoicesListCommand = new Command("list")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
   .option("--company <id|name>", "Filter by company ID or name")
   .option("--status <status>", "Filter by status (Unpaid, Paid, Void, Overdue)")
-  .option("--page <number>", "Page number (0-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
@@ -23,28 +23,31 @@ Examples:
   pax8 invoices list --month 2026-03
   pax8 invoices list --company "Summit Healthcare"
   pax8 invoices list --status Unpaid
-  pax8 invoices list --json`
+  pax8 invoices list --json
+  pax8 invoices list --csv
+  pax8 invoices list --ids-only | xargs -I{} pax8 invoices show {}`
   )
   .action(async (options, command) => {
-    const globalOpts = command.optsWithGlobals();
-    const ctx = await buildContext(globalOpts);
+    const allOpts = command.optsWithGlobals();
+    const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Fetching invoices...");
 
     try {
       spinner.start();
-      const companyId = options.company
-        ? await resolveCompanyId(ctx, options.company)
+      const companyId = allOpts.company
+        ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
+      const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
       const result = await ctx.api.invoices.list({
-        month: options.month,
+        month: allOpts.month,
         companyId,
-        status: options.status,
-        page: parseInt(options.page, 10),
-        size: parseInt(options.size, 10),
+        status: allOpts.status,
+        page: apiPage,
+        size: parseInt(allOpts.size, 10),
       });
       spinner.stop();
 
-      if (globalOpts.idsOnly) {
+      if (allOpts.idsOnly) {
         for (const item of result.content) {
           process.stdout.write(item.id + "\n");
         }

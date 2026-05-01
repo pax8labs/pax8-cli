@@ -2,6 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { loadConfig, saveConfig } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
+import { CliError } from "../lib/errors.js";
 
 export const initCommand = new Command("init")
   .description("Initialize configuration (or enable demo mode)")
@@ -11,9 +12,10 @@ export const initCommand = new Command("init")
     "after",
     `
 Examples:
-  pax8 init              Create default config
-  pax8 init --demo       Enable demo mode persistently
-  pax8 init --demo off   Disable demo mode`
+  pax8 init                Create default config at ~/.pax8/config.yaml
+  pax8 init --force        Overwrite an existing config with defaults
+  pax8 init --demo         Enable demo mode persistently (no credentials needed)
+  pax8 init --demo off     Disable demo mode and return to live API`
   )
   .action(async (options) => {
     try {
@@ -35,13 +37,13 @@ Examples:
           config.demo = false;
           await saveConfig(config);
           process.stdout.write(
-            chalk.green("\n  \u2713 Demo mode disabled.\n\n")
+            chalk.green("\n  ✓ Demo mode disabled.\n\n")
           );
         } else {
           config.demo = true;
           await saveConfig(config);
           process.stdout.write(
-            chalk.green(`\n  \u2713 Demo mode enabled. Try: ${replCmd("pax8 companies list")}\n`)
+            chalk.green(`\n  ✓ Demo mode enabled. Try: ${replCmd("pax8 companies list")}\n`)
           );
           process.stdout.write(
             chalk.dim(`  Disable with: ${replCmd("pax8 init --demo off")}\n\n`)
@@ -57,11 +59,19 @@ Examples:
         { from: "user" }
       );
     } catch (error) {
-      process.stderr.write(
-        chalk.red(
-          `\n  \u2717 Failed: ${error instanceof Error ? error.message : String(error)}\n\n`
-        )
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new CliError(
+        "Failed to initialize Pax8 configuration",
+        [
+          detail,
+          "The config directory (~/.pax8) may not be writable, or an existing config could not be updated.",
+        ],
+        [
+          `Check that the config directory is writable: ${chalk.cyan("ls -ld ~/.pax8")}`,
+          `Overwrite a corrupt config with defaults: ${chalk.cyan(replCmd("pax8 init --force"))}`,
+          `Skip credential setup and try sample data: ${chalk.cyan(replCmd("pax8 init --demo"))}`,
+        ],
+        "https://devx.pax8.com/"
       );
-      process.exit(1);
     }
   });
