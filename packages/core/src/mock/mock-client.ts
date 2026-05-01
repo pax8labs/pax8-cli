@@ -417,14 +417,13 @@ class OrdersResource {
 }
 
 class ContactsResource {
+  // Mirrors ContactsApi.list — companyId is the first positional argument.
   async list(
-    params?: ListParams & { companyId?: string }
+    companyId: string,
+    params?: ListParams,
   ): Promise<PaginatedResponse<Contact>> {
     await randomDelay();
-    let filtered = contacts;
-    if (params?.companyId) {
-      filtered = contacts.filter((c) => c.companyId === params.companyId);
-    }
+    const filtered = contacts.filter((c) => c.companyId === companyId);
     return paginate(filtered, params);
   }
 
@@ -443,10 +442,8 @@ class ContactsResource {
       firstName: data.firstName ?? "",
       lastName: data.lastName ?? "",
       email: data.email ?? "",
-      phone: data.phone ?? "",
-      type: data.type ?? "Admin",
-      isPrimary: data.isPrimary ?? false,
-      createdDate: new Date().toISOString().split("T")[0],
+      ...(data.phone ? { phone: data.phone } : {}),
+      types: data.types && data.types.length > 0 ? data.types : ["Admin"],
     };
     return newContact;
   }
@@ -521,11 +518,9 @@ class QuotesResource {
     const newQuote: Quote = {
       id: `quote-demo-${Date.now()}`,
       companyId: data.companyId ?? "",
-      companyName: data.companyName ?? "Unknown",
       createdDate: new Date().toISOString().split("T")[0],
-      expirationDate: data.expirationDate ?? "",
+      ...(data.expirationDate ? { expirationDate: data.expirationDate } : {}),
       status: "Draft",
-      total: data.total ?? 0,
       lineItems: data.lineItems ?? [],
     };
     return newQuote;

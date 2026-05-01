@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Features
+- **Contacts CLI commands** — `pax8 contacts list/show/create/update/delete` expose the existing `ContactsApi` with company name resolution, type validation (Admin/Billing/Technical), and confirmation prompts on writes (#39)
+- **Quotes CLI commands** — `pax8 quotes list/show/create/update/delete` expose the existing `QuotesApi` with company/product name resolution, client-side `--status` filter, and confirmation prompts on writes (#39)
 - **Usage CLI commands** — `pax8 usage list` and `pax8 usage show [--lines]` expose the existing `UsageApi` for metered/consumption-based subscriptions; supports `--company`, `--month` filters and full output flag set (#40)
 - **Portfolio coverage analysis** — `pax8 companies list --coverage` shows category coverage (N/7), missing categories, and estimated MRR uplift per company (#64)
 - **MRR and growth reporting** — `pax8 report mrr` and `pax8 report growth` commands with full JSON/CSV/quiet support (#36)

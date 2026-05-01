@@ -13,6 +13,8 @@ import { registerRecommendationsCommands } from "./commands/recommendations/inde
 import { registerTelemetryCommands } from "./commands/telemetry/index.js";
 import { registerReportCommands } from "./commands/report/index.js";
 import { registerUsageCommands } from "./commands/usage/index.js";
+import { registerContactsCommands } from "./commands/contacts/index.js";
+import { registerQuotesCommands } from "./commands/quotes/index.js";
 import { statusCommand } from "./commands/status.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
@@ -89,6 +91,8 @@ export function createProgram(): Command {
   registerTelemetryCommands(program);
   registerReportCommands(program);
   registerUsageCommands(program);
+  registerContactsCommands(program);
+  registerQuotesCommands(program);
   program.addCommand(statusCommand);
   program.addCommand(initCommand);
   program.addCommand(doctorCommand);

@@ -126,10 +126,8 @@ export interface Contact {
   firstName: string;
   lastName: string;
   email: string;
-  phone: string;
-  type: "Admin" | "Billing" | "Technical";
-  isPrimary: boolean;
-  createdDate: string;
+  phone?: string;
+  types: ("Admin" | "Billing" | "Technical")[];
 }
 
 export interface UsageSummary {
@@ -158,20 +156,18 @@ export interface UsageLine {
 export interface Quote {
   id: string;
   companyId: string;
-  companyName: string;
   createdDate: string;
-  expirationDate: string;
-  status: "Draft" | "Sent" | "Accepted" | "Expired" | "Rejected";
-  total: number;
-  lineItems: QuoteLineItem[];
+  expirationDate?: string;
+  status: "Draft" | "Sent" | "Accepted" | "Declined";
+  lineItems?: QuoteLineItem[];
 }
 
 export interface QuoteLineItem {
   productId: string;
-  productName: string;
   quantity: number;
-  unitPrice: number;
-  billingTerm: "Monthly" | "Annual";
+  billingTerm?: "Monthly" | "Annual";
+  unitPrice?: number;
+  subtotal?: number;
 }
 
 export interface Webhook {
@@ -1405,9 +1401,7 @@ export const contacts: Contact[] = [
     lastName: "Thornton",
     email: "rachel.thornton@summithealthcare.example.com",
     phone: "+1-303-555-0111",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2023-06-15",
+    types: ["Admin"],
   },
   {
     id: "contact-summit-002",
@@ -1416,9 +1410,7 @@ export const contacts: Contact[] = [
     lastName: "Bridger",
     email: "tom.bridger@summithealthcare.example.com",
     phone: "+1-303-555-0112",
-    type: "Billing",
-    isPrimary: false,
-    createdDate: "2023-08-20",
+    types: ["Billing"],
   },
   {
     id: "contact-coastline-001",
@@ -1427,9 +1419,7 @@ export const contacts: Contact[] = [
     lastName: "Reyes",
     email: "marco.reyes@coastlinelegal.example.com",
     phone: "+1-305-555-0211",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2024-01-10",
+    types: ["Admin"],
   },
   {
     id: "contact-coastline-002",
@@ -1438,9 +1428,7 @@ export const contacts: Contact[] = [
     lastName: "Vasquez",
     email: "sarah.vasquez@coastlinelegal.example.com",
     phone: "+1-305-555-0212",
-    type: "Technical",
-    isPrimary: false,
-    createdDate: "2024-03-15",
+    types: ["Technical"],
   },
   {
     id: "contact-redwood-001",
@@ -1449,9 +1437,7 @@ export const contacts: Contact[] = [
     lastName: "Olsen",
     email: "karen.olsen@redwoodmfg.example.com",
     phone: "+1-503-555-0311",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2022-09-01",
+    types: ["Admin"],
   },
   {
     id: "contact-bright-001",
@@ -1460,9 +1446,7 @@ export const contacts: Contact[] = [
     lastName: "Cheng",
     email: "lisa.cheng@brightminds.example.com",
     phone: "+1-512-555-0411",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2025-03-20",
+    types: ["Admin"],
   },
   {
     id: "contact-bright-002",
@@ -1471,9 +1455,7 @@ export const contacts: Contact[] = [
     lastName: "Ortiz",
     email: "james.ortiz@brightminds.example.com",
     phone: "+1-512-555-0412",
-    type: "Billing",
-    isPrimary: false,
-    createdDate: "2025-05-10",
+    types: ["Billing"],
   },
   {
     id: "contact-pinnacle-001",
@@ -1482,9 +1464,7 @@ export const contacts: Contact[] = [
     lastName: "Nakamura",
     email: "david.nakamura@pinnaclefa.example.com",
     phone: "+1-312-555-0511",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2024-08-05",
+    types: ["Admin"],
   },
   {
     id: "contact-pinnacle-002",
@@ -1493,9 +1473,7 @@ export const contacts: Contact[] = [
     lastName: "Park",
     email: "emily.park@pinnaclefa.example.com",
     phone: "+1-312-555-0512",
-    type: "Technical",
-    isPrimary: false,
-    createdDate: "2024-09-15",
+    types: ["Technical"],
   },
 ];
 
@@ -1564,61 +1542,55 @@ export const quotes: Quote[] = [
   {
     id: "quote-summit-001",
     companyId: SUMMIT_ID,
-    companyName: "Summit Healthcare Partners",
     createdDate: "2026-03-10",
     expirationDate: "2026-04-10",
     status: "Sent",
-    total: 1140.0,
     lineItems: [
       {
         productId: "prod-m365-e3-0003",
-        productName: "Microsoft 365 E3 [New Commerce Experience]",
         quantity: 5,
         unitPrice: 36.0,
         billingTerm: "Annual",
+        subtotal: 180.0,
       },
       {
         productId: "prod-aad-p1-0008",
-        productName: "Microsoft Entra ID P1 [New Commerce Experience]",
         quantity: 5,
         unitPrice: 6.0,
         billingTerm: "Annual",
+        subtotal: 30.0,
       },
     ],
   },
   {
     id: "quote-bright-001",
     companyId: BRIGHT_ID,
-    companyName: "Bright Minds Academy",
     createdDate: "2026-03-05",
     expirationDate: "2026-04-05",
     status: "Draft",
-    total: 75.0,
     lineItems: [
       {
         productId: "prod-defender-biz-0007",
-        productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
         quantity: 25,
         unitPrice: 3.0,
         billingTerm: "Monthly",
+        subtotal: 75.0,
       },
     ],
   },
   {
     id: "quote-redwood-001",
     companyId: REDWOOD_ID,
-    companyName: "Redwood Manufacturing",
     createdDate: "2026-02-20",
     expirationDate: "2026-03-20",
     status: "Accepted",
-    total: 456.0,
     lineItems: [
       {
         productId: "prod-m365-e5-0004",
-        productName: "Microsoft 365 E5 [New Commerce Experience]",
         quantity: 8,
         unitPrice: 57.0,
         billingTerm: "Annual",
+        subtotal: 456.0,
       },
     ],
   },
