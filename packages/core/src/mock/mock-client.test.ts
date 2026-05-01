@@ -202,9 +202,9 @@ describe("MockPax8Client", () => {
 
   describe("contacts", () => {
     it("list filters by companyId", async () => {
-      const result = await client.contacts.list({
-        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      });
+      const result = await client.contacts.list(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      );
       expect(result.content.length).toBe(2);
     });
   });

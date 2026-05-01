@@ -231,7 +231,10 @@ describe("MockPax8Client — extended coverage", () => {
 
   describe("contacts.get()", () => {
     it("returns contact by id", async () => {
-      const all = await client.contacts.list({ size: 100 });
+      const all = await client.contacts.list(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        { size: 100 },
+      );
       const firstId = all.content[0].id;
       const contact = await client.contacts.get(firstId);
       expect(contact.id).toBe(firstId);
@@ -257,7 +260,10 @@ describe("MockPax8Client — extended coverage", () => {
 
   describe("contacts.update()", () => {
     it("updates a contact", async () => {
-      const all = await client.contacts.list({ size: 100 });
+      const all = await client.contacts.list(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        { size: 100 },
+      );
       const firstId = all.content[0].id;
       const result = await client.contacts.update(firstId, { firstName: "Updated" });
       expect(result.firstName).toBe("Updated");
@@ -273,7 +279,10 @@ describe("MockPax8Client — extended coverage", () => {
 
   describe("contacts.delete()", () => {
     it("deletes existing contact", async () => {
-      const all = await client.contacts.list({ size: 100 });
+      const all = await client.contacts.list(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        { size: 100 },
+      );
       const firstId = all.content[0].id;
       await expect(client.contacts.delete(firstId)).resolves.toBeUndefined();
     });
