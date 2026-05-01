@@ -16,6 +16,7 @@ import {
 import type { CreateOrderInput, OrderLineItemInput, BillingTerm } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
+import { hashArgs, isValidKey, loadEntry, saveEntry } from "../../lib/idempotency.js";
 
 export const ordersCreateCommand = new Command("create")
   .description("Create a new order")
@@ -26,13 +27,18 @@ export const ordersCreateCommand = new Command("create")
   .option("--commitment-term <term>", "Commitment term (Monthly, 1-Year, or 3-Year) — auto-resolves to UUID from existing subscription")
   .option("--commitment-term-id <uuid>", "Commitment term UUID (from subscription commitment.id)")
   .option("-y, --yes", "Skip confirmation prompt")
+  .option(
+    "--idempotency-key <uuid>",
+    "Replay-safe key for retries (24h TTL). Accepts UUIDs or 8–128 char identifiers (letters, digits, '-', '_', '.')",
+  )
   .addHelpText(
     "after",
     `
 Examples:
   pax8 orders create --company a1b2c3d4-e5f6-7890-abcd-ef1234567890 --product prod-m365-biz-prem-0001 --quantity 5
   pax8 orders create --company a1b2c3d4 --product prod-123 --quantity 10 --billing-term Annual
-  pax8 orders create --company a1b2c3d4 --product prod-123 --yes`
+  pax8 orders create --company a1b2c3d4 --product prod-123 --yes
+  pax8 orders create --company a1b2c3d4 --product prod-123 --idempotency-key 9f3b2c1e-...-e1`
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -40,6 +46,109 @@ Examples:
     // Hoist names so they're available in catch block for error messages
     let productName: string = allOpts.product;
     let companyName: string = allOpts.company;
+
+    // --- Idempotency handling ---
+    // The "args hash" deliberately excludes `yes` (cosmetic) and the key itself,
+    // so retrying with the same key under -y or interactive confirm is allowed.
+    const idempotencyKey: string | undefined = allOpts.idempotencyKey;
+    const commandName = "orders.create";
+    let argsHash: string | null = null;
+    if (idempotencyKey !== undefined) {
+      if (!isValidKey(idempotencyKey)) {
+        handleCommandError(
+          new CliError(
+            `Invalid idempotency key: "${idempotencyKey}"`,
+            [
+              "Idempotency keys must be 8–128 characters of letters, digits, '-', '_', or '.'",
+              "UUID v4 is recommended.",
+            ],
+            [
+              "Generate one with: uuidgen",
+              `Example: ${replCmd("pax8 orders create")} ... --idempotency-key 9f3b2c1e-7d4f-4a8b-9c2d-1e2f3a4b5c6d`,
+            ],
+          ),
+        );
+      }
+      argsHash = hashArgs({
+        company: allOpts.company,
+        product: allOpts.product,
+        quantity: allOpts.quantity,
+        billingTerm: allOpts.billingTerm,
+        commitmentTerm: allOpts.commitmentTerm,
+        commitmentTermId: allOpts.commitmentTermId,
+      });
+
+      try {
+        const cached = await loadEntry(commandName, idempotencyKey);
+        if (cached) {
+          if (cached.argsHash !== argsHash) {
+            handleCommandError(
+              new CliError(
+                "Idempotency key reused with different arguments — refusing to retry.",
+                [
+                  `The key "${idempotencyKey}" was previously used for ${cached.command} with a different argument set.`,
+                  "Replaying with new arguments would risk a double-write or a misleading 'cached' response.",
+                ],
+                [
+                  "Generate a new idempotency key for the new request.",
+                  `Or wait 24h for the old entry to expire (cached at ${cached.createdAt}).`,
+                ],
+              ),
+            );
+          }
+          process.stderr.write(chalk.dim("  (idempotent replay)\n"));
+          if (cached.output) process.stdout.write(cached.output);
+          process.exit(cached.exitCode);
+          return;
+        }
+      } catch (err) {
+        // Re-throw CliError thrown via handleCommandError; for other read errors,
+        // log in debug mode and proceed (fail-open: if cache is broken, the user
+        // still gets to make the call).
+        if (err instanceof CliError) throw err;
+        if (process.env.PAX8_DEBUG) {
+          process.stderr.write(`[debug] idempotency cache read failed: ${err}\n`);
+        }
+      }
+    }
+
+    // Capture stdout so we can replay it on a future invocation with the
+    // same idempotency key. We only install the proxy when a key is present.
+    let captured = "";
+    let succeeded = false;
+    const realStdoutWrite = process.stdout.write.bind(process.stdout);
+    if (idempotencyKey) {
+      // Cast to satisfy the multi-overload signature of process.stdout.write.
+      (process.stdout.write as unknown as (chunk: string | Uint8Array) => boolean) = (
+        chunk: string | Uint8Array,
+      ): boolean => {
+        const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8");
+        captured += text;
+        return realStdoutWrite(chunk as string);
+      };
+    }
+    const restoreStdout = (): void => {
+      if (idempotencyKey) {
+        process.stdout.write = realStdoutWrite as typeof process.stdout.write;
+      }
+    };
+    const persistEntry = async (): Promise<void> => {
+      if (!idempotencyKey || !succeeded || argsHash === null) return;
+      try {
+        await saveEntry({
+          key: idempotencyKey,
+          command: commandName,
+          argsHash,
+          output: captured,
+          exitCode: 0,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        if (process.env.PAX8_DEBUG) {
+          process.stderr.write(`[debug] idempotency cache write failed: ${err}\n`);
+        }
+      }
+    };
 
     try {
       const ctx = await buildContext(allOpts);
@@ -204,6 +313,11 @@ Examples:
         companyId: resolvedCompanyId,
         lineItems: [lineItem],
       };
+      // TODO: When the Pax8 API adds support for an `Idempotency-Key` request
+      // header on POST /orders (not currently documented in the existing
+      // `OrdersApi.create` shape — see packages/core/src/api/orders.ts), pass
+      // `idempotencyKey` through here so the server dedupes natively. Until
+      // then, deduplication is purely local via the file cache below.
       const order = await ctx.api.orders.create(orderInput);
       await invalidateCacheAfterWrite();
 
@@ -241,6 +355,9 @@ Examples:
           annualCost: annualCost ?? null,
         };
         process.stdout.write(JSON.stringify(enriched, null, 2) + "\n");
+        succeeded = true;
+        await persistEntry();
+        restoreStdout();
         return;
       }
 
@@ -275,7 +392,14 @@ Examples:
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders show ${order.id}`))}  ${chalk.dim("check order status")}\n`);
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${companyName}"`))}  ${chalk.dim("view subscriptions")}\n`);
       process.stderr.write("\n");
+      succeeded = true;
+      await persistEntry();
+      restoreStdout();
     } catch (error) {
+      // Restore stdout before delegating to handleCommandError (which prints
+      // formatted error to stderr and calls process.exit). We don't persist the
+      // idempotency entry on error — the agent can retry.
+      restoreStdout();
       // Provide order-specific error messages with actionable guidance
       if (error instanceof ApiError) {
         const displayProduct = productName || allOpts.product;
