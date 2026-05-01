@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Features
+- **Usage CLI commands** — `pax8 usage list` and `pax8 usage show [--lines]` expose the existing `UsageApi` for metered/consumption-based subscriptions; supports `--company`, `--month` filters and full output flag set (#40)
 - **Portfolio coverage analysis** — `pax8 companies list --coverage` shows category coverage (N/7), missing categories, and estimated MRR uplift per company (#64)
 - **MRR and growth reporting** — `pax8 report mrr` and `pax8 report growth` commands with full JSON/CSV/quiet support (#36)
 - **nextActions in JSON output** — status, renewals, recommendations, and audit commands include contextual next-step suggestions for agents (#69)

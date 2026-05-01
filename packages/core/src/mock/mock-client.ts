@@ -467,15 +467,15 @@ class ContactsResource {
 
 class UsageResource {
   async listSummaries(
-    params?: ListParams & { companyId?: string; month?: string }
+    params?: ListParams & { companyId?: string; resourceGroup?: string }
   ): Promise<PaginatedResponse<UsageSummary>> {
     await randomDelay();
     let filtered = usageSummaries;
     if (params?.companyId) {
       filtered = filtered.filter((u) => u.companyId === params.companyId);
     }
-    if (params?.month) {
-      filtered = filtered.filter((u) => u.usageDate.startsWith(params.month!));
+    if (params?.resourceGroup) {
+      filtered = filtered.filter((u) => u.resourceGroup === params.resourceGroup);
     }
     return paginate(filtered, params);
   }
@@ -488,15 +488,11 @@ class UsageResource {
   }
 
   async listLines(
-    params?: ListParams & { usageSummaryId?: string }
+    summaryId: string,
+    params?: ListParams
   ): Promise<PaginatedResponse<UsageLine>> {
     await randomDelay();
-    let filtered = usageLines;
-    if (params?.usageSummaryId) {
-      filtered = usageLines.filter(
-        (l) => l.usageSummaryId === params.usageSummaryId
-      );
-    }
+    const filtered = usageLines.filter((l) => l.usageSummaryId === summaryId);
     return paginate(filtered, params);
   }
 }

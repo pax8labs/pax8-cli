@@ -301,11 +301,13 @@ describe("MockPax8Client — extended coverage", () => {
       }
     });
 
-    it("filters by month", async () => {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const result = await client.usage.listSummaries({ month: currentMonth, size: 100 });
+    it("filters by resourceGroup", async () => {
+      const all = await client.usage.listSummaries({ size: 100 });
+      const group = all.content.find((u) => u.resourceGroup)?.resourceGroup;
+      if (!group) return; // no demo data has resourceGroup → skip
+      const result = await client.usage.listSummaries({ resourceGroup: group, size: 100 });
       for (const u of result.content) {
-        expect(u.usageDate.startsWith(currentMonth)).toBe(true);
+        expect(u.resourceGroup).toBe(group);
       }
     });
   });
@@ -324,18 +326,18 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   describe("usage.listLines()", () => {
-    it("returns usage lines", async () => {
-      const result = await client.usage.listLines({ size: 100 });
-      expect(result.content.length).toBeGreaterThan(0);
-    });
-
-    it("filters by usageSummaryId", async () => {
+    it("returns lines for a given summary id", async () => {
       const summaries = await client.usage.listSummaries({ size: 100 });
       const summaryId = summaries.content[0].id;
-      const result = await client.usage.listLines({ usageSummaryId: summaryId, size: 100 });
+      const result = await client.usage.listLines(summaryId, { size: 100 });
       for (const line of result.content) {
         expect(line.usageSummaryId).toBe(summaryId);
       }
+    });
+
+    it("returns empty content for an unknown summary id", async () => {
+      const result = await client.usage.listLines("does-not-exist", { size: 100 });
+      expect(result.content).toEqual([]);
     });
   });
 

@@ -12,6 +12,7 @@ import { registerOrdersCommands } from "./commands/orders/index.js";
 import { registerRecommendationsCommands } from "./commands/recommendations/index.js";
 import { registerTelemetryCommands } from "./commands/telemetry/index.js";
 import { registerReportCommands } from "./commands/report/index.js";
+import { registerUsageCommands } from "./commands/usage/index.js";
 import { statusCommand } from "./commands/status.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
@@ -87,6 +88,7 @@ export function createProgram(): Command {
   registerRecommendationsCommands(program);
   registerTelemetryCommands(program);
   registerReportCommands(program);
+  registerUsageCommands(program);
   program.addCommand(statusCommand);
   program.addCommand(initCommand);
   program.addCommand(doctorCommand);

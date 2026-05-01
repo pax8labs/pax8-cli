@@ -138,19 +138,21 @@ export interface UsageSummary {
   companyName: string;
   productId: string;
   productName: string;
-  usageDate: string;
+  date: string;
   quantity: number;
-  unitOfMeasure: string;
-  currentCharges: number;
+  unitPrice: number;
+  subtotal: number;
+  resourceGroup?: string;
 }
 
 export interface UsageLine {
   id: string;
   usageSummaryId: string;
-  resourceName: string;
+  description: string;
   quantity: number;
   unitPrice: number;
-  total: number;
+  subtotal: number;
+  date: string;
 }
 
 export interface Quote {
@@ -1506,10 +1508,11 @@ export const usageSummaries: UsageSummary[] = [
     companyName: "Redwood Manufacturing",
     productId: "prod-acronis-backup-0009",
     productName: "AvePoint Cloud Backup for Microsoft 365",
-    usageDate: `${currentMonth}-15`,
+    date: `${currentMonth}-15`,
     quantity: 850,
-    unitOfMeasure: "GB",
-    currentCharges: 255.0,
+    unitPrice: 0.3,
+    subtotal: 255.0,
+    resourceGroup: "Backup",
   },
   {
     id: "usage-redwood-acronis-last",
@@ -1517,10 +1520,11 @@ export const usageSummaries: UsageSummary[] = [
     companyName: "Redwood Manufacturing",
     productId: "prod-acronis-backup-0009",
     productName: "AvePoint Cloud Backup for Microsoft 365",
-    usageDate: `${lastMonth}-15`,
+    date: `${lastMonth}-15`,
     quantity: 810,
-    unitOfMeasure: "GB",
-    currentCharges: 255.0,
+    unitPrice: 0.3,
+    subtotal: 243.0,
+    resourceGroup: "Backup",
   },
 ];
 
@@ -1528,26 +1532,29 @@ export const usageLines: UsageLine[] = [
   {
     id: "uline-redwood-001",
     usageSummaryId: "usage-redwood-acronis-curr",
-    resourceName: "ERP Server Backup - SAP01",
+    description: "ERP Server Backup - SAP01",
     quantity: 400,
     unitPrice: 0.3,
-    total: 120.0,
+    subtotal: 120.0,
+    date: `${currentMonth}-15`,
   },
   {
     id: "uline-redwood-002",
     usageSummaryId: "usage-redwood-acronis-curr",
-    resourceName: "CAD Server Backup - CAD01",
+    description: "CAD Server Backup - CAD01",
     quantity: 250,
     unitPrice: 0.3,
-    total: 75.0,
+    subtotal: 75.0,
+    date: `${currentMonth}-15`,
   },
   {
     id: "uline-redwood-003",
     usageSummaryId: "usage-redwood-acronis-curr",
-    resourceName: "Domain Controller Backup - DC01",
+    description: "Domain Controller Backup - DC01",
     quantity: 200,
     unitPrice: 0.3,
-    total: 60.0,
+    subtotal: 60.0,
+    date: `${currentMonth}-15`,
   },
 ];
 
