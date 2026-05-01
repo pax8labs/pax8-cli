@@ -14,7 +14,8 @@ export const contactsShowCommand = new Command("show")
     `
 Examples:
   pax8 contacts show contact-summit-001
-  pax8 contacts show contact-summit-001 --json`
+  pax8 contacts show contact-summit-001 --json
+  pax8 contacts show contact-summit-001 --csv`
   )
   .action(async (id, _options, command) => {
     const globalOpts = command.optsWithGlobals();

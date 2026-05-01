@@ -17,7 +17,8 @@ export const webhooksListCommand = new Command("list")
 Examples:
   pax8 webhooks list
   pax8 webhooks list --json
-  pax8 webhooks list --ids-only`,
+  pax8 webhooks list --ids-only
+  pax8 webhooks list --ids-only | xargs -I{} pax8 webhooks logs {}`,
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
