@@ -177,21 +177,19 @@ export interface QuoteLineItem {
 export interface Webhook {
   id: string;
   url: string;
-  status: "Active" | "Inactive" | "Failed";
+  status: "Active" | "Disabled";
   topics: string[];
   createdDate: string;
-  lastTriggeredDate: string | null;
-  secret: string;
+  secret?: string;
 }
 
 export interface WebhookLog {
   id: string;
   webhookId: string;
   topic: string;
-  status: "Success" | "Failed";
-  statusCode: number;
-  triggeredDate: string;
-  responseTime: number;
+  responseCode: number;
+  responseBody?: string;
+  sentAt: string;
 }
 
 // ─── Company IDs ─────────────────────────────────────────────────────────────
@@ -1626,9 +1624,14 @@ export const quotes: Quote[] = [
 
 // ─── Webhooks ────────────────────────────────────────────────────────────────
 
+// Webhook IDs as UUIDs (real Pax8 API uses UUIDs)
+const WEBHOOK_SUBS_ID = "11111111-2222-3333-4444-555555555501";
+const WEBHOOK_INVOICES_ID = "11111111-2222-3333-4444-555555555502";
+const WEBHOOK_ORDERS_ID = "11111111-2222-3333-4444-555555555503";
+
 export const webhooks: Webhook[] = [
   {
-    id: "wh-001",
+    id: WEBHOOK_SUBS_ID,
     url: "https://hooks.example.com/pax8/subscriptions",
     status: "Active",
     topics: [
@@ -1637,74 +1640,66 @@ export const webhooks: Webhook[] = [
       "subscription.cancelled",
     ],
     createdDate: "2025-06-01",
-    lastTriggeredDate: "2026-03-18",
     secret: "whsec_demo_abc123",
   },
   {
-    id: "wh-002",
+    id: WEBHOOK_INVOICES_ID,
     url: "https://hooks.example.com/pax8/invoices",
     status: "Active",
     topics: ["invoice.created", "invoice.paid"],
     createdDate: "2025-08-15",
-    lastTriggeredDate: "2026-03-01",
     secret: "whsec_demo_def456",
   },
   {
-    id: "wh-003",
+    id: WEBHOOK_ORDERS_ID,
     url: "https://hooks.example.com/pax8/orders",
-    status: "Failed",
+    status: "Disabled",
     topics: ["order.created", "order.completed"],
     createdDate: "2025-11-20",
-    lastTriggeredDate: "2026-02-10",
     secret: "whsec_demo_ghi789",
   },
 ];
 
 export const webhookLogs: WebhookLog[] = [
   {
-    id: "whlog-001",
-    webhookId: "wh-001",
+    id: "22222222-3333-4444-5555-666666666601",
+    webhookId: WEBHOOK_SUBS_ID,
     topic: "subscription.updated",
-    status: "Success",
-    statusCode: 200,
-    triggeredDate: "2026-03-18T14:23:00Z",
-    responseTime: 145,
+    responseCode: 200,
+    responseBody: "OK",
+    sentAt: "2026-03-18T14:23:00Z",
   },
   {
-    id: "whlog-002",
-    webhookId: "wh-001",
+    id: "22222222-3333-4444-5555-666666666602",
+    webhookId: WEBHOOK_SUBS_ID,
     topic: "subscription.created",
-    status: "Success",
-    statusCode: 200,
-    triggeredDate: "2026-03-15T10:12:00Z",
-    responseTime: 98,
+    responseCode: 200,
+    responseBody: "OK",
+    sentAt: "2026-03-15T10:12:00Z",
   },
   {
-    id: "whlog-003",
-    webhookId: "wh-002",
+    id: "22222222-3333-4444-5555-666666666603",
+    webhookId: WEBHOOK_INVOICES_ID,
     topic: "invoice.created",
-    status: "Success",
-    statusCode: 200,
-    triggeredDate: "2026-03-01T06:00:00Z",
-    responseTime: 210,
+    responseCode: 200,
+    responseBody: "OK",
+    sentAt: "2026-03-01T06:00:00Z",
   },
   {
-    id: "whlog-004",
-    webhookId: "wh-003",
+    id: "22222222-3333-4444-5555-666666666604",
+    webhookId: WEBHOOK_ORDERS_ID,
     topic: "order.created",
-    status: "Failed",
-    statusCode: 502,
-    triggeredDate: "2026-02-10T09:45:00Z",
-    responseTime: 5023,
+    responseCode: 502,
+    responseBody: "Bad Gateway",
+    sentAt: "2026-02-10T09:45:00Z",
   },
   {
-    id: "whlog-005",
-    webhookId: "wh-003",
+    id: "22222222-3333-4444-5555-666666666605",
+    webhookId: WEBHOOK_ORDERS_ID,
     topic: "order.completed",
-    status: "Failed",
-    statusCode: 0,
-    triggeredDate: "2026-02-10T10:00:00Z",
-    responseTime: 30000,
+    responseCode: 0,
+    responseBody: "Timeout after 30000ms",
+    sentAt: "2026-02-10T10:00:00Z",
   },
 ];
 
