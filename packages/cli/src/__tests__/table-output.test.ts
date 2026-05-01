@@ -163,8 +163,7 @@ describe("table output — TTY-aware rendering", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toMatch(/\x1b\[/);
       const data = JSON.parse(result.stdout);
-      expect(data).toHaveProperty("renewals");
-      expect(Array.isArray(data.renewals)).toBe(true);
+      expect(Array.isArray(data)).toBe(true);
     });
 
     it("CSV output has no ANSI codes", async () => {
@@ -186,7 +185,7 @@ describe("table output — TTY-aware rendering", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toMatch(/\x1b\[/);
       const data = JSON.parse(result.stdout);
-      expect(data).toHaveProperty("recommendations");
+      expect(Array.isArray(data)).toBe(true);
     });
 
     it("CSV output has no ANSI codes", async () => {

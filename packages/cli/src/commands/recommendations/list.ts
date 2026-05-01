@@ -214,6 +214,7 @@ export const recommendationsListCommand = new Command("list")
   .option("--type <type>", "Filter by type (seat_gap or cross_sell)")
   .option("--product <name>", "Filter by product name (e.g. 'AvePoint', 'Entra')")
   .option("--include-all", "Show all recommendations including ones without orderable products")
+  .option("--with-actions", "Wrap JSON output as { recommendations, nextActions, unmatchedProducts } instead of a flat array")
   .option("--limit <number>", "Max rows to show in table (default 10)")
   .addHelpText(
     "after",
@@ -275,14 +276,18 @@ Examples:
       recs = filterRecommendations(recs, options);
 
       if (ctx.outputFormat === "json") {
-        const nextActions = recs
-          .filter((r) => r.orderCommand)
-          .slice(0, 5)
-          .map((r) => ({
-            command: r.orderCommand!,
-            description: `${r.title} for ${r.companyName}`,
-          }));
-        process.stdout.write(JSON.stringify({ recommendations: recs, nextActions, unmatchedProducts: report.unmatchedProducts }, null, 2) + "\n");
+        if (options.withActions) {
+          const nextActions = recs
+            .filter((r) => r.orderCommand)
+            .slice(0, 5)
+            .map((r) => ({
+              command: r.orderCommand!,
+              description: `${r.title} for ${r.companyName}`,
+            }));
+          process.stdout.write(JSON.stringify({ recommendations: recs, nextActions, unmatchedProducts: report.unmatchedProducts }, null, 2) + "\n");
+        } else {
+          process.stdout.write(JSON.stringify(recs, null, 2) + "\n");
+        }
         return;
       }
 

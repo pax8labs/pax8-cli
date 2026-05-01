@@ -29,6 +29,7 @@ export const webhooksLogsCommand = new Command("logs")
   .argument("[id]", "Webhook ID (omit to show logs across all webhooks)")
   .option("--since <duration>", 'Only show logs within window (e.g. "7d", "24h")')
   .option("--ids-only", "Output only log IDs, one per line")
+  .option("--with-actions", "Wrap JSON output as { logs, nextActions } instead of a flat array")
   .addHelpText(
     "after",
     `
@@ -79,19 +80,23 @@ Examples:
       }
 
       if (ctx.outputFormat === "json") {
-        const nextActions: { command: string; description: string }[] = [];
-        const failures = allLogs.filter(
-          (l) => l.responseCode === 0 || l.responseCode >= 400,
-        );
-        if (failures.length > 0 && id) {
-          nextActions.push({
-            command: `pax8 webhooks test ${id}`,
-            description: `Re-test the endpoint — ${failures.length} recent failure${failures.length === 1 ? "" : "s"}`,
-          });
+        if (options.withActions) {
+          const nextActions: { command: string; description: string }[] = [];
+          const failures = allLogs.filter(
+            (l) => l.responseCode === 0 || l.responseCode >= 400,
+          );
+          if (failures.length > 0 && id) {
+            nextActions.push({
+              command: `pax8 webhooks test ${id}`,
+              description: `Re-test the endpoint — ${failures.length} recent failure${failures.length === 1 ? "" : "s"}`,
+            });
+          }
+          process.stdout.write(
+            JSON.stringify({ logs: allLogs, nextActions }, null, 2) + "\n",
+          );
+        } else {
+          process.stdout.write(JSON.stringify(allLogs, null, 2) + "\n");
         }
-        process.stdout.write(
-          JSON.stringify({ logs: allLogs, nextActions }, null, 2) + "\n",
-        );
         return;
       }
 

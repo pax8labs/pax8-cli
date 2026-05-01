@@ -10,6 +10,7 @@ import { replCmd } from "../../lib/confirm.js";
 export const webhooksListCommand = new Command("list")
   .description("List configured webhook subscriptions")
   .option("--ids-only", "Output only webhook IDs, one per line")
+  .option("--with-actions", "Wrap JSON output as { webhooks, nextActions } instead of a flat array")
   .addHelpText(
     "after",
     `
@@ -18,7 +19,7 @@ Examples:
   pax8 webhooks list --json
   pax8 webhooks list --ids-only`,
   )
-  .action(async (_options, command) => {
+  .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
     const spinner = createSpinner("Fetching webhooks...");
@@ -36,26 +37,30 @@ Examples:
       }
 
       if (ctx.outputFormat === "json") {
-        const nextActions: { command: string; description: string }[] = [];
-        if (webhooks.length === 0) {
-          nextActions.push({
-            command: "pax8 webhooks create --url <url> --events <comma-separated-events>",
-            description: "Create your first webhook subscription",
-          });
+        if (options.withActions) {
+          const nextActions: { command: string; description: string }[] = [];
+          if (webhooks.length === 0) {
+            nextActions.push({
+              command: "pax8 webhooks create --url <url> --events <comma-separated-events>",
+              description: "Create your first webhook subscription",
+            });
+          } else {
+            const first = webhooks[0];
+            nextActions.push({
+              command: `pax8 webhooks test ${first.id}`,
+              description: "Send a test delivery to verify the endpoint",
+            });
+            nextActions.push({
+              command: `pax8 webhooks logs ${first.id}`,
+              description: "View recent delivery history",
+            });
+          }
+          process.stdout.write(
+            JSON.stringify({ webhooks, nextActions }, null, 2) + "\n",
+          );
         } else {
-          const first = webhooks[0];
-          nextActions.push({
-            command: `pax8 webhooks test ${first.id}`,
-            description: "Send a test delivery to verify the endpoint",
-          });
-          nextActions.push({
-            command: `pax8 webhooks logs ${first.id}`,
-            description: "View recent delivery history",
-          });
+          process.stdout.write(JSON.stringify(webhooks, null, 2) + "\n");
         }
-        process.stdout.write(
-          JSON.stringify({ webhooks, nextActions }, null, 2) + "\n",
-        );
         return;
       }
 

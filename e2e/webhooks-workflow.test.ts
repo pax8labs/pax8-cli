@@ -2,20 +2,25 @@ import { describe, it, expect } from "vitest";
 import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
-  it("pax8 webhooks list returns JSON with webhooks and nextActions", async () => {
+  it("pax8 webhooks list returns a flat array of webhooks", async () => {
     const result = await runCliExpectSuccess(["webhooks", "list"]);
     const data = JSON.parse(result.stdout);
-    expect(data).toHaveProperty("webhooks");
-    expect(Array.isArray(data.webhooks)).toBe(true);
-    expect(data.webhooks.length).toBeGreaterThan(0);
-    expect(data).toHaveProperty("nextActions");
-    expect(Array.isArray(data.nextActions)).toBe(true);
-
-    const first = data.webhooks[0];
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
+    const first = data[0];
     expect(first).toHaveProperty("id");
     expect(first).toHaveProperty("url");
     expect(first).toHaveProperty("topics");
     expect(first).toHaveProperty("status");
+  });
+
+  it("pax8 webhooks list --with-actions wraps in { webhooks, nextActions }", async () => {
+    const result = await runCliExpectSuccess(["webhooks", "list", "--with-actions"]);
+    const data = JSON.parse(result.stdout);
+    expect(data).toHaveProperty("webhooks");
+    expect(data).toHaveProperty("nextActions");
+    expect(Array.isArray(data.webhooks)).toBe(true);
+    expect(Array.isArray(data.nextActions)).toBe(true);
   });
 
   it("pax8 webhooks list --ids-only emits one ID per line", async () => {
@@ -65,7 +70,7 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
 
   it("pax8 webhooks test emits result JSON for an existing webhook", async () => {
     const list = await runCliExpectSuccess(["webhooks", "list"]);
-    const id = JSON.parse(list.stdout).webhooks[0].id;
+    const id = JSON.parse(list.stdout)[0].id;
 
     const result = await runCliExpectSuccess(["webhooks", "test", id, "--json"]);
     const data = JSON.parse(result.stdout);
@@ -83,13 +88,12 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
     expect(result.stderr.length).toBeGreaterThan(0);
   });
 
-  it("pax8 webhooks logs (no id) returns aggregated logs JSON", async () => {
+  it("pax8 webhooks logs (no id) returns aggregated logs as a flat array", async () => {
     const result = await runCliExpectSuccess(["webhooks", "logs", "--json"]);
     const data = JSON.parse(result.stdout);
-    expect(data).toHaveProperty("logs");
-    expect(Array.isArray(data.logs)).toBe(true);
-    expect(data.logs.length).toBeGreaterThan(0);
-    const first = data.logs[0];
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
+    const first = data[0];
     expect(first).toHaveProperty("id");
     expect(first).toHaveProperty("webhookId");
     expect(first).toHaveProperty("topic");
@@ -97,14 +101,22 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
     expect(first).toHaveProperty("sentAt");
   });
 
+  it("pax8 webhooks logs --with-actions wraps in { logs, nextActions }", async () => {
+    const result = await runCliExpectSuccess(["webhooks", "logs", "--with-actions", "--json"]);
+    const data = JSON.parse(result.stdout);
+    expect(data).toHaveProperty("logs");
+    expect(data).toHaveProperty("nextActions");
+    expect(Array.isArray(data.logs)).toBe(true);
+  });
+
   it("pax8 webhooks logs <id> filters to logs for that webhook", async () => {
     const list = await runCliExpectSuccess(["webhooks", "list"]);
     // Find a webhook that has logs in the demo data
-    const webhooks = JSON.parse(list.stdout).webhooks;
+    const webhooks = JSON.parse(list.stdout);
     let chosenId: string | null = null;
     for (const wh of webhooks) {
       const r = await runCliExpectSuccess(["webhooks", "logs", wh.id, "--json"]);
-      if (JSON.parse(r.stdout).logs.length > 0) {
+      if (JSON.parse(r.stdout).length > 0) {
         chosenId = wh.id;
         break;
       }
@@ -113,8 +125,8 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
 
     const result = await runCliExpectSuccess(["webhooks", "logs", chosenId!, "--json"]);
     const data = JSON.parse(result.stdout);
-    expect(data.logs.length).toBeGreaterThan(0);
-    for (const log of data.logs) {
+    expect(data.length).toBeGreaterThan(0);
+    for (const log of data) {
       expect(log.webhookId).toBe(chosenId);
     }
   });
@@ -141,7 +153,7 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
 
   it("pax8 webhooks delete removes a webhook (with --yes)", async () => {
     const list = await runCliExpectSuccess(["webhooks", "list"]);
-    const id = JSON.parse(list.stdout).webhooks[0].id;
+    const id = JSON.parse(list.stdout)[0].id;
 
     const result = await runCliExpectSuccess([
       "webhooks",

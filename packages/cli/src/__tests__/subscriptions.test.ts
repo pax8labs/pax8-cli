@@ -95,15 +95,24 @@ describe("pax8 subscriptions renewals", () => {
       "renewals",
     ]);
     const data = JSON.parse(result.stdout);
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
+    expect(data[0]).toHaveProperty("companyName");
+    expect(data[0]).toHaveProperty("productName");
+    expect(data[0]).toHaveProperty("daysUntilRenewal");
+    expect(data[0]).toHaveProperty("renewalDate");
+  });
+
+  it("--with-actions wraps in { renewals, nextActions }", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "renewals",
+      "--with-actions",
+    ]);
+    const data = JSON.parse(result.stdout);
     expect(data).toHaveProperty("renewals");
     expect(data).toHaveProperty("nextActions");
     expect(Array.isArray(data.renewals)).toBe(true);
-    expect(data.renewals.length).toBeGreaterThan(0);
-    expect(data.renewals[0]).toHaveProperty("companyName");
-    expect(data.renewals[0]).toHaveProperty("productName");
-    expect(data.renewals[0]).toHaveProperty("daysUntilRenewal");
-    expect(data.renewals[0]).toHaveProperty("renewalDate");
-    // nextActions should suggest drilldowns
     expect(Array.isArray(data.nextActions)).toBe(true);
     if (data.nextActions.length > 0) {
       expect(data.nextActions[0]).toHaveProperty("command");
@@ -119,10 +128,8 @@ describe("pax8 subscriptions renewals", () => {
       "7d",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(data).toHaveProperty("renewals");
-    expect(Array.isArray(data.renewals)).toBe(true);
-    // All items should be within 7 days
-    for (const item of data.renewals) {
+    expect(Array.isArray(data)).toBe(true);
+    for (const item of data) {
       expect(item.daysUntilRenewal).toBeLessThanOrEqual(7);
     }
   });

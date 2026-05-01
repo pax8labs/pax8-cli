@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+### Breaking
+- **List-command JSON shape** — `recommendations list`, `subscriptions renewals`, `webhooks list`, and `webhooks logs` now return a flat array as their default JSON output. The previous wrapped envelope (`{ recommendations, nextActions, ... }` etc.) is now opt-in via the new `--with-actions` flag. Single-object commands (`status`, `report mrr/growth`, `invoices audit`, `webhooks create/delete/test`) are unchanged.
+
 ### Features
-- **Webhooks CLI commands** — `pax8 webhooks list/create/delete/test/logs` expose the existing `WebhooksApi` for managing event subscriptions; supports `--since` log windowing, `nextActions` in JSON output, and full output flag set (#82)
+- **`--with-actions` flag** — opt into the legacy wrapped envelope on the four list commands above when you want `nextActions`/diagnostic metadata to ride along
+- **Webhooks CLI commands** — `pax8 webhooks list/create/delete/test/logs` expose the existing `WebhooksApi` for managing event subscriptions; supports `--since` log windowing, `nextActions` (via `--with-actions`) in JSON output, and full output flag set (#82)
 - **Contacts CLI commands** — `pax8 contacts list/show/create/update/delete` expose the existing `ContactsApi` with company name resolution, type validation (Admin/Billing/Technical), and confirmation prompts on writes (#39)
 - **Quotes CLI commands** — `pax8 quotes list/show/create/update/delete` expose the existing `QuotesApi` with company/product name resolution, client-side `--status` filter, and confirmation prompts on writes (#39)
 - **Usage CLI commands** — `pax8 usage list` and `pax8 usage show [--lines]` expose the existing `UsageApi` for metered/consumption-based subscriptions; supports `--company`, `--month` filters and full output flag set (#40)

@@ -19,10 +19,11 @@ You have access to the `pax8` CLI on PATH. Run it directly via Bash — never `n
 
 | Flag | When to use |
 |---|---|
-| `--json` | Default. You parse it. |
+| `--json` | Default. You parse it. List commands return flat arrays. |
 | `--csv` | User asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
+| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`status`, `report mrr/growth`, `invoices audit`) always include `nextActions` inline. |
 
 Pagination: most list commands default to `--size 25`. Use `--size 1000` for portfolio-wide analysis (MRR, audits, recs). Don't fetch 1000 if the user asked for "top 5."
 
