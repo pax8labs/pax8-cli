@@ -265,7 +265,74 @@ If a feature would corrupt a JSON pipe, it doesn't ship without a TTY guard.
 
 ---
 
-## 12. Checklist for a new command
+## 12. Designing for agents
+
+pax8-cli has two audiences. One is the human at a terminal. The other is an AI agent — `@pax8/claude-skill` already wraps every command as an LLM tool, and the CLI is also invoked directly by Claude Code via shell. **Treat agents as a peer audience.** A command that's good for humans but opaque to agents is half-finished.
+
+Most rules above already serve agents (deterministic stdout, JSON default in non-TTY, structured errors via `CliError`, demo mode for safe experimentation). This section covers agent-specific contracts on top.
+
+> **Status note:** parts of this section describe contracts pax8-cli is moving toward, not all of which are implemented today. Items marked **(planned)** are policy intent — open an issue before relying on them. Items marked **(implemented)** are live and enforced. Don't add a new command that violates a planned contract; design with it in mind so the eventual rollout doesn't require a rewrite.
+
+### Machine-readable error codes — (planned)
+
+Agents shouldn't have to regex-match English error strings to decide whether to retry, re-auth, or escalate. `CliError` will carry a stable `code` field — a SCREAMING_SNAKE_CASE identifier like `ERROR_AUTH_EXPIRED`, `ERROR_COMPANY_NOT_FOUND`, `ERROR_RATE_LIMITED`, `ERROR_API_TIMEOUT`.
+
+```ts
+throw new CliError(
+  "No company matched 'Acme'.",
+  ["The name didn't match any active company."],
+  [`Run ${replCmd("pax8 companies list")} to see active companies.`],
+  "https://devx.pax8.com/",
+  "ERROR_COMPANY_NOT_FOUND"          // ← new field
+);
+```
+
+When `--json` is set, the error serializes to stderr as a structured object instead of formatted text:
+
+```json
+{
+  "code": "ERROR_COMPANY_NOT_FOUND",
+  "message": "No company matched 'Acme'.",
+  "causes": ["..."],
+  "recoverySteps": ["..."],
+  "docsUrl": "https://devx.pax8.com/"
+}
+```
+
+Codes will live in `packages/core/src/errors/codes.ts` and are append-only — never repurpose an existing code, even for a "near-match" failure mode. If you need a new code, add a new constant.
+
+### Idempotency keys for writes — (planned)
+
+Every write command (`orders create`, `subscriptions create`, future `update` / `cancel` variants) accepts `--idempotency-key <uuid>`. The agent passes a key, retries on transient failure, and the CLI dedupes — you get either the original result or a cached "already processed" response, never a double-write.
+
+```bash
+pax8 orders create --company c1 --product p1 --quantity 5 \
+  --idempotency-key 9f3b...e1
+```
+
+Local cache: 24h TTL, keyed on `{command, key, args-hash}`. When a key matches a cached call, the command writes `(idempotent replay)` to stderr (dim) and returns the cached response. Exit code is unchanged. Prefer server-side idempotency tokens when the Pax8 API supports them; the local cache is a fallback for endpoints that don't.
+
+Reads never need a key.
+
+### Signal handling — (planned)
+
+A `SIGINT` (Ctrl+C) must not corrupt the terminal or leave a half-finished write in ambiguous state. The top-level handler should:
+
+1. **Stop active spinners cleanly** — clear the line, don't `.fail()` (that prints `✗` which reads like an error).
+2. **If a write is in flight,** log `(cancelled)` to stderr with the idempotency key (if any) so the user can resume or investigate.
+3. **Exit with code 130** — the conventional SIGINT exit code. Not 1.
+
+Reads can be killed without ceremony. Writes should log enough context that a follow-up `pax8 orders show` or `subscriptions show` can confirm the actual state.
+
+### Stable list ordering — (implemented where the API permits)
+
+Agents that crawl paginated lists expect order to be stable across calls. Where the Pax8 API guarantees order (most list endpoints sort by `createdDate desc`), surface results unchanged. Where the API doesn't guarantee order, sort by `id` ascending in the CLI before output, so `list --page 1` followed by `list --page 2` doesn't double-count or skip rows.
+
+If you add a new list command and the sort order isn't obvious from the API docs, document it in the command's examples block: `# results sorted by createdDate desc`.
+
+---
+
+## 13. Checklist for a new command
 
 Before opening the PR:
 
@@ -283,3 +350,4 @@ Before opening the PR:
 - [ ] Works under `PAX8_DEMO=1` end-to-end.
 - [ ] Subprocess test in `packages/cli/src/__tests__/` covers TTY format, `--json`, and an error path.
 - [ ] Output is byte-stable: no timestamps or random IDs in the rendered output unless they came from the (mock) API.
+- [ ] Reviewed §12 ("Designing for agents") — if the command writes, has new error modes, or returns lists, confirm it doesn't violate any planned agent contract.
