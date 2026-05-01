@@ -8,6 +8,7 @@ import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { filterRecommendations } from "./filter.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 async function prompt(question: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
@@ -88,15 +89,21 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
       if (match?.commitment?.id) commitmentTermId = match.commitment.id;
     } catch { /* best effort */ }
 
-    const order = await ctx.api.orders.create({
-      companyId: rec.companyId,
-      lineItems: [{
-        productId,
-        quantity,
-        billingTerm: "Monthly",
-        ...(commitmentTermId ? { commitmentTermId } : {}),
-      }],
-    });
+    const doneOrder = markWriteInFlight("orders");
+    let order;
+    try {
+      order = await ctx.api.orders.create({
+        companyId: rec.companyId,
+        lineItems: [{
+          productId,
+          quantity,
+          billingTerm: "Monthly",
+          ...(commitmentTermId ? { commitmentTermId } : {}),
+        }],
+      });
+    } finally {
+      doneOrder();
+    }
 
     // Look up unit price from product pricing
     let unitPrice: number | null = null;

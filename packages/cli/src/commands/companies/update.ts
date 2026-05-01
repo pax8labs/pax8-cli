@@ -7,6 +7,7 @@ import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const companiesUpdateCommand = new Command("update")
   .description("Update a company")
@@ -61,7 +62,13 @@ Examples:
 
       const spinner = createSpinner("Updating company...").start();
 
-      const company = await ctx.api.companies.update(resolved.id, updates);
+      const doneUpdate = markWriteInFlight("companies");
+      let company;
+      try {
+        company = await ctx.api.companies.update(resolved.id, updates);
+      } finally {
+        doneUpdate();
+      }
 
       await invalidateCacheAfterWrite();
       spinner.succeed("Company updated");

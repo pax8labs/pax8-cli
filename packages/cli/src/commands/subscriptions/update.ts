@@ -7,6 +7,7 @@ import { handleCommandError } from "../../lib/errors.js";
 import { confirmWithChange } from "../../lib/confirm.js";
 import { formatQuantity, formatCurrency, formatStatus } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const subscriptionsUpdateCommand = new Command("update")
   .description("Update a subscription")
@@ -66,7 +67,13 @@ Examples:
       }
 
       const updateSpinner = createSpinner("Updating subscription...").start();
-      const updated = await ctx.api.subscriptions.update(id, updateData);
+      const doneUpdate = markWriteInFlight("subscriptions");
+      let updated;
+      try {
+        updated = await ctx.api.subscriptions.update(id, updateData);
+      } finally {
+        doneUpdate();
+      }
       await invalidateCacheAfterWrite();
       updateSpinner.succeed("Subscription updated");
 

@@ -8,6 +8,7 @@ import { confirm, replCmd } from "../../lib/confirm.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 import { formatQuantity } from "../../lib/formatters.js";
 import { ERROR_INVALID_INPUT } from "@pax8/core";
 import type { CreateQuoteInput, BillingTerm } from "@pax8/core";
@@ -74,7 +75,13 @@ Examples:
       };
 
       const spinner = createSpinner("Creating quote...").start();
-      const quote = await ctx.api.quotes.create(input);
+      const doneCreate = markWriteInFlight("quotes");
+      let quote;
+      try {
+        quote = await ctx.api.quotes.create(input);
+      } finally {
+        doneCreate();
+      }
       await invalidateCacheAfterWrite();
       spinner.succeed("Quote created");
 

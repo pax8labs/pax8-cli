@@ -10,6 +10,7 @@ import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscri
 import { filterRecommendations } from "./filter.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 const columns: Column[] = [
   {
@@ -143,15 +144,21 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
 
   const spinner = createSpinner("Creating order...").start();
   try {
-    const order = await ctx.api.orders.create({
-      companyId: rec.companyId,
-      lineItems: [{
-        productId,
-        quantity,
-        billingTerm: "Monthly",
-        ...(commitmentTermId ? { commitmentTermId } : {}),
-      }],
-    });
+    const doneOrder = markWriteInFlight("orders");
+    let order;
+    try {
+      order = await ctx.api.orders.create({
+        companyId: rec.companyId,
+        lineItems: [{
+          productId,
+          quantity,
+          billingTerm: "Monthly",
+          ...(commitmentTermId ? { commitmentTermId } : {}),
+        }],
+      });
+    } finally {
+      doneOrder();
+    }
     spinner.succeed("Order created 🎉");
 
     // Look up unit price from product pricing

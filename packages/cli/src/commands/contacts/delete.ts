@@ -6,6 +6,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { confirmDestructive } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const contactsDeleteCommand = new Command("delete")
   .description("Delete a contact")
@@ -46,7 +47,12 @@ Examples:
       }
 
       const delSpinner = createSpinner("Deleting contact...").start();
-      await ctx.api.contacts.delete(id);
+      const doneDelete = markWriteInFlight("contacts");
+      try {
+        await ctx.api.contacts.delete(id);
+      } finally {
+        doneDelete();
+      }
       await invalidateCacheAfterWrite();
       delSpinner.succeed("Contact deleted");
 

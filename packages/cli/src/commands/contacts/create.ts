@@ -8,6 +8,7 @@ import { handleCommandError, CliError } from "../../lib/errors.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 import type { CreateContactInput, ContactType } from "@pax8/core";
 
 const VALID_TYPES: ContactType[] = ["Admin", "Billing", "Technical"];
@@ -72,7 +73,13 @@ Examples:
       };
 
       const spinner = createSpinner("Creating contact...").start();
-      const contact = await ctx.api.contacts.create(input);
+      const doneCreate = markWriteInFlight("contacts");
+      let contact;
+      try {
+        contact = await ctx.api.contacts.create(input);
+      } finally {
+        doneCreate();
+      }
       await invalidateCacheAfterWrite();
       spinner.succeed("Contact created");
 
