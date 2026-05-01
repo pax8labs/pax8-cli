@@ -4,7 +4,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
-import { formatStatus } from "../../lib/formatters.js";
+import { formatCurrency, formatStatus } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { resolveFromLastList } from "../../lib/last-list.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
@@ -14,7 +14,7 @@ const subscriptionColumns: Column[] = [
   { key: "quantity", header: "Qty" },
   { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
   { key: "billingTerm", header: "Term" },
-  { key: "price", header: "Price", format: (v) => `$${Number(v).toFixed(2)}` },
+  { key: "price", header: "Price", format: (v) => formatCurrency(Number(v)) },
 ];
 
 export const companiesShowCommand = new Command("show")
