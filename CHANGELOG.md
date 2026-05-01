@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Features
+- **Webhooks CLI commands** — `pax8 webhooks list/create/delete/test/logs` expose the existing `WebhooksApi` for managing event subscriptions; supports `--since` log windowing, `nextActions` in JSON output, and full output flag set (#82)
 - **Usage CLI commands** — `pax8 usage list` and `pax8 usage show [--lines]` expose the existing `UsageApi` for metered/consumption-based subscriptions; supports `--company`, `--month` filters and full output flag set (#40)
 - **Portfolio coverage analysis** — `pax8 companies list --coverage` shows category coverage (N/7), missing categories, and estimated MRR uplift per company (#64)
 - **MRR and growth reporting** — `pax8 report mrr` and `pax8 report growth` commands with full JSON/CSV/quiet support (#36)

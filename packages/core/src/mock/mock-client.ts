@@ -17,7 +17,6 @@ import {
   quotes,
   webhooks,
   webhookLogs,
-  webhookTopics,
   type Company,
   type Subscription,
   type Product,
@@ -545,10 +544,20 @@ class QuotesResource {
   }
 }
 
+// Mock surface mirrors the real @pax8/core WebhooksApi:
+//   list()       → Webhook[]
+//   create(data) → Webhook
+//   get(id)      → Webhook
+//   update(id, data)        → Webhook
+//   updateStatus(id, status)→ Webhook
+//   delete(id)   → void
+//   test(id)     → unknown (returns a small structured payload here)
+//   getLogs(id)  → WebhookLog[]
+//   retryLog(id, logId) → unknown
 class WebhooksResource {
-  async list(params?: ListParams): Promise<PaginatedResponse<Webhook>> {
+  async list(): Promise<Webhook[]> {
     await randomDelay();
-    return paginate(webhooks, params);
+    return [...webhooks];
   }
 
   async get(id: string): Promise<Webhook> {
@@ -558,21 +567,25 @@ class WebhooksResource {
     return wh;
   }
 
-  async create(data: Partial<Webhook>): Promise<Webhook> {
+  async create(data: { url: string; topics: string[] }): Promise<Webhook> {
     await randomDelay();
+    // Generate a deterministic-ish UUID-shaped id for demo mode.
+    const newId = `99999999-aaaa-bbbb-cccc-${String(Date.now()).padStart(12, "0").slice(-12)}`;
     const newWh: Webhook = {
-      id: `wh-demo-${Date.now()}`,
-      url: data.url ?? "",
+      id: newId,
+      url: data.url,
       status: "Active",
-      topics: data.topics ?? [],
+      topics: data.topics,
       createdDate: new Date().toISOString().split("T")[0],
-      lastTriggeredDate: null,
       secret: `whsec_demo_${Date.now()}`,
     };
     return newWh;
   }
 
-  async update(id: string, data: Partial<Webhook>): Promise<Webhook> {
+  async update(
+    id: string,
+    data: { url?: string; topics?: string[]; status?: "Active" | "Disabled" }
+  ): Promise<Webhook> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
@@ -581,35 +594,12 @@ class WebhooksResource {
 
   async updateStatus(
     id: string,
-    status: "Active" | "Inactive"
+    status: "Active" | "Disabled"
   ): Promise<Webhook> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
     return { ...wh, status };
-  }
-
-  async addTopics(id: string, topics: string[]): Promise<Webhook> {
-    await randomDelay();
-    const wh = webhooks.find((w) => w.id === id);
-    if (!wh) throw notFound("Webhook", id);
-    const merged = [...new Set([...wh.topics, ...topics])];
-    return { ...wh, topics: merged };
-  }
-
-  async replaceTopics(id: string, topics: string[]): Promise<Webhook> {
-    await randomDelay();
-    const wh = webhooks.find((w) => w.id === id);
-    if (!wh) throw notFound("Webhook", id);
-    return { ...wh, topics };
-  }
-
-  async removeTopics(id: string, topics: string[]): Promise<Webhook> {
-    await randomDelay();
-    const wh = webhooks.find((w) => w.id === id);
-    if (!wh) throw notFound("Webhook", id);
-    const remaining = wh.topics.filter((t) => !topics.includes(t));
-    return { ...wh, topics: remaining };
   }
 
   async delete(id: string): Promise<void> {
@@ -618,37 +608,31 @@ class WebhooksResource {
     if (!wh) throw notFound("Webhook", id);
   }
 
-  async test(
-    id: string,
-    topic?: string
-  ): Promise<{ success: boolean; statusCode: number; responseTime: number }> {
+  async test(id: string): Promise<unknown> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
-    return { success: wh.status === "Active", statusCode: wh.status === "Active" ? 200 : 502, responseTime: 123 };
+    return {
+      success: wh.status === "Active",
+      responseCode: wh.status === "Active" ? 200 : 502,
+      sentAt: new Date().toISOString(),
+    };
   }
 
-  async logs(
-    params?: ListParams & { webhookId?: string }
-  ): Promise<PaginatedResponse<WebhookLog>> {
+  async getLogs(id: string): Promise<WebhookLog[]> {
     await randomDelay();
-    let filtered = webhookLogs;
-    if (params?.webhookId) {
-      filtered = webhookLogs.filter((l) => l.webhookId === params.webhookId);
-    }
-    return paginate(filtered, params);
+    const wh = webhooks.find((w) => w.id === id);
+    if (!wh) throw notFound("Webhook", id);
+    return webhookLogs.filter((l) => l.webhookId === id);
   }
 
-  async retry(logId: string): Promise<WebhookLog> {
+  async retryLog(id: string, logId: string): Promise<unknown> {
     await randomDelay();
-    const log = webhookLogs.find((l) => l.id === logId);
+    const wh = webhooks.find((w) => w.id === id);
+    if (!wh) throw notFound("Webhook", id);
+    const log = webhookLogs.find((l) => l.id === logId && l.webhookId === id);
     if (!log) throw notFound("WebhookLog", logId);
-    return { ...log, status: "Success", statusCode: 200 };
-  }
-
-  async listTopics(): Promise<string[]> {
-    await randomDelay();
-    return webhookTopics;
+    return { ...log, responseCode: 200, responseBody: "OK" };
   }
 }
 

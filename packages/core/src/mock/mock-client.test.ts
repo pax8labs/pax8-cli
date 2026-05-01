@@ -214,13 +214,11 @@ describe("MockPax8Client", () => {
   describe("webhooks", () => {
     it("list returns webhooks", async () => {
       const result = await client.webhooks.list();
-      expect(result.content.length).toBeGreaterThan(0);
-    });
-
-    it("listTopics returns topics", async () => {
-      const topics = await client.webhooks.listTopics();
-      expect(topics.length).toBeGreaterThan(0);
-      expect(topics).toContain("subscription.created");
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeGreaterThan(0);
+      expect(result[0]).toHaveProperty("id");
+      expect(result[0]).toHaveProperty("url");
+      expect(result[0]).toHaveProperty("topics");
     });
   });
 });
