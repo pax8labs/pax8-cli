@@ -12,7 +12,7 @@ export const usageListCommand = new Command("list")
   .description("List usage summaries")
   .option("--company <id|name>", "Filter by company ID or name")
   .option("--month <YYYY-MM>", "Filter by usage month (e.g. 2026-04)")
-  .option("--page <number>", "Page number (0-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "50")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
@@ -34,9 +34,10 @@ Examples:
       const companyId = options.company
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
+      const apiPage = Math.max(parseInt(options.page, 10) - 1, 0);
       const result = await ctx.api.usage.listSummaries({
         companyId,
-        page: parseInt(options.page, 10),
+        page: apiPage,
         size: parseInt(options.size, 10),
       });
       spinner.stop();
