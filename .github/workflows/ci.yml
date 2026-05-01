@@ -26,11 +26,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm -r exec tsc --noEmit
-
       - name: Build
         run: pnpm build
+
+      - name: Typecheck
+        run: pnpm -r exec tsc --noEmit
 
       - name: Test
         run: pnpm test
