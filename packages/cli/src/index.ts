@@ -22,6 +22,7 @@ import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
 import { initCommand } from "./commands/init.js";
 import { handleCommandError } from "./lib/errors.js";
+import { installSigintHandler } from "./lib/signals.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
@@ -358,6 +359,11 @@ function tokenize(input: string): string[] {
 }
 
 async function main(): Promise<void> {
+  // Install the SIGINT handler before doing anything else so Ctrl+C during
+  // startup (token loading, config parsing, cache warmer spawn) still gets
+  // the clean cleanup path rather than Node's default `1` exit.
+  installSigintHandler();
+
   if (process.argv.length <= 2) {
     if (process.stdin.isTTY) {
       await startRepl();

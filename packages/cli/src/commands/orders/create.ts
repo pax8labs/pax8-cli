@@ -6,6 +6,7 @@ import { buildContext } from "../../lib/context.js";
 import { confirmWithChange, replCmd } from "../../lib/confirm.js";
 import { formatStatus, formatDate, formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 import {
   ApiError,
   ERROR_API_VALIDATION,
@@ -318,7 +319,13 @@ Examples:
       // `OrdersApi.create` shape — see packages/core/src/api/orders.ts), pass
       // `idempotencyKey` through here so the server dedupes natively. Until
       // then, deduplication is purely local via the file cache below.
-      const order = await ctx.api.orders.create(orderInput);
+      const doneWrite = markWriteInFlight("orders");
+      let order;
+      try {
+        order = await ctx.api.orders.create(orderInput);
+      } finally {
+        doneWrite();
+      }
       await invalidateCacheAfterWrite();
 
       spinner.succeed("Order created 🎉");

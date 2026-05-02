@@ -7,6 +7,7 @@ import { handleCommandError, CliError } from "../../lib/errors.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 import { ERROR_INVALID_INPUT } from "@pax8/core";
 import type { UpdateQuoteInput, BillingTerm } from "@pax8/core";
 
@@ -89,7 +90,13 @@ Examples:
       }
 
       const updateSpinner = createSpinner("Updating quote...").start();
-      const updated = await ctx.api.quotes.update(id, data);
+      const doneUpdate = markWriteInFlight("quotes");
+      let updated;
+      try {
+        updated = await ctx.api.quotes.update(id, data);
+      } finally {
+        doneUpdate();
+      }
       await invalidateCacheAfterWrite();
       updateSpinner.succeed("Quote updated");
 

@@ -7,6 +7,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 import type { UpdateContactInput, ContactType } from "@pax8/core";
 
 const VALID_TYPES: ContactType[] = ["Admin", "Billing", "Technical"];
@@ -83,7 +84,13 @@ Examples:
       }
 
       const updateSpinner = createSpinner("Updating contact...").start();
-      const updated = await ctx.api.contacts.update(id, data);
+      const doneUpdate = markWriteInFlight("contacts");
+      let updated;
+      try {
+        updated = await ctx.api.contacts.update(id, data);
+      } finally {
+        doneUpdate();
+      }
       await invalidateCacheAfterWrite();
       updateSpinner.succeed("Contact updated");
 

@@ -8,6 +8,7 @@ import { confirmDestructive } from "../../lib/confirm.js";
 import { formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { replCmd } from "../../lib/confirm.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const subscriptionsCancelCommand = new Command("cancel")
   .description("Cancel a subscription")
@@ -54,7 +55,12 @@ Examples:
       }
 
       const cancelSpinner = createSpinner("Cancelling subscription...").start();
-      await ctx.api.subscriptions.delete(id);
+      const doneCancel = markWriteInFlight("subscriptions");
+      try {
+        await ctx.api.subscriptions.delete(id);
+      } finally {
+        doneCancel();
+      }
       await invalidateCacheAfterWrite();
       cancelSpinner.succeed("Subscription cancelled");
 

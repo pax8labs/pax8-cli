@@ -6,6 +6,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 function parseEvents(input: string): string[] {
   return input
@@ -84,7 +85,13 @@ Examples:
       }
 
       const spinner = createSpinner("Creating webhook...").start();
-      const webhook = await ctx.api.webhooks.create({ url, topics });
+      const doneCreate = markWriteInFlight("webhooks");
+      let webhook;
+      try {
+        webhook = await ctx.api.webhooks.create({ url, topics });
+      } finally {
+        doneCreate();
+      }
       await invalidateCacheAfterWrite();
       spinner.succeed("Webhook created");
 

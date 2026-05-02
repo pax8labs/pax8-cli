@@ -6,6 +6,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { confirmDestructive } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const quotesDeleteCommand = new Command("delete")
   .description("Delete a quote")
@@ -45,7 +46,12 @@ Examples:
       }
 
       const delSpinner = createSpinner("Deleting quote...").start();
-      await ctx.api.quotes.delete(id);
+      const doneDelete = markWriteInFlight("quotes");
+      try {
+        await ctx.api.quotes.delete(id);
+      } finally {
+        doneDelete();
+      }
       await invalidateCacheAfterWrite();
       delSpinner.succeed("Quote deleted");
 

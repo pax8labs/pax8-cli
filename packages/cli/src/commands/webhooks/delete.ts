@@ -5,6 +5,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const webhooksDeleteCommand = new Command("delete")
   .description("Delete a webhook subscription")
@@ -47,7 +48,12 @@ Examples:
       }
 
       const spinner = createSpinner("Deleting webhook...").start();
-      await ctx.api.webhooks.delete(id);
+      const doneDelete = markWriteInFlight("webhooks");
+      try {
+        await ctx.api.webhooks.delete(id);
+      } finally {
+        doneDelete();
+      }
       await invalidateCacheAfterWrite();
       spinner.succeed("Webhook deleted");
 
