@@ -1,5 +1,6 @@
-import type { Product } from "@pax8/core";
+import { ERROR_PRODUCT_NOT_FOUND, type Product } from "@pax8/core";
 import type { CommandContext } from "./context.js";
+import { CliError } from "./errors.js";
 import { replCmd } from "./confirm.js";
 
 // Vendors common in the Pax8 catalog. Used to detect a vendor prefix in
@@ -97,8 +98,12 @@ export async function resolveProduct(ctx: CommandContext, input: string): Promis
       .slice(0, 5)
       .map((p) => p.name)
       .join(", ");
-    throw new Error(
-      `Multiple products match "${input}": ${names}. Use an exact name or product ID.`,
+    throw new CliError(
+      `Multiple products match "${input}"`,
+      [`Matches: ${names}`],
+      ["Use an exact name or product ID."],
+      undefined,
+      ERROR_PRODUCT_NOT_FOUND,
     );
   }
 
@@ -116,12 +121,20 @@ export async function resolveProduct(ctx: CommandContext, input: string): Promis
       .slice(0, 5)
       .map((p) => p.name)
       .join(", ");
-    throw new Error(
-      `Multiple products match "${input}": ${names}. Use an exact name or product ID.`,
+    throw new CliError(
+      `Multiple products match "${input}"`,
+      [`Matches: ${names}`],
+      ["Use an exact name or product ID."],
+      undefined,
+      ERROR_PRODUCT_NOT_FOUND,
     );
   }
 
-  throw new Error(
-    `Product not found: "${input}". Try '${replCmd("pax8 products search")} "${input}"' to browse the catalog.`,
+  throw new CliError(
+    `Product not found: "${input}"`,
+    ["No product in the catalog matched the supplied name or ID."],
+    [`Try ${replCmd("pax8 products search")} "${input}" to browse the catalog.`],
+    undefined,
+    ERROR_PRODUCT_NOT_FOUND,
   );
 }

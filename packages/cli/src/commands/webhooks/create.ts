@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
@@ -53,6 +54,8 @@ Examples:
           [
             `Example: ${replCmd("pax8 webhooks create")} --url https://example.com/hook --events subscription.created`,
           ],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 
@@ -63,6 +66,8 @@ Examples:
           [
             `Example: ${replCmd("pax8 webhooks create")} --url ${url} --events subscription.created,invoice.paid`,
           ],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 

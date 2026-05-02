@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
@@ -37,7 +38,9 @@ Examples:
         throw new CliError(
           "No updates provided",
           ["At least one update flag is required"],
-          ["Use --name, --phone, or --website to specify what to update"]
+          ["Use --name, --phone, or --website to specify what to update"],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 

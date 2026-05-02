@@ -6,7 +6,13 @@ import { buildContext } from "../../lib/context.js";
 import { confirmWithChange, replCmd } from "../../lib/confirm.js";
 import { formatStatus, formatDate, formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
-import { ApiError, getTelemetry } from "@pax8/core";
+import {
+  ApiError,
+  ERROR_API_VALIDATION,
+  ERROR_INVALID_INPUT,
+  ERROR_PRODUCT_NOT_FOUND,
+  getTelemetry,
+} from "@pax8/core";
 import type { CreateOrderInput, OrderLineItemInput, BillingTerm } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
@@ -44,6 +50,8 @@ Examples:
           `Invalid quantity: "${allOpts.quantity}"`,
           ["Quantity must be a positive integer (1 or greater)"],
           [`Example: ${replCmd("pax8 orders create")} --company <id> --product <id> --quantity 5`],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 
@@ -75,6 +83,8 @@ Examples:
             `Search the catalog: ${replCmd("pax8 products search")} "${allOpts.product}"`,
             `Then use the product ID: ${replCmd("pax8 orders create")} --product <product-id> ...`,
           ],
+          undefined,
+          ERROR_PRODUCT_NOT_FOUND,
         );
       }
 
@@ -284,6 +294,8 @@ Examples:
                 `Search for alternatives: ${replCmd("pax8 products search")} "${shortName}"`,
                 `View ${displayCompany}'s current subscriptions: ${replCmd("pax8 companies more")} "${displayCompany}"`,
               ],
+              undefined,
+              ERROR_PRODUCT_NOT_FOUND,
             ),
           );
         }
@@ -310,6 +322,8 @@ Examples:
               `Can't order "${displayProduct}" for ${displayCompany}`,
               causes,
               steps,
+              undefined,
+              ERROR_API_VALIDATION,
             ),
           );
         }
@@ -331,7 +345,13 @@ Examples:
           steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
 
           handleCommandError(
-            new CliError(`Can't order "${displayProduct}" for ${displayCompany}`, causes, steps),
+            new CliError(
+              `Can't order "${displayProduct}" for ${displayCompany}`,
+              causes,
+              steps,
+              undefined,
+              ERROR_API_VALIDATION,
+            ),
           );
         }
       }

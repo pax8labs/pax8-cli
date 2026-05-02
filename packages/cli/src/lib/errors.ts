@@ -1,7 +1,19 @@
 import chalk from "chalk";
 import { ZodError, ZodIssueCode } from "zod";
 import type { Ora } from "ora";
-import { ApiError } from "@pax8/core";
+import {
+  ApiError,
+  ERROR_API_TIMEOUT,
+  ERROR_API_VALIDATION,
+  ERROR_AUTH_EXPIRED,
+  ERROR_COMPANY_NOT_FOUND,
+  ERROR_INTERNAL,
+  ERROR_NOT_AUTHORIZED,
+  ERROR_PRODUCT_NOT_FOUND,
+  ERROR_RATE_LIMITED,
+  ERROR_SUBSCRIPTION_NOT_FOUND,
+  type Pax8ErrorCode,
+} from "@pax8/core";
 import { replCmd } from "./confirm.js";
 
 export class CliError extends Error {
@@ -9,7 +21,8 @@ export class CliError extends Error {
     message: string,
     public causes?: string[],
     public recoverySteps?: string[],
-    public docsUrl?: string
+    public docsUrl?: string,
+    public code?: Pax8ErrorCode,
   ) {
     super(message);
     this.name = "CliError";
@@ -55,10 +68,116 @@ export function extractErrorDetail(body: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Detect whether the global `--json` flag is set. We check argv directly
+ * because handleCommandError is often invoked from a `catch` block where the
+ * Commander context isn't available, and because we want JSON envelope output
+ * even for errors that fire before `buildContext()` succeeds.
+ */
+function isJsonOutputRequested(): boolean {
+  return process.argv.includes("--json");
+}
+
+/**
+ * Map an ApiError to a stable error code based on status + message hints.
+ */
+function codeForApiError(error: ApiError): Pax8ErrorCode {
+  const status = error.statusCode;
+  if (status === 401 || status === 403) return ERROR_AUTH_EXPIRED;
+  if (status === 408) return ERROR_API_TIMEOUT;
+  if (status === 429) return ERROR_RATE_LIMITED;
+  if (status >= 500) return ERROR_INTERNAL;
+  if (status === 404) {
+    const haystack = (
+      error.message +
+      " " +
+      (typeof error.requestPath === "string" ? error.requestPath : "")
+    ).toLowerCase();
+    if (haystack.includes("company") || haystack.includes("companies")) {
+      return ERROR_COMPANY_NOT_FOUND;
+    }
+    if (haystack.includes("product")) {
+      return ERROR_PRODUCT_NOT_FOUND;
+    }
+    if (haystack.includes("subscription")) {
+      return ERROR_SUBSCRIPTION_NOT_FOUND;
+    }
+    return ERROR_NOT_AUTHORIZED;
+  }
+  return ERROR_INTERNAL;
+}
+
+interface ErrorEnvelope {
+  code?: Pax8ErrorCode;
+  message: string;
+  causes?: string[];
+  recoverySteps?: string[];
+  docsUrl?: string;
+}
+
+/**
+ * Build the JSON envelope for a thrown error. Omits fields that aren't set so
+ * consumers don't have to special-case `null`.
+ */
+function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
+  const prefix = context ? `${context}: ` : "";
+
+  if (error instanceof CliError) {
+    const env: ErrorEnvelope = { message: prefix + error.message };
+    if (error.code) env.code = error.code;
+    if (error.causes && error.causes.length > 0) env.causes = error.causes;
+    if (error.recoverySteps && error.recoverySteps.length > 0) {
+      env.recoverySteps = error.recoverySteps;
+    }
+    if (error.docsUrl) env.docsUrl = error.docsUrl;
+    return env;
+  }
+
+  if (error instanceof ZodError) {
+    return {
+      code: ERROR_API_VALIDATION,
+      message:
+        prefix +
+        "The Pax8 API returned an unexpected response.",
+      causes: [formatZodError(error)],
+      recoverySteps: [
+        "Try a different query, or run pax8 doctor to check your setup.",
+      ],
+    };
+  }
+
+  if (error instanceof ApiError) {
+    const env: ErrorEnvelope = {
+      code: codeForApiError(error),
+      message: prefix + error.message,
+    };
+    const detail = extractErrorDetail(error.responseBody);
+    if (detail) env.causes = [detail];
+    if (error.statusCode === 401 || error.statusCode === 403) {
+      env.recoverySteps = [
+        "Your credentials may have expired. Run pax8 auth login to re-authenticate.",
+      ];
+    }
+    return env;
+  }
+
+  if (error instanceof Error) {
+    return {
+      code: ERROR_INTERNAL,
+      message: prefix + error.message,
+    };
+  }
+
+  return {
+    code: ERROR_INTERNAL,
+    message: prefix + "An unexpected error occurred",
+  };
+}
+
 export function handleCommandError(
   error: unknown,
   spinner?: Ora,
-  context?: string
+  context?: string,
 ): never {
   // Stop spinner if active
   if (spinner) {
@@ -67,6 +186,16 @@ export function handleCommandError(
     } catch {
       // Spinner may already be stopped
     }
+  }
+
+  // Machine-readable JSON envelope when --json is set
+  if (isJsonOutputRequested()) {
+    const envelope = buildErrorEnvelope(error, context);
+    process.stderr.write(JSON.stringify(envelope, null, 2) + "\n");
+    process.exit(1);
+
+    // Honor never return contract when process.exit is mocked
+    throw new Error("process.exit intercepted");
   }
 
   const prefix = context ? `${context}\n` : "";

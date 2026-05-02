@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -43,6 +44,9 @@ Examples:
           throw new CliError(
             `Invalid --type "${options.type}"`,
             [`Allowed values: ${VALID_TYPES.join(", ")}`],
+            undefined,
+            undefined,
+            ERROR_INVALID_INPUT,
           );
         }
         data.types = [type];
@@ -53,6 +57,8 @@ Examples:
           "No fields to update",
           ["At least one of --first-name, --last-name, --email, --phone, or --type is required"],
           [`Try: ${replCmd("pax8 contacts update")} ${id} --email <new-email>`],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 

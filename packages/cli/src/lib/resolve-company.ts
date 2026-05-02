@@ -1,5 +1,6 @@
-import type { Company } from "@pax8/core";
+import { ERROR_COMPANY_NOT_FOUND, type Company } from "@pax8/core";
 import type { CommandContext } from "./context.js";
+import { CliError } from "./errors.js";
 import { resolveFromLastList } from "./last-list.js";
 import { replCmd } from "./confirm.js";
 
@@ -37,12 +38,22 @@ export async function resolveCompany(ctx: CommandContext, input: string): Promis
   const fuzzy = result.content.filter((c) => c.name.toLowerCase().includes(lower));
   if (fuzzy.length === 1) return fuzzy[0];
   if (fuzzy.length > 1) {
-    throw new Error(
-      `Multiple companies match "${input}": ${fuzzy.map((c) => c.name).join(", ")}. Use an exact name or ID.`,
+    throw new CliError(
+      `Multiple companies match "${input}"`,
+      [`Matches: ${fuzzy.map((c) => c.name).join(", ")}`],
+      [`Use an exact name or ID. Run ${replCmd("pax8 companies list")} to see all companies.`],
+      undefined,
+      ERROR_COMPANY_NOT_FOUND,
     );
   }
 
-  throw new Error(`Company not found: "${input}". Run '${replCmd("pax8 companies list")}' to see available companies.`);
+  throw new CliError(
+    `Company not found: "${input}"`,
+    ["No active company matched the supplied name or ID."],
+    [`Run ${replCmd("pax8 companies list")} to see available companies.`],
+    undefined,
+    ERROR_COMPANY_NOT_FOUND,
+  );
 }
 
 /**

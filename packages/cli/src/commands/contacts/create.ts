@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -38,6 +39,8 @@ Examples:
           `Invalid --type "${options.type}"`,
           [`Allowed values: ${VALID_TYPES.join(", ")}`],
           [`Try: ${replCmd("pax8 contacts create")} --type Admin ...`],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 

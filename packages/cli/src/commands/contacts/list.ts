@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -37,6 +38,8 @@ Examples:
             `Pick a company first: ${replCmd("pax8 companies list")}`,
             `Then: ${replCmd("pax8 contacts list")} --company <id|name>`,
           ],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 

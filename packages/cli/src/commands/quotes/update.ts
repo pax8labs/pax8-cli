@@ -7,6 +7,7 @@ import { handleCommandError, CliError } from "../../lib/errors.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import type { UpdateQuoteInput, BillingTerm } from "@pax8/core";
 
 export const quotesUpdateCommand = new Command("update")
@@ -37,6 +38,9 @@ Examples:
           throw new CliError(
             `Invalid quantity: "${options.quantity}"`,
             ["Quantity must be a positive integer"],
+            undefined,
+            undefined,
+            ERROR_INVALID_INPUT,
           );
         }
         const product = await resolveProduct(ctx, options.product);
@@ -58,6 +62,8 @@ Examples:
           "No fields to update",
           ["Use --product (with --quantity) to replace line items, or --expiration-date"],
           [`Try: ${replCmd("pax8 quotes update")} ${id} --expiration-date 2026-05-15`],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 

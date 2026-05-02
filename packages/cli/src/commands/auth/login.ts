@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { CredentialStore, TokenManager } from "@pax8/core";
+import { CredentialStore, ERROR_AUTH_MISSING, TokenManager } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
@@ -44,7 +44,8 @@ Examples:
           `Provide credentials via flags: ${replCmd("pax8 auth login")} --client-id <id> --client-secret <secret>`,
           "Or set environment variables: PAX8_CLIENT_ID and PAX8_CLIENT_SECRET",
         ],
-        "https://devx.pax8.com/"
+        "https://devx.pax8.com/",
+        ERROR_AUTH_MISSING,
       );
     }
 
