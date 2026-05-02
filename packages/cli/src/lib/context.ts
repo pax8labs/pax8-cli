@@ -13,6 +13,7 @@ import {
   TokenManager,
   CredentialStore,
   loadConfig,
+  ERROR_AUTH_MISSING,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
 import { spawn } from "node:child_process";
@@ -118,6 +119,7 @@ export async function buildContext(
           `Or use demo mode: PAX8_DEMO=1 ${replCmd("pax8")} <command> (macOS/Linux) or $env:PAX8_DEMO="1"; ${replCmd("pax8")} <command> (PowerShell)`,
         ],
         "https://devx.pax8.com/",
+        ERROR_AUTH_MISSING,
       );
     }
 

@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -15,6 +16,8 @@ function parseSinceMs(input: string): number {
       `Invalid --since value: "${input}"`,
       ['Use format like "7d", "24h", or "30m"'],
       ['Example: pax8 webhooks logs --since 7d'],
+      undefined,
+      ERROR_INVALID_INPUT,
     );
   }
   const n = parseInt(match[1], 10);

@@ -9,6 +9,7 @@ import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { formatQuantity } from "../../lib/formatters.js";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import type { CreateQuoteInput, BillingTerm } from "@pax8/core";
 
 export const quotesCreateCommand = new Command("create")
@@ -36,6 +37,9 @@ Examples:
         throw new CliError(
           `Invalid quantity: "${options.quantity}"`,
           ["Quantity must be a positive integer"],
+          undefined,
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { loadConfig, saveConfig } from "@pax8/core";
+import { ERROR_INTERNAL, loadConfig, saveConfig } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { CliError } from "../lib/errors.js";
 
@@ -71,7 +71,8 @@ Examples:
           `Overwrite a corrupt config with defaults: ${chalk.cyan(replCmd("pax8 init --force"))}`,
           `Skip credential setup and try sample data: ${chalk.cyan(replCmd("pax8 init --demo"))}`,
         ],
-        "https://devx.pax8.com/"
+        "https://devx.pax8.com/",
+        ERROR_INTERNAL,
       );
     }
   });
