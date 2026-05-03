@@ -7,6 +7,8 @@ import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
 import { ALL_SUBS_PAGE_SIZE, auditInvoices } from "@pax8/core";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
+import { discrepancyId } from "./dispute.js";
+import { replCmd } from "../../lib/confirm.js";
 
 export const invoicesAuditCommand = new Command("audit")
   .description("Audit invoices against active subscriptions")
@@ -81,15 +83,31 @@ Examples:
       // Run audit
       const report = auditInvoices(itemsResult.content, normalizedSubs);
 
+      // Stamp each discrepancy with a stable ID so `pax8 invoices dispute
+      // --discrepancy <id>` can locate it without re-auditing under the user's
+      // exact filters.
+      const stampedDiscrepancies = report.discrepancies.map((d) => ({
+        ...d,
+        discrepancyId: discrepancyId({
+          companyId: d.companyId,
+          productName: d.productName,
+          type: d.type,
+          month: options.month,
+        }),
+      }));
+
       // JSON output
       if (ctx.outputFormat === "json") {
-        const nextActions = report.discrepancies
+        const nextActions = stampedDiscrepancies
           .slice(0, 5)
           .map((d) => ({
-            command: `pax8 subscriptions list --company "${d.companyName}" --json`,
-            description: `Investigate ${d.type} for ${d.companyName} — ${d.productName} (Δ${d.delta > 0 ? "+" : ""}${d.delta})`,
+            command: `pax8 invoices dispute --discrepancy ${d.discrepancyId}${options.month ? ` --month ${options.month}` : ""}`,
+            description: `File a dispute for ${d.companyName} — ${d.productName} (${d.type}, Δ${d.delta > 0 ? "+" : ""}${d.delta})`,
           }));
-        output([{ ...report, nextActions }], { format: "json" });
+        output(
+          [{ ...report, discrepancies: stampedDiscrepancies, nextActions }],
+          { format: "json" },
+        );
         return;
       }
 
@@ -126,9 +144,9 @@ Examples:
         `\n  ${chalk.yellow("⚠")} ${report.discrepancies.length} discrepancies found in ${monthLabel} invoices:\n\n`
       );
 
-      for (const d of report.discrepancies) {
+      for (const d of stampedDiscrepancies) {
         process.stdout.write(
-          `  ${chalk.bold(d.companyName)} — ${d.productName}\n`
+          `  ${chalk.bold(d.companyName)} — ${d.productName}  ${chalk.dim(`[${d.discrepancyId}]`)}\n`
         );
 
         const deltaSign = d.delta > 0 ? "+" : "";
@@ -159,6 +177,17 @@ Examples:
         `  ${chalk.bold("Net impact:")}   ${formatCurrency(report.netImpact)}\n`
       );
       process.stdout.write("\n");
+
+      // Closed-loop hint: surface the dispute command so the partner can act
+      // on what the audit just found, without leaving the terminal.
+      if (stampedDiscrepancies.length > 0) {
+        process.stderr.write(chalk.dim("  Try next:\n"));
+        const first = stampedDiscrepancies[0];
+        process.stderr.write(
+          `    ${chalk.cyan(replCmd(`pax8 invoices dispute --discrepancy ${first.discrepancyId}`))}  ${chalk.dim("file a dispute draft")}\n`,
+        );
+        process.stderr.write("\n");
+      }
     } catch (error) {
       handleCommandError(error, spinner, "Failed to audit invoices");
     }
