@@ -2,14 +2,16 @@
 
 An open-source CLI for managing Pax8 cloud marketplace operations. Built for MSPs who want to manage subscriptions, billing, customers, and growth opportunities from the terminal.
 
+## Status
+
+This is an early-stage open-source experiment. We're using engagement signals (installs, issues, command usage) to learn which capabilities are worth investing in further. Feedback, issues, and PRs are welcome.
+
 ## Highlights
 
-- **Business dashboard** — `pax8 status` shows MRR, renewals, growth opportunities, and expiring trials in one command
-- **Recommendation engine** — analyzes customer portfolios, flags missing products (backup, security, identity), and estimates MRR uplift
-- **Act on recommendations** — `pax8 recommendations act` walks through opportunities one by one and places orders
-- **Full Pax8 API coverage** — companies, subscriptions, orders, invoices, products
-- **Claude AI integration** — agents get structured access to renewals, audits, recommendations, and MRR via the Claude Code skill
-- **Smart UX** — interactive drill-downs, copy-paste order commands, actionable error messages
+- **Answers the API doesn't** — renewals, invoice audit, upsell recommendations, MRR analytics computed locally from raw Pax8 data
+- **Closes the loop** — `pax8 recommendations act` walks portfolio gaps and places the orders, so insight and action live in the same tool
+- **Works for humans and agents identically** — every command emits structured JSON, so a Claude Code skill, a shell pipeline, or a person at a terminal all use the same surface
+- **Demo mode** — `PAX8_DEMO=1` runs every command against an in-memory fixture, no credentials required
 
 ## Why This Exists
 
@@ -23,6 +25,10 @@ This CLI computes what the API doesn't:
 - **MRR analytics** — aggregation by company/product/vendor with annual-to-monthly amortization
 
 Every command supports `--json`, so humans and AI agents use the same tool.
+
+## When to use this CLI vs the Pax8 MCP
+
+Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see the [Pax8 MCP docs](https://devx.pax8.com/docs/mcp-server). Use this CLI when you want a richer command surface (recommendations, invoice audit, MRR analytics, demo mode) or when you're scripting against a stable, versioned interface. Use the Pax8 MCP when you want zero-install access via Claude, Cursor, Copilot, or VS Code and you don't need the CLI-specific capabilities.
 
 ## Quick Start
 
@@ -44,10 +50,10 @@ PAX8_DEMO=1 pax8 status
 
 ```bash
 pax8 status                              # MRR, renewals, growth opportunities
-pax8 companies list                      # Browse customers (type # to drill in)
-pax8 companies more "Acme Corp"          # Full customer summary
 pax8 recommendations list                # Cross-sell and seat gap opportunities
 pax8 recommendations act                 # Walk through and place orders (y/s/q)
+pax8 companies list                      # Browse customers (type # to drill in)
+pax8 companies more "Acme Corp"          # Full customer summary
 ```
 
 ## Commands
@@ -207,6 +213,10 @@ Claude: runs pax8 recommendations list --json, returns prioritized gaps
 ```
 
 Works with Claude Code, Cursor, Copilot, and any agent framework that can run shell commands.
+
+## Core library
+
+All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and MRR analytics are all importable from a portal feature, a Lambda, a dashboard, or your own tool. The CLI is one consumer; the durable asset is the domain knowledge in `core`. See [`packages/core/README.md`](packages/core/README.md) for the install, import example, and capability list.
 
 ## Performance
 
