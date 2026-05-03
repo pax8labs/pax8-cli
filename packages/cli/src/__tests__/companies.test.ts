@@ -51,6 +51,27 @@ describe("pax8 companies", () => {
       const result = await runCliExpectSuccess(["companies", "list"]);
       expect(result.stderr).toContain("companies");
     });
+
+    it("--with-actions wraps in { companies, nextActions }", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "list",
+        "--json",
+        "--with-actions",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("companies");
+      expect(data).toHaveProperty("nextActions");
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(Array.isArray(data.nextActions)).toBe(true);
+      expect(data.nextActions.length).toBeGreaterThan(0);
+      for (const action of data.nextActions) {
+        expect(action).toHaveProperty("command");
+        expect(action).toHaveProperty("description");
+        expect(typeof action.command).toBe("string");
+        expect(typeof action.description).toBe("string");
+      }
+    });
   });
 
   describe("companies show", () => {

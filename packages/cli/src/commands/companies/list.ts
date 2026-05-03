@@ -40,6 +40,7 @@ export const companiesListCommand = new Command("list")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .option("--coverage", "Include portfolio coverage analysis")
+  .option("--with-actions", "Wrap JSON output as { companies, nextActions } instead of a flat array")
   .addHelpText(
     "after",
     `
@@ -49,6 +50,7 @@ Examples:
   pax8 companies list --page 1 --size 25
   pax8 companies list --coverage
   pax8 companies list --json
+  pax8 companies list --json --with-actions
   pax8 companies list --csv
   pax8 companies list --ids-only
   pax8 companies list --ids-only | xargs -I{} pax8 subscriptions list --company {}`
@@ -179,6 +181,41 @@ Examples:
       } catch { /* best effort */ }
 
       const columns = coverageMap ? coverageColumns : baseColumns;
+
+      if (ctx.outputFormat === "json" && allOpts.withActions) {
+        const nextActions: { command: string; description: string }[] = [];
+        // Companies with the largest coverage gaps first if available
+        const ranked = coverageMap
+          ? [...result.content].sort((a, b) => {
+              const aGap = coverageMap!.get(String(a.id))?.estimatedUplift ?? 0;
+              const bGap = coverageMap!.get(String(b.id))?.estimatedUplift ?? 0;
+              return bGap - aGap;
+            })
+          : result.content;
+        for (const c of ranked.slice(0, 3)) {
+          nextActions.push({
+            command: `pax8 companies more "${c.name}"`,
+            description: `Drill into ${c.name}`,
+          });
+        }
+        if (coverageMap) {
+          const top = ranked.find((c) => (coverageMap!.get(String(c.id))?.estimatedUplift ?? 0) > 0);
+          if (top) {
+            nextActions.push({
+              command: `pax8 recommendations list --company "${top.name}" --json`,
+              description: `Review growth opportunities for ${top.name}`,
+            });
+          }
+        } else {
+          nextActions.push({
+            command: "pax8 companies list --coverage --json",
+            description: "Re-run with portfolio coverage analysis to surface gaps",
+          });
+        }
+        process.stdout.write(JSON.stringify({ companies: numbered, nextActions }, null, 2) + "\n");
+        return;
+      }
+
       output(numbered, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
