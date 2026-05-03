@@ -97,7 +97,9 @@ export async function buildContext(
     telemetry: { enabled: false },
   }));
 
-  const isDemo = process.env.PAX8_DEMO === "1" || config.demo === true;
+  const isDemo =
+    process.env.PAX8_DEMO === "1" ||
+    ("demo" in config && config.demo === true);
   const outputFormat = getOutputFormat(options, config.defaults?.output_format);
 
   let api: ApiClient | MockPax8Client;
