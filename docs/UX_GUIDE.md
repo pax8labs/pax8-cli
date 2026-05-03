@@ -271,9 +271,9 @@ pax8-cli has two audiences. One is the human at a terminal. The other is an AI a
 
 Most rules above already serve agents (deterministic stdout, JSON default in non-TTY, structured errors via `CliError`, demo mode for safe experimentation). This section covers agent-specific contracts on top.
 
-> **Status note:** parts of this section describe contracts pax8-cli is moving toward, not all of which are implemented today. Items marked **(planned)** are policy intent — open an issue before relying on them. Items marked **(implemented)** are live and enforced. Don't add a new command that violates a planned contract; design with it in mind so the eventual rollout doesn't require a rewrite.
+> **Status note:** items below are tagged **(implemented)** when the contract is live and enforced, or **(planned)** when it's policy intent — open an issue before relying on a planned contract. Don't add a new command that violates a planned contract; design with it in mind so the eventual rollout doesn't require a rewrite.
 
-### Machine-readable error codes — (planned)
+### Machine-readable error codes — (implemented)
 
 Agents shouldn't have to regex-match English error strings to decide whether to retry, re-auth, or escalate. `CliError` will carry a stable `code` field — a SCREAMING_SNAKE_CASE identifier like `ERROR_AUTH_EXPIRED`, `ERROR_COMPANY_NOT_FOUND`, `ERROR_RATE_LIMITED`, `ERROR_API_TIMEOUT`.
 
@@ -301,7 +301,7 @@ When `--json` is set, the error serializes to stderr as a structured object inst
 
 Codes will live in `packages/core/src/errors/codes.ts` and are append-only — never repurpose an existing code, even for a "near-match" failure mode. If you need a new code, add a new constant.
 
-### Idempotency keys for writes — (planned)
+### Idempotency keys for writes — (implemented)
 
 Every write command (`orders create`, `subscriptions create`, future `update` / `cancel` variants) accepts `--idempotency-key <uuid>`. The agent passes a key, retries on transient failure, and the CLI dedupes — you get either the original result or a cached "already processed" response, never a double-write.
 
@@ -314,7 +314,24 @@ Local cache: 24h TTL, keyed on `{command, key, args-hash}`. When a key matches a
 
 Reads never need a key.
 
-### Signal handling — (planned)
+### Out-of-band approval for agent-initiated writes — (planned)
+
+An agent with valid OAuth credentials can place orders today. That's appropriate for low-stakes writes and inappropriate for anything a partner wants to lay eyes on first. The contract for high-stakes writes is **CIBA** — the OpenID Connect [Client-Initiated Backchannel Authentication Flow](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) — where the agent constructs the payload but a human signs it off out-of-band.
+
+The flow:
+
+1. Agent assembles the write (e.g. a `pax8 orders create` payload) and submits it for approval rather than execution.
+2. Pax8's auth platform pushes an approval request to the partner's registered device — phone, hardware key, whatever's enrolled.
+3. The partner reviews the *exact* payload (company, product, quantity, price) and approves or denies it.
+4. On approval, the agent receives a token cryptographically scoped to that payload and submits the order with it. Mutating any field after sign-off invalidates the token — the agent cannot bait-and-switch.
+
+Composes with idempotency keys: the approval token is one-shot (single submission), but the submission itself is retried with the same `--idempotency-key` if the network drops. Together they give "approved exactly once, submitted at-least-once, deduped to exactly-once."
+
+Expect an **approval threshold** pattern: orders under a configurable dollar amount auto-approve via the standard `-y` / `--yes` flag; orders above the threshold require CIBA sign-off regardless of `--yes`. The threshold is partner-configured, not agent-configured.
+
+Tracking issue: [#98](https://github.com/pax8labs/pax8-cli/issues/98). Don't ship an agent-initiated write path that bypasses this — design new write commands so a CIBA approval step can slot in without changing the command surface.
+
+### Signal handling — (implemented)
 
 A `SIGINT` (Ctrl+C) must not corrupt the terminal or leave a half-finished write in ambiguous state. The top-level handler should:
 
@@ -323,6 +340,35 @@ A `SIGINT` (Ctrl+C) must not corrupt the terminal or leave a half-finished write
 3. **Exit with code 130** — the conventional SIGINT exit code. Not 1.
 
 Reads can be killed without ceremony. Writes should log enough context that a follow-up `pax8 orders show` or `subscriptions show` can confirm the actual state.
+
+### Next-action hints — (implementing)
+
+Every workflow that returns a list or summary should tell the agent — and the human — what to run next. The contract is the same shape everywhere:
+
+```json
+{
+  "command": "pax8 recommendations act --company \"Acme Corp\"",
+  "description": "Walk through and order the open recommendations for Acme Corp"
+}
+```
+
+- `command` is a runnable shell snippet. No prose, no placeholders the agent has to fill in beyond what's already in the JSON. If the command needs an argument that came from the response, embed it (with proper quoting).
+- `description` is one short sentence — enough for an agent or human to decide whether to follow it.
+
+Two delivery modes, depending on the response shape:
+
+| Response shape | Where `nextActions` lives | Flag |
+|---|---|---|
+| Single object (`status`, `report mrr/growth`, `invoices audit`) | Inline as a top-level `nextActions` field | Always emitted |
+| List/array (`companies list`, `subscriptions list`, `subscriptions renewals`, `recommendations list`, `invoices list`, `webhooks list`, `webhooks logs`) | Inside an envelope: `{ <resourceKey>: [...], nextActions: [...] }` | Opt-in via `--with-actions` |
+
+The opt-in flag for list commands exists because the default contract is "list commands return a flat array" — agents that already parse `pax8 ... list --json` as an array of records don't break. If they want hints, they pass `--with-actions` and accept the wrapped envelope.
+
+The resource key inside the envelope matches the resource name (`companies`, `subscriptions`, `renewals`, `recommendations`, `webhooks`, `logs`, `invoices`). Diagnostic siblings (e.g. `unmatchedProducts` on recommendations) ride alongside `nextActions`.
+
+**The rule:** every command that lists resources or summarizes state populates `nextActions` — inline for single-object summaries, behind `--with-actions` for arrays. Cap the array at five entries and rank by likely usefulness; an agent reading the list top-to-bottom should hit the highest-leverage next step first.
+
+Detail commands (`<resource> show <id>`) don't need `nextActions` — the agent already knows what they're looking at. Write commands (`create`, `update`, `cancel`) can include them in their single-object response when there's an obvious follow-up (e.g. `orders create` → `pax8 orders show <new-id>`).
 
 ### Stable list ordering — (implemented where the API permits)
 
@@ -348,6 +394,7 @@ Before opening the PR:
 - [ ] Errors flow through `handleCommandError()`. Custom errors use `CliError` with causes + recovery + docs.
 - [ ] Writes prompt for confirmation; honor `-y` / `--yes` / `PAX8_YES=1`.
 - [ ] Works under `PAX8_DEMO=1` end-to-end.
+- [ ] If the command returns a list or summary, populates `nextActions` — inline for single-object responses, behind `--with-actions` (`{ <resource>: [...], nextActions: [...] }`) for list responses. See §12.
 - [ ] Subprocess test in `packages/cli/src/__tests__/` covers TTY format, `--json`, and an error path.
 - [ ] Output is byte-stable: no timestamps or random IDs in the rendered output unless they came from the (mock) API.
 - [ ] Reviewed §12 ("Designing for agents") — if the command writes, has new error modes, or returns lists, confirm it doesn't violate any planned agent contract.
