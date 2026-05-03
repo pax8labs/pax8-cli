@@ -145,6 +145,116 @@ async function checkApiHealth(): Promise<CheckResult[]> {
   return results;
 }
 
+interface McpJson {
+  mcpServers?: {
+    pax8?: {
+      url?: string;
+      headers?: Record<string, string>;
+    };
+  };
+}
+
+async function findMcpJson(startDir: string): Promise<string | null> {
+  let dir = startDir;
+  // Walk up at most 8 levels to avoid pathological traversal
+  for (let i = 0; i < 8; i++) {
+    const candidate = path.join(dir, ".mcp.json");
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // not here, walk up
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+export async function checkMcp(opts?: {
+  cwd?: string;
+  fetchImpl?: typeof fetch;
+}): Promise<CheckResult> {
+  const name = "MCP server";
+  const isDemo = await isDemoMode();
+  if (isDemo) {
+    return { name, passed: true, detail: "Demo mode — MCP check skipped." };
+  }
+
+  const startDir = opts?.cwd ?? process.cwd();
+  const mcpPath = await findMcpJson(startDir);
+  if (!mcpPath) {
+    return {
+      name,
+      passed: true,
+      detail:
+        ".mcp.json not found — MCP not configured (skip if you don't use Claude/Cursor/Copilot)",
+    };
+  }
+
+  let parsed: McpJson;
+  try {
+    const raw = await fs.readFile(mcpPath, "utf8");
+    parsed = JSON.parse(raw) as McpJson;
+  } catch (err) {
+    return {
+      name,
+      passed: false,
+      detail: `Failed to parse ${mcpPath}: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  const server = parsed.mcpServers?.pax8;
+  const url = server?.url;
+  const token = server?.headers?.["x-pax8-mcp-token"];
+  if (!url || !token) {
+    return {
+      name,
+      passed: false,
+      detail: ".mcp.json found but missing pax8 server url or x-pax8-mcp-token header.",
+    };
+  }
+
+  const doFetch = opts?.fetchImpl ?? fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await doFetch(url, {
+      method: "GET",
+      headers: { "x-pax8-mcp-token": token, accept: "application/json, text/event-stream" },
+      signal: controller.signal,
+    });
+    if (res.status >= 200 && res.status < 300) {
+      return { name, passed: true, detail: "MCP server reachable, token valid" };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return {
+        name,
+        passed: false,
+        detail:
+          "MCP token invalid or revoked. Regenerate at https://app.pax8.com/integrations/mcp",
+      };
+    }
+    // Other 4xx (e.g. 405 from a streamable-HTTP MCP that rejects bare GET) means
+    // we reached the server — token shape unverified, but no point failing doctor.
+    return {
+      name,
+      passed: true,
+      detail: `MCP server reachable (HTTP ${res.status}); token shape unverified`,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      name,
+      passed: false,
+      detail: `MCP server unreachable. Check network/firewall. (${msg})`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function checkCredentialPermissions(): Promise<CheckResult> {
   const store = new CredentialStore();
   const result = await store.checkPermissions();
@@ -205,7 +315,7 @@ Examples:
     process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));
 
     // Run all checks in parallel for speed
-    const [nodeV, configF, authC, credPerms, tokenC, apiCs, cacheC, telC] = await Promise.all([
+    const [nodeV, configF, authC, credPerms, tokenC, apiCs, cacheC, telC, mcpC] = await Promise.all([
       checkNodeVersion(),
       checkConfigFile(),
       checkAuth(),
@@ -214,8 +324,9 @@ Examples:
       checkApiHealth(),
       checkCacheDir(),
       checkTelemetry(),
+      checkMcp(),
     ]);
-    const checks: CheckResult[] = [nodeV, configF, authC, credPerms, tokenC, ...apiCs, cacheC, telC];
+    const checks: CheckResult[] = [nodeV, configF, authC, credPerms, tokenC, ...apiCs, cacheC, telC, mcpC];
 
     let allPassed = true;
     for (const check of checks) {
