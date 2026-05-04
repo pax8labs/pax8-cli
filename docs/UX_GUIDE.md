@@ -275,7 +275,7 @@ Most rules above already serve agents (deterministic stdout, JSON default in non
 
 ### Machine-readable error codes — (implemented)
 
-Agents shouldn't have to regex-match English error strings to decide whether to retry, re-auth, or escalate. `CliError` will carry a stable `code` field — a SCREAMING_SNAKE_CASE identifier like `ERROR_AUTH_EXPIRED`, `ERROR_COMPANY_NOT_FOUND`, `ERROR_RATE_LIMITED`, `ERROR_API_TIMEOUT`.
+Agents shouldn't have to regex-match English error strings to decide whether to retry, re-auth, or escalate. `CliError` carries a stable `code` field — a SCREAMING_SNAKE_CASE identifier like `ERROR_AUTH_EXPIRED`, `ERROR_COMPANY_NOT_FOUND`, `ERROR_RATE_LIMITED`, `ERROR_API_TIMEOUT`.
 
 ```ts
 throw new CliError(
@@ -283,7 +283,7 @@ throw new CliError(
   ["The name didn't match any active company."],
   [`Run ${replCmd("pax8 companies list")} to see active companies.`],
   "https://devx.pax8.com/",
-  "ERROR_COMPANY_NOT_FOUND"          // ← new field
+  "ERROR_COMPANY_NOT_FOUND"
 );
 ```
 
@@ -299,11 +299,11 @@ When `--json` is set, the error serializes to stderr as a structured object inst
 }
 ```
 
-Codes will live in `packages/core/src/errors/codes.ts` and are append-only — never repurpose an existing code, even for a "near-match" failure mode. If you need a new code, add a new constant.
+Codes live in `packages/core/src/errors/codes.ts` and are append-only — never repurpose an existing code, even for a "near-match" failure mode. If you need a new code, add a new constant.
 
 ### Idempotency keys for writes — (implemented)
 
-Every write command (`orders create`, `subscriptions create`, future `update` / `cancel` variants) accepts `--idempotency-key <uuid>`. The agent passes a key, retries on transient failure, and the CLI dedupes — you get either the original result or a cached "already processed" response, never a double-write.
+Write commands accept `--idempotency-key <uuid>` for replay-safe retries. The agent passes a key, retries on transient failure, and the CLI dedupes — you get either the original result or a cached "already processed" response, never a double-write. Today this is wired into `orders create` and `invoices dispute`; new write commands should follow the same pattern.
 
 ```bash
 pax8 orders create --company c1 --product p1 --quantity 5 \
@@ -333,13 +333,13 @@ Tracking issue: [#98](https://github.com/pax8labs/pax8-cli/issues/98). Don't shi
 
 ### Signal handling — (implemented)
 
-A `SIGINT` (Ctrl+C) must not corrupt the terminal or leave a half-finished write in ambiguous state. The top-level handler should:
+A `SIGINT` (Ctrl+C) must not corrupt the terminal or leave a half-finished write in ambiguous state. The top-level handler:
 
-1. **Stop active spinners cleanly** — clear the line, don't `.fail()` (that prints `✗` which reads like an error).
-2. **If a write is in flight,** log `(cancelled)` to stderr with the idempotency key (if any) so the user can resume or investigate.
-3. **Exit with code 130** — the conventional SIGINT exit code. Not 1.
+1. **Stops active spinners cleanly** — clears the line, doesn't `.fail()` (that prints `✗` which reads like an error).
+2. **If a write is in flight,** logs `(cancelled)` to stderr with the idempotency key (if any) so the user can resume or investigate.
+3. **Exits with code 130** — the conventional SIGINT exit code. Not 1.
 
-Reads can be killed without ceremony. Writes should log enough context that a follow-up `pax8 orders show` or `subscriptions show` can confirm the actual state.
+Reads can be killed without ceremony. Writes log enough context that a follow-up `pax8 orders show` or `subscriptions show` can confirm the actual state.
 
 ### Next-action hints — (implementing)
 
@@ -397,4 +397,4 @@ Before opening the PR:
 - [ ] If the command returns a list or summary, populates `nextActions` — inline for single-object responses, behind `--with-actions` (`{ <resource>: [...], nextActions: [...] }`) for list responses. See §12.
 - [ ] Subprocess test in `packages/cli/src/__tests__/` covers TTY format, `--json`, and an error path.
 - [ ] Output is byte-stable: no timestamps or random IDs in the rendered output unless they came from the (mock) API.
-- [ ] Reviewed §12 ("Designing for agents") — if the command writes, has new error modes, or returns lists, confirm it doesn't violate any planned agent contract.
+- [ ] Reviewed §12 ("Designing for agents") — if the command writes, has new error modes, or returns lists, confirm it conforms to the agent contracts (implemented and planned).
