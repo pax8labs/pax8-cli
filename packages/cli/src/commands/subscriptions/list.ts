@@ -41,6 +41,7 @@ export const subscriptionsListCommand = new Command("list")
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
+  .option("--with-actions", "Wrap JSON output as { subscriptions, nextActions } instead of a flat array")
   .addHelpText(
     "after",
     `
@@ -50,6 +51,7 @@ Examples:
   pax8 subscriptions list --status Active
   pax8 subscriptions list --size 10 --page 2
   pax8 subscriptions list --json
+  pax8 subscriptions list --json --with-actions
   pax8 subscriptions list --csv
   pax8 subscriptions list --ids-only | xargs -I{} pax8 subscriptions show {}`
   )
@@ -86,6 +88,33 @@ Examples:
         for (const item of result.content) {
           process.stdout.write(item.id + "\n");
         }
+        return;
+      }
+
+      if (ctx.outputFormat === "json" && options.withActions) {
+        const nextActions: { command: string; description: string }[] = [];
+        const subsList = result.content;
+        const trials = subsList.filter((s) => (s.status ?? "").toLowerCase() === "trial");
+        const top = subsList[0];
+        if (top) {
+          nextActions.push({
+            command: `pax8 subscriptions show ${top.id}`,
+            description: `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`,
+          });
+        }
+        if (trials.length > 0) {
+          nextActions.push({
+            command: "pax8 subscriptions list --status Trial --json",
+            description: `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`,
+          });
+        }
+        nextActions.push({
+          command: "pax8 subscriptions renewals --json --with-actions",
+          description: "Check upcoming renewals before they auto-renew",
+        });
+        process.stdout.write(
+          JSON.stringify({ subscriptions: result.content, nextActions }, null, 2) + "\n"
+        );
         return;
       }
 
