@@ -59,7 +59,7 @@ The durable asset — questions this package answers without you having to assem
 - **API client** (`Pax8Client`) — typed wrapper over Pax8 v1 with auth, retry, and rate-limit awareness. Sub-clients: `companies`, `contacts`, `subscriptions`, `orders`, `invoices`, `products`, `usage`, `quotes`, `webhooks`.
 - **Mock client** (`MockPax8Client`) — drop-in replacement backed by an in-memory fixture. Same interface as `Pax8Client`. Used by the CLI for `PAX8_DEMO=1`.
 - **Bulk executor** (`executeBulk`) — concurrency-bounded batch runner with progress callbacks, used to apply a list of operations (e.g. ordering across many companies) without overwhelming the API rate limit.
-- **Types and Zod schemas** — `Subscription`, `Company`, `Invoice`, `Product`, `Order`, etc., plus typed errors (`Pax8ApiError`) and machine-readable error codes.
+- **Types and Zod schemas** — `Subscription`, `Company`, `Invoice`, `Product`, `Order`, etc., plus typed errors (`ApiError`, `AuthError`, `RateLimitError`, `NotFoundError`, `ValidationError`) and machine-readable error codes (`ERROR_AUTH_EXPIRED`, `ERROR_COMPANY_NOT_FOUND`, etc., as a `Pax8ErrorCode` union).
 
 ## Versioning
 
