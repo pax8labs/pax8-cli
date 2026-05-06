@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import { Telemetry, resetTelemetry, type TelemetryEvent } from "./telemetry.js";
+import { ERROR_COMPANY_NOT_FOUND } from "../errors/codes.js";
 
 function makeTmpDir(): string {
   return path.join(os.tmpdir(), `pax8-telemetry-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -114,7 +115,7 @@ describe("Telemetry", () => {
     (t as any).posthog = { capture: () => {}, flush: async () => {}, shutdown: async () => {} };
 
     const event1 = makeEvent();
-    const event2 = makeEvent({ command: "companies.get", success: false, error_code: "NOT_FOUND" });
+    const event2 = makeEvent({ command: "companies.get", success: false, error_code: ERROR_COMPANY_NOT_FOUND });
     t.track(event1);
     t.track(event2);
 

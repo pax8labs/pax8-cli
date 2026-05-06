@@ -53,6 +53,7 @@ export {
   ERROR_API_VALIDATION,
   ERROR_INVALID_INPUT,
   ERROR_NOT_AUTHORIZED,
+  ERROR_NOT_FOUND,
   ERROR_INTERNAL,
 } from "./errors/codes.js";
 export type { Pax8ErrorCode } from "./errors/codes.js";
