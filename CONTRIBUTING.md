@@ -90,6 +90,10 @@ Pick the affected packages, the bump type (`patch` / `minor` / `major`), and wri
 
 On merge to `main`, the release workflow opens (or updates) a `chore: release` PR that bumps versions and updates `CHANGELOG.md`. Merging that PR publishes to npm with [provenance](https://docs.npmjs.com/generating-provenance-statements) attestations.
 
+### Maintainer note: npm trusted publishing
+
+The release workflow publishes via [npm OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) — no `NPM_TOKEN` secret. For this to work, the `@pax8` scope must have the `pax8labs/pax8-cli` repository and the `Release` workflow registered as a trusted publisher at <https://www.npmjs.com/settings/pax8/packages> for every package the workflow publishes (`@pax8/cli`, `@pax8/core`). The workflow already declares `permissions.id-token: write` and `setup-node`'s `registry-url`; once the npm side is configured, `npm publish` exchanges the OIDC token for an ephemeral publish token automatically.
+
 ## Reporting Issues
 
 Use GitHub Issues. Include:

@@ -40,7 +40,12 @@ jobs:
           version: pnpm changeset version
           commit: "chore: release"
           title: "chore: release"
+        # npm OIDC trusted publishing: when this workflow has `id-token: write`
+        # and the @pax8 scope has the publishing repo+workflow registered as a
+        # trusted publisher at https://www.npmjs.com/settings/pax8/packages,
+        # `npm publish` exchanges the OIDC token for an ephemeral publish token
+        # automatically — no NPM_TOKEN secret required.
+        # https://docs.npmjs.com/trusted-publishers
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
