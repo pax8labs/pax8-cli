@@ -19,6 +19,7 @@ import {
 import type { CreateOrderInput, OrderLineItemInput, BillingTerm } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
+import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
 import { hashArgs, isValidKey, withIdempotency } from "../../lib/idempotency.js";
 import { setTelemetryFields } from "../../lib/telemetry-context.js";
 
@@ -162,29 +163,15 @@ Examples:
       // Resolve commitmentTermId from existing subscription for the SAME product.
       // commitmentTermId UUIDs are product-specific and cannot be reused across products.
       if (!commitmentTermId && (commitmentTerm || requiresCommitment)) {
-        try {
-          const subs = await ctx.api.subscriptions.list({
-            companyId: resolvedCompanyId,
-            status: "Active",
-          });
-          // Only match subscriptions for the same product
-          const matches = subs.content.filter((s) =>
-            s.productId === resolvedProductId && s.commitment?.id
-          );
-          // Prefer matching commitment term label if specified
-          const match = (commitmentTerm
-            ? matches.find((s) => s.commitment?.term === commitmentTerm)
-            : null
-          ) ?? matches[0];
-          if (match?.commitment?.id) {
-            commitmentTermId = match.commitment.id;
-            if (!commitmentTerm) commitmentTerm = match.commitment.term;
-            if (process.env.PAX8_DEBUG) {
-              process.stderr.write(`[debug] resolved commitmentTermId=${commitmentTermId} from subscription ${match.id}\n`);
-            }
-          }
-        } catch (err) {
-          if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] subscription lookup for commitmentTermId failed: ${err}\n`);
+        const info = await resolveCommitmentTermId(
+          ctx,
+          resolvedCompanyId,
+          resolvedProductId,
+          commitmentTerm,
+        );
+        if (info) {
+          commitmentTermId = info.id;
+          if (!commitmentTerm) commitmentTerm = info.term;
         }
       }
 
