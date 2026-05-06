@@ -1,14 +1,14 @@
 # Default owners for everything
-* @jdulberger
+* @jdulberger @cbrownpax8
 
 # Core package
-packages/core/ @jdulberger
+packages/core/ @jdulberger @cbrownpax8
 
 # CLI package
-packages/cli/ @jdulberger
+packages/cli/ @jdulberger @cbrownpax8
 
 # Claude skill
-packages/claude-skill/ @jdulberger
+packages/claude-skill/ @jdulberger @cbrownpax8
 
 # CI and config
-.github/ @jdulberger
+.github/ @jdulberger @cbrownpax8
