@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, it, expect, vi } from "vitest";
 import { resolveProduct } from "./resolve-product.js";
 import type { CommandContext } from "./context.js";

@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { execCli } from "../index.js";
 
 export const pax8_subscriptions_list = {

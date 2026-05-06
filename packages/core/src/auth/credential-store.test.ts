@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CredentialStore } from "./credential-store.js";
 import * as fs from "node:fs/promises";

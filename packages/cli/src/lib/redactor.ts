@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Redactor for the `pax8 report-bug` command. Takes a structured error
  * envelope and returns a sanitized copy with anything that smells like PII,

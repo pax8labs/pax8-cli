@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 export class ApiError extends Error {
   public readonly statusCode: number;
   public readonly requestPath: string;

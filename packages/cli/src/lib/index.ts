@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 export { output, type Column, type OutputOptions } from "./output.js";
 export { createSpinner } from "./spinner.js";
 export { CliError, handleCommandError } from "./errors.js";

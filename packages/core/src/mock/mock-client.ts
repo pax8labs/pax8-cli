@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 // MockPax8Client — drop-in replacement for the real API client in demo mode.
 // Returns demo data with simulated pagination, latency, and filtering.
 

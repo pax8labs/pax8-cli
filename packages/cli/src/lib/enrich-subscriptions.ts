@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import type { CommandContext } from "./context.js";
 
 /** Minimal shape needed by enrichProductNames — any object with productId and optional productName. */

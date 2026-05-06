@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 export { pax8_companies_list, pax8_companies_show } from "./companies.js";
 export {
   pax8_subscriptions_list,

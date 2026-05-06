@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { InvoicesApi } from "./invoices.js";
 import type { Pax8Client } from "./client.js";

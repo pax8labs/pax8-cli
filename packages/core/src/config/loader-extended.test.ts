@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, it, expect } from "vitest";
 import { getConfigDir, ensureConfigDir } from "./loader.js";
 import * as path from "node:path";

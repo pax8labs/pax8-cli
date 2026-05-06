@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { Command } from "commander";
 import chalk from "chalk";
 import { categorizeProduct, ALL_CATEGORIES, getRecommendations, getPortfolioCoverage, type ProductCategory } from "@pax8/core";
