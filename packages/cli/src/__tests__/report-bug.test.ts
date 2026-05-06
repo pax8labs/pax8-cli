@@ -176,4 +176,45 @@ describe("handleCommandError last-error.json side effect", () => {
     expect(result.stdout).toContain("[ERROR_COMPANY_NOT_FOUND]");
     expect(result.stdout).toContain("Sanitized by `pax8 report-bug`");
   });
+
+  // #170: regression test — a company name typed at the CLI must not appear
+  // anywhere in the persisted envelope. The `command` field renders
+  // `<REDACTED:ARG>` placeholders; the `message` / `causes` / etc. get the
+  // same value scrubbed via the redactor's argTokens post-pass.
+  it("does not leak a positional company-name argument into last-error.json (#170)", async () => {
+    const sensitiveName = "ZZZSensitiveCustomerInc";
+    await runCliExpectFailure(
+      ["companies", "show", sensitiveName, "--json"],
+      { PAX8_CONFIG_DIR: tmpDir }
+    );
+
+    const envPath = path.join(tmpDir, "last-error.json");
+    const raw = await fs.readFile(envPath, "utf-8");
+    // The raw value must not appear anywhere in the file on disk.
+    expect(raw).not.toContain(sensitiveName);
+
+    const env = JSON.parse(raw);
+    // Structure preserved.
+    expect(env.command).toBe("companies show <REDACTED:ARG>");
+    expect(env.flags).toContain("--json");
+    expect(env.code).toBe("ERROR_COMPANY_NOT_FOUND");
+    // Message had the value interpolated (`Company not found: "${input}"`)
+    // and now shows the placeholder.
+    expect(env.message).toContain("<REDACTED:ARG>");
+    expect(env.message).not.toContain(sensitiveName);
+  });
+
+  it("report-bug --print does not leak the positional value in its body (#170)", async () => {
+    const sensitiveName = "ZZZSensitiveCustomerInc";
+    await runCliExpectFailure(
+      ["companies", "show", sensitiveName, "--json"],
+      { PAX8_CONFIG_DIR: tmpDir }
+    );
+    const result = await runCliExpectSuccess(["report-bug", "--print"], {
+      PAX8_CONFIG_DIR: tmpDir,
+    });
+    expect(result.stdout).not.toContain(sensitiveName);
+    expect(result.stdout).toContain("<REDACTED:ARG>");
+    expect(result.stdout).toContain("companies show <REDACTED:ARG>");
+  });
 });

@@ -22,6 +22,7 @@ import {
   type Pax8ErrorCode,
 } from "@pax8/core";
 import { replCmd } from "./confirm.js";
+import { redactEnvelope } from "./redactor.js";
 
 declare const __CLI_VERSION__: string;
 
@@ -158,14 +159,40 @@ function getCliVersion(): string {
 }
 
 /**
- * Best-effort extraction of the command name (e.g. "companies list") and the
- * flag *names* (e.g. ["--json", "--page"]) from `process.argv`. We do not
- * include flag values — those frequently contain customer names or IDs.
+ * Best-effort extraction of the command name (e.g. "companies list"), the
+ * flag *names* (e.g. ["--json", "--page"]), and the positional argument
+ * *values* from `process.argv`.
+ *
+ * The returned `command` field renders positional arguments as
+ * `<REDACTED:ARG>` placeholders rather than their literal values, so that
+ * what we persist to disk preserves the structure of the invocation
+ * (`companies show <REDACTED:ARG>`) without leaking the user-supplied
+ * customer / company / product name. See #170 — the public README's
+ * Telemetry section commits to never sending names, but this field used to
+ * pass them through.
+ *
+ * `argTokens` (the raw values) is returned **only** for the redactor's
+ * post-pass to strip these same values from the message / causes /
+ * recoverySteps fields where commands may have interpolated them
+ * (`Company not found: "${input}"`). It is never written to disk.
+ *
+ * Subcommand detection: we treat the leading run of tokens that look like
+ * Commander subcommand names (`/^[a-z][\w-]*$/i`, capped at 3 levels) as
+ * the command path. Any non-flag token after that boundary is a positional
+ * arg. Flags are collected from anywhere in argv, not only before the
+ * first positional, fixing a pre-existing bug where
+ * `pax8 companies show "Acme" --json` lost the `--json` flag.
  */
-function extractCommandAndFlags(): { command: string; flags: string[] } {
+function extractCommandAndFlags(): {
+  command: string;
+  flags: string[];
+  argTokens: string[];
+} {
   const args = process.argv.slice(2);
   const cmdParts: string[] = [];
   const flags: string[] = [];
+  const argTokens: string[] = [];
+  let inSubcommandPrefix = true;
   for (const a of args) {
     if (a.startsWith("--")) {
       // Strip "--flag=value" form down to "--flag".
@@ -173,18 +200,33 @@ function extractCommandAndFlags(): { command: string; flags: string[] } {
       flags.push(eq >= 0 ? a.slice(0, eq) : a);
     } else if (a.startsWith("-")) {
       flags.push(a);
-    } else if (cmdParts.length < 3 && /^[a-z][\w-]*$/i.test(a)) {
-      // Conservative: only keep tokens that look like Commander subcommand
-      // names. This filters out positional values like company names or IDs.
+    } else if (
+      inSubcommandPrefix &&
+      cmdParts.length < 2 &&
+      /^[a-z][\w-]*$/i.test(a)
+    ) {
+      // Still consuming the leading subcommand path. Cap at 2 levels — the
+      // CLI's deepest command tree today is `<group> <action>` (e.g.
+      // `companies show`, `recommendations act`). Leaving this generous (the
+      // pre-#170 code allowed up to 3) would mistake a positional like
+      // `pax8 companies show definitely-does-not-exist` for a subcommand
+      // and skip redacting it. If a future subcommand goes 3 deep, raise
+      // this cap intentionally.
       cmdParts.push(a);
     } else {
-      // Stop accumulating once we hit something that isn't a subcommand.
-      break;
+      // Once we see a non-subcommand-shaped token, every subsequent non-flag
+      // token is a positional argument value. Capture it for the redactor
+      // post-pass; render a placeholder in the command string.
+      inSubcommandPrefix = false;
+      argTokens.push(a);
     }
   }
+  const placeholders = argTokens.map(() => "<REDACTED:ARG>");
+  const commandRendered = [...cmdParts, ...placeholders].join(" ") || "unknown";
   return {
-    command: cmdParts.join(" ") || "unknown",
+    command: commandRendered,
     flags: [...new Set(flags)].sort(),
+    argTokens,
   };
 }
 
@@ -192,11 +234,24 @@ function writeLastErrorEnvelope(envelope: ErrorEnvelope): void {
   try {
     const dir = getConfigDir();
     fs.mkdirSync(dir, { recursive: true });
-    const { command, flags } = extractCommandAndFlags();
+    const { command, flags, argTokens } = extractCommandAndFlags();
+    // Decision (#170): redact at envelope-write time, not at report-bug-print
+    // time. The file on disk should already be sanitized — both because a
+    // future tool that reads ~/.pax8/last-error.json (e.g. an upload helper)
+    // should see redacted content, and because it shrinks the surface area
+    // for redactor-bypass bugs. The acceptable trade-off is that a developer
+    // debugging their own error locally gets less context here; they have
+    // the original failure on stderr already.
+    const redacted = redactEnvelope(
+      {
+        ...envelope,
+        command,
+        flags,
+      },
+      argTokens,
+    );
     const payload = {
-      ...envelope,
-      command,
-      flags,
+      ...redacted,
       cli_version: getCliVersion(),
       node_version: process.version,
       os: process.platform,

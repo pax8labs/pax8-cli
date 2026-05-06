@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 Initial public release.
 
+### Security
+
+- `pax8 report-bug` now redacts positional argument values (e.g. customer / company / product names typed at the CLI) from both the `command` and `Message` fields of the persisted error envelope and the submitted report. The command *structure* is preserved (`companies show <REDACTED:ARG>`) but the user-supplied value is replaced everywhere, including inside interpolated error messages like `Company not found: "<name>"`. Closes #170.
+
 ### Added
 
 - **Seven core workflows** computed locally from raw Pax8 data: `status`, `companies list --coverage`, `subscriptions renewals`, `invoices audit`, `recommendations list`, `recommendations act`, and `report mrr` / `report growth`.

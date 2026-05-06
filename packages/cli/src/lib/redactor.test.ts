@@ -249,3 +249,127 @@ describe("redactEnvelope", () => {
     expect(out.flags).toBeUndefined();
   });
 });
+
+// #170: positional-arg redaction. The existing rules (UUID/email/path/JWT/
+// long token) don't catch a normal "Acme Corp"-shaped string, so the
+// redactor needs an opt-in pass driven by the original argv values.
+describe("redactString with argTokens", () => {
+  it("replaces a single full-word token with <REDACTED:ARG>", () => {
+    expect(redactString("Company not found: Acme", ["Acme"])).toBe(
+      "Company not found: <REDACTED:ARG>",
+    );
+  });
+
+  it("replaces a multi-word company name with one <REDACTED:ARG>", () => {
+    const out = redactString(
+      'Company not found: "Real Customer Inc"',
+      ["Real Customer Inc"],
+    );
+    expect(out).toBe('Company not found: "<REDACTED:ARG>"');
+  });
+
+  it("does not substring-match the token inside larger words", () => {
+    // argTokens=["Inc"] must NOT scrub "Inc" out of "Incident".
+    const out = redactString(
+      "An Incident occurred for Inc on Tuesday",
+      ["Inc"],
+    );
+    expect(out).toBe("An Incident occurred for <REDACTED:ARG> on Tuesday");
+  });
+
+  it("strips multiple occurrences of the same token", () => {
+    const out = redactString("Acme failed; retried Acme; gave up.", ["Acme"]);
+    expect(out).toBe(
+      "<REDACTED:ARG> failed; retried <REDACTED:ARG>; gave up.",
+    );
+  });
+
+  it("strips multiple distinct tokens, longest-first", () => {
+    // If we scrubbed shortest-first, "Real Customer Inc" containing "Inc"
+    // would get partially eaten. Sort longest-first inside the redactor.
+    const out = redactString(
+      'Failed for "Real Customer Inc" then "Inc"',
+      ["Inc", "Real Customer Inc"],
+    );
+    expect(out).toBe('Failed for "<REDACTED:ARG>" then "<REDACTED:ARG>"');
+  });
+
+  it("treats regex metacharacters in tokens as literal", () => {
+    // argTokens come straight from argv — they may contain `.`, `(`, `*`, etc.
+    const out = redactString("Bad query: a.b.c (test)", ["a.b.c", "(test)"]);
+    expect(out).toBe("Bad query: <REDACTED:ARG> <REDACTED:ARG>");
+  });
+
+  it("skips tokens shorter than 2 characters", () => {
+    // A 1-char positional arg ("a", "x") would cause runaway over-redaction
+    // across an English message; skip to be safe.
+    const out = redactString("a quick brown fox", ["a"]);
+    expect(out).toBe("a quick brown fox");
+  });
+
+  it("skips empty / whitespace-only tokens", () => {
+    expect(redactString("hello world", ["", "  "])).toBe("hello world");
+  });
+
+  it("argToken pass runs before generic rules so it doesn't fight them", () => {
+    // A 32-char token-shaped positional arg should still be replaced with
+    // <REDACTED:ARG>, not <REDACTED:TOKEN>, since argToken is more specific.
+    const tok = "AbCdEfGhIjKlMnOpQrStUvWxYz012345"; // 32 chars, mixed
+    const out = redactString(`secret=${tok} done`, [tok]);
+    expect(out).toBe("secret=<REDACTED:ARG> done");
+  });
+
+  it("is a no-op when argTokens is empty (existing rules unchanged)", () => {
+    const out = redactString("hello world", []);
+    expect(out).toBe("hello world");
+  });
+});
+
+describe("redactEnvelope with argTokens (#170)", () => {
+  it("scrubs the company name from message, command, and causes", () => {
+    // Reproduces the leak in #170: a company name typed at the CLI shows up
+    // in command (via argv concat) and in message (via CliError interpolation).
+    const env: BugReportEnvelope = {
+      code: "ERROR_COMPANY_NOT_FOUND",
+      message: 'Failed to show company: Company not found: "Real Customer Inc"',
+      causes: ["Tried to fetch Real Customer Inc from /companies/by-name"],
+      recoverySteps: ["Check the spelling of Real Customer Inc and try again"],
+      command: "companies show Real Customer Inc",
+      flags: ["--json"],
+    };
+    const out = redactEnvelope(env, ["Real Customer Inc"]);
+    const all = JSON.stringify(out);
+    expect(all).not.toContain("Real Customer Inc");
+    expect(out.message).toContain("<REDACTED:ARG>");
+    expect(out.causes?.[0]).toContain("<REDACTED:ARG>");
+    expect(out.recoverySteps?.[0]).toContain("<REDACTED:ARG>");
+    expect(out.command).toContain("<REDACTED:ARG>");
+    // Non-PII metadata pass-through unchanged.
+    expect(out.code).toBe("ERROR_COMPANY_NOT_FOUND");
+    expect(out.flags).toEqual(["--json"]);
+  });
+
+  it("default (no argTokens) preserves prior behavior — non-pattern names slip through", () => {
+    // Documents the pre-fix behavior so a future regression that *removes*
+    // the argTokens param doesn't silently start reverting #170.
+    const env: BugReportEnvelope = {
+      message: 'Company not found: "Acme Corp"',
+    };
+    const out = redactEnvelope(env);
+    // No argTokens → "Acme Corp" survives (it doesn't match any other rule).
+    expect(out.message).toContain("Acme Corp");
+  });
+
+  it("argTokens does not break the existing UUID / path / token rules", () => {
+    const env: BugReportEnvelope = {
+      message:
+        "client_id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 for Acme at /Users/jdoe/.pax8",
+    };
+    const out = redactEnvelope(env, ["Acme"]);
+    expect(out.message).toContain("<REDACTED:UUID>");
+    expect(out.message).toContain("<REDACTED:PATH>");
+    expect(out.message).toContain("<REDACTED:ARG>");
+    expect(out.message).not.toContain("Acme");
+    expect(out.message).not.toContain("jdoe");
+  });
+});
