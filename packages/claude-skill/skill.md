@@ -1,9 +1,9 @@
 ---
 name: pax8
-description: Manage Pax8 cloud marketplace operations — query customers, subscriptions, invoices, renewals, and products
+description: Answer Pax8 marketplace questions — renewals, invoice audits, MRR, growth recommendations — and place orders. Computed locally from public Pax8 API data.
 ---
 
-You have access to the `pax8` CLI on PATH. Run it directly via Bash — never `node packages/cli/dist/index.js` or `pnpm dev`. The CLI is the source of truth: it computes renewals, audits invoices, and ranks recommendations server-side, so you should not reimplement that logic.
+You have access to the `pax8` CLI on PATH. Run it directly via Bash — never `node packages/cli/dist/index.js` or `pnpm dev`. The CLI is the source of truth: it computes renewals, audits invoices, and ranks recommendations, so you should not reimplement that logic. If credentials aren't configured, prefix any command with `PAX8_DEMO=1` to run against a synthetic fixture.
 
 ## Safety: Read-only vs. Write Commands
 
@@ -52,10 +52,11 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 - **Act first.** Your first response must include the right `pax8` command. No preamble, no "let me check."
 - **No clarifying questions.** Use sensible defaults: all companies, current month, 30-day renewal window, top 10 results.
 - **Parallel fetches.** When you need two independent calls (e.g. subs + companies), run them in parallel.
-- **Read-only is free.** Never confirm before listing/showing/auditing. Always confirm before `orders create`, `subscriptions update`, or `subscriptions cancel`.
 - **Resolve names, hide UUIDs.** Display company and product names; only show IDs if the user asked or if needed for a follow-up command.
 - **Order previews are mandatory.** Run `orders create` without `--yes` so the user sees price/total/MRR before confirming. Pass `--yes` only when the user has already approved this specific order.
 - **Lead with the number.** Total MRR, count of renewals, dollar impact — top of the response. Top 3-5 rows, not every row.
+
+(Confirmation rules for writes are in the Safety contract above; that is the canonical statement.)
 
 ## Output flags
 
@@ -67,7 +68,7 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
 | `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`status`, `report mrr/growth`, `invoices audit`) always include `nextActions` inline. |
 
-Pagination: most list commands default to `--size 25`. Use `--size 1000` for portfolio-wide analysis (MRR, audits, recs). Don't fetch 1000 if the user asked for "top 5."
+Result size: list commands default to `--size 25`. For portfolio-wide analysis (MRR, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 
 ## Commands
 
@@ -134,6 +135,18 @@ pax8 companies list --json
 pax8 recommendations list --json --product "<name>"
 ```
 Filter by product (e.g. `"backup"`, `"AvePoint"`, `"Entra"`). Returns ranked customers with estimated uplift and ready-to-run order commands.
+
+## Falling back to raw data
+
+The recipes above cover the questions the CLI is opinionated about. For novel questions (custom analytics, ad-hoc joins, "show me all subscriptions ending in Q3 grouped by vendor"), use the raw list commands and assemble the answer yourself with `jq`:
+
+```
+pax8 subscriptions list --json --size 1000
+pax8 invoices list --json
+pax8 companies list --json
+```
+
+Don't reimplement what's already a first-class command (renewals, audit, recommendations, MRR) — those exist precisely because they're hard to get right from the raw shape.
 
 ## Error and edge cases
 
