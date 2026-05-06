@@ -90,16 +90,24 @@ describe("installSigintHandler — capture and invoke", () => {
     expect(sigintHandler).not.toBeNull();
   });
 
-  it("on first SIGINT exits with code 130", () => {
+  // The first-SIGINT path now awaits a bounded telemetry flush before
+  // exiting (#145), so `process.exit(130)` lands on a microtask rather
+  // than synchronously. Tests yield with an explicit microtask hop.
+  const settle = (): Promise<void> =>
+    new Promise((resolve) => setImmediate(resolve));
+
+  it("on first SIGINT exits with code 130", async () => {
     expect(sigintHandler).not.toBeNull();
     sigintHandler!();
+    await settle();
     expect(exitSpy).toHaveBeenCalledWith(130);
   });
 
-  it("on second SIGINT also exits with 130 (Node default takes over)", () => {
+  it("on second SIGINT also exits with 130 (Node default takes over)", async () => {
     expect(sigintHandler).not.toBeNull();
     sigintHandler!();
     sigintHandler!();
+    await settle();
     expect(exitSpy).toHaveBeenCalledTimes(2);
     expect(exitSpy).toHaveBeenLastCalledWith(130);
   });
@@ -110,6 +118,7 @@ describe("installSigintHandler — capture and invoke", () => {
     fresh.markWriteInFlight("orders", "(idempotency-key=xyz)");
 
     sigintHandler!();
+    await settle();
 
     const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
     expect(written).toContain("(cancelled)");
@@ -118,9 +127,10 @@ describe("installSigintHandler — capture and invoke", () => {
     expect(exitSpy).toHaveBeenCalledWith(130);
   });
 
-  it("on first SIGINT without an in-flight write skips the (cancelled) hint", () => {
+  it("on first SIGINT without an in-flight write skips the (cancelled) hint", async () => {
     expect(sigintHandler).not.toBeNull();
     sigintHandler!();
+    await settle();
     const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
     expect(written).not.toContain("(cancelled)");
     expect(exitSpy).toHaveBeenCalledWith(130);

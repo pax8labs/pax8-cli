@@ -59,6 +59,6 @@ Examples:
         );
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list products");
+      await handleCommandError(error, spinner, "Failed to list products");
     }
   });

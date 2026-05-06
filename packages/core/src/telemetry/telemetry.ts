@@ -212,6 +212,41 @@ export class Telemetry {
       this.posthog = null;
     }
   }
+
+  /**
+   * Flush any buffered events and shut down the PostHog client, bounded by
+   * `timeoutMs`. Used on the error-exit path so a hung PostHog connection
+   * cannot stall the user's CLI before `process.exit`.
+   *
+   * Returns immediately (a resolved promise) when telemetry is disabled —
+   * opt-out users pay no latency.
+   */
+  async flushAndShutdown(timeoutMs = 2000): Promise<void> {
+    if (!this.enabled) return;
+    if (this.buffer.length === 0 && !this.posthog) return;
+
+    const work = (async (): Promise<void> => {
+      try {
+        await this.flush();
+      } catch {
+        // flush() already swallows internally; defensive belt + suspenders.
+      }
+      await this.shutdown();
+    })();
+
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+      // Don't keep the event loop alive on our account.
+      timer.unref?.();
+    });
+
+    try {
+      await Promise.race([work, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
 }
 
 // Singleton

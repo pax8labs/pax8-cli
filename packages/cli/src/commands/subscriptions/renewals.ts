@@ -168,6 +168,6 @@ Examples:
 
       process.stdout.write("\n");
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to fetch renewals");
+      await handleCommandError(error, spinner, "Failed to fetch renewals");
     }
   });

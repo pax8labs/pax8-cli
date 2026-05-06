@@ -437,6 +437,6 @@ Examples:
       });
       await promptNextSteps(steps);
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to generate recommendations");
+      await handleCommandError(error, spinner, "Failed to generate recommendations");
     }
   });

@@ -12,12 +12,12 @@ import {
   ERROR_API_VALIDATION,
   ERROR_INVALID_INPUT,
   ERROR_PRODUCT_NOT_FOUND,
-  getTelemetry,
 } from "@pax8/core";
 import type { CreateOrderInput, OrderLineItemInput, BillingTerm } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { hashArgs, isValidKey, loadEntry, saveEntry } from "../../lib/idempotency.js";
+import { setTelemetryFields } from "../../lib/telemetry-context.js";
 
 export const ordersCreateCommand = new Command("create")
   .description("Create a new order")
@@ -56,7 +56,7 @@ Examples:
     let argsHash: string | null = null;
     if (idempotencyKey !== undefined) {
       if (!isValidKey(idempotencyKey)) {
-        handleCommandError(
+        await handleCommandError(
           new CliError(
             `Invalid idempotency key: "${idempotencyKey}"`,
             [
@@ -83,7 +83,7 @@ Examples:
         const cached = await loadEntry(commandName, idempotencyKey);
         if (cached) {
           if (cached.argsHash !== argsHash) {
-            handleCommandError(
+            await handleCommandError(
               new CliError(
                 "Idempotency key reused with different arguments — refusing to retry.",
                 [
@@ -330,26 +330,15 @@ Examples:
 
       spinner.succeed("Order created 🎉");
 
-      // Track revenue
-      try {
-        const tel = getTelemetry();
-        const orderMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : undefined;
-        tel.track({
-          event: "command_executed",
-          command: "orders.create",
-          flags: [],
-          duration_ms: 0,
-          success: true,
-          cli_version: "0.1.0",
-          node_version: process.version,
-          os: process.platform,
-          demo_mode: process.env.PAX8_DEMO === "1",
-          order_success: true,
-          order_total_dollars: unitPrice ? unitPrice * confirmedQty : undefined,
-          order_mrr_impact: orderMrr ?? undefined,
-          order_seats: confirmedQty,
-        });
-      } catch { /* telemetry never breaks the CLI */ }
+      // Contribute revenue counters to the single command_executed event
+      // emitted by the postAction hook (#146 — was double-firing).
+      const orderMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : undefined;
+      setTelemetryFields({
+        order_success: true,
+        order_total_dollars: unitPrice ? unitPrice * confirmedQty : undefined,
+        order_mrr_impact: orderMrr,
+        order_seats: confirmedQty,
+      });
 
       if (ctx.outputFormat === "json") {
         const jsonMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : null;
@@ -415,7 +404,7 @@ Examples:
         if (error.statusCode === 404) {
           // Extract a short searchable name from the full product name
           const shortName = displayProduct.replace(/\s*\[.*?\]\s*/g, "").replace(/\s*\(.*?\)\s*/g, "").trim().split(" ").slice(0, 4).join(" ");
-          handleCommandError(
+          await handleCommandError(
             new CliError(
               `"${displayProduct}" can't be ordered for ${displayCompany}`,
               [
@@ -448,7 +437,7 @@ Examples:
           }
           steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
 
-          handleCommandError(
+          await handleCommandError(
             new CliError(
               `Can't order "${displayProduct}" for ${displayCompany}`,
               causes,
@@ -475,7 +464,7 @@ Examples:
           }
           steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
 
-          handleCommandError(
+          await handleCommandError(
             new CliError(
               `Can't order "${displayProduct}" for ${displayCompany}`,
               causes,
@@ -487,6 +476,6 @@ Examples:
         }
       }
 
-      handleCommandError(error, undefined, "Failed to create order");
+      await handleCommandError(error, undefined, "Failed to create order");
     }
   });

@@ -85,6 +85,6 @@ Examples:
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes delete ${quote.id}`))}  ${chalk.dim("delete this quote")}\n`);
       process.stderr.write("\n");
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to show quote");
+      await handleCommandError(error, spinner, "Failed to show quote");
     }
   });

@@ -12,9 +12,32 @@ import {
   ERROR_PRODUCT_NOT_FOUND,
   ERROR_RATE_LIMITED,
   ERROR_SUBSCRIPTION_NOT_FOUND,
+  getTelemetry,
   type Pax8ErrorCode,
 } from "@pax8/core";
 import { replCmd } from "./confirm.js";
+
+/**
+ * Flush buffered telemetry and shut down the PostHog client before the CLI
+ * exits. Bounded by a 2s timeout so a hung egress can never stall the user.
+ * No-op fast path when telemetry is disabled (the default), so opt-out users
+ * pay nothing for this guarantee. Errors are swallowed — telemetry must
+ * never crash the CLI.
+ *
+ * Exported so the top-level signal/error handlers in `index.ts` can reuse
+ * the same flush-before-exit semantics.
+ *
+ * See #145 — without this, the in-memory PostHog buffer was being dropped
+ * by `process.exit(1)` on every error path, making PostHog dashboards
+ * report ~100% success regardless of reality.
+ */
+export async function flushTelemetryBeforeExit(timeoutMs = 2000): Promise<void> {
+  try {
+    await getTelemetry().flushAndShutdown(timeoutMs);
+  } catch {
+    // Telemetry must never crash the CLI.
+  }
+}
 
 export class CliError extends Error {
   constructor(
@@ -174,11 +197,11 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
   };
 }
 
-export function handleCommandError(
+export async function handleCommandError(
   error: unknown,
   spinner?: Ora,
   context?: string,
-): never {
+): Promise<never> {
   // Stop spinner if active
   if (spinner) {
     try {
@@ -192,6 +215,9 @@ export function handleCommandError(
   if (isJsonOutputRequested()) {
     const envelope = buildErrorEnvelope(error, context);
     process.stderr.write(JSON.stringify(envelope, null, 2) + "\n");
+    // Flush telemetry before exit (#145) so failure events actually reach
+    // PostHog. Bounded by a 2s timeout in flushAndShutdown.
+    await flushTelemetryBeforeExit();
     process.exit(1);
 
     // Honor never return contract when process.exit is mocked
@@ -263,6 +289,9 @@ export function handleCommandError(
     );
   }
 
+  // Flush telemetry before exit (#145) so failure events actually reach
+  // PostHog. Bounded by a 2s timeout in flushAndShutdown.
+  await flushTelemetryBeforeExit();
   process.exit(1);
 
   // If process.exit was overridden (e.g. REPL mode), throw to stop execution.

@@ -83,7 +83,7 @@ Examples:
         process.stderr.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list contacts");
+      await handleCommandError(error, spinner, "Failed to list contacts");
     }
   });
 

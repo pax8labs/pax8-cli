@@ -127,6 +127,6 @@ Examples:
       out.write(`  ${"Projected ARR".padEnd(nameWidth)}  ${"".padEnd(11)}  ${chalk.bold(formatCurrency(projectedArr).padStart(12))}\n`);
       out.write("\n");
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to calculate MRR");
+      await handleCommandError(error, spinner, "Failed to calculate MRR");
     }
   });

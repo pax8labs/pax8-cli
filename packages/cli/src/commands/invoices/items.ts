@@ -69,6 +69,6 @@ Examples:
         );
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list invoice items");
+      await handleCommandError(error, spinner, "Failed to list invoice items");
     }
   });

@@ -116,6 +116,6 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Items:".padEnd(14))}${updated.lineItems?.length ?? 0}\n`);
       process.stdout.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to update quote");
+      await handleCommandError(error, undefined, "Failed to update quote");
     }
   });

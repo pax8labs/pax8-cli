@@ -24,6 +24,7 @@ import { versionCommand } from "./commands/version.js";
 import { initCommand } from "./commands/init.js";
 import { handleCommandError } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
+import { consumeTelemetryFields } from "./lib/telemetry-context.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
@@ -148,6 +149,9 @@ export function createProgram(): Command {
   program.hook("postAction", async (_thisCommand, actionCommand) => {
     try {
       const telemetry = getTelemetry();
+      // Always consume so a leftover from a (rare) early-returning handler
+      // doesn't leak into a later command run in the same process (REPL).
+      const handlerProps = consumeTelemetryFields();
       if (!telemetry.isEnabled()) return;
 
       const startTime = commandStartTimes.get(actionCommand) ?? Date.now();
@@ -155,6 +159,9 @@ export function createProgram(): Command {
       const flags = extractCommandFlags(actionCommand);
       const isDemo = process.env.PAX8_DEMO === "1" || false;
 
+      // Single canonical event for every command run (#146). Handlers
+      // contribute aggregate counters via setTelemetryFields(); they no
+      // longer call telemetry.track() directly.
       telemetry.track({
         event: "command_executed",
         command: subcommand.split(".")[0] ?? subcommand,
@@ -166,6 +173,7 @@ export function createProgram(): Command {
         node_version: process.version,
         os: process.platform,
         demo_mode: isDemo,
+        ...handlerProps,
       });
 
       // Fire-and-forget flush
@@ -366,6 +374,17 @@ async function main(): Promise<void> {
   // the clean cleanup path rather than Node's default `1` exit.
   installSigintHandler();
 
+  // Last-resort handlers for crashes that escape `parseAsync.catch`. Without
+  // these the process would exit before the PostHog buffer flushed, so the
+  // failure event would be lost (#145). We delegate to `handleCommandError`
+  // which now awaits the bounded telemetry shutdown before exit.
+  process.on("uncaughtException", (err) => {
+    void handleCommandError(err).catch(() => process.exit(1));
+  });
+  process.on("unhandledRejection", (reason) => {
+    void handleCommandError(reason).catch(() => process.exit(1));
+  });
+
   if (process.argv.length <= 2) {
     if (process.stdin.isTTY) {
       await startRepl();
@@ -404,7 +423,7 @@ async function main(): Promise<void> {
         // Telemetry must never interfere with error handling
       }
 
-      handleCommandError(err);
+      await handleCommandError(err);
     });
   }
 }

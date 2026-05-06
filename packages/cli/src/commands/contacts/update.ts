@@ -111,6 +111,6 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Types:".padEnd(14))}${(updated.types ?? []).join(", ")}\n`);
       process.stdout.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to update contact");
+      await handleCommandError(error, undefined, "Failed to update contact");
     }
   });

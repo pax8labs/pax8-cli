@@ -83,6 +83,6 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Status:")}   ${company.status}\n`);
       process.stdout.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to create company");
+      await handleCommandError(error, undefined, "Failed to create company");
     }
   });

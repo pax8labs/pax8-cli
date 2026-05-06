@@ -101,6 +101,6 @@ Examples:
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts list --company "${company.name}"`))}  ${chalk.dim("view all contacts at this company")}\n`);
       process.stderr.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to create contact");
+      await handleCommandError(error, undefined, "Failed to create contact");
     }
   });

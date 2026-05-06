@@ -60,6 +60,6 @@ Examples:
         output([{ id: contact.id, status: "Deleted" }], { format: "json" });
       }
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to delete contact");
+      await handleCommandError(error, undefined, "Failed to delete contact");
     }
   });

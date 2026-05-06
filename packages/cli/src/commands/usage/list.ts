@@ -80,6 +80,6 @@ Examples:
         process.stderr.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list usage summaries");
+      await handleCommandError(error, spinner, "Failed to list usage summaries");
     }
   });

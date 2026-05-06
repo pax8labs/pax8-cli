@@ -109,6 +109,6 @@ Examples:
         chalk.green(`\n  ✓ Credentials saved for ${masked}\n\n`)
       );
     } catch (error) {
-      handleCommandError(error, spinner, "Authentication failed");
+      await handleCommandError(error, spinner, "Authentication failed");
     }
   });

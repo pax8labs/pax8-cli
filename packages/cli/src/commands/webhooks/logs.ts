@@ -162,6 +162,6 @@ Examples:
         }
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to fetch webhook logs");
+      await handleCommandError(error, spinner, "Failed to fetch webhook logs");
     }
   });

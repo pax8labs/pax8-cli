@@ -75,6 +75,6 @@ Examples:
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders create --company "${coName}" --product <name>`))}  ${chalk.dim("order a replacement")}\n`);
       process.stderr.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to cancel subscription");
+      await handleCommandError(error, undefined, "Failed to cancel subscription");
     }
   });

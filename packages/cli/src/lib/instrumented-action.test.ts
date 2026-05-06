@@ -127,3 +127,166 @@ describe("instrumentedAction", () => {
     await expect(wrapped({})).rejects.toThrow("test error");
   });
 });
+
+/**
+ * #146 — write commands (recommendations act, orders create) used to fire two
+ * `command_executed` events: one from the `postAction` hook in index.ts, and
+ * one manually inside the handler to attach aggregate counters. These tests
+ * pin the new invariant: handlers contribute via `setTelemetryFields()`, the
+ * postAction hook merges those fields into its single canonical track call.
+ *
+ * We don't run the whole Commander program here — we exercise the merge
+ * contract directly. The integration is small enough that a unit test is
+ * the right grain.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any -- accessing private members for testing */
+describe("postAction telemetry merge (#146)", () => {
+  beforeEach(async () => {
+    const { resetTelemetry } = await import("@pax8/core");
+    resetTelemetry();
+  });
+
+  afterEach(async () => {
+    const { _resetTelemetryFields } = await import("./telemetry-context.js");
+    _resetTelemetryFields();
+  });
+
+  it("merges setTelemetryFields contributions into a single command_executed event", async () => {
+    const { setTelemetryFields, consumeTelemetryFields } = await import(
+      "./telemetry-context.js"
+    );
+    const { getTelemetry } = await import("@pax8/core");
+
+    // Simulate a `recommendations act` handler contributing fields.
+    setTelemetryFields({
+      recs_presented: 3,
+      recs_ordered: 2,
+      recs_skipped: 1,
+      recs_mrr_captured: 250,
+    });
+
+    // Mimic exactly what the postAction hook does: drain + merge into the
+    // intrinsic event shape and emit ONE track() call.
+    const telemetry = getTelemetry();
+    (telemetry as any).enabled = true;
+
+    const handlerProps = consumeTelemetryFields();
+    const intrinsic = {
+      event: "command_executed" as const,
+      command: "recommendations",
+      subcommand: "recommendations.act",
+      flags: ["--priority"],
+      duration_ms: 42,
+      success: true,
+      cli_version: "0.1.0",
+      node_version: process.version,
+      os: process.platform,
+      demo_mode: false,
+    };
+    telemetry.track({ ...intrinsic, ...handlerProps });
+
+    const buffer = (telemetry as any).buffer as unknown[];
+    expect(buffer).toHaveLength(1);
+    const evt = buffer[0] as Record<string, unknown>;
+    // command/subcommand match the README #134 contract: top-level group +
+    // dotted path. No more `command: "recommendations.act"` from the manual
+    // track() call.
+    expect(evt.command).toBe("recommendations");
+    expect(evt.subcommand).toBe("recommendations.act");
+    // Aggregate counters come along on the same event.
+    expect(evt.recs_presented).toBe(3);
+    expect(evt.recs_ordered).toBe(2);
+    expect(evt.recs_skipped).toBe(1);
+    expect(evt.recs_mrr_captured).toBe(250);
+    // And the intrinsic props are still present.
+    expect(evt.success).toBe(true);
+    expect(evt.duration_ms).toBe(42);
+  });
+
+  it("merges orders.create revenue counters into a single event", async () => {
+    const { setTelemetryFields, consumeTelemetryFields } = await import(
+      "./telemetry-context.js"
+    );
+    const { getTelemetry } = await import("@pax8/core");
+
+    setTelemetryFields({
+      order_success: true,
+      order_total_dollars: 500,
+      order_mrr_impact: 50,
+      order_seats: 10,
+    });
+
+    const telemetry = getTelemetry();
+    (telemetry as any).enabled = true;
+
+    const handlerProps = consumeTelemetryFields();
+    telemetry.track({
+      event: "command_executed",
+      command: "orders",
+      subcommand: "orders.create",
+      flags: [],
+      duration_ms: 100,
+      success: true,
+      cli_version: "0.1.0",
+      node_version: process.version,
+      os: process.platform,
+      demo_mode: false,
+      ...handlerProps,
+    });
+
+    const buffer = (telemetry as any).buffer as unknown[];
+    expect(buffer).toHaveLength(1);
+    const evt = buffer[0] as Record<string, unknown>;
+    expect(evt.command).toBe("orders");
+    expect(evt.subcommand).toBe("orders.create");
+    expect(evt.order_success).toBe(true);
+    expect(evt.order_total_dollars).toBe(500);
+    expect(evt.order_mrr_impact).toBe(50);
+    expect(evt.order_seats).toBe(10);
+  });
+
+  it("a regular read-only command with no setTelemetryFields fires exactly one event with no extra props", async () => {
+    const { consumeTelemetryFields } = await import("./telemetry-context.js");
+    const { getTelemetry } = await import("@pax8/core");
+
+    const telemetry = getTelemetry();
+    (telemetry as any).enabled = true;
+
+    const handlerProps = consumeTelemetryFields(); // empty
+    telemetry.track({
+      event: "command_executed",
+      command: "companies",
+      subcommand: "companies.list",
+      flags: ["--json"],
+      duration_ms: 25,
+      success: true,
+      cli_version: "0.1.0",
+      node_version: process.version,
+      os: process.platform,
+      demo_mode: false,
+      ...handlerProps,
+    });
+
+    const buffer = (telemetry as any).buffer as unknown[];
+    expect(buffer).toHaveLength(1);
+    const evt = buffer[0] as Record<string, unknown>;
+    expect(evt.command).toBe("companies");
+    expect(evt.subcommand).toBe("companies.list");
+    expect(evt.recs_presented).toBeUndefined();
+    expect(evt.order_seats).toBeUndefined();
+  });
+
+  it("a leftover handlerProp from one consume does NOT leak to the next event", async () => {
+    const { setTelemetryFields, consumeTelemetryFields } = await import(
+      "./telemetry-context.js"
+    );
+
+    setTelemetryFields({ recs_presented: 5 });
+    const first = consumeTelemetryFields();
+    const second = consumeTelemetryFields();
+
+    expect(first).toEqual({ recs_presented: 5 });
+    expect(second).toEqual({});
+  });
+});
+/* eslint-enable @typescript-eslint/no-explicit-any */

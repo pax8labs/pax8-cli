@@ -95,6 +95,6 @@ Examples:
         process.stderr.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list quotes");
+      await handleCommandError(error, spinner, "Failed to list quotes");
     }
   });

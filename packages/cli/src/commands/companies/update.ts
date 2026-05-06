@@ -86,6 +86,6 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Website:")}  ${company.website || chalk.dim("—")}\n`);
       process.stdout.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to update company");
+      await handleCommandError(error, undefined, "Failed to update company");
     }
   });

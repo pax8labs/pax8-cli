@@ -125,6 +125,6 @@ Examples:
         );
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list invoices");
+      await handleCommandError(error, spinner, "Failed to list invoices");
     }
   });
