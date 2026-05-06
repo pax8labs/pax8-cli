@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { filterRecommendations, type RecFilterOptions } from "./filter.js";
+import { filterRecommendations } from "./filter.js";
 import type { Recommendation } from "@pax8/core";
 
 function makeRec(overrides: Partial<Recommendation> = {}): Recommendation {

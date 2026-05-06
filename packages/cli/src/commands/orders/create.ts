@@ -7,7 +7,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError, extractErrorDetail } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirmWithChange, replCmd } from "../../lib/confirm.js";
-import { formatStatus, formatDate, formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
+import { formatStatus, formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import {

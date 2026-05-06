@@ -8,7 +8,15 @@ export default tseslint.config(
     files: ["packages/*/src/**/*.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          // Allow `const { foo, ...rest } = obj` for explicit field omission.
+          ignoreRestSiblings: true,
+        },
+      ],
       "no-console": ["error", { allow: ["error", "warn"] }],
       "no-undef": "off",
     },

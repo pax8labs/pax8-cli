@@ -3,7 +3,7 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { categorizeProduct, ALL_CATEGORIES, getRecommendations, getPortfolioCoverage, type ProductCategory } from "@pax8/core";
+import { categorizeProduct, ALL_CATEGORIES, getRecommendations, type ProductCategory } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
@@ -17,7 +17,7 @@ import {
 } from "../../lib/formatters.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
-import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 import { output, type Column } from "../../lib/output.js";
 
 
@@ -310,7 +310,7 @@ Examples:
           chalk.yellow(`    \u2192 Run ${chalk.cyan(replCmd("pax8 companies list"))} to see available companies\n\n`)
         );
         process.exit(1);
-        throw new Error("process.exit intercepted");
+        throw new Error("process.exit intercepted", { cause: error });
       }
       await handleCommandError(error, spinner, "Failed to load company summary");
     }
