@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import type { Recommendation } from "@pax8/core";
 
 export interface RecFilterOptions {

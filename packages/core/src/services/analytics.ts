@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import type { Subscription, Invoice } from "../api/types.js";
 
 /** The subset of Subscription fields used by analytics. */

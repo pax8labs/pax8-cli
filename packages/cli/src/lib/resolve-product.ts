@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { ERROR_PRODUCT_NOT_FOUND, type Product } from "@pax8/core";
 import type { CommandContext } from "./context.js";
 import { CliError } from "./errors.js";

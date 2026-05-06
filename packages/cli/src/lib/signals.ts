@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import chalk from "chalk";
 import { getTelemetry } from "@pax8/core";
 import { stopAllActiveSpinners } from "./spinner.js";

@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import chalk from "chalk";
 import { ZodError, ZodIssueCode } from "zod";
 import type { Ora } from "ora";

@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import type { InvoiceItem, Subscription } from "../api/types.js";
 
 /** The subset of InvoiceItem fields used by the invoice auditor. */

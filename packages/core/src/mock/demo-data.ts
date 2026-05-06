@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 // Demo data for PAX8_DEMO=1 mode
 // All data is realistic but fictional. UUIDs are deterministic for testing.
 

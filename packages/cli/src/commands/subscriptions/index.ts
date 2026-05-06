@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { Command } from "commander";
 import { subscriptionsListCommand } from "./list.js";
 import { subscriptionsShowCommand } from "./show.js";

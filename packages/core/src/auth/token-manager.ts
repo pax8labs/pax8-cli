@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { AuthError } from "../api/errors.js";
 import { getDefaultBaseUrl } from "../api/client.js";
 

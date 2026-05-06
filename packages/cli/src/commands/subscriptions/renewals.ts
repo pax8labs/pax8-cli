@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { Command } from "commander";
 import chalk from "chalk";
 import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";

@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Page size used by commands that need to fetch "all" subscriptions
  * across an entire portfolio (status, audit, recommendations, MRR
