@@ -13,22 +13,33 @@ export interface NextStep {
 }
 
 /**
- * Show a numbered menu of next steps, prompt the user to pick one, and run it.
+ * Prompt the user to drill into a numbered row from the most-recent table.
  * Only interactive in TTY mode. Skips silently when piped.
+ *
+ * The table itself is the menu — every row already shows its index in the
+ * `#` column — so we don't re-print each option here. We just show one
+ * concise hint with a representative example, then read input.
  */
 export async function promptNextSteps(steps: NextStep[]): Promise<void> {
   if (!process.stdin.isTTY) return;
   if (steps.length === 0) return;
 
-  for (const step of steps) {
-    process.stderr.write(`  ${chalk.cyan.bold(`[${step.key}]`)} ${step.label}\n`);
-    process.stderr.write(chalk.dim(`      ${step.command.join(" ")}\n`));
-  }
-  process.stderr.write("\n");
+  // Pick a sample row to illustrate "what does typing a number do?"
+  // First row is representative for any list-style table.
+  const sample = steps[0];
+  const max = steps[steps.length - 1].key;
+
+  process.stderr.write(
+    "  " +
+      chalk.dim(
+        `Type 1-${max} to drill in (e.g. \`${sample.key}\` → ${sample.label.split(" — ")[0]}), or press Enter to skip.`
+      ) +
+      "\n\n"
+  );
 
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   const answer = await new Promise<string>((resolve) => {
-    rl.question(chalk.dim("  Enter # to run, or press Enter to skip: "), (a) => {
+    rl.question(chalk.dim("  > "), (a) => {
       rl.close();
       resolve(a.trim());
     });

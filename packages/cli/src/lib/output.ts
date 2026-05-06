@@ -66,6 +66,15 @@ function formatTable(data: readonly Record<string, unknown>[], columns: Column[]
       "padding-left": 1,
       "padding-right": 1,
     },
+    // Drop the inter-row dividers. The bold/cyan header is enough visual
+    // separation; per-row dividers double the line count for no information
+    // value (gh, k9s, fly, stripe all render this way). The outer box stays.
+    chars: {
+      mid: "",
+      "left-mid": "",
+      "mid-mid": "",
+      "right-mid": "",
+    },
     colWidths,
     wordWrap: wrapEnabled,
   });
