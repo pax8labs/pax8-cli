@@ -218,6 +218,7 @@ const COASTLINE_ID = "b2c3d4e5-f6a7-8901-bcde-f12345678901";
 const REDWOOD_ID = "c3d4e5f6-a7b8-9012-cdef-123456789012";
 const BRIGHT_ID = "d4e5f6a7-b8c9-0123-defa-234567890123";
 const PINNACLE_ID = "e5f6a7b8-c9d0-1234-efab-345678901234";
+const ACME_ID = "f6a7b8c9-d0e1-2345-fabc-456789012345";
 
 // ─── Companies ───────────────────────────────────────────────────────────────
 
@@ -335,6 +336,34 @@ export const companies: Company[] = [
       firstName: "David",
       lastName: "Nakamura",
       email: "david.nakamura@pinnaclefa.example.com",
+    },
+  },
+  {
+    // "Acme Corp" — generic professional services firm. Exists primarily so
+    // the README/skill.md/CLAUDE.md/AGENTS.md examples that use "Acme Corp"
+    // as the canonical placeholder customer name actually resolve under
+    // PAX8_DEMO=1. Intentionally has a coverage gap (no backup) so
+    // `recommendations list --company "Acme Corp"` returns at least one rec.
+    id: ACME_ID,
+    name: "Acme Corp",
+    address: {
+      street: "1 Acme Plaza, Suite 100",
+      city: "Springfield",
+      state: "MA",
+      zip: "01103",
+      country: "US",
+    },
+    phone: "+1-413-555-0606",
+    website: "https://acme.example.com",
+    status: "Active",
+    billOnBehalfOfEnabled: true,
+    selfServiceAllowed: true,
+    orderApprovalRequired: false,
+    created: "2024-11-15",
+    billingContact: {
+      firstName: "Wile",
+      lastName: "Coyote",
+      email: "wile.coyote@acme.example.com",
     },
   },
 ];
@@ -870,6 +899,44 @@ export const subscriptions: Subscription[] = [
     commitmentTermEndDate: daysFromNow(10),
     provisioningStatus: "Provisioned",
     companyName: "Pinnacle Financial Advisors",
+  },
+
+  // ── Acme Corp (2 subs, ~$70 MRR) — productivity + email security; missing backup
+  // ── on purpose so the `recommendations list --company "Acme Corp"` example
+  // ── from the README returns at least one rec.
+  {
+    id: "sub-acme-m365bp-001",
+    companyId: ACME_ID,
+    productId: "prod-m365-biz-prem-0001",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
+    quantity: 25,
+    startDate: "2025-01-15",
+    createdDate: "2025-01-10",
+    billingStart: "2025-01-15",
+    status: "Active",
+    price: 22.0,
+    billingTerm: "Annual",
+    commitment: { id: "cterm-0006-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(45) },
+    commitmentTermEndDate: daysFromNow(45),
+    provisioningStatus: "Provisioned",
+    companyName: "Acme Corp",
+  },
+  {
+    id: "sub-acme-defender-002",
+    companyId: ACME_ID,
+    productId: "prod-defender-biz-0007",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
+    quantity: 25,
+    startDate: "2025-01-15",
+    createdDate: "2025-01-10",
+    billingStart: "2025-01-15",
+    status: "Active",
+    price: 3.0,
+    billingTerm: "Annual",
+    commitment: { id: "cterm-0006-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(45) },
+    commitmentTermEndDate: daysFromNow(45),
+    provisioningStatus: "Provisioned",
+    companyName: "Acme Corp",
   },
 ];
 

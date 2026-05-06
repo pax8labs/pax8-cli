@@ -13,7 +13,7 @@ describe("MockPax8Client", () => {
     it("returns paginated results", async () => {
       const result = await client.companies.list({ size: 2 });
       expect(result.content).toHaveLength(2);
-      expect(result.page.totalElements).toBe(5);
+      expect(result.page.totalElements).toBe(6);
       expect(result.page.totalPages).toBe(3);
       expect(result.page.number).toBe(0);
       expect(result.page.size).toBe(2);
@@ -21,7 +21,7 @@ describe("MockPax8Client", () => {
 
     it("returns all companies with large page size", async () => {
       const result = await client.companies.list({ size: 100 });
-      expect(result.content).toHaveLength(5);
+      expect(result.content).toHaveLength(6);
       expect(result.page.totalPages).toBe(1);
     });
 
@@ -133,9 +133,9 @@ describe("MockPax8Client", () => {
       expect(page0.content[0].id).not.toBe(page1.content[0].id);
     });
 
-    it("last page may have fewer items", async () => {
+    it("last page is full when count is even multiple", async () => {
       const lastPage = await client.companies.list({ page: 2, size: 2 });
-      expect(lastPage.content).toHaveLength(1); // 5 companies, page 2 of size 2 = 1 item
+      expect(lastPage.content).toHaveLength(2); // 6 companies, page 2 of size 2 = 2 items
     });
 
     it("page beyond total returns empty", async () => {
