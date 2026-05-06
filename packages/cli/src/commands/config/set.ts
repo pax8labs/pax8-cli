@@ -5,11 +5,8 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import * as os from "node:os";
 import YAML from "yaml";
-
-const CONFIG_DIR = path.join(os.homedir(), ".pax8");
-const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
+import { getConfigDir } from "@pax8/core";
 
 function setNestedValue(obj: Record<string, unknown>, keyPath: string, value: string): void {
   const keys = keyPath.split(".");
@@ -42,6 +39,8 @@ Examples:
   pax8 config set cache.enabled false`
   )
   .action(async (key: string, value: string) => {
+    const CONFIG_DIR = getConfigDir();
+    const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
     try {
       let config: Record<string, unknown> = {};
       try {

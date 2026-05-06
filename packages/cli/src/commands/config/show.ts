@@ -5,12 +5,8 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import * as os from "node:os";
 import { replCmd } from "../../lib/confirm.js";
-import YAML from "yaml";
-
-const CONFIG_DIR = path.join(os.homedir(), ".pax8");
-const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
+import { getConfigDir } from "@pax8/core";
 
 export const configShowCommand = new Command("show")
   .description("Display current configuration")
@@ -21,6 +17,7 @@ Examples:
   pax8 config show`
   )
   .action(async () => {
+    const CONFIG_FILE = path.join(getConfigDir(), "config.yaml");
     try {
       const content = await fs.readFile(CONFIG_FILE, "utf-8");
       process.stdout.write(content);

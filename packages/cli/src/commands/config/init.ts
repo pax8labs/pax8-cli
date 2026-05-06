@@ -5,11 +5,8 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import * as os from "node:os";
 import YAML from "yaml";
-
-const CONFIG_DIR = path.join(os.homedir(), ".pax8");
-const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
+import { getConfigDir } from "@pax8/core";
 
 const DEFAULT_CONFIG = {
   version: "1.0",
@@ -35,6 +32,8 @@ Examples:
   pax8 config init --force`
   )
   .action(async (options) => {
+    const CONFIG_DIR = getConfigDir();
+    const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
     try {
       const exists = await fs
         .access(CONFIG_FILE)
