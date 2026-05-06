@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 subscriptions list", () => {
   it("lists subscriptions in demo mode", async () => {
@@ -49,6 +49,25 @@ describe("pax8 subscriptions list", () => {
     expect(result.stdout).toContain("--company");
     expect(result.stdout).toContain("Examples:");
   });
+
+  it("--with-actions wraps in { subscriptions, nextActions }", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "list",
+      "--json",
+      "--with-actions",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(data).toHaveProperty("subscriptions");
+    expect(data).toHaveProperty("nextActions");
+    expect(Array.isArray(data.subscriptions)).toBe(true);
+    expect(Array.isArray(data.nextActions)).toBe(true);
+    expect(data.nextActions.length).toBeGreaterThan(0);
+    for (const action of data.nextActions) {
+      expect(action).toHaveProperty("command");
+      expect(action).toHaveProperty("description");
+    }
+  });
 });
 
 describe("pax8 subscriptions show", () => {
@@ -60,7 +79,7 @@ describe("pax8 subscriptions show", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(data[0].id).toBe("sub-summit-m365bp-001");
-    expect(data[0].productName).toBe("Microsoft 365 Business Premium");
+    expect(data[0].productName).toBe("Microsoft 365 Business Premium [New Commerce Experience]");
   });
 
   it("shows subscription with --history", async () => {
@@ -103,6 +122,23 @@ describe("pax8 subscriptions renewals", () => {
     expect(data[0]).toHaveProperty("renewalDate");
   });
 
+  it("--with-actions wraps in { renewals, nextActions }", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "renewals",
+      "--with-actions",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(data).toHaveProperty("renewals");
+    expect(data).toHaveProperty("nextActions");
+    expect(Array.isArray(data.renewals)).toBe(true);
+    expect(Array.isArray(data.nextActions)).toBe(true);
+    if (data.nextActions.length > 0) {
+      expect(data.nextActions[0]).toHaveProperty("command");
+      expect(data.nextActions[0]).toHaveProperty("description");
+    }
+  });
+
   it("filters by --within 7d", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
@@ -112,7 +148,6 @@ describe("pax8 subscriptions renewals", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(Array.isArray(data)).toBe(true);
-    // All items should be within 7 days
     for (const item of data) {
       expect(item.daysUntilRenewal).toBeLessThanOrEqual(7);
     }
@@ -141,6 +176,16 @@ describe("pax8 subscriptions update", () => {
     expect(result.stdout).toContain("--quantity");
     expect(result.stdout).toContain("--billing-term");
   });
+
+  it("warns when no changes specified", async () => {
+    const result = await runCli([
+      "subscriptions",
+      "update",
+      "sub-summit-m365bp-001",
+    ]);
+    const combined = result.stdout + result.stderr;
+    expect(combined).toMatch(/[Nn]o changes/);
+  });
 });
 
 describe("pax8 subscriptions cancel", () => {
@@ -151,6 +196,17 @@ describe("pax8 subscriptions cancel", () => {
       "--help",
     ]);
     expect(result.stdout).toContain("Cancel a subscription");
+  });
+
+  it("errors with invalid subscription ID", async () => {
+    const result = await runCliExpectFailure([
+      "subscriptions",
+      "cancel",
+      "totally-bogus-id-not-real",
+      "--yes",
+    ]);
+    const combined = result.stdout + result.stderr;
+    expect(combined.length).toBeGreaterThan(0);
   });
 });
 

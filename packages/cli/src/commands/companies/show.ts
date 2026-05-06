@@ -4,21 +4,23 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
-import { formatStatus } from "../../lib/formatters.js";
+import { formatCurrency, formatStatus } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { resolveFromLastList } from "../../lib/last-list.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 
 const subscriptionColumns: Column[] = [
   { key: "productName", header: "Product" },
   { key: "quantity", header: "Qty" },
   { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
   { key: "billingTerm", header: "Term" },
-  { key: "price", header: "Price", format: (v) => `$${Number(v).toFixed(2)}` },
+  { key: "price", header: "Price", format: (v) => formatCurrency(Number(v)) },
 ];
 
 export const companiesShowCommand = new Command("show")
   .description("Show company details")
   .argument("<id|name>", "Company ID or name")
+  .allowExcessArguments(true)
   .option("--subscriptions", "Include company subscriptions")
   .addHelpText(
     "after",
@@ -30,6 +32,11 @@ Examples:
   )
   .action(async (idOrName: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+
+    // Rejoin excess args when user forgets quotes
+    if (command.args.length > 1) {
+      idOrName = command.args.join(" ");
+    }
 
     // Resolve numbered reference from last `companies list`
     const fromList = await resolveFromLastList(idOrName);
@@ -49,6 +56,7 @@ Examples:
       if (ctx.outputFormat === "json") {
         if (allOpts.subscriptions) {
           const subs = await ctx.api.subscriptions.list({ companyId: id });
+          await enrichProductNames(ctx, subs.content as Record<string, unknown>[]);
           process.stdout.write(
             JSON.stringify({ ...company, subscriptions: subs.content }, null, 2) + "\n"
           );
@@ -75,29 +83,30 @@ Examples:
       // Table / detail view
       process.stdout.write("\n");
       process.stdout.write(chalk.bold(`  ${company.name}\n\n`));
-      process.stdout.write(`  ${chalk.dim("ID:")}       ${company.id}\n`);
-      process.stdout.write(`  ${chalk.dim("Status:")}   ${formatStatus(company.status)}\n`);
-      process.stdout.write(`  ${chalk.dim("Phone:")}    ${company.phone || chalk.dim("—")}\n`);
-      process.stdout.write(`  ${chalk.dim("Website:")}  ${company.website || chalk.dim("—")}\n`);
+      process.stdout.write(`  ${chalk.dim("ID:".padEnd(18))}${company.id}\n`);
+      process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(company.status)}\n`);
+      process.stdout.write(`  ${chalk.dim("Phone:".padEnd(18))}${company.phone || chalk.dim("—")}\n`);
+      process.stdout.write(`  ${chalk.dim("Website:".padEnd(18))}${company.website || chalk.dim("—")}\n`);
       if (company.address) {
         const addr = company.address;
-        const parts = [addr.city, addr.stateOrProvince, addr.postalCode, addr.country].filter(Boolean);
-        process.stdout.write(`  ${chalk.dim("Address:")}  ${addr.street || ""}\n`);
+        const parts = [addr.city, addr.state, addr.zip, addr.country].filter(Boolean);
+        process.stdout.write(`  ${chalk.dim("Address:".padEnd(18))}${addr.street || ""}\n`);
         if (parts.length > 0) {
-          process.stdout.write(`             ${parts.join(", ")}\n`);
+          process.stdout.write(`  ${"".padEnd(18)}${parts.join(", ")}\n`);
         }
       }
-      process.stdout.write(`  ${chalk.dim("Created:")}  ${company.createdDate}\n`);
+      process.stdout.write(`  ${chalk.dim("Created:".padEnd(18))}${company.created ?? ""}\n`);
       process.stdout.write("\n");
 
       if (allOpts.subscriptions) {
         const subs = await ctx.api.subscriptions.list({ companyId: id });
+        await enrichProductNames(ctx, subs.content as Record<string, unknown>[]);
         if (subs.content.length > 0) {
           process.stdout.write(chalk.dim(`  Subscriptions (${subs.content.length}):\n\n`));
           output(subs.content, { format: "table", columns: subscriptionColumns });
           process.stdout.write("\n");
         } else {
-          process.stdout.write(chalk.dim("  No subscriptions found.\n\n"));
+          process.stdout.write(chalk.dim("  No active subscriptions.\n\n"));
         }
       }
     } catch (error) {

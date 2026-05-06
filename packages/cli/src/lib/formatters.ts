@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { subscriptionMrr } from "@pax8/core";
 
 export function formatTimeAgo(date: Date | string): string {
   const now = new Date();
@@ -32,7 +33,8 @@ export function formatQuantity(n: number): string {
   return `${n} seat${n !== 1 ? "s" : ""}`;
 }
 
-export function formatStatus(status: string): string {
+export function formatStatus(status: string | undefined): string {
+  if (!status) return chalk.gray("  —");
   const normalized = status.toLowerCase();
 
   if (normalized === "active") {
@@ -65,6 +67,10 @@ export function formatDate(iso: string | Date): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+export function calculateMrr(price: number, quantity: number, billingTerm: string): number {
+  return Number(subscriptionMrr(price, quantity, billingTerm).toFixed(2));
 }
 
 export function formatDaysUntil(date: string | Date): string {

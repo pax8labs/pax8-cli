@@ -44,7 +44,7 @@ export class FileCache {
     const filePath = this.filePath(key);
     const tmpPath = filePath + ".tmp";
 
-    await fs.writeFile(tmpPath, JSON.stringify(entry), "utf-8");
+    await fs.writeFile(tmpPath, JSON.stringify(entry), { encoding: "utf-8", mode: 0o600 });
     await fs.rename(tmpPath, filePath);
   }
 

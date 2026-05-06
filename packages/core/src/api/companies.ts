@@ -13,7 +13,7 @@ const PaginatedCompanySchema = PaginatedResponseSchema(CompanySchema);
 export class CompaniesApi {
   constructor(private client: Pax8Client) {}
 
-  async list(params?: { page?: number; size?: number }): Promise<PaginatedResponse<Company>> {
+  async list(params?: { page?: number; size?: number; status?: string; filter?: string }): Promise<PaginatedResponse<Company>> {
     const raw = await this.client.get<unknown>("/companies", params as Record<string, string | number | undefined>);
     return PaginatedCompanySchema.parse(raw);
   }

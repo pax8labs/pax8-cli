@@ -1,0 +1,18 @@
+{
+  "name": "Pax8 CLI Demo",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "containerEnv": {
+    "PAX8_DEMO": "1"
+  },
+  "postStartCommand": "echo '\n  ✨ Pax8 CLI is ready in demo mode!\n\n  Try these commands:\n    pax8 status\n    pax8 companies list\n    pax8 subscriptions list\n    pax8 recommendations list\n    pax8 status --all\n'",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

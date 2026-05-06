@@ -3,7 +3,7 @@ import { execCli } from "../index.js";
 export const pax8_subscriptions_list = {
   name: "pax8_subscriptions_list",
   description:
-    "List subscriptions across all companies or filtered to a specific company. Returns subscription ID, product, company, quantity, status, and billing term.",
+    "List subscriptions across all companies or filtered by companyId and/or status. Returns id, productName, companyName, quantity, price, status, billingTerm, startDate, and endDate. Combine companyId + status filters for targeted queries. Use size=1000 for MRR calculations.",
   parameters: {
     type: "object" as const,
     properties: {
@@ -41,7 +41,7 @@ export const pax8_subscriptions_list = {
 export const pax8_subscriptions_renewals = {
   name: "pax8_subscriptions_renewals",
   description:
-    "List subscriptions with upcoming renewals. Shows subscription details with renewal dates, sorted by soonest renewal first.",
+    "List subscriptions with upcoming renewals within a given window. Returns productName, companyName, renewalDate, quantity, price, and billingTerm, sorted by soonest renewal first. Filter by within (days ahead, default 30) and/or companyId.",
   parameters: {
     type: "object" as const,
     properties: {

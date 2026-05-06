@@ -11,9 +11,14 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts --format esm --dts --watch"
+    "build": "tsup src/index.ts --format esm --dts --clean --sourcemap",
+    "dev": "tsup src/index.ts --format esm --dts --watch --sourcemap"
   },
   "dependencies": {
     "posthog-node": "^5.28.4",
@@ -40,5 +45,5 @@
     "subscriptions",
     "billing"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

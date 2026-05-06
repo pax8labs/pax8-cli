@@ -7,6 +7,11 @@
     "pax8": "./dist/index.js"
   },
   "main": "./dist/index.js",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts"
@@ -17,9 +22,11 @@
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "ora": "^8.1.0",
-    "yaml": "^2.5.0"
+    "yaml": "^2.5.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "tsup": "^8.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
@@ -31,6 +38,13 @@
   },
   "homepage": "https://github.com/pax8labs/pax8-cli#readme",
   "bugs": "https://github.com/pax8labs/pax8-cli/issues",
-  "keywords": ["pax8", "msp", "cli", "cloud-marketplace", "subscriptions", "billing"],
-  "license": "MIT"
+  "keywords": [
+    "pax8",
+    "msp",
+    "cli",
+    "cloud-marketplace",
+    "subscriptions",
+    "billing"
+  ],
+  "license": "Apache-2.0"
 }

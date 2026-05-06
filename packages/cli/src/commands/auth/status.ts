@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { CredentialStore } from "@pax8/core";
+import { replCmd } from "../../lib/confirm.js";
 
 export const authStatusCommand = new Command("status")
   .description("Show current authentication status")
@@ -46,7 +47,7 @@ Examples:
       process.stdout.write(chalk.red("  ✗ Not authenticated\n"));
       process.stdout.write(
         chalk.dim(
-          "\n  Run: pax8 auth login --client-id <id> --client-secret <secret>\n"
+          `\n  Run: ${replCmd("pax8 auth login")} --client-id <id> --client-secret <secret>\n`
         )
       );
     }

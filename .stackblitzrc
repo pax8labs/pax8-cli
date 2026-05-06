@@ -1,0 +1,7 @@
+{
+  "installDependencies": true,
+  "startCommand": "pnpm build && PAX8_DEMO=1 node packages/cli/dist/index.js status --all",
+  "env": {
+    "PAX8_DEMO": "1"
+  }
+}

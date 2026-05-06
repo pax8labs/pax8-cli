@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runCli, runCliExpectSuccess } from "./test-utils.js";
+import { runCliExpectSuccess } from "./test-utils.js";
 
 describe("pax8 telemetry", () => {
   describe("telemetry --help", () => {

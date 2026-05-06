@@ -5,10 +5,11 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency } from "../../lib/formatters.js";
+import { resolveProduct } from "../../lib/resolve-product.js";
 
 export const productsShowCommand = new Command("show")
   .description("Show product details")
-  .argument("<id>", "Product ID")
+  .argument("<id|name>", "Product ID or name")
   .option("--pricing", "Show pricing tiers")
   .option("--provisioning", "Show provisioning requirements")
   .option("--dependencies", "Show product dependencies")
@@ -28,20 +29,20 @@ Examples:
 
     try {
       spinner.start();
-      const product = await ctx.api.products.get(id);
+      const product = await resolveProduct(ctx, id);
 
       let pricing = null;
       let provisioning = null;
       let dependencies = null;
 
       if (options.pricing) {
-        pricing = await ctx.api.products.getPricing(id);
+        pricing = await ctx.api.products.getPricing(product.id);
       }
       if (options.provisioning) {
-        provisioning = await ctx.api.products.getProvisioningDetails(id);
+        provisioning = await ctx.api.products.getProvisioningDetails(product.id);
       }
       if (options.dependencies) {
-        dependencies = await ctx.api.products.getDependencies(id);
+        dependencies = await ctx.api.products.getDependencies(product.id);
       }
       spinner.stop();
 
@@ -67,45 +68,60 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Vendor:")} ${product.vendorName}\n`);
       process.stdout.write(`  ${chalk.dim("SKU:")} ${product.sku}\n`);
       process.stdout.write(
-        `  ${chalk.dim("Unit:")} ${product.unitOfMeasure}\n`
+        `  ${chalk.dim("Unit:")} ${product.unitOfMeasurement ?? ""}\n`
       );
       process.stdout.write(
         `  ${chalk.dim("Description:")} ${product.shortDescription}\n`
       );
 
       if (pricing && pricing.length > 0) {
-        process.stdout.write(`\n  ${chalk.cyan.bold("Pricing Tiers")}\n`);
+        process.stdout.write(`\n  ${chalk.cyan.bold("Pricing Plans")}\n`);
+        const pricingRows = pricing.map((p) => ({
+          billingTerm: p.billingTerm,
+          commitmentTerm: p.commitmentTerm,
+          partnerBuyRate: p.rates[0]?.partnerBuyRate,
+          suggestedRetailPrice: p.rates[0]?.suggestedRetailPrice,
+        }));
         const pricingColumns = [
-          { key: "billingTerm", header: "Term", width: 12 },
+          { key: "billingTerm", header: "Billing", width: 10 },
+          { key: "commitmentTerm", header: "Commitment", width: 12 },
           {
-            key: "partnerBuyPrice",
+            key: "partnerBuyRate",
             header: "Partner Price",
             width: 16,
-            format: (v) => formatCurrency(Number(v)),
+            format: (v: unknown) => formatCurrency(Number(v)),
           },
           {
             key: "suggestedRetailPrice",
             header: "Retail Price",
             width: 16,
-            format: (v) => formatCurrency(Number(v)),
+            format: (v: unknown) => formatCurrency(Number(v)),
           },
         ];
-        output(pricing, { format: "table", columns: pricingColumns });
+        output(pricingRows, { format: "table", columns: pricingColumns });
       }
 
       if (provisioning) {
         process.stdout.write(
           `\n  ${chalk.cyan.bold("Provisioning Requirements")}\n`
         );
+        const fields = provisioning.fields ?? [];
+        const requiresDomain = fields.some((f) => f.name === "domain");
+        const requiresTenant = fields.some((f) => f.name === "tenantId");
         process.stdout.write(
-          `  ${chalk.dim("Requires Domain:")} ${provisioning.requiresDomain ? "Yes" : "No"}\n`
+          `  ${chalk.dim("Requires Domain:")} ${requiresDomain ? "Yes" : "No"}\n`
         );
         process.stdout.write(
-          `  ${chalk.dim("Requires Tenant:")} ${provisioning.requiresTenant ? "Yes" : "No"}\n`
+          `  ${chalk.dim("Requires Tenant:")} ${requiresTenant ? "Yes" : "No"}\n`
         );
-        if (provisioning.fields.length > 0) {
+        if (provisioning.vendorPrerequisites) {
           process.stdout.write(
-            `  ${chalk.dim("Fields:")} ${provisioning.fields.join(", ")}\n`
+            `  ${chalk.dim("Prerequisites:")} ${provisioning.vendorPrerequisites}\n`
+          );
+        }
+        if (fields.length > 0) {
+          process.stdout.write(
+            `  ${chalk.dim("Fields:")} ${fields.map((f) => f.name).join(", ")}\n`
           );
         }
       }
@@ -114,11 +130,11 @@ Examples:
         process.stdout.write(
           `\n  ${chalk.cyan.bold("Dependencies")}\n`
         );
-        if (dependencies.dependencies.length === 0) {
+        if (dependencies.length === 0) {
           process.stdout.write(`  ${chalk.dim("No dependencies")}\n`);
         } else {
-          for (const dep of dependencies.dependencies) {
-            process.stdout.write(`  • ${dep}\n`);
+          for (const dep of dependencies) {
+            process.stdout.write(`  • ${dep.dependsOnProductId}\n`);
           }
         }
       }

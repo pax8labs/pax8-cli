@@ -13,9 +13,27 @@ import {
   TokenManager,
   CredentialStore,
   loadConfig,
+  ERROR_AUTH_MISSING,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
+import { spawn } from "node:child_process";
 import { CliError } from "./errors.js";
+import { replCmd } from "./confirm.js";
+
+/**
+ * Emit a stderr warning when a paginated result hits the page size limit,
+ * indicating that results may be incomplete.
+ */
+export function warnIfTruncated(
+  result: { content: unknown[] },
+  pageSize: number,
+): void {
+  if (result.content.length >= pageSize) {
+    process.stderr.write(
+      `\n  ⚠ Returned ${result.content.length} subscriptions (page limit) — results may be incomplete. Use --size to increase.\n`,
+    );
+  }
+}
 
 export interface ApiClient {
   companies: CompaniesApi;
@@ -44,7 +62,7 @@ export interface GlobalOptions {
   verbose?: boolean;
   noColor?: boolean;
   config?: string;
-  parent?: any;
+  parent?: unknown;
 }
 
 export function getOutputFormat(
@@ -79,7 +97,9 @@ export async function buildContext(
     telemetry: { enabled: false },
   }));
 
-  const isDemo = process.env.PAX8_DEMO === "1" || config.demo === true;
+  const isDemo =
+    process.env.PAX8_DEMO === "1" ||
+    ("demo" in config && config.demo === true);
   const outputFormat = getOutputFormat(options, config.defaults?.output_format);
 
   let api: ApiClient | MockPax8Client;
@@ -95,12 +115,13 @@ export async function buildContext(
         "Not authenticated",
         ["No Pax8 API credentials found"],
         [
-          "Run: pax8 auth login --client-id <id> --client-secret <secret>",
+          `Run: ${replCmd("pax8 auth login")} --client-id <id> --client-secret <secret>`,
           "Or set environment variables: export PAX8_CLIENT_ID=... && export PAX8_CLIENT_SECRET=... (macOS/Linux)",
           "  PowerShell: $env:PAX8_CLIENT_ID=\"...\"; $env:PAX8_CLIENT_SECRET=\"...\"",
-          "Or use demo mode: PAX8_DEMO=1 pax8 <command> (macOS/Linux) or $env:PAX8_DEMO=\"1\"; pax8 <command> (PowerShell)",
+          `Or use demo mode: PAX8_DEMO=1 ${replCmd("pax8")} <command> (macOS/Linux) or $env:PAX8_DEMO="1"; ${replCmd("pax8")} <command> (PowerShell)`,
         ],
         "https://devx.pax8.com/",
+        ERROR_AUTH_MISSING,
       );
     }
 
@@ -127,5 +148,49 @@ export async function buildContext(
     };
   }
 
+  // Spawn a detached background process to warm the cache.
+  // Skip if we're already a warmer child (prevents infinite recursion).
+  if (!isDemo && !process.env.PAX8_CACHE_WARMING) {
+    spawnCacheWarmer();
+  }
+
   return { api, outputFormat, config, isDemo, verbose };
+}
+
+/**
+ * Spawn a detached child process that runs common pax8 queries to warm the file cache.
+ * The child is fully detached (stdio ignored, unref'd) so the parent exits immediately.
+ */
+function spawnCacheWarmer(): void {
+  const env = { ...process.env, PAX8_CACHE_WARMING: "1" };
+
+  const child = spawn(
+    "pax8",
+    ["companies", "list", "--json", "--size", "200", "--quiet"],
+    { detached: true, stdio: "ignore", env },
+  );
+  child.on("error", (err) => {
+    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (companies) failed: ${err}\n`);
+  });
+  child.unref();
+
+  const child2 = spawn(
+    "pax8",
+    ["subscriptions", "list", "--json", "--size", "1000", "--quiet"],
+    { detached: true, stdio: "ignore", env },
+  );
+  child2.on("error", (err) => {
+    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (subscriptions) failed: ${err}\n`);
+  });
+  child2.unref();
+
+  const child3 = spawn(
+    "pax8",
+    ["products", "list", "--json", "--size", "500", "--quiet"],
+    { detached: true, stdio: "ignore", env },
+  );
+  child3.on("error", (err) => {
+    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (products) failed: ${err}\n`);
+  });
+  child3.unref();
 }

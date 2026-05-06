@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -7,7 +8,7 @@ import { handleCommandError } from "../../lib/errors.js";
 export const productsListCommand = new Command("list")
   .description("List products in the Pax8 catalog")
   .option("--vendor <name>", "Filter by vendor name")
-  .option("--page <number>", "Page number (0-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
@@ -16,24 +17,27 @@ export const productsListCommand = new Command("list")
 Examples:
   pax8 products list
   pax8 products list --vendor Microsoft
-  pax8 products list --size 10 --page 1
-  pax8 products list --json`
+  pax8 products list --size 10 --page 2
+  pax8 products list --json
+  pax8 products list --csv
+  pax8 products list --ids-only | xargs -I{} pax8 products show {}`
   )
   .action(async (options, command) => {
-    const globalOpts = command.optsWithGlobals();
-    const ctx = await buildContext(globalOpts);
+    const allOpts = command.optsWithGlobals();
+    const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Fetching products...");
 
     try {
       spinner.start();
+      const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
       const result = await ctx.api.products.list({
-        vendorName: options.vendor,
-        page: parseInt(options.page, 10),
-        size: parseInt(options.size, 10),
+        vendorName: allOpts.vendor,
+        page: apiPage,
+        size: parseInt(allOpts.size, 10),
       });
       spinner.stop();
 
-      if (globalOpts.idsOnly) {
+      if (allOpts.idsOnly) {
         for (const item of result.content) {
           process.stdout.write(item.id + "\n");
         }
@@ -50,8 +54,8 @@ Examples:
       output(result.content, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stdout.write(
-          `\n  ${result.page.totalElements} products\n\n`
+        process.stderr.write(
+          chalk.dim(`\n  ${result.page.totalElements} products\n\n`)
         );
       }
     } catch (error) {

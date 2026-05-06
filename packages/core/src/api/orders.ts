@@ -16,6 +16,7 @@ export class OrdersApi {
     page?: number;
     size?: number;
     companyId?: string;
+    status?: string;
   }): Promise<PaginatedResponse<Order>> {
     const raw = await this.client.get<unknown>("/orders", params as Record<string, string | number | undefined>);
     return PaginatedOrderSchema.parse(raw);

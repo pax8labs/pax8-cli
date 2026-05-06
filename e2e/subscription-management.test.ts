@@ -41,7 +41,7 @@ describe("E2E: Subscription management — daily workflows", () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it("pax8 subscriptions renewals --json produces valid JSON", async () => {
+  it("pax8 subscriptions renewals --json returns a flat array by default", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "renewals",
@@ -49,12 +49,25 @@ describe("E2E: Subscription management — daily workflows", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(Array.isArray(data)).toBe(true);
-    // Each item should have renewal-specific fields
     if (data.length > 0) {
       expect(data[0]).toHaveProperty("subscriptionId");
       expect(data[0]).toHaveProperty("renewalDate");
       expect(data[0]).toHaveProperty("mrrAtRisk");
       expect(data[0]).toHaveProperty("daysUntilRenewal");
     }
+  });
+
+  it("pax8 subscriptions renewals --json --with-actions wraps in { renewals, nextActions }", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "renewals",
+      "--json",
+      "--with-actions",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(data).toHaveProperty("renewals");
+    expect(data).toHaveProperty("nextActions");
+    expect(Array.isArray(data.renewals)).toBe(true);
+    expect(Array.isArray(data.nextActions)).toBe(true);
   });
 });

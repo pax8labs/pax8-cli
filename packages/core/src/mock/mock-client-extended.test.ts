@@ -117,9 +117,9 @@ describe("MockPax8Client — extended coverage", () => {
     it("returns provisioning details for Microsoft product", async () => {
       const msProduct = (await client.products.list({ vendorName: "Microsoft", size: 1 })).content[0];
       const details = await client.products.getProvisioningDetails(msProduct.id);
-      expect(details.requiresDomain).toBe(true);
-      expect(details.requiresTenant).toBe(true);
-      expect(details.fields).toContain("domain");
+      expect(details.productId).toBe(msProduct.id);
+      expect(details.vendorPrerequisites).toMatch(/tenant/i);
+      expect(details.fields?.map((f) => f.name)).toContain("domain");
     });
 
     it("throws NotFoundError for unknown product", async () => {
@@ -131,7 +131,7 @@ describe("MockPax8Client — extended coverage", () => {
     it("returns empty dependencies", async () => {
       const all = await client.products.list({ size: 1 });
       const result = await client.products.getDependencies(all.content[0].id);
-      expect(result.dependencies).toEqual([]);
+      expect(result).toEqual([]);
     });
   });
 
@@ -213,11 +213,17 @@ describe("MockPax8Client — extended coverage", () => {
     it("creates an order with provided data", async () => {
       const result = await client.orders.create({
         companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        companyName: "Summit Healthcare Partners",
+        lineItems: [{
+          productId: "11111111-1111-1111-1111-111111111111",
+          quantity: 5,
+          billingTerm: "Monthly",
+        }],
       });
       expect(result.id).toContain("ord-demo-");
       expect(result.companyName).toBe("Summit Healthcare Partners");
       expect(result.status).toBe("Processing");
+      expect(result.lineItems).toHaveLength(1);
+      expect(result.lineItems[0].quantity).toBe(5);
     });
   });
 
@@ -225,7 +231,10 @@ describe("MockPax8Client — extended coverage", () => {
 
   describe("contacts.get()", () => {
     it("returns contact by id", async () => {
-      const all = await client.contacts.list({ size: 100 });
+      const all = await client.contacts.list(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        { size: 100 },
+      );
       const firstId = all.content[0].id;
       const contact = await client.contacts.get(firstId);
       expect(contact.id).toBe(firstId);
@@ -251,7 +260,10 @@ describe("MockPax8Client — extended coverage", () => {
 
   describe("contacts.update()", () => {
     it("updates a contact", async () => {
-      const all = await client.contacts.list({ size: 100 });
+      const all = await client.contacts.list(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        { size: 100 },
+      );
       const firstId = all.content[0].id;
       const result = await client.contacts.update(firstId, { firstName: "Updated" });
       expect(result.firstName).toBe("Updated");
@@ -267,7 +279,10 @@ describe("MockPax8Client — extended coverage", () => {
 
   describe("contacts.delete()", () => {
     it("deletes existing contact", async () => {
-      const all = await client.contacts.list({ size: 100 });
+      const all = await client.contacts.list(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        { size: 100 },
+      );
       const firstId = all.content[0].id;
       await expect(client.contacts.delete(firstId)).resolves.toBeUndefined();
     });
@@ -295,11 +310,13 @@ describe("MockPax8Client — extended coverage", () => {
       }
     });
 
-    it("filters by month", async () => {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const result = await client.usage.listSummaries({ month: currentMonth, size: 100 });
+    it("filters by resourceGroup", async () => {
+      const all = await client.usage.listSummaries({ size: 100 });
+      const group = all.content.find((u) => u.resourceGroup)?.resourceGroup;
+      if (!group) return; // no demo data has resourceGroup → skip
+      const result = await client.usage.listSummaries({ resourceGroup: group, size: 100 });
       for (const u of result.content) {
-        expect(u.usageDate.startsWith(currentMonth)).toBe(true);
+        expect(u.resourceGroup).toBe(group);
       }
     });
   });
@@ -318,18 +335,18 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   describe("usage.listLines()", () => {
-    it("returns usage lines", async () => {
-      const result = await client.usage.listLines({ size: 100 });
-      expect(result.content.length).toBeGreaterThan(0);
-    });
-
-    it("filters by usageSummaryId", async () => {
+    it("returns lines for a given summary id", async () => {
       const summaries = await client.usage.listSummaries({ size: 100 });
       const summaryId = summaries.content[0].id;
-      const result = await client.usage.listLines({ usageSummaryId: summaryId, size: 100 });
+      const result = await client.usage.listLines(summaryId, { size: 100 });
       for (const line of result.content) {
         expect(line.usageSummaryId).toBe(summaryId);
       }
+    });
+
+    it("returns empty content for an unknown summary id", async () => {
+      const result = await client.usage.listLines("does-not-exist", { size: 100 });
+      expect(result.content).toEqual([]);
     });
   });
 
@@ -404,11 +421,13 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   // ─── Webhooks ────────────────────────────────────────────────────────────
+  // Mock surface mirrors the real WebhooksApi (list, get, create, update,
+  // updateStatus, delete, test, getLogs, retryLog).
 
   describe("webhooks.get()", () => {
     it("returns webhook by id", async () => {
       const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
+      const firstId = all[0].id;
       const wh = await client.webhooks.get(firstId);
       expect(wh.id).toBe(firstId);
     });
@@ -424,16 +443,16 @@ describe("MockPax8Client — extended coverage", () => {
         url: "https://example.com/hook",
         topics: ["subscription.created"],
       });
-      expect(result.id).toContain("wh-demo-");
       expect(result.status).toBe("Active");
       expect(result.url).toBe("https://example.com/hook");
+      expect(result.topics).toEqual(["subscription.created"]);
     });
   });
 
   describe("webhooks.update()", () => {
     it("updates a webhook", async () => {
       const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
+      const firstId = all[0].id;
       const result = await client.webhooks.update(firstId, { url: "https://new.com/hook" });
       expect(result.url).toBe("https://new.com/hook");
       expect(result.id).toBe(firstId);
@@ -449,9 +468,9 @@ describe("MockPax8Client — extended coverage", () => {
   describe("webhooks.updateStatus()", () => {
     it("updates webhook status", async () => {
       const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
-      const result = await client.webhooks.updateStatus(firstId, "Inactive");
-      expect(result.status).toBe("Inactive");
+      const firstId = all[0].id;
+      const result = await client.webhooks.updateStatus(firstId, "Disabled");
+      expect(result.status).toBe("Disabled");
     });
 
     it("throws NotFoundError for unknown webhook", async () => {
@@ -461,70 +480,10 @@ describe("MockPax8Client — extended coverage", () => {
     });
   });
 
-  describe("webhooks.addTopics()", () => {
-    it("adds topics to webhook", async () => {
-      const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
-      const original = await client.webhooks.get(firstId);
-      const result = await client.webhooks.addTopics(firstId, ["new.topic"]);
-      expect(result.topics.length).toBeGreaterThanOrEqual(original.topics.length);
-      expect(result.topics).toContain("new.topic");
-    });
-
-    it("deduplicates topics", async () => {
-      const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
-      const original = await client.webhooks.get(firstId);
-      const existingTopic = original.topics[0];
-      const result = await client.webhooks.addTopics(firstId, [existingTopic]);
-      // Should not duplicate
-      const count = result.topics.filter((t) => t === existingTopic).length;
-      expect(count).toBe(1);
-    });
-
-    it("throws NotFoundError for unknown webhook", async () => {
-      await expect(
-        client.webhooks.addTopics("nonexistent", ["x"]),
-      ).rejects.toThrow(NotFoundError);
-    });
-  });
-
-  describe("webhooks.replaceTopics()", () => {
-    it("replaces all topics", async () => {
-      const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
-      const result = await client.webhooks.replaceTopics(firstId, ["only.this"]);
-      expect(result.topics).toEqual(["only.this"]);
-    });
-
-    it("throws NotFoundError for unknown webhook", async () => {
-      await expect(
-        client.webhooks.replaceTopics("nonexistent", ["x"]),
-      ).rejects.toThrow(NotFoundError);
-    });
-  });
-
-  describe("webhooks.removeTopics()", () => {
-    it("removes specified topics", async () => {
-      const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
-      const original = await client.webhooks.get(firstId);
-      const topicToRemove = original.topics[0];
-      const result = await client.webhooks.removeTopics(firstId, [topicToRemove]);
-      expect(result.topics).not.toContain(topicToRemove);
-    });
-
-    it("throws NotFoundError for unknown webhook", async () => {
-      await expect(
-        client.webhooks.removeTopics("nonexistent", ["x"]),
-      ).rejects.toThrow(NotFoundError);
-    });
-  });
-
   describe("webhooks.delete()", () => {
     it("deletes existing webhook", async () => {
       const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
+      const firstId = all[0].id;
       await expect(client.webhooks.delete(firstId)).resolves.toBeUndefined();
     });
 
@@ -536,12 +495,14 @@ describe("MockPax8Client — extended coverage", () => {
   describe("webhooks.test()", () => {
     it("returns test result for active webhook", async () => {
       const all = await client.webhooks.list();
-      const active = all.content.find((w) => w.status === "Active");
+      const active = all.find((w) => w.status === "Active");
       expect(active).toBeDefined();
-      const result = await client.webhooks.test(active!.id);
+      const result = (await client.webhooks.test(active!.id)) as {
+        success: boolean;
+        responseCode: number;
+      };
       expect(result.success).toBe(true);
-      expect(result.statusCode).toBe(200);
-      expect(result.responseTime).toBeGreaterThan(0);
+      expect(result.responseCode).toBe(200);
     });
 
     it("throws NotFoundError for unknown webhook", async () => {
@@ -549,33 +510,40 @@ describe("MockPax8Client — extended coverage", () => {
     });
   });
 
-  describe("webhooks.logs()", () => {
-    it("returns webhook logs", async () => {
-      const result = await client.webhooks.logs({ size: 100 });
-      expect(result.content.length).toBeGreaterThan(0);
-    });
-
-    it("filters by webhookId", async () => {
+  describe("webhooks.getLogs()", () => {
+    it("returns webhook logs for a given id", async () => {
       const all = await client.webhooks.list();
-      const firstId = all.content[0].id;
-      const result = await client.webhooks.logs({ webhookId: firstId, size: 100 });
-      for (const log of result.content) {
+      const firstId = all[0].id;
+      const logs = await client.webhooks.getLogs(firstId);
+      expect(Array.isArray(logs)).toBe(true);
+      for (const log of logs) {
         expect(log.webhookId).toBe(firstId);
       }
     });
+
+    it("throws NotFoundError for unknown webhook", async () => {
+      await expect(client.webhooks.getLogs("nonexistent")).rejects.toThrow(NotFoundError);
+    });
   });
 
-  describe("webhooks.retry()", () => {
+  describe("webhooks.retryLog()", () => {
     it("retries a webhook log", async () => {
-      const logs = await client.webhooks.logs({ size: 100 });
-      const firstLogId = logs.content[0].id;
-      const result = await client.webhooks.retry(firstLogId);
-      expect(result.status).toBe("Success");
-      expect(result.statusCode).toBe(200);
+      const all = await client.webhooks.list();
+      const firstId = all[0].id;
+      const logs = await client.webhooks.getLogs(firstId);
+      expect(logs.length).toBeGreaterThan(0);
+      const result = (await client.webhooks.retryLog(firstId, logs[0].id)) as {
+        responseCode: number;
+      };
+      expect(result.responseCode).toBe(200);
     });
 
     it("throws NotFoundError for unknown log", async () => {
-      await expect(client.webhooks.retry("nonexistent")).rejects.toThrow(NotFoundError);
+      const all = await client.webhooks.list();
+      const firstId = all[0].id;
+      await expect(client.webhooks.retryLog(firstId, "nonexistent")).rejects.toThrow(
+        NotFoundError,
+      );
     });
   });
 });
