@@ -1,0 +1,20 @@
+# Ensure consistent line endings across platforms.
+# All text files use LF in the repo; Windows checkouts get CRLF via
+# core.autocrlf but source files and fixtures stay LF so that tests
+# asserting on exact strings don't diverge between OS matrix entries.
+* text=auto eol=lf
+
+# Explicitly binary — never touch line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.zip binary
+*.gz binary
+*.tar binary
