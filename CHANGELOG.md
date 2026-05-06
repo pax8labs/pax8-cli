@@ -18,6 +18,7 @@ Initial public release.
 - **Idempotency keys on write commands** — `--idempotency-key <uuid>` is accepted on every mutation command (#91).
 - **Machine-readable error codes** — every `CliError` carries a stable `code` (one of the `ERROR_*` constants from `@pax8/core`) so agents and scripts can branch on outcome without parsing strings (#90).
 - **Output formats** — `--json`, `--csv`, `--quiet`, plus `--with-actions` (envelope mode) and `--ids-only` (one ID per line, for piping into the next command's `--company` filter).
+- **Cost simulator (`pax8 cost sim`)** — model SKU swaps, quantity changes, and add-product scenarios with monthly/annual MRR delta, before actually placing the order. Pure compute over pricing data; `simulateCostChange()` is also exported from `@pax8/core` for embedders (#3).
 - **Vitest test suite** — ~840 tests across unit, CLI integration (subprocess), and e2e flows, runnable end-to-end under `PAX8_DEMO=1`.
 - `pax8 auth login` now masks the client secret in interactive mode (no more plaintext echo).
 

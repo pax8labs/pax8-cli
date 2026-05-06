@@ -21,6 +21,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 subscriptions renewals` — computes renewals from existing data
 - `pax8 invoices items` — line items for an invoice
 - `pax8 invoices audit` — read-only computation, no writes
+- `pax8 cost sim` — what-if pricing simulation, no writes
 - `pax8 status`, `pax8 status --all|--renewals|--growth`
 - `pax8 doctor` — diagnostics only
 - `pax8 webhooks logs <id>` — delivery history (read-only)
@@ -87,6 +88,7 @@ pax8 recommendations list --json [--priority high|medium|low] [--company <id|nam
 pax8 recommendations act [--company <id|name>] [--product <name>]    # interactive — only for human-in-the-loop sessions
 pax8 orders list --json
 pax8 orders create --company <id|name> --product <id|name> --quantity <n> [--billing-term Monthly|Annual]
+pax8 cost sim --company <id|name> --product <id|name> --quantity <n> [--from <id|name>] [--billing-term Monthly|Annual] --json
 pax8 report mrr --json
 pax8 report growth --json
 pax8 doctor                                                  # diagnostics, not for data
@@ -129,6 +131,12 @@ pax8 report mrr --json
 pax8 companies list --json
 ```
 `report mrr` already breaks down by company. Lead with total MRR and top 5 customers; offer per-vendor or per-product breakdown if the user asks.
+
+### "What if?" — cost simulation
+```
+pax8 cost sim --company "<name>" --product "<name>" --quantity <n> --json
+```
+Use for SKU swaps (`--from "<current sku>"`), quantity changes (omit `--from`; the CLI auto-detects the existing subscription), or add-new (no current subscription). Lead with the delta number — "+$N/mo" or "−$N/mo" — and mention the per-seat impact when seats are unchanged. Read-only; no order is placed.
 
 ### "Who's missing X?" (cross-sell)
 ```

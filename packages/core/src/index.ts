@@ -203,6 +203,18 @@ export type {
   ProductCategory,
 } from "./services/recommendations.js";
 
+export {
+  simulateCostChange,
+} from "./services/cost-simulator.js";
+export type {
+  SimulationCurrent,
+  SimulationProposed,
+  SimulationInput,
+  SimulationLeg,
+  SimulationDelta,
+  SimulationResult,
+} from "./services/cost-simulator.js";
+
 /**
  * On-disk cache for API responses, keyed by request path + params.
  *
