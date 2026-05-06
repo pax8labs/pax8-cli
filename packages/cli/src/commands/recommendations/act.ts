@@ -14,6 +14,7 @@ import { filterRecommendations } from "./filter.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import { setTelemetryFields } from "../../lib/telemetry-context.js";
 import { replCmd } from "../../lib/confirm.js";
+import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
 
 interface PlacementResult {
   ordered: boolean;
@@ -60,17 +61,8 @@ async function placeOrder(rec: Recommendation, ctx: CommandContext): Promise<Pla
   const spinner = createSpinner(`Ordering ${product} for ${rec.companyName}...`).start();
   try {
     // Resolve commitmentTermId from existing subscription for the SAME product.
-    let commitmentTermId: string | undefined;
-    try {
-      const subs = await ctx.api.subscriptions.list({
-        companyId: rec.companyId,
-        status: "Active",
-      });
-      const match = subs.content.find((s) =>
-        s.productId === productId && s.commitment?.id
-      );
-      if (match?.commitment?.id) commitmentTermId = match.commitment.id;
-    } catch { /* best effort */ }
+    const commitmentInfo = await resolveCommitmentTermId(ctx, rec.companyId, productId);
+    const commitmentTermId = commitmentInfo?.id;
 
     const doneOrder = markWriteInFlight("orders");
     let order;

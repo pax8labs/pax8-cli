@@ -14,6 +14,7 @@ import { filterRecommendations } from "./filter.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { markWriteInFlight } from "../../lib/signals.js";
+import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
 
 const columns: Column[] = [
   {
@@ -133,17 +134,8 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
   }
 
   // Resolve commitmentTermId from existing subscription for the SAME product
-  let commitmentTermId: string | undefined;
-  try {
-    const subs = await ctx.api.subscriptions.list({
-      companyId: rec.companyId,
-      status: "Active",
-    });
-    const match = subs.content.find((s) =>
-      s.productId === productId && s.commitment?.id
-    );
-    if (match?.commitment?.id) commitmentTermId = match.commitment.id;
-  } catch { /* best effort */ }
+  const commitmentInfo = await resolveCommitmentTermId(ctx, rec.companyId, productId);
+  const commitmentTermId = commitmentInfo?.id;
 
   const spinner = createSpinner("Creating order...").start();
   try {

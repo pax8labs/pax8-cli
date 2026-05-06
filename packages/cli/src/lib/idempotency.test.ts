@@ -12,8 +12,10 @@ import {
   isValidKey,
   loadEntry,
   saveEntry,
+  withIdempotency,
   type IdempotencyEntry,
 } from "./idempotency.js";
+import { CliError } from "./errors.js";
 
 describe("idempotency", () => {
   let tmpDir: string;
@@ -189,6 +191,177 @@ describe("idempotency", () => {
     it("does not throw when the dir does not exist", async () => {
       await fs.rm(tmpDir, { recursive: true, force: true });
       await expect(gc()).resolves.toBeUndefined();
+    });
+  });
+
+  describe("withIdempotency", () => {
+    // The wrapper writes the cached payload to real stdout on a hit and then
+    // calls process.exit(). Stub stdout.write so we can assert what would have
+    // been replayed without actually exiting the test runner.
+    const stubStdoutWrite = (): { writes: string[]; restore: () => void } => {
+      const writes: string[] = [];
+      const real = process.stdout.write.bind(process.stdout);
+      // Multi-overload: accept the union of the variants we exercise.
+      (process.stdout.write as unknown as (chunk: string | Uint8Array) => boolean) = (
+        chunk: string | Uint8Array,
+      ): boolean => {
+        const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8");
+        writes.push(text);
+        return true;
+      };
+      return {
+        writes,
+        restore: () => {
+          process.stdout.write = real as typeof process.stdout.write;
+        },
+      };
+    };
+
+    it("passthrough: no key supplied → action runs once, no cache touched", async () => {
+      let calls = 0;
+      const result = await withIdempotency(
+        { commandName: "test.cmd", argsHash: "h1" },
+        async () => {
+          calls += 1;
+          return "value";
+        },
+      );
+      expect(result).toBe("value");
+      expect(calls).toBe(1);
+      // Cache directory must remain empty.
+      const files = await fs.readdir(tmpDir).catch(() => [] as string[]);
+      expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(0);
+    });
+
+    it("cache miss: runs action, persists captured stdout under the key", async () => {
+      const stub = stubStdoutWrite();
+      try {
+        const result = await withIdempotency(
+          { commandName: "test.cmd", idempotencyKey: "miss1234", argsHash: "h1" },
+          async () => {
+            process.stdout.write("hello-from-action\n");
+            return 42;
+          },
+        );
+        expect(result).toBe(42);
+        // Real stdout (stubbed) saw the action's output too — it tees, not swallows.
+        expect(stub.writes.join("")).toContain("hello-from-action");
+      } finally {
+        stub.restore();
+      }
+
+      // Cache entry exists with the captured output.
+      const cached = await loadEntry("test.cmd", "miss1234");
+      expect(cached).not.toBeNull();
+      expect(cached?.argsHash).toBe("h1");
+      expect(cached?.output).toBe("hello-from-action\n");
+      expect(cached?.exitCode).toBe(0);
+    });
+
+    it("cache hit: replays cached stdout and does NOT re-run the action", async () => {
+      // Seed the cache with a known entry.
+      await saveEntry({
+        key: "hit12345",
+        command: "test.cmd",
+        argsHash: "h1",
+        output: "REPLAYED-PAYLOAD\n",
+        exitCode: 0,
+        createdAt: new Date().toISOString(),
+      });
+
+      // The wrapper calls process.exit() on a hit. Stub it.
+      const realExit = process.exit;
+      let exitedWith: number | undefined;
+      (process.exit as unknown as (code?: number) => never) = ((code?: number) => {
+        exitedWith = code;
+        // Throw a sentinel so the caller's code path stops without actually exiting.
+        throw new Error("__test_exit__");
+      }) as never;
+
+      let actionCalls = 0;
+      const stub = stubStdoutWrite();
+      try {
+        await expect(
+          withIdempotency(
+            { commandName: "test.cmd", idempotencyKey: "hit12345", argsHash: "h1" },
+            async () => {
+              actionCalls += 1;
+              return "should-not-run";
+            },
+          ),
+        ).rejects.toThrow("__test_exit__");
+      } finally {
+        stub.restore();
+        process.exit = realExit;
+      }
+
+      expect(actionCalls).toBe(0);
+      expect(exitedWith).toBe(0);
+      expect(stub.writes.join("")).toContain("REPLAYED-PAYLOAD");
+    });
+
+    it("cache hit with different argsHash: throws CliError, does not run action", async () => {
+      await saveEntry({
+        key: "diff1234",
+        command: "test.cmd",
+        argsHash: "original-hash",
+        output: "x",
+        exitCode: 0,
+        createdAt: new Date().toISOString(),
+      });
+
+      let actionCalls = 0;
+      await expect(
+        withIdempotency(
+          { commandName: "test.cmd", idempotencyKey: "diff1234", argsHash: "different-hash" },
+          async () => {
+            actionCalls += 1;
+            return null;
+          },
+        ),
+      ).rejects.toBeInstanceOf(CliError);
+      expect(actionCalls).toBe(0);
+    });
+
+    it("shouldPersist=false: action runs but cache entry is NOT written", async () => {
+      const stub = stubStdoutWrite();
+      try {
+        const result = await withIdempotency<boolean>(
+          {
+            commandName: "test.cmd",
+            idempotencyKey: "skip1234",
+            argsHash: "h1",
+            shouldPersist: (didWrite) => didWrite,
+          },
+          async () => {
+            process.stdout.write("user-cancelled\n");
+            return false; // signal: don't persist
+          },
+        );
+        expect(result).toBe(false);
+      } finally {
+        stub.restore();
+      }
+      // Cache entry should NOT exist.
+      const cached = await loadEntry("test.cmd", "skip1234");
+      expect(cached).toBeNull();
+    });
+
+    it("action throws: cache is not written, stdout is restored", async () => {
+      const beforeWrite = process.stdout.write;
+      await expect(
+        withIdempotency(
+          { commandName: "test.cmd", idempotencyKey: "fail1234", argsHash: "h1" },
+          async () => {
+            throw new Error("boom");
+          },
+        ),
+      ).rejects.toThrow("boom");
+      // stdout.write must be restored to the original (the wrapper temporarily proxies it).
+      expect(process.stdout.write).toBe(beforeWrite);
+      // No cache entry was persisted.
+      const cached = await loadEntry("test.cmd", "fail1234");
+      expect(cached).toBeNull();
     });
   });
 });

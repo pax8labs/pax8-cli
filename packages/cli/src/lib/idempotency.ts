@@ -1,10 +1,12 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
+import { CliError } from "./errors.js";
 
 /**
  * Idempotency cache for write commands.
@@ -146,4 +148,135 @@ export async function saveEntry(entry: IdempotencyEntry): Promise<void> {
   const tmp = fp + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(entry), { encoding: "utf-8", mode: 0o600 });
   await fs.rename(tmp, fp);
+}
+
+export interface IdempotencyOptions<T = unknown> {
+  /** Cache key namespace, e.g. "orders.create". */
+  commandName: string;
+  /** User-supplied replay key. If undefined the wrapper is a passthrough. */
+  idempotencyKey?: string;
+  /**
+   * Stable hash of the action's effective arguments. Used to detect "same
+   * key, different args" reuse and refuse to replay. Callers compute this
+   * with `hashArgs()`.
+   */
+  argsHash: string;
+  /**
+   * Optional predicate to skip persisting the cache entry on certain
+   * "successful" returns — e.g. when the user cancels at a confirmation
+   * prompt. Defaults to "always persist on action success".
+   */
+  shouldPersist?: (result: T) => boolean;
+}
+
+/**
+ * Wrap a write action with idempotency-key handling.
+ *
+ * Behavior:
+ *   1. If `opts.idempotencyKey` is undefined → invoke `action()` as a
+ *      passthrough. No cache lookup, no stdout capture.
+ *   2. If a cached entry exists for `(commandName, idempotencyKey)`:
+ *        - If `argsHash` matches → write the cached stdout to the user's
+ *          terminal and `process.exit(cached.exitCode)`. The action does
+ *          NOT re-run.
+ *        - If `argsHash` differs → throw a `CliError` (refuse to replay
+ *          with different args; could double-write).
+ *   3. Otherwise: install a `process.stdout.write` proxy that tees output
+ *      both to the real terminal and an in-memory buffer; run `action`;
+ *      on success persist the captured buffer + exitCode 0 under the
+ *      cache key; restore stdout; return the action's value. On failure,
+ *      stdout is restored and the cache is NOT written (the agent retries).
+ *
+ * The caller is responsible for:
+ *   - Validating the key format with `isValidKey()` and throwing a
+ *     CliError before calling this wrapper.
+ *   - Computing `argsHash` from the action's effective arguments.
+ *   - Calling `markWriteInFlight()` around the actual write inside `action`.
+ */
+export async function withIdempotency<T>(
+  opts: IdempotencyOptions<T>,
+  action: () => Promise<T>,
+): Promise<T> {
+  const { commandName, idempotencyKey, argsHash, shouldPersist } = opts;
+
+  // Passthrough: no key supplied.
+  if (idempotencyKey === undefined) {
+    return action();
+  }
+
+  // Cache hit branch. `loadEntry` itself is wrapped so that a transient
+  // read failure leaves us in fail-open mode (we run the action). The
+  // replay path below is intentionally *not* inside that try/catch — once
+  // we have a cached entry, any further error must propagate so the user
+  // sees it (e.g. CliError on argsHash mismatch).
+  let cached: IdempotencyEntry | null = null;
+  try {
+    cached = await loadEntry(commandName, idempotencyKey);
+  } catch (err) {
+    if (process.env.PAX8_DEBUG) {
+      process.stderr.write(`[debug] idempotency cache read failed: ${err}\n`);
+    }
+  }
+  if (cached) {
+    if (cached.argsHash !== argsHash) {
+      throw new CliError(
+        "Idempotency key reused with different arguments — refusing to retry.",
+        [
+          `The key "${idempotencyKey}" was previously used for ${cached.command} with a different argument set.`,
+          "Replaying with new arguments would risk a double-write or a misleading 'cached' response.",
+        ],
+        [
+          "Generate a new idempotency key for the new request.",
+          `Or wait 24h for the old entry to expire (cached at ${cached.createdAt}).`,
+        ],
+      );
+    }
+    process.stderr.write(chalk.dim("  (idempotent replay)\n"));
+    if (cached.output) process.stdout.write(cached.output);
+    process.exit(cached.exitCode);
+  }
+
+  // Cache miss: tee stdout to memory while running the action.
+  let captured = "";
+  // Preserve a reference to the *original* function so we can restore it
+  // exactly (preserves identity for tests / nested wrappers). Use a bound
+  // copy for the actual passthrough call inside the proxy.
+  const originalStdoutWrite = process.stdout.write;
+  const writeBound = originalStdoutWrite.bind(process.stdout);
+  // Cast to satisfy the multi-overload signature of process.stdout.write.
+  (process.stdout.write as unknown as (chunk: string | Uint8Array) => boolean) = (
+    chunk: string | Uint8Array,
+  ): boolean => {
+    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8");
+    captured += text;
+    return writeBound(chunk as string);
+  };
+
+  try {
+    const value = await action();
+    // Persist on success only — and skip when the caller's predicate says
+    // we shouldn't (e.g. user cancelled at a confirmation prompt).
+    const persist = shouldPersist ? shouldPersist(value) : true;
+    if (persist) {
+      try {
+        await saveEntry({
+          key: idempotencyKey,
+          command: commandName,
+          argsHash,
+          output: captured,
+          exitCode: 0,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        if (process.env.PAX8_DEBUG) {
+          process.stderr.write(`[debug] idempotency cache write failed: ${err}\n`);
+        }
+      }
+    }
+    return value;
+  } finally {
+    // Always restore stdout, even on action failure. Restoring the
+    // original function (not a bound copy) preserves reference identity.
+    process.stdout.write = originalStdoutWrite;
+  }
 }
