@@ -89,7 +89,7 @@ Examples:
       spinner.succeed("Quote created");
 
       if (ctx.outputFormat === "json") {
-        output([quote as unknown as Record<string, unknown>], { format: "json" });
+        output([quote], { format: "json" });
         return;
       }
 

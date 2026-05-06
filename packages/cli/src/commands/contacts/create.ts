@@ -87,7 +87,7 @@ Examples:
       spinner.succeed("Contact created");
 
       if (ctx.outputFormat === "json") {
-        output([contact as unknown as Record<string, unknown>], { format: "json" });
+        output([contact], { format: "json" });
         return;
       }
 

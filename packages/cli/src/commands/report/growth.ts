@@ -86,7 +86,7 @@ Examples:
           { key: "delta", header: "Change" },
           { key: "growthPercent", header: "Growth %" },
         ];
-        output(rows as unknown as Record<string, unknown>[], { format: "csv", columns });
+        output(rows, { format: "csv", columns });
         return;
       }
 

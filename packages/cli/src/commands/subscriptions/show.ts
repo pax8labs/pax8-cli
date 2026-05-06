@@ -62,13 +62,13 @@ Examples:
             format: "json",
           });
         } else {
-          output([sub as unknown as Record<string, unknown>], { format: "json" });
+          output([sub], { format: "json" });
         }
         return;
       }
 
       if (ctx.outputFormat === "csv") {
-        output([sub as unknown as Record<string, unknown>], { format: "csv" });
+        output([sub], { format: "csv" });
         return;
       }
 
@@ -106,7 +106,7 @@ Examples:
         const changes = Array.isArray(history) ? history : history.changes;
         if (changes.length > 0) {
           process.stdout.write(chalk.bold("  Change History\n\n"));
-          output(changes as unknown as Record<string, unknown>[], {
+          output(changes, {
             format: "table",
             columns: historyColumns,
           });

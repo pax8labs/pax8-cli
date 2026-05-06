@@ -1,6 +1,8 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { TelemetryEvent } from "@pax8/core";
+
 /**
  * Request-scoped telemetry fields contributed by command handlers.
  *
@@ -24,6 +26,26 @@
  * the next.
  */
 
+/**
+ * Aggregate-count fields that handlers may contribute to the postAction
+ * event. Constrained to the seven keys actually defined on `TelemetryEvent`
+ * today so a future drive-by can't add free-form text to the schema —
+ * widen this `Pick` set when a new field is added to `TelemetryEvent`.
+ */
+export type TelemetryExtraFields = Partial<
+  Pick<
+    TelemetryEvent,
+    | "order_success"
+    | "order_total_dollars"
+    | "order_mrr_impact"
+    | "order_seats"
+    | "recs_presented"
+    | "recs_ordered"
+    | "recs_skipped"
+    | "recs_mrr_captured"
+  >
+>;
+
 let pending: Record<string, unknown> = {};
 
 /**
@@ -33,7 +55,7 @@ let pending: Record<string, unknown> = {};
  * (callers that compute optional values can pass them through without an
  * `if`).
  */
-export function setTelemetryFields(fields: Record<string, unknown>): void {
+export function setTelemetryFields(fields: TelemetryExtraFields): void {
   for (const [k, v] of Object.entries(fields)) {
     if (v !== undefined) {
       pending[k] = v;

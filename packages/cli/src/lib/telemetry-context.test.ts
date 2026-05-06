@@ -46,11 +46,11 @@ describe("telemetry-context", () => {
   });
 
   it("consume returns a fresh object the caller owns", () => {
-    setTelemetryFields({ a: 1 });
+    setTelemetryFields({ recs_presented: 1 });
     const first = consumeTelemetryFields();
-    setTelemetryFields({ b: 2 });
+    setTelemetryFields({ order_seats: 2 });
     const second = consumeTelemetryFields();
-    expect(first).toEqual({ a: 1 });
-    expect(second).toEqual({ b: 2 });
+    expect(first).toEqual({ recs_presented: 1 });
+    expect(second).toEqual({ order_seats: 2 });
   });
 });

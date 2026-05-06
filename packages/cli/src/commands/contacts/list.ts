@@ -71,7 +71,7 @@ Examples:
         { key: "phone", header: "Phone", width: 18 },
       ];
 
-      output(result.content as unknown as Record<string, unknown>[], { format: ctx.outputFormat, columns });
+      output(result.content, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
         process.stderr.write(

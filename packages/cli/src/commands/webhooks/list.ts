@@ -96,7 +96,7 @@ Examples:
         },
       ];
 
-      output(webhooks as unknown as Record<string, unknown>[], {
+      output(webhooks, {
         format: ctx.outputFormat,
         columns,
       });

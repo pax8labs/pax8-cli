@@ -1,8 +1,8 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { classifyError, instrumentedAction } from "./instrumented-action.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { classifyError } from "./classify-error.js";
 import { CliError } from "./errors.js";
 import {
   AuthError,
@@ -99,35 +99,6 @@ describe("classifyError", () => {
       expect(allowed.has(code)).toBe(true);
       expect(code).toMatch(/^ERROR_[A-Z_]+$/);
     }
-  });
-});
-
-describe("instrumentedAction", () => {
-  const originalEnv = { ...process.env };
-
-  beforeEach(() => {
-    delete process.env.PAX8_DEMO;
-  });
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("calls the wrapped action", async () => {
-    const action = vi.fn().mockResolvedValue(undefined);
-    const wrapped = instrumentedAction("test.command", action);
-
-    await wrapped({ json: true, verbose: false });
-
-    expect(action).toHaveBeenCalledWith({ json: true, verbose: false });
-  });
-
-  it("re-throws errors from the action", async () => {
-    const error = new Error("test error");
-    const action = vi.fn().mockRejectedValue(error);
-    const wrapped = instrumentedAction("test.command", action);
-
-    await expect(wrapped({})).rejects.toThrow("test error");
   });
 });
 

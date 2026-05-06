@@ -83,7 +83,7 @@ Examples:
         { key: "_total", header: "Total", width: 12, format: (v) => formatCurrency(Number(v)) },
       ];
 
-      output(enriched as unknown as Record<string, unknown>[], { format: ctx.outputFormat, columns });
+      output(enriched, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
         const total = enriched.reduce((s, q) => s + q._total, 0);
