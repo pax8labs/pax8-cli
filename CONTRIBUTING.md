@@ -76,6 +76,20 @@ docs: update README with demo mode examples
 chore: upgrade vitest to v4
 ```
 
+## Releases
+
+We use [Changesets](https://github.com/changesets/changesets) to manage versions and changelogs for the published packages (`@pax8/cli` and `@pax8/core`). `@pax8/claude-skill` is not published to npm.
+
+When your PR has user-visible changes, add a changeset alongside your code:
+
+```bash
+pnpm changeset
+```
+
+Pick the affected packages, the bump type (`patch` / `minor` / `major`), and write a short summary in the imperative mood ("Add X", "Fix Y"). Commit the generated `.changeset/*.md` file with the rest of your PR.
+
+On merge to `main`, the release workflow opens (or updates) a `chore: release` PR that bumps versions and updates `CHANGELOG.md`. Merging that PR publishes to npm with [provenance](https://docs.npmjs.com/generating-provenance-statements) attestations.
+
 ## Reporting Issues
 
 Use GitHub Issues. Include:
