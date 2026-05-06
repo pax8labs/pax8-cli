@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { getUpcomingRenewals } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -43,6 +43,7 @@ export const subscriptionsRenewalsCommand = new Command("renewals")
   .description("Show upcoming subscription renewals")
   .option("--within <period>", "Time window (e.g. 7d, 14d, 30d, 90d)", "30d")
   .option("--company <id|name>", "Filter by company")
+  .option("--with-actions", "Wrap JSON output as { renewals, nextActions } instead of a flat array")
   .addHelpText(
     "after",
     `
@@ -65,7 +66,7 @@ Examples:
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
       const [result, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: 1000, companyId }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId }),
         ctx.api.companies.list({ size: 200 }),
       ]);
 
@@ -88,13 +89,17 @@ Examples:
           mrrAtRisk: Number(item.mrrAtRisk.toFixed(2)),
           renewalDate: item.renewalDate.toISOString().split("T")[0],
         }));
-        const nextActions = report.items
-          .slice(0, 5)
-          .map((item) => ({
-            command: `pax8 subscriptions show ${item.subscriptionId}`,
-            description: `View renewal details for ${item.companyName} — ${item.productName} (${item.daysUntilRenewal}d)`,
-          }));
-        process.stdout.write(JSON.stringify({ renewals: renewalItems, nextActions }, null, 2) + "\n");
+        if (options.withActions) {
+          const nextActions = report.items
+            .slice(0, 5)
+            .map((item) => ({
+              command: `pax8 subscriptions show ${item.subscriptionId}`,
+              description: `View renewal details for ${item.companyName} — ${item.productName} (${item.daysUntilRenewal}d)`,
+            }));
+          process.stdout.write(JSON.stringify({ renewals: renewalItems, nextActions }, null, 2) + "\n");
+        } else {
+          process.stdout.write(JSON.stringify(renewalItems, null, 2) + "\n");
+        }
         return;
       }
 

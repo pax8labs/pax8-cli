@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runCli, runCliExpectSuccess } from "./test-utils.js";
+import { runCliExpectSuccess } from "./test-utils.js";
 
 describe("pax8 invoices", () => {
   describe("invoices list", () => {
@@ -47,6 +47,25 @@ describe("pax8 invoices", () => {
         expect(inv.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
       }
     });
+
+    it("--with-actions wraps in { invoices, nextActions }", async () => {
+      const result = await runCliExpectSuccess([
+        "invoices",
+        "list",
+        "--json",
+        "--with-actions",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("invoices");
+      expect(data).toHaveProperty("nextActions");
+      expect(Array.isArray(data.invoices)).toBe(true);
+      expect(Array.isArray(data.nextActions)).toBe(true);
+      expect(data.nextActions.length).toBeGreaterThan(0);
+      for (const action of data.nextActions) {
+        expect(action).toHaveProperty("command");
+        expect(action).toHaveProperty("description");
+      }
+    });
   });
 
   describe("invoices show", () => {
@@ -80,7 +99,7 @@ describe("pax8 invoices", () => {
       expect(data[0]).toHaveProperty("productName");
       expect(data[0]).toHaveProperty("quantity");
       expect(data[0]).toHaveProperty("unitPrice");
-      expect(data[0]).toHaveProperty("total");
+      expect(data[0]).toHaveProperty("subtotal");
     });
 
     it("filters items by invoice ID", async () => {

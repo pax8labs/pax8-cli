@@ -179,8 +179,9 @@ describe("MockPax8Client", () => {
       );
       expect(pricing.length).toBeGreaterThan(0);
       expect(pricing[0]).toHaveProperty("billingTerm");
-      expect(pricing[0]).toHaveProperty("partnerBuyPrice");
       expect(pricing[0]).toHaveProperty("commitmentTerm");
+      expect(pricing[0]).toHaveProperty("rates");
+      expect(pricing[0]?.rates[0]).toHaveProperty("partnerBuyRate");
     });
   });
 
@@ -202,9 +203,9 @@ describe("MockPax8Client", () => {
 
   describe("contacts", () => {
     it("list filters by companyId", async () => {
-      const result = await client.contacts.list({
-        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      });
+      const result = await client.contacts.list(
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      );
       expect(result.content.length).toBe(2);
     });
   });
@@ -214,13 +215,11 @@ describe("MockPax8Client", () => {
   describe("webhooks", () => {
     it("list returns webhooks", async () => {
       const result = await client.webhooks.list();
-      expect(result.content.length).toBeGreaterThan(0);
-    });
-
-    it("listTopics returns topics", async () => {
-      const topics = await client.webhooks.listTopics();
-      expect(topics.length).toBeGreaterThan(0);
-      expect(topics).toContain("subscription.created");
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeGreaterThan(0);
+      expect(result[0]).toHaveProperty("id");
+      expect(result[0]).toHaveProperty("url");
+      expect(result[0]).toHaveProperty("topics");
     });
   });
 });

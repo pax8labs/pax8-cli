@@ -2,14 +2,16 @@
 
 An open-source CLI for managing Pax8 cloud marketplace operations. Built for MSPs who want to manage subscriptions, billing, customers, and growth opportunities from the terminal.
 
+## Status
+
+This is an early-stage open-source experiment. We're using engagement signals (installs, issues, command usage) to learn which capabilities are worth investing in further. Feedback, issues, and PRs are welcome.
+
 ## Highlights
 
-- **Business dashboard** — `pax8 status` shows MRR, renewals, growth opportunities, and expiring trials in one command
-- **Recommendation engine** — analyzes customer portfolios, flags missing products (backup, security, identity), and estimates MRR uplift
-- **Act on recommendations** — `pax8 recommendations act` walks through opportunities one by one and places orders
-- **Full Pax8 API coverage** — companies, subscriptions, orders, invoices, products
-- **Claude AI integration** — agents get structured access to renewals, audits, recommendations, and MRR via MCP server
-- **Smart UX** — interactive drill-downs, copy-paste order commands, actionable error messages
+- **Answers the API doesn't** — renewals, invoice audit, upsell recommendations, MRR analytics computed locally from raw Pax8 data
+- **Closes the loop** — `pax8 recommendations act` walks portfolio gaps and places the orders, so insight and action live in the same tool
+- **Works for humans and agents identically** — every command emits structured JSON, so a Claude Code skill, a shell pipeline, or a person at a terminal all use the same surface
+- **Demo mode** — `PAX8_DEMO=1` runs every command against an in-memory fixture, no credentials required
 
 ## Why This Exists
 
@@ -23,6 +25,10 @@ This CLI computes what the API doesn't:
 - **MRR analytics** — aggregation by company/product/vendor with annual-to-monthly amortization
 
 Every command supports `--json`, so humans and AI agents use the same tool.
+
+## When to use this CLI vs the Pax8 MCP
+
+Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see the [Pax8 MCP docs](https://devx.pax8.com/docs/mcp-server). Use this CLI when you want a richer command surface (recommendations, invoice audit, MRR analytics, demo mode) or when you're scripting against a stable, versioned interface. Use the Pax8 MCP when you want zero-install access via Claude, Cursor, Copilot, or VS Code and you don't need the CLI-specific capabilities.
 
 ## Quick Start
 
@@ -44,10 +50,10 @@ PAX8_DEMO=1 pax8 status
 
 ```bash
 pax8 status                              # MRR, renewals, growth opportunities
-pax8 companies list                      # Browse customers (type # to drill in)
-pax8 companies more "Acme Corp"          # Full customer summary
 pax8 recommendations list                # Cross-sell and seat gap opportunities
 pax8 recommendations act                 # Walk through and place orders (y/s/q)
+pax8 companies list                      # Browse customers (type # to drill in)
+pax8 companies more "Acme Corp"          # Full customer summary
 ```
 
 ## Commands
@@ -123,7 +129,7 @@ pax8 products show <id>                                # Product details + prici
 ### Diagnostics
 
 ```bash
-pax8 doctor                    # Node, auth, API endpoints (5/5), cache, MCP, telemetry
+pax8 doctor                    # Node, auth, API endpoints (5/5), cache, telemetry
 pax8 auth status               # Check credentials
 ```
 
@@ -171,7 +177,19 @@ export PAX8_CLIENT_ID=your-client-id
 export PAX8_CLIENT_SECRET=your-client-secret
 ```
 
-Generate API credentials in the [Pax8 Integrations Hub](https://app.pax8.com). For detailed setup instructions, see the [Credential Setup Guide](docs/credential-setup.md).
+Generate API credentials in the [Pax8 Integrations Hub](https://app.pax8.com). For detailed setup instructions, see the [Credential Setup Guide](docs/credential-setup.md). A copy-pasteable starter is in [`.env.example`](.env.example).
+
+### Pointing at a non-prod environment
+
+By default, the CLI talks to `https://api.pax8.com/v1`. Partners testing against a sandbox or staging environment can override the base URL without code changes:
+
+```bash
+export PAX8_API_BASE=https://staging-api.pax8.com/v1/
+pax8 status
+pax8 doctor   # confirms the active API base in its output
+```
+
+`PAX8_API_BASE` is honored by both the API client and the OAuth token endpoint, so a single override switches the whole CLI (and any process embedding `@pax8/core`) to the alternate environment.
 
 ## Demo Mode
 
@@ -186,7 +204,7 @@ Or enable persistently: `pax8 init --demo`
 
 ## Claude AI Integration
 
-The CLI includes an MCP server and a Claude Code skill, so AI agents get the same computed intelligence as human operators — without reimplementing business logic or wrestling with raw API calls.
+The CLI ships with a Claude Code skill, so AI agents get the same computed intelligence as human operators — without reimplementing business logic or wrestling with raw API calls.
 
 ### What agents get
 
@@ -196,20 +214,7 @@ Available tools: companies, subscriptions, renewals, invoices, invoice audits, r
 
 ### Setup (Claude Code)
 
-Add to your Claude Code MCP config:
-
-```json
-{
-  "mcpServers": {
-    "pax8": {
-      "command": "pax8",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Or use the Claude Code skill directly — it wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible).
+The skill wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible). See `packages/claude-skill/skill.md`.
 
 ### Example
 
@@ -220,6 +225,10 @@ Claude: runs pax8 recommendations list --json, returns prioritized gaps
 ```
 
 Works with Claude Code, Cursor, Copilot, and any agent framework that can run shell commands.
+
+## Core library
+
+All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and MRR analytics are all importable from a portal feature, a Lambda, a dashboard, or your own tool. The CLI is one consumer; the durable asset is the domain knowledge in `core`. See [`packages/core/README.md`](packages/core/README.md) for the install, import example, and capability list.
 
 ## Performance
 
@@ -234,7 +243,7 @@ git clone https://github.com/pax8labs/pax8-cli.git
 cd pax8-cli
 pnpm install
 pnpm build
-pnpm test              # 700+ tests (739 and counting)
+pnpm test              # comprehensive test suite (800+ tests across unit, CLI integration, and e2e flows; see CI for current count)
 pnpm test:coverage
 ```
 
@@ -242,16 +251,97 @@ pnpm test:coverage
 
 - **`packages/core`** — API client, auth, recommendation engine, types (zero CLI dependencies)
 - **`packages/cli`** — Commander.js commands, formatting, interactive UX
-- **`packages/claude-skill`** — Claude Code MCP skill
+- **`packages/claude-skill`** — Claude Code skill
 
 ### Telemetry
 
-Anonymous, opt-in usage telemetry via PostHog. Tracks command names, duration, and revenue processed — never credentials, company data, or PII.
+Anonymous, **opt-in** usage telemetry via PostHog. Off by default — `telemetry.enabled` defaults to `false` in config and the CLI sends nothing until you explicitly opt in.
 
 ```bash
-pax8 telemetry enable    # Opt in
-pax8 telemetry disable   # Opt out
+pax8 telemetry enable     # Opt in
+pax8 telemetry disable    # Opt out
+pax8 telemetry status     # Check current state
 ```
+
+The CLI also honors two ambient environment variables (no opt-in required) and short-circuits before constructing the PostHog client:
+
+- `PAX8_TELEMETRY_DISABLED=1`
+- `DO_NOT_TRACK=1` (the [Console Do Not Track](https://consoledonottrack.com) standard)
+
+**Single event:** `command_executed`
+
+| Property | Sent | Notes |
+|---|---|---|
+| `command` | always | The top-level command, e.g. `companies` |
+| `subcommand` | when present | Dotted path, e.g. `recommendations.list` |
+| `flags` | always | The flag *names* the user passed (no values) |
+| `duration_ms` | always | Wall-clock duration in ms |
+| `success` | always | Boolean |
+| `error_code` | on error | One of the `ERROR_*` constants from `@pax8/core` |
+| `cli_version` | always | From package.json |
+| `node_version` | always | `process.version` |
+| `os` | always | `process.platform` |
+| `demo_mode` | always | Whether `PAX8_DEMO=1` was set |
+| `recs_presented`, `recs_ordered`, `recs_skipped`, `recs_mrr_captured` | `recommendations act` | Aggregate counts only |
+| `order_success`, `order_total_dollars`, `order_mrr_impact`, `order_seats` | `orders create` | Aggregate transaction outcome only |
+
+The anonymous `distinct_id` is `sha256(hostname + ":" + username)` truncated to 16 hex chars — computed locally, never reversible to its inputs.
+
+**Never sent:**
+
+- API client_id, client_secret, OAuth tokens
+- Customer / company / subscription / order IDs
+- Customer or company names
+- Command argument values (only flag *names* — `--company`, never `--company "Acme Corp"`)
+- Partner identifiers, account names, billing data
+- Stack traces, file paths, environment variables
+- Any PII
+
+**On the embedded PostHog key:** the project key shipped in the bundle is the public, write-only PostHog *project ingestion* key — this is the standard pattern for OSS analytics, and [PostHog's own guidance](https://posthog.com/docs/api#public-posthog-api) recommends embedding it. It cannot read events back, only append.
+
+### Network egress
+
+For partners on restricted networks, this is the complete allowlist of hosts the CLI may contact:
+
+| Host | When | Required? |
+|---|---|---|
+| `https://api.pax8.com` | Every API call | Always |
+| `https://api.pax8.com/v1/token` | OAuth client-credentials token exchange | Always (during auth) |
+| `https://us.i.posthog.com` | Telemetry capture | Only when `pax8 telemetry enable` has been set AND no opt-out env var is present |
+
+No other network egress. The CLI does not contact npm, GitHub, the Pax8 portal, the marketing site, or any auto-update service at runtime.
+
+### Using @pax8/core as a standalone library
+
+All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and MRR analytics are all importable. See [`packages/core/README.md`](packages/core/README.md) for the full API; here is a minimal end-to-end example:
+
+```ts
+import {
+  Pax8Client,
+  TokenManager,
+  SubscriptionsApi,
+  getUpcomingRenewals,
+  ALL_SUBS_PAGE_SIZE,
+} from "@pax8/core";
+
+const tokenManager = new TokenManager({
+  clientId: process.env.PAX8_CLIENT_ID!,
+  clientSecret: process.env.PAX8_CLIENT_SECRET!,
+});
+
+const client = new Pax8Client({ tokenManager });
+const subscriptions = new SubscriptionsApi(client);
+
+const { content } = await subscriptions.list({ size: ALL_SUBS_PAGE_SIZE });
+const report = getUpcomingRenewals(content, 30);
+
+console.log(`${report.items.length} renewals in 30 days, $${report.totalMrrAtRisk}/mo at risk`);
+for (const r of report.items.slice(0, 5)) {
+  console.log(`  ${r.daysUntilRenewal}d  ${r.companyName}  ${r.productName}  $${r.mrrAtRisk}/mo`);
+}
+```
+
+The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface.
 
 ## Documentation
 
@@ -268,3 +358,7 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE)
+
+---
+
+Pax8 and the Pax8 logo are trademarks of Pax8, Inc.

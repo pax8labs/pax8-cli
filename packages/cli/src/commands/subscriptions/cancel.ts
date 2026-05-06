@@ -8,6 +8,7 @@ import { confirmDestructive } from "../../lib/confirm.js";
 import { formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { replCmd } from "../../lib/confirm.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const subscriptionsCancelCommand = new Command("cancel")
   .description("Cancel a subscription")
@@ -31,7 +32,7 @@ Examples:
       spinner.stop();
 
       // Calculate MRR impact
-      const mrr = calculateMrr(sub.price, sub.quantity, String(sub.billingTerm ?? "Monthly"));
+      const mrr = calculateMrr(sub.price ?? 0, sub.quantity, String(sub.billingTerm ?? "Monthly"));
 
       if (ctx.outputFormat !== "quiet") {
         process.stdout.write(chalk.red.bold("\n  Subscription to be cancelled:\n\n"));
@@ -54,7 +55,12 @@ Examples:
       }
 
       const cancelSpinner = createSpinner("Cancelling subscription...").start();
-      await ctx.api.subscriptions.delete(id);
+      const doneCancel = markWriteInFlight("subscriptions");
+      try {
+        await ctx.api.subscriptions.delete(id);
+      } finally {
+        doneCancel();
+      }
       await invalidateCacheAfterWrite();
       cancelSpinner.succeed("Subscription cancelled");
 

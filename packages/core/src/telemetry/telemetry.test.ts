@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- accessing private members for testing */
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -26,15 +26,24 @@ function makeEvent(overrides: Partial<TelemetryEvent> = {}): TelemetryEvent {
 
 describe("Telemetry", () => {
   const originalEnv = { ...process.env };
+  let isolatedConfigDir: string;
 
   beforeEach(() => {
     resetTelemetry();
     delete process.env.PAX8_TELEMETRY_DISABLED;
     delete process.env.DO_NOT_TRACK;
+    // Each test gets its own config dir so we don't clobber the user's real
+    // ~/.pax8 or race against other test files that touch config.yaml.
+    isolatedConfigDir = path.join(
+      os.tmpdir(),
+      `pax8-telemetry-cfg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    process.env.PAX8_CONFIG_DIR = isolatedConfigDir;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.env = { ...originalEnv };
+    await fs.rm(isolatedConfigDir, { recursive: true, force: true }).catch(() => {});
   });
 
   it("is disabled by default", () => {
@@ -62,11 +71,6 @@ describe("Telemetry", () => {
     await fs.mkdir(tmpDir, { recursive: true });
     const configPath = path.join(tmpDir, "config.yaml");
     await fs.writeFile(configPath, 'version: "1.0"\ntelemetry:\n  enabled: false\n', "utf-8");
-
-    // Monkey-patch the loader to use our temp config
-    const loader = await import("../config/loader.js");
-    const origLoad = loader.loadConfig;
-    const origSave = loader.saveConfig;
 
     // We can't easily mock ESM, so we test the public interface with real config.
     // Instead, test the state toggle:

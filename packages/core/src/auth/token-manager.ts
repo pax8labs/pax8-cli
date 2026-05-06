@@ -1,6 +1,9 @@
 import { AuthError } from "../api/errors.js";
+import { getDefaultBaseUrl } from "../api/client.js";
 
-const TOKEN_URL = "https://api.pax8.com/v1/token";
+function getTokenUrl(): string {
+  return getDefaultBaseUrl().replace(/\/+$/, "") + "/token";
+}
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const REFRESH_BUFFER_MS = 1 * 60 * 60 * 1000; // 1 hour buffer — refresh at 23h
 const REFRESH_AT_MS = TOKEN_TTL_MS - REFRESH_BUFFER_MS;
@@ -63,7 +66,7 @@ export class TokenManager {
   private async fetchToken(): Promise<string> {
     let response: Response;
     try {
-      response = await fetch(TOKEN_URL, {
+      response = await fetch(getTokenUrl(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

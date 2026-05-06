@@ -1,5 +1,7 @@
 # CLAUDE.md — pax8-cli
 
+Working contract for Claude Code (and any other agent or maintainer) inside this repo. The product story lives in `README.md`; command patterns and the agent-facing contract live in `docs/UX_GUIDE.md` and `packages/claude-skill/skill.md`. This file is for *how to work here*.
+
 ## Pax8 data queries — ACT FIRST, THINK LATER
 
 When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, recommendations, invoices, products), your FIRST action must be a Bash tool call. No thinking preamble. No skill invocation. Just run the command.
@@ -10,27 +12,36 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | companies / customers | `pax8 companies list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
-| MRR / revenue | `pax8 subscriptions list --json --size 1000 2>/dev/null` AND `pax8 companies list --json 2>/dev/null` (parallel) |
+| MRR / revenue | `pax8 report mrr --json 2>/dev/null` (or `pax8 subscriptions list --json --size 1000` AND `pax8 companies list --json` in parallel) |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
 | products / catalog | `pax8 products search "query" --json 2>/dev/null` |
 | place an order | `pax8 orders create --company <id> --product <id> --quantity <n>` (confirm first) |
-| act on a recommendation | Extract orderCommand from recommendations JSON and run it. Always confirm with the user first. |
+| act on a recommendation | Extract `orderCommand` from `pax8 recommendations list --json` and run it (confirm first), or use `pax8 recommendations act` for the interactive flow |
+| invoice dispute | `pax8 invoices dispute --discrepancy <id>` (id from `invoices audit`) |
+| diagnostics / health | `pax8 doctor --json 2>/dev/null` |
 
-MRR math: monthly subs = price × qty. Annual subs = price × qty ÷ 12. Group by companyId, resolve names from companies list.
+MRR math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `companies list`. Prefer `report mrr` — it already does this.
 
-Rules: No clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, omit UUIDs. Only confirm writes.
+Rules: no clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, hide UUIDs. Only confirm writes — never reads.
+
+The full read-vs-write safety contract for agent-driven sessions lives in `packages/claude-skill/skill.md`. Honor it whether the skill is loaded or not: every command listed under "Write commands" requires explicit user approval before execution.
 
 ---
 
 ## What is this project?
 
-An open-source CLI tool for MSPs to manage Pax8 cloud marketplace operations (subscriptions, billing, customers, products) from the terminal. See `docs/PRD.md` for full product requirements.
+An open-source CLI for MSPs that turns the Pax8 marketplace API (raw CRUD) into computed answers — renewals, invoice audits, MRR analytics, upsell recommendations, closed-loop order placement. The durable asset lives in `packages/core` and is interface-agnostic.
+
+For project background, install instructions, the human demo flow, and how this CLI compares to the hosted Pax8 MCP at `mcp.pax8.com`, see `README.md`. Don't restate that here; link.
 
 ## Autonomous Build Mode
 
+This mode applies **only** when you're explicitly following `docs/BUILD.md` (or a similar mode-specific prompt). Default behavior is conservative — confirm before destructive or shared-state actions and surface uncertainty.
+
 When following `docs/BUILD.md`, operate fully autonomously with ZERO human interaction:
+
 - NEVER ask questions, for permission, or for confirmation.
 - NEVER stop to explain what you're about to do. Just do it.
 - If something breaks, fix it yourself. If a test fails, fix the test or the code.
@@ -38,35 +49,61 @@ When following `docs/BUILD.md`, operate fully autonomously with ZERO human inter
 - Commit after every numbered build step. Run `pnpm build && pnpm test` before each commit.
 - Go fast. Minimize tool calls. Batch related changes.
 
-## Key commands
+## Repo layout
+
+Monorepo with pnpm workspaces:
+
+- `packages/core` — `@pax8/core`. API client, auth, services (renewals, audit, recommendations, MRR), types. Zero CLI dependencies. Embeddable on its own — see `packages/core/README.md`.
+- `packages/cli` — `@pax8/cli`. Commander.js commands, formatting, interactive UX. Imports only from `@pax8/core`.
+- `packages/claude-skill` — `@pax8/claude-skill`. Wraps CLI commands as Claude Code tools and ships the agent-facing safety contract (`packages/claude-skill/skill.md`).
+
+Subprocess integration tests live in `packages/cli/src/__tests__/`; they run the built CLI with `PAX8_DEMO=1`. Demo mode is the test posture, not a side project — every command must work end-to-end under it.
+
+## Developer commands
 
 ```bash
-pnpm install          # Install all dependencies
-pnpm build            # Build all packages
-pnpm test             # Run all tests
-pnpm test:coverage    # Run tests with coverage report
-pnpm lint             # Lint all packages
-pnpm dev              # Run CLI in dev mode
+pnpm install                                            # Install all dependencies
+pnpm build                                              # Build all packages
+pnpm test                                               # Run all tests (vitest)
+pnpm test packages/cli/src/__tests__/invoices.test.ts   # Run one test file
+pnpm test --run -t "should audit"                       # Run by name pattern
+pnpm test:coverage                                      # Coverage report
+pnpm lint                                               # Lint all packages
+pnpm dev                                                # Run CLI in dev mode (watch)
 ```
-
-## Architecture
-
-- **Monorepo** with pnpm workspaces: `packages/cli`, `packages/core`, `packages/claude-skill`
-- **`@pax8/core`** — API client, auth, services, types. Zero CLI dependencies.
-- **`@pax8/cli`** — Commander.js commands, formatting, UX. Imports only from core.
-- **`@pax8/claude-skill`** — Claude Code skill wrapping CLI commands as AI tools.
 
 ## Conventions
 
-- TypeScript strict mode, Zod for validation
-- Every command supports `--json`, `--csv`, `--quiet` output flags
-- Demo mode (`PAX8_DEMO=1`) works for every command
-- Tests: Vitest with subprocess integration tests
-- Spinners on stderr, data on stdout (never mix)
+`docs/UX_GUIDE.md` is the canonical reference for command shape, flag vocabulary, output contracts, error handling, spinners, confirmation prompts, pagination, demo mode, and the agent-facing contracts (machine-readable error codes, idempotency keys, `nextActions`, signal handling). **Read it before adding or modifying any command** and use the §13 checklist before opening a PR.
 
-## Pax8 API Reference
+Operating principles you'll feel everywhere — stated so they're not implied:
 
-- Base URL: `https://api.pax8.com/v1/`
-- Auth: OAuth 2.0 client credentials → `POST /v1/token`
-- Rate limit: 1,000 calls/minute
-- Docs: https://devx.pax8.com/
+- **Reads are free; writes are deliberate.** Reads never prompt. Writes always prompt unless the user passes `-y` / `--yes` or sets `PAX8_YES=1`, accept `--idempotency-key <uuid>`, and call `markWriteInFlight()` so SIGINT can log the in-flight key.
+- **Stdout is data, stderr is everything else.** A `pax8 ... --json | jq` pipeline must never see a spinner, hint, or banner. Use `output()` from `packages/cli/src/lib/output.ts`; never `console.log`.
+- **Demo mode is the test posture.** `PAX8_DEMO=1` swaps in `MockPax8Client`. Every command must work under it; CI fails otherwise. Don't branch on `process.env.PAX8_DEMO` in command code — go through `buildContext()`.
+- **Errors carry codes.** Throw `CliError` with one of the `ERROR_*` constants from `@pax8/core` (`packages/core/src/errors/codes.ts`). Codes are append-only — never repurpose. `--json` mode serializes errors as structured objects on stderr.
+- **No invented synonyms.** If the concept exists in the §2 flag table of `docs/UX_GUIDE.md`, use that flag. Kebab-case for flags, `PAX8_<SCREAMING_SNAKE>` for env vars.
+- **SIGINT exits 130.** Active spinners stop cleanly without `✗`. Writes log `(cancelled)` with the idempotency key if any.
+- **Conventional Commits + DCO sign-off.** Every commit uses `git commit -s` and a Conventional Commits subject; PRs without sign-off get bounced. See `CONTRIBUTING.md` for the full DCO policy.
+
+Adding a new command? Lives at `packages/cli/src/commands/<resource>/<action>.ts`, registered in `<resource>/index.ts`, gets a subprocess test in `packages/cli/src/__tests__/`, and conforms to `docs/UX_GUIDE.md` §13.
+
+## Environment variables
+
+- `PAX8_CLIENT_ID`, `PAX8_CLIENT_SECRET` — credentials (file fallback: `~/.pax8/credentials.json`)
+- `PAX8_API_BASE` — override API + token base URL (e.g. staging); honored by both `@pax8/core` and the OAuth client
+- `PAX8_DEMO=1` — run against `MockPax8Client` with synthetic data
+- `PAX8_YES=1` — auto-confirm write prompts
+- `PAX8_QUIET=1` — disable spinners
+- `PAX8_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1` — opt out of telemetry (already opt-in by default)
+
+## References
+
+- `README.md` — what the project is, install/quick-start, MCP comparison
+- `docs/UX_GUIDE.md` — command patterns, output contracts, agent-facing rules (canonical for conventions)
+- `docs/PRD.md` — product requirements and API gap analysis
+- `docs/BUILD.md` — autonomous build-mode execution plan
+- `packages/core/README.md` — `@pax8/core` as a standalone embeddable library
+- `packages/claude-skill/skill.md` — agent-facing skill manifest + read/write safety contract
+- `CONTRIBUTING.md` — DCO sign-off, Conventional Commits, PR workflow
+- Pax8 API: `https://api.pax8.com/v1/`, OAuth at `POST /v1/token`, 1,000 req/min, docs at `https://devx.pax8.com/`

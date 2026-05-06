@@ -205,7 +205,7 @@ export const OrderLineItemInputSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().int().min(1),
   billingTerm: BillingTermSchema.optional(),
-  commitmentTerm: CommitmentTermSchema.optional(),
+  commitmentTermId: z.string().uuid().optional(),
   provisioningDetails: OrderLineItemProvisioningSchema.optional(),
 });
 export type OrderLineItemInput = z.infer<typeof OrderLineItemInputSchema>;
@@ -214,6 +214,10 @@ export const OrderLineItemSchema = z.object({
   id: z.string().uuid(),
   offerId: z.string().optional(),
   productId: z.string().uuid(),
+  /** Denormalized product name (demo data convenience). */
+  productName: z.string().optional(),
+  /** Optional billing term (demo data convenience). */
+  billingTerm: BillingTermSchema.optional(),
   lineItemNumber: z.number().int().optional(),
   quantity: z.number(),
   provisioningDetails: OrderLineItemProvisioningSchema.optional(),
@@ -223,7 +227,12 @@ export type OrderLineItem = z.infer<typeof OrderLineItemSchema>;
 export const OrderSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
+  /** Denormalized company name. Returned by the demo client; the real API
+   * doesn't include it directly but the CLI populates it after lookup. */
+  companyName: z.string().optional(),
   orderedBy: z.string().optional(),
+  /** Denormalized email of the placing user (demo data convenience). */
+  orderedByEmail: z.string().optional(),
   status: z.string().optional(),
   createdDate: z.string(),
   lineItems: z.array(OrderLineItemSchema).optional(),
@@ -238,6 +247,13 @@ export type CreateOrderInput = z.infer<typeof CreateOrderInputSchema>;
 
 // ─── Subscription ────────────────────────────────────────────────────────────
 
+export const CommitmentSchema = z.object({
+  id: z.string().uuid().optional(),
+  term: z.string().optional(),
+  endDate: z.string().optional(),
+});
+export type Commitment = z.infer<typeof CommitmentSchema>;
+
 export const SubscriptionSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
@@ -250,7 +266,8 @@ export const SubscriptionSchema = z.object({
   status: SubscriptionStatusSchema,
   price: z.number().optional(),
   billingTerm: BillingTermSchema.optional(),
-  commitmentTermEndDate: z.string().optional(),
+  commitment: CommitmentSchema.optional(),
+  commitmentTermEndDate: z.string().nullable().optional(),
   companyName: z.string().optional(),
   productName: z.string().optional(),
 });

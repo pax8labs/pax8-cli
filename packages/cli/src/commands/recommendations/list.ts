@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { getRecommendations, type Recommendation } from "@pax8/core";
-import { buildContext, ALL_SUBS_SIZE, warnIfTruncated, type CommandContext } from "../../lib/context.js";
+import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation } from "@pax8/core";
+import { buildContext, warnIfTruncated, type CommandContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -10,6 +10,7 @@ import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscri
 import { filterRecommendations } from "./filter.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 const columns: Column[] = [
   {
@@ -128,16 +129,36 @@ async function executeRecommendation(rec: Recommendation, ctx: CommandContext): 
     } catch { /* use as-is */ }
   }
 
+  // Resolve commitmentTermId from existing subscription for the SAME product
+  let commitmentTermId: string | undefined;
+  try {
+    const subs = await ctx.api.subscriptions.list({
+      companyId: rec.companyId,
+      status: "Active",
+    });
+    const match = subs.content.find((s) =>
+      s.productId === productId && s.commitment?.id
+    );
+    if (match?.commitment?.id) commitmentTermId = match.commitment.id;
+  } catch { /* best effort */ }
+
   const spinner = createSpinner("Creating order...").start();
   try {
-    const order = await ctx.api.orders.create({
-      companyId: rec.companyId,
-      lineItems: [{
-        productId,
-        quantity,
-        billingTerm: "Monthly",
-      }],
-    });
+    const doneOrder = markWriteInFlight("orders");
+    let order;
+    try {
+      order = await ctx.api.orders.create({
+        companyId: rec.companyId,
+        lineItems: [{
+          productId,
+          quantity,
+          billingTerm: "Monthly",
+          ...(commitmentTermId ? { commitmentTermId } : {}),
+        }],
+      });
+    } finally {
+      doneOrder();
+    }
     spinner.succeed("Order created 🎉");
 
     // Look up unit price from product pricing
@@ -200,6 +221,7 @@ export const recommendationsListCommand = new Command("list")
   .option("--type <type>", "Filter by type (seat_gap or cross_sell)")
   .option("--product <name>", "Filter by product name (e.g. 'AvePoint', 'Entra')")
   .option("--include-all", "Show all recommendations including ones without orderable products")
+  .option("--with-actions", "Wrap JSON output as { recommendations, nextActions, unmatchedProducts } instead of a flat array")
   .option("--limit <number>", "Max rows to show in table (default 10)")
   .addHelpText(
     "after",
@@ -227,11 +249,11 @@ Examples:
     try {
       // Fetch subscriptions, companies, and enrich product names — all in parallel where possible
       const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE, status: "Active" }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
         ctx.api.companies.list({ size: 200 }),
       ]);
 
-      warnIfTruncated(subsResult, ALL_SUBS_SIZE);
+      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
       // Build company name lookup
       const companyNames = new Map<string, string>();
@@ -261,14 +283,18 @@ Examples:
       recs = filterRecommendations(recs, options);
 
       if (ctx.outputFormat === "json") {
-        const nextActions = recs
-          .filter((r) => r.orderCommand)
-          .slice(0, 5)
-          .map((r) => ({
-            command: r.orderCommand!,
-            description: `${r.title} for ${r.companyName}`,
-          }));
-        process.stdout.write(JSON.stringify({ recommendations: recs, nextActions, unmatchedProducts: report.unmatchedProducts }, null, 2) + "\n");
+        if (options.withActions) {
+          const nextActions = recs
+            .filter((r) => r.orderCommand)
+            .slice(0, 5)
+            .map((r) => ({
+              command: r.orderCommand!,
+              description: `${r.title} for ${r.companyName}`,
+            }));
+          process.stdout.write(JSON.stringify({ recommendations: recs, nextActions, unmatchedProducts: report.unmatchedProducts }, null, 2) + "\n");
+        } else {
+          process.stdout.write(JSON.stringify(recs, null, 2) + "\n");
+        }
         return;
       }
 
@@ -393,7 +419,9 @@ Examples:
       const steps: NextStep[] = displayRecs.map((r, i) => {
         if (r.orderCommand) {
           // Tokenize orderCommand, strip leading "pax8" if present
-          const tokens = r.orderCommand.match(/"[^"]*"|\S+/g) ?? [];
+          const tokens = (r.orderCommand.match(/"[^"]*"|\S+/g) ?? []).map(
+            (t) => t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t
+          );
           const command = tokens[0] === "pax8" ? tokens.slice(1) : tokens;
           return {
             key: String(i + 1),

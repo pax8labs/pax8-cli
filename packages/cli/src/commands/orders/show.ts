@@ -20,7 +20,8 @@ export const ordersShowCommand = new Command("show")
     `
 Examples:
   pax8 orders show ord-summit-001
-  pax8 orders show ord-summit-001 --json`
+  pax8 orders show ord-summit-001 --json
+  pax8 orders show ord-summit-001 --csv`
   )
   .action(async (id: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();

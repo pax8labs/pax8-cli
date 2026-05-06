@@ -69,9 +69,9 @@ describe("pax8 products", () => {
       const plan = data[0].pricingDetails[0];
       expect(plan).toHaveProperty("billingTerm");
       expect(plan).toHaveProperty("commitmentTerm");
-      expect(plan).toHaveProperty("suggestedRetailPrice");
-      // Demo mode uses partnerBuyPrice; real API uses rates[].partnerBuyRate
-      expect(plan.partnerBuyPrice ?? plan.rates?.[0]?.partnerBuyRate).toBeDefined();
+      expect(plan).toHaveProperty("rates");
+      expect(plan.rates[0]).toHaveProperty("partnerBuyRate");
+      expect(plan.rates[0]).toHaveProperty("suggestedRetailPrice");
     });
 
     it("shows provisioning with --provisioning flag", async () => {
@@ -84,7 +84,8 @@ describe("pax8 products", () => {
       ]);
       const data = JSON.parse(result.stdout);
       expect(data[0]).toHaveProperty("provisioningDetails");
-      expect(data[0].provisioningDetails).toHaveProperty("requiresDomain");
+      expect(data[0].provisioningDetails).toHaveProperty("productId");
+      expect(data[0].provisioningDetails).toHaveProperty("fields");
     });
 
     it("shows dependencies with --dependencies flag", async () => {

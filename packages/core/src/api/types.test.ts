@@ -285,6 +285,8 @@ describe("OrderSchema", () => {
   });
 
   it("validates without lineItems", () => {
+    // Strip lineItems via destructure; the unused name is the rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { lineItems, ...rest } = valid;
     expect(OrderSchema.parse(rest)).toEqual(rest);
   });
@@ -437,6 +439,8 @@ describe("SubscriptionHistorySchema", () => {
   });
 
   it("validates without previousQuantity", () => {
+    // Strip previousQuantity via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { previousQuantity, ...rest } = valid;
     expect(SubscriptionHistorySchema.parse(rest)).toEqual(rest);
   });
@@ -469,6 +473,8 @@ describe("InvoiceSchema", () => {
   });
 
   it("rejects missing total", () => {
+    // Strip total via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { total, ...rest } = valid;
     expect(() => InvoiceSchema.parse(rest)).toThrow();
   });
@@ -571,6 +577,8 @@ describe("UsageLineSchema", () => {
   });
 
   it("rejects missing date", () => {
+    // Strip date via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { date, ...rest } = valid;
     expect(() => UsageLineSchema.parse(rest)).toThrow();
   });
@@ -595,6 +603,8 @@ describe("QuoteSchema", () => {
   });
 
   it("validates without lineItems", () => {
+    // Strip lineItems via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { lineItems, ...rest } = valid;
     expect(QuoteSchema.parse(rest)).toEqual(rest);
   });
@@ -631,6 +641,8 @@ describe("WebhookSchema", () => {
   });
 
   it("rejects missing topics", () => {
+    // Strip topics via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { topics, ...rest } = valid;
     expect(() => WebhookSchema.parse(rest)).toThrow();
   });
@@ -690,6 +702,8 @@ describe("WebhookLogSchema", () => {
   });
 
   it("rejects missing responseCode", () => {
+    // Strip responseCode via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { responseCode, ...rest } = valid;
     expect(() => WebhookLogSchema.parse(rest)).toThrow();
   });

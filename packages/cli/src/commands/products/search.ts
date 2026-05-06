@@ -18,24 +18,35 @@ Examples:
   pax8 products search defender --vendor Microsoft
   pax8 products search backup --json`
   )
-  .action(async (query, options, command) => {
+  .action(async (query: string, options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
     const spinner = createSpinner("Fetching products...");
 
     try {
       spinner.start();
-      // Fetch all products (with optional vendor filter), then filter client-side by name
+      // The Pax8 API's `search` param only honors single-word values, so
+      // pass the longest token from the query and filter the rest
+      // client-side. Without this we'd be limited to the first 200
+      // products of a 2,600+ catalog.
+      const tokens = query.split(/\s+/).filter(Boolean);
+      const apiKeyword = tokens.reduce(
+        (best: string, t: string) => (t.length >= best.length ? t : best),
+        ""
+      );
       const result = await ctx.api.products.list({
         vendorName: options.vendor,
+        search: apiKeyword || undefined,
         size: 200,
       });
       spinner.stop();
 
       const q = query.toLowerCase();
-      const matches = result.content.filter((p) =>
-        p.name.toLowerCase().includes(q)
-      );
+      const queryTokens = q.split(/\s+/).filter(Boolean);
+      const matches = result.content.filter((p) => {
+        const name = p.name.toLowerCase();
+        return name.includes(q) || queryTokens.every((t) => name.includes(t));
+      });
 
       if (matches.length === 0) {
         if (ctx.outputFormat === "json") {

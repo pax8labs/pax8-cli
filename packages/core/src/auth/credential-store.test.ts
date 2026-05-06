@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CredentialStore } from "./credential-store.js";
 import * as fs from "node:fs/promises";
-import { constants } from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 

@@ -33,7 +33,8 @@ export function formatQuantity(n: number): string {
   return `${n} seat${n !== 1 ? "s" : ""}`;
 }
 
-export function formatStatus(status: string): string {
+export function formatStatus(status: string | undefined): string {
+  if (!status) return chalk.gray("  —");
   const normalized = status.toLowerCase();
 
   if (normalized === "active") {

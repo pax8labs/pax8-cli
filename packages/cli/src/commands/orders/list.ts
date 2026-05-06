@@ -21,7 +21,7 @@ export const ordersListCommand = new Command("list")
   .description("List orders")
   .option("--company <id|name>", "Filter by company ID or name")
   .option("--status <status>", "Filter by status (Completed, Processing, Failed, PendingManual)")
-  .option("--page <number>", "Page number (zero-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
@@ -29,10 +29,12 @@ export const ordersListCommand = new Command("list")
     `
 Examples:
   pax8 orders list
-  pax8 orders list --company a1b2c3d4-e5f6-7890-abcd-ef1234567890
+  pax8 orders list --company "Summit Healthcare Partners"
   pax8 orders list --status Completed
-  pax8 orders list --page 1 --size 25
-  pax8 orders list --json`
+  pax8 orders list --page 2 --size 25
+  pax8 orders list --json
+  pax8 orders list --csv
+  pax8 orders list --ids-only | xargs -I{} pax8 orders show {}`
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -40,8 +42,9 @@ Examples:
 
     try {
       const ctx = await buildContext(allOpts);
+      const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
       const params: { page: number; size: number; companyId?: string; status?: string } = {
-        page: parseInt(allOpts.page, 10),
+        page: apiPage,
         size: parseInt(allOpts.size, 10),
       };
       if (allOpts.company) {

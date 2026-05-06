@@ -1,11 +1,13 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const companiesUpdateCommand = new Command("update")
   .description("Update a company")
@@ -37,7 +39,9 @@ Examples:
         throw new CliError(
           "No updates provided",
           ["At least one update flag is required"],
-          ["Use --name, --phone, or --website to specify what to update"]
+          ["Use --name, --phone, or --website to specify what to update"],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 
@@ -58,7 +62,13 @@ Examples:
 
       const spinner = createSpinner("Updating company...").start();
 
-      const company = await ctx.api.companies.update(resolved.id, updates);
+      const doneUpdate = markWriteInFlight("companies");
+      let company;
+      try {
+        company = await ctx.api.companies.update(resolved.id, updates);
+      } finally {
+        doneUpdate();
+      }
 
       await invalidateCacheAfterWrite();
       spinner.succeed("Company updated");

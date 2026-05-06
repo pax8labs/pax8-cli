@@ -17,8 +17,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
@@ -28,11 +26,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build
+        run: pnpm build
+
       - name: Typecheck
         run: pnpm -r exec tsc --noEmit
 
-      - name: Build
-        run: pnpm build
+      - name: Lint
+        run: pnpm lint
 
       - name: Test
         run: pnpm test
