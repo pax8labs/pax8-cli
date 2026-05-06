@@ -7,7 +7,9 @@
     "pax8": "./dist/index.js"
   },
   "main": "./dist/index.js",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
@@ -22,11 +24,13 @@
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "ora": "^8.1.0",
+    "prompts": "^2.4.2",
     "yaml": "^2.8.4",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "@types/prompts": "^2.4.9",
     "tsup": "^8.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"

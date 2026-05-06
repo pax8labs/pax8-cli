@@ -19,5 +19,6 @@ Initial public release.
 - **Machine-readable error codes** — every `CliError` carries a stable `code` (one of the `ERROR_*` constants from `@pax8/core`) so agents and scripts can branch on outcome without parsing strings (#90).
 - **Output formats** — `--json`, `--csv`, `--quiet`, plus `--with-actions` (envelope mode) and `--ids-only` (one ID per line, for piping into the next command's `--company` filter).
 - **Vitest test suite** — ~840 tests across unit, CLI integration (subprocess), and e2e flows, runnable end-to-end under `PAX8_DEMO=1`.
+- `pax8 auth login` now masks the client secret in interactive mode (no more plaintext echo).
 
 [0.1.0]: https://github.com/pax8labs/pax8-cli/releases/tag/v0.1.0

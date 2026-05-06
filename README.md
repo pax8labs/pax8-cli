@@ -167,6 +167,7 @@ No `pax8` prefix needed. Numbered shortcuts work after list commands.
 
 ```bash
 # Interactive (stores in ~/.pax8/credentials.json)
+# Prompts for Client ID and Client Secret (secret input is masked).
 pax8 auth login
 
 # Non-interactive

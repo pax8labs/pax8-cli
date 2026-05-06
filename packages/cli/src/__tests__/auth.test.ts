@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import { runCli, runCliExpectSuccess } from "./test-utils.js";
 
 describe("pax8 auth", () => {
   describe("auth login", () => {
@@ -14,6 +14,32 @@ describe("pax8 auth", () => {
       expect(result.stdout).toContain("client-id");
       expect(result.stdout).toContain("client-secret");
       expect(result.stdout).toContain("Examples:");
+    });
+
+    it("accepts credentials via flags (non-interactive path)", async () => {
+      // Demo mode short-circuits before validation, but the flag-parsing
+      // path still runs — proves the non-interactive contract is intact.
+      const result = await runCliExpectSuccess([
+        "auth",
+        "login",
+        "--client-id",
+        "test-id",
+        "--client-secret",
+        "test-secret",
+      ]);
+      expect(result.stdout).toContain("Authenticated");
+    });
+
+    it("errors cleanly when stdin is non-TTY and no credentials are supplied", async () => {
+      // execFile pipes stdin (non-TTY) so the interactive prompt path is skipped.
+      // PAX8_DEMO must be off so we hit the credential-check branch.
+      const result = await runCli(["auth", "login"], {
+        PAX8_DEMO: "",
+        PAX8_CLIENT_ID: "",
+        PAX8_CLIENT_SECRET: "",
+      });
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr + result.stdout).toMatch(/Missing credentials|client-id/);
     });
   });
 
