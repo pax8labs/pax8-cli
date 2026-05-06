@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { z } from "zod";
 import {
   ApiError,
@@ -13,6 +16,29 @@ import {
   ERROR_SUBSCRIPTION_NOT_FOUND,
 } from "@pax8/core";
 import { CliError, handleCommandError, extractErrorDetail } from "./errors.js";
+
+// handleCommandError persists the structured envelope to
+// `getConfigDir() + "/last-error.json"` so `pax8 report-bug` has something to
+// report. Isolate the config dir for the whole file so this test suite
+// doesn't clobber the developer's real ~/.pax8/last-error.json.
+let tmpConfigDir: string;
+let originalConfigDir: string | undefined;
+
+beforeAll(() => {
+  originalConfigDir = process.env.PAX8_CONFIG_DIR;
+  tmpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "pax8-errors-test-"));
+  process.env.PAX8_CONFIG_DIR = tmpConfigDir;
+});
+
+afterAll(() => {
+  if (originalConfigDir === undefined) delete process.env.PAX8_CONFIG_DIR;
+  else process.env.PAX8_CONFIG_DIR = originalConfigDir;
+  try {
+    fs.rmSync(tmpConfigDir, { recursive: true, force: true });
+  } catch {
+    // best-effort cleanup
+  }
+});
 
 describe("CliError", () => {
   it("constructs with message only", async () => {
@@ -471,5 +497,61 @@ describe("handleCommandError flushes telemetry before exit (#145)", () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
 
     flushSpy.mockRestore();
+  });
+});
+
+describe("handleCommandError last-error.json side effect (in-process)", () => {
+  let stderrWrite: ReturnType<typeof vi.spyOn>;
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    // Clean any prior envelope so our assertion sees a fresh write.
+    const p = path.join(tmpConfigDir, "last-error.json");
+    try { fs.unlinkSync(p); } catch { /* not present */ }
+  });
+
+  afterEach(() => {
+    stderrWrite.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("persists the envelope to <configDir>/last-error.json with mode 0600", async () => {
+    await expect(
+      handleCommandError(
+        new CliError(
+          "Auth failed",
+          ["Token expired"],
+          ["Run pax8 auth login"],
+          "https://docs.pax8.com/auth",
+          ERROR_AUTH_EXPIRED
+        )
+      )
+    ).rejects.toThrow("process.exit intercepted");
+
+    const filePath = path.join(tmpConfigDir, "last-error.json");
+    const stat = fs.statSync(filePath);
+    if (process.platform !== "win32") {
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
+
+    const env = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    expect(env.code).toBe(ERROR_AUTH_EXPIRED);
+    expect(env.message).toBe("Auth failed");
+    expect(env.causes).toEqual(["Token expired"]);
+    expect(env.recoverySteps).toEqual(["Run pax8 auth login"]);
+    expect(typeof env.cli_version).toBe("string");
+    expect(typeof env.node_version).toBe("string");
+    expect(typeof env.os).toBe("string");
+    expect(typeof env.timestamp).toBe("string");
+    // command/flags fields are present (string + array), even if empty when
+    // the test runner has odd argv shape.
+    expect(typeof env.command).toBe("string");
+    expect(Array.isArray(env.flags)).toBe(true);
   });
 });

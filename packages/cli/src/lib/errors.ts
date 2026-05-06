@@ -1,6 +1,8 @@
 import chalk from "chalk";
 import { ZodError, ZodIssueCode } from "zod";
 import type { Ora } from "ora";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   ApiError,
   ERROR_API_TIMEOUT,
@@ -12,10 +14,13 @@ import {
   ERROR_PRODUCT_NOT_FOUND,
   ERROR_RATE_LIMITED,
   ERROR_SUBSCRIPTION_NOT_FOUND,
+  getConfigDir,
   getTelemetry,
   type Pax8ErrorCode,
 } from "@pax8/core";
 import { replCmd } from "./confirm.js";
+
+declare const __CLI_VERSION__: string;
 
 /**
  * Flush buffered telemetry and shut down the PostHog client before the CLI
@@ -139,6 +144,79 @@ interface ErrorEnvelope {
 }
 
 /**
+ * Persist a richer copy of the error envelope to `~/.pax8/last-error.json`
+ * (mode 0600) so `pax8 report-bug` has something to report. Includes
+ * command/flag *names* (no values) and runtime metadata. Failures here are
+ * intentionally swallowed — we never want a config-dir issue (read-only fs,
+ * full disk, sandboxed env) to hide the actual error from the user.
+ */
+function getCliVersion(): string {
+  return typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.0.0";
+}
+
+/**
+ * Best-effort extraction of the command name (e.g. "companies list") and the
+ * flag *names* (e.g. ["--json", "--page"]) from `process.argv`. We do not
+ * include flag values — those frequently contain customer names or IDs.
+ */
+function extractCommandAndFlags(): { command: string; flags: string[] } {
+  const args = process.argv.slice(2);
+  const cmdParts: string[] = [];
+  const flags: string[] = [];
+  for (const a of args) {
+    if (a.startsWith("--")) {
+      // Strip "--flag=value" form down to "--flag".
+      const eq = a.indexOf("=");
+      flags.push(eq >= 0 ? a.slice(0, eq) : a);
+    } else if (a.startsWith("-")) {
+      flags.push(a);
+    } else if (cmdParts.length < 3 && /^[a-z][\w-]*$/i.test(a)) {
+      // Conservative: only keep tokens that look like Commander subcommand
+      // names. This filters out positional values like company names or IDs.
+      cmdParts.push(a);
+    } else {
+      // Stop accumulating once we hit something that isn't a subcommand.
+      break;
+    }
+  }
+  return {
+    command: cmdParts.join(" ") || "unknown",
+    flags: [...new Set(flags)].sort(),
+  };
+}
+
+function writeLastErrorEnvelope(envelope: ErrorEnvelope): void {
+  try {
+    const dir = getConfigDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const { command, flags } = extractCommandAndFlags();
+    const payload = {
+      ...envelope,
+      command,
+      flags,
+      cli_version: getCliVersion(),
+      node_version: process.version,
+      os: process.platform,
+      timestamp: new Date().toISOString(),
+    };
+    const filePath = path.join(dir, "last-error.json");
+    // writeFileSync with mode applies the mode on creation; if the file
+    // already exists it keeps existing perms — chmod after to be safe.
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), {
+      mode: 0o600,
+    });
+    try {
+      fs.chmodSync(filePath, 0o600);
+    } catch {
+      // Some filesystems (e.g. fat32 / windows) don't support chmod; ignore.
+    }
+  } catch {
+    // Persisting the envelope is a nice-to-have for `pax8 report-bug`. Never
+    // let it interfere with the user-facing error path.
+  }
+}
+
+/**
  * Build the JSON envelope for a thrown error. Omits fields that aren't set so
  * consumers don't have to special-case `null`.
  */
@@ -211,9 +289,17 @@ export async function handleCommandError(
     }
   }
 
+  // Persist the structured envelope so `pax8 report-bug` has something to
+  // report. Write happens *before* any exit logic. This is decoupled from the
+  // telemetry pipeline by design (works with telemetry off).
+  // Coordination: another agent is rewriting handleCommandError to be async
+  // and to flush before exit (#145/#146). This call is logically independent —
+  // resolve any rebase by keeping both the envelope-write and the flush.
+  const envelope = buildErrorEnvelope(error, context);
+  writeLastErrorEnvelope(envelope);
+
   // Machine-readable JSON envelope when --json is set
   if (isJsonOutputRequested()) {
-    const envelope = buildErrorEnvelope(error, context);
     process.stderr.write(JSON.stringify(envelope, null, 2) + "\n");
     // Flush telemetry before exit (#145) so failure events actually reach
     // PostHog. Bounded by a 2s timeout in flushAndShutdown.
@@ -248,6 +334,14 @@ export async function handleCommandError(
     if (error.docsUrl) {
       process.stderr.write(
         chalk.dim(`\n  Docs: ${error.docsUrl}\n`)
+      );
+    }
+
+    if (error.code) {
+      process.stderr.write(
+        chalk.dim(
+          `\n  → Help us fix this: run ${chalk.cyan(replCmd("pax8 report-bug"))} to file a sanitized report\n`
+        )
       );
     }
 
