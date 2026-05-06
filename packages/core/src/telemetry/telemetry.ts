@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { PostHog } from "posthog-node";
 import { loadConfig, saveConfig, getConfigDir } from "../config/loader.js";
+import type { Pax8ErrorCode } from "../errors/codes.js";
 
 // PostHog project API key (public, write-only — safe to embed)
 const POSTHOG_API_KEY = "phc_XKIa0EPGDACY1p4Cczk6IWXFa3n9";
@@ -15,7 +16,12 @@ export interface TelemetryEvent {
   flags: string[];
   duration_ms: number;
   success: boolean;
-  error_code?: string;
+  /**
+   * Canonical machine-readable error code from `@pax8/core`'s `ERROR_*`
+   * registry. Set on failed events (`success: false`); omitted on successful
+   * ones. The README's Telemetry contract promises this vocabulary.
+   */
+  error_code?: Pax8ErrorCode;
   cli_version: string;
   node_version: string;
   os: string;

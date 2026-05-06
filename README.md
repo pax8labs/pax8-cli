@@ -277,7 +277,7 @@ The CLI also honors two ambient environment variables (no opt-in required) and s
 | `flags` | always | The flag *names* the user passed (no values) |
 | `duration_ms` | always | Wall-clock duration in ms |
 | `success` | always | Boolean |
-| `error_code` | on error | One of the `ERROR_*` constants from `@pax8/core` |
+| `error_code` | on error | One of the canonical `ERROR_*` constants — see [`packages/core/src/errors/codes.ts`](packages/core/src/errors/codes.ts) for the full catalog (codes are append-only) |
 | `cli_version` | always | From package.json |
 | `node_version` | always | `process.version` |
 | `os` | always | `process.platform` |
