@@ -16,6 +16,7 @@ import { registerUsageCommands } from "./commands/usage/index.js";
 import { registerWebhooksCommands } from "./commands/webhooks/index.js";
 import { registerContactsCommands } from "./commands/contacts/index.js";
 import { registerQuotesCommands } from "./commands/quotes/index.js";
+import { registerCostCommands } from "./commands/cost/index.js";
 import { statusCommand } from "./commands/status.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
@@ -96,6 +97,7 @@ export function createProgram(): Command {
   registerWebhooksCommands(program);
   registerContactsCommands(program);
   registerQuotesCommands(program);
+  registerCostCommands(program);
   program.addCommand(statusCommand);
   program.addCommand(initCommand);
   program.addCommand(doctorCommand);

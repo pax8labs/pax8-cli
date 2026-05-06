@@ -110,6 +110,16 @@ pax8 orders show <id>                                  # Check order status
 
 The order preview shows unit price, total, and MRR impact before you confirm.
 
+### Cost Simulation
+
+```bash
+pax8 cost sim --company "Acme Corp" --product "M365 Business Premium" --quantity 50
+pax8 cost sim --company "Acme" --product "M365 Business Premium" --from "M365 Business Basic" --quantity 45
+pax8 cost sim --company "Acme" --product "AvePoint Cloud Backup" --quantity 30 --json
+```
+
+Model the financial impact of a SKU swap, quantity change, or new-product add before placing the order. The output shows current and proposed monthly/annual cost, the delta, and a per-seat breakdown — pure compute over existing pricing data, no writes.
+
 ### Invoices
 
 ```bash

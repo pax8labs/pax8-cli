@@ -17,6 +17,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
 | products / catalog | `pax8 products search "query" --json 2>/dev/null` |
+| cost sim / what if / pricing change / SKU swap | `pax8 cost sim --company <name> --product <name> --quantity <n> --json 2>/dev/null` |
 | place an order | `pax8 orders create --company <id> --product <id> --quantity <n>` (confirm first) |
 | act on a recommendation | Extract `orderCommand` from `pax8 recommendations list --json` and run it (confirm first), or use `pax8 recommendations act` for the interactive flow |
 | invoice dispute | `pax8 invoices dispute --discrepancy <id>` (id from `invoices audit`) |
