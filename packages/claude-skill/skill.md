@@ -5,6 +5,48 @@ description: Manage Pax8 cloud marketplace operations — query customers, subsc
 
 You have access to the `pax8` CLI on PATH. Run it directly via Bash — never `node packages/cli/dist/index.js` or `pnpm dev`. The CLI is the source of truth: it computes renewals, audits invoices, and ranks recommendations server-side, so you should not reimplement that logic.
 
+## Safety: Read-only vs. Write Commands
+
+This is the safety contract. Read-only commands run autonomously; write commands require explicit user approval before execution.
+
+### Read-only commands — run autonomously (no confirmation)
+
+These never mutate state. Run them freely, in parallel, and as often as needed.
+
+- `pax8 *list` — `companies list`, `subscriptions list`, `invoices list`, `orders list`, `recommendations list`, `products list`, `quotes list`, `webhooks list`, `usage list`, `contacts list`
+- `pax8 *show <id>` — every show command across every resource
+- `pax8 *search` — `products search`
+- `pax8 report *` — `report mrr`, `report growth`
+- `pax8 companies more <name>` — rich read-only summary
+- `pax8 subscriptions renewals` — computes renewals from existing data
+- `pax8 invoices items` — line items for an invoice
+- `pax8 invoices audit` — read-only computation, no writes
+- `pax8 status`, `pax8 status --all|--renewals|--growth`
+- `pax8 doctor` — diagnostics only
+- `pax8 webhooks logs <id>` — delivery history (read-only)
+
+### Write commands — confirm with the user first
+
+For every write command below:
+
+1. **Show the user exactly what will change** — the command you're about to run, the affected resource(s), and the expected effect (price, quantity, MRR delta, etc. when applicable).
+2. **Wait for explicit approval** — a clear "yes / go ahead / do it." Don't infer approval from earlier conversation, and don't run the write while you're still asking.
+3. **Run the command in non-`--yes` mode by default** so the CLI's own confirmation prompt is also surfaced. Pass `--yes` only when the user has already approved this exact action.
+
+Write commands:
+
+- `pax8 recommendations act` — places real orders. Always interactive; only invoke during a human-in-the-loop session.
+- `pax8 invoices dispute` — files a billing dispute against a discrepancy.
+- `pax8 orders create` — places a real order, charges the partner, creates a subscription.
+- `pax8 companies create`, `pax8 companies update` — partner-account-level customer-record changes.
+- `pax8 contacts create`, `pax8 contacts update`, `pax8 contacts delete` — modifies customer contacts.
+- `pax8 quotes create`, `pax8 quotes update`, `pax8 quotes delete` — modifies sales quotes.
+- `pax8 subscriptions update`, `pax8 subscriptions cancel` — changes seat counts, billing terms, or terminates a subscription.
+- `pax8 webhooks create`, `pax8 webhooks delete`, `pax8 webhooks test` — modifies subscription endpoints / sends real test deliveries to partner-controlled URLs.
+- **Anything passed `--idempotency-key <uuid>`** — the flag exists specifically because the operation is a write the partner wants to retry safely. Treat as write regardless of which subcommand carries it.
+
+If you're unsure whether a command counts as a write, default to confirming. Better one extra prompt than one unintended order.
+
 ## Behavioral rules
 
 - **Act first.** Your first response must include the right `pax8` command. No preamble, no "let me check."
