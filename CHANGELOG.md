@@ -1,40 +1,23 @@
 # Changelog
 
-## Unreleased
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Breaking
-- **List-command JSON shape** — `recommendations list`, `subscriptions renewals`, `webhooks list`, and `webhooks logs` now return a flat array as their default JSON output. The previous wrapped envelope (`{ recommendations, nextActions, ... }` etc.) is now opt-in via the new `--with-actions` flag. Single-object commands (`status`, `report mrr/growth`, `invoices audit`, `webhooks create/delete/test`) are unchanged.
+## [0.1.0] — 2026-05-06
 
-### Features
-- **`--with-actions` flag** — opt into the legacy wrapped envelope on the four list commands above when you want `nextActions`/diagnostic metadata to ride along
-- **Webhooks CLI commands** — `pax8 webhooks list/create/delete/test/logs` expose the existing `WebhooksApi` for managing event subscriptions; supports `--since` log windowing, `nextActions` (via `--with-actions`) in JSON output, and full output flag set (#82)
-- **Contacts CLI commands** — `pax8 contacts list/show/create/update/delete` expose the existing `ContactsApi` with company name resolution, type validation (Admin/Billing/Technical), and confirmation prompts on writes (#39)
-- **Quotes CLI commands** — `pax8 quotes list/show/create/update/delete` expose the existing `QuotesApi` with company/product name resolution, client-side `--status` filter, and confirmation prompts on writes (#39)
-- **Usage CLI commands** — `pax8 usage list` and `pax8 usage show [--lines]` expose the existing `UsageApi` for metered/consumption-based subscriptions; supports `--company`, `--month` filters and full output flag set (#40)
-- **Portfolio coverage analysis** — `pax8 companies list --coverage` shows category coverage (N/7), missing categories, and estimated MRR uplift per company (#64)
-- **MRR and growth reporting** — `pax8 report mrr` and `pax8 report growth` commands with full JSON/CSV/quiet support (#36)
-- **nextActions in JSON output** — status, renewals, recommendations, and audit commands include contextual next-step suggestions for agents (#69)
-- **Claude skill error handling** — structured error responses with recovery suggestions instead of raw stderr (#68)
-- **Zero-subscription company flagging** — recommendations engine flags companies with no active subscriptions (#52)
-- **MRR impact after orders** — order creation shows unit price, monthly cost, and annual cost (#57)
-- **Test mode** — `PAX8_TEST=1` or `pax8 init --test` runs against adversarial edge-case data (#67)
-- **Cache bypass** — `--refresh` flag skips API cache for fresh data (#73)
-- **Real API integration tests** — `pnpm test:real` runs read-only tests against live Pax8 API when credentials are set (#38)
-- **Credential setup guide** — step-by-step docs for API credential configuration (#41, #42)
+Initial public release.
 
-### Fixes
-- **Live-API product name resolution** — `resolveProduct()` and `pax8 products search` now extract a single keyword and (when detected) a vendor for the API call, then fuzzy-match client-side. Fixes failures against the 2,600+ product live catalog where multi-word `?search=` returns 0 results and the page size capped lookups at 200 (#76)
-- **Invoice auditor** — correctly aggregates quantities when a company has multiple subscriptions for the same product (#63)
-- **Recommendations summary counts** — visible item counts now match what's actually displayed (#51)
-- **MRR uplift estimates** — labeled as upper-bound projections, not forecasts (#72)
-- **Product matching** — fuzzy matching and vendor-aware fallback for catalog name changes (#71)
-- **Subscription truncation warning** — warns when results hit page size limit (#61)
-- **Windows credential permissions** — enforces file permissions via `icacls` on Windows, adds doctor check (#34)
-- **Table output** — terminal-width-aware word wrap, verified no ANSI leakage in JSON/CSV (#37)
+### Added
 
-### Performance
-- **Mock client delays** — reduced from 50-200ms to 5-20ms in demo mode, zero in test/CI mode (#74)
+- **Seven core workflows** computed locally from raw Pax8 data: `status`, `companies list --coverage`, `subscriptions renewals`, `invoices audit`, `recommendations list`, `recommendations act`, and `report mrr` / `report growth`.
+- **Closed-loop ordering** — `recommendations act` walks portfolio gaps and places the orders interactively; `invoices audit → invoices dispute` files billing disputes against detected discrepancies.
+- **`@pax8/core` standalone SDK** — all renewal, audit, recommendation, and analytics logic exposed as an importable library with zero CLI dependencies, suitable for embedding in portals, Lambdas, or partner tooling.
+- **`@pax8/claude-skill`** — agent skill that wraps the CLI as AI tools for Claude Code, Cursor, Copilot, and any framework that can run shell commands; ships with a read-only vs. write safety contract.
+- **Demo mode** (`PAX8_DEMO=1`) — every command runs against an in-memory fixture, so partners can evaluate the tool with no credentials and CI runs end-to-end against the same surface.
+- **OAuth 2.0 client-credentials flow** — secure local credential storage at `~/.pax8/credentials.json` with mode `0600`, tokens cached in memory only and never persisted, automatic refresh at 23h.
+- **Structured `--json` output with `nextActions`** — `status`, `report mrr/growth`, and `invoices audit` always include contextual next-step hints; list commands opt in via `--with-actions` to ride a `{ data, nextActions }` envelope alongside the flat JSON array (#97).
+- **Idempotency keys on write commands** — `--idempotency-key <uuid>` is accepted on every mutation command (#91).
+- **Machine-readable error codes** — every `CliError` carries a stable `code` (one of the `ERROR_*` constants from `@pax8/core`) so agents and scripts can branch on outcome without parsing strings (#90).
+- **Output formats** — `--json`, `--csv`, `--quiet`, plus `--with-actions` (envelope mode) and `--ids-only` (one ID per line, for piping into the next command's `--company` filter).
+- **Vitest test suite** — ~840 tests across unit, CLI integration (subprocess), and e2e flows, runnable end-to-end under `PAX8_DEMO=1`.
 
-### Internal
-- **Centralized MRR helper** — single `subscriptionMrr()` function replaces 4 duplicates (#53, #70)
-- **Consistent `formatQuantity()`** usage across commands (#56)
+[0.1.0]: https://github.com/pax8labs/pax8-cli/releases/tag/v0.1.0
