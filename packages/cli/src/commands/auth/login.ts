@@ -1,9 +1,23 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import prompts from "prompts";
 import { CredentialStore, ERROR_AUTH_MISSING, TokenManager } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
+
+function authMissingError(): CliError {
+  return new CliError(
+    "Missing credentials",
+    ["Both --client-id and --client-secret are required"],
+    [
+      `Provide credentials via flags: ${replCmd("pax8 auth login")} --client-id <id> --client-secret <secret>`,
+      "Or set environment variables: PAX8_CLIENT_ID and PAX8_CLIENT_SECRET",
+    ],
+    "https://devx.pax8.com/",
+    ERROR_AUTH_MISSING,
+  );
+}
 
 export const authLoginCommand = new Command("login")
   .description("Authenticate with Pax8 API credentials")
@@ -31,22 +45,47 @@ Examples:
       return;
     }
 
-    const clientId: string | undefined =
+    let clientId: string | undefined =
       options.clientId ?? process.env.PAX8_CLIENT_ID;
-    const clientSecret: string | undefined =
+    let clientSecret: string | undefined =
       options.clientSecret ?? process.env.PAX8_CLIENT_SECRET;
 
+    // Interactive fallback: prompt only when stdin is a TTY and credentials
+    // weren't supplied via flags or env vars. Non-TTY without credentials
+    // errors cleanly instead of hanging on a prompt.
+    if ((!clientId || !clientSecret) && process.stdin.isTTY) {
+      const questions: prompts.PromptObject[] = [];
+      if (!clientId) {
+        questions.push({
+          type: "text",
+          name: "clientId",
+          message: "Client ID:",
+          validate: (value: string) =>
+            value.trim().length > 0 || "Client ID is required",
+        });
+      }
+      if (!clientSecret) {
+        questions.push({
+          type: "password",
+          name: "clientSecret",
+          message: "Client Secret:",
+          validate: (value: string) =>
+            value.length > 0 || "Client Secret is required",
+        });
+      }
+
+      const answers = await prompts(questions, {
+        onCancel: () => {
+          throw authMissingError();
+        },
+      });
+
+      clientId = clientId ?? (answers.clientId as string | undefined);
+      clientSecret = clientSecret ?? (answers.clientSecret as string | undefined);
+    }
+
     if (!clientId || !clientSecret) {
-      throw new CliError(
-        "Missing credentials",
-        ["Both --client-id and --client-secret are required"],
-        [
-          `Provide credentials via flags: ${replCmd("pax8 auth login")} --client-id <id> --client-secret <secret>`,
-          "Or set environment variables: PAX8_CLIENT_ID and PAX8_CLIENT_SECRET",
-        ],
-        "https://devx.pax8.com/",
-        ERROR_AUTH_MISSING,
-      );
+      throw authMissingError();
     }
 
     const spinner = createSpinner("Validating credentials...").start();
