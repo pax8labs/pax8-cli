@@ -38,7 +38,7 @@ export async function promptNextSteps(steps: NextStep[]): Promise<void> {
 
   process.stderr.write("\n");
 
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<void>((resolve, _reject) => {
     const child = spawn("pax8", picked.command, {
       stdio: "inherit",
       env: process.env,

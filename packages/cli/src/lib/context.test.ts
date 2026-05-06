@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getOutputFormat, buildContext, warnIfTruncated, type GlobalOptions } from "./context.js";
+import { getOutputFormat, buildContext, warnIfTruncated } from "./context.js";
 
 describe("getOutputFormat", () => {
   const originalIsTTY = process.stdout.isTTY;

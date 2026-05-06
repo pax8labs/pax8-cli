@@ -122,7 +122,7 @@ async function checkApiHealth(): Promise<CheckResult[]> {
 
   const results: CheckResult[] = [];
   let passed = 0;
-  let total = endpoints.length;
+  const total = endpoints.length;
 
   // Run all endpoint checks in parallel
   const start = Date.now();

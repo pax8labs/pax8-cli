@@ -1,6 +1,5 @@
 import {
   getTelemetry,
-  type TelemetryEvent,
   AuthError,
   RateLimitError,
   ValidationError,
