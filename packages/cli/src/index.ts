@@ -364,6 +364,17 @@ async function main(): Promise<void> {
   // the clean cleanup path rather than Node's default `1` exit.
   installSigintHandler();
 
+  // Last-resort handlers for crashes that escape `parseAsync.catch`. Without
+  // these the process would exit before the PostHog buffer flushed, so the
+  // failure event would be lost (#145). We delegate to `handleCommandError`
+  // which now awaits the bounded telemetry shutdown before exit.
+  process.on("uncaughtException", (err) => {
+    void handleCommandError(err).catch(() => process.exit(1));
+  });
+  process.on("unhandledRejection", (reason) => {
+    void handleCommandError(reason).catch(() => process.exit(1));
+  });
+
   if (process.argv.length <= 2) {
     if (process.stdin.isTTY) {
       await startRepl();
@@ -402,7 +413,7 @@ async function main(): Promise<void> {
         // Telemetry must never interfere with error handling
       }
 
-      handleCommandError(err);
+      await handleCommandError(err);
     });
   }
 }

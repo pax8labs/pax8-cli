@@ -252,6 +252,6 @@ Examples:
         await promptNextSteps(steps);
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list companies");
+      await handleCommandError(error, spinner, "Failed to list companies");
     }
   });

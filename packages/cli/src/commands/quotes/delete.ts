@@ -59,6 +59,6 @@ Examples:
         output([{ id: quote.id, status: "Deleted" }], { format: "json" });
       }
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to delete quote");
+      await handleCommandError(error, undefined, "Failed to delete quote");
     }
   });

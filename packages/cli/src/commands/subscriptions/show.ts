@@ -122,6 +122,6 @@ Examples:
         process.stderr.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to show subscription");
+      await handleCommandError(error, spinner, "Failed to show subscription");
     }
   });

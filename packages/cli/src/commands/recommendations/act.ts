@@ -259,6 +259,6 @@ Examples:
         });
       } catch { /* telemetry never breaks the CLI */ }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to process recommendations");
+      await handleCommandError(error, spinner, "Failed to process recommendations");
     }
   });

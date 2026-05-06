@@ -67,6 +67,6 @@ Examples:
         process.stdout.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to show order");
+      await handleCommandError(error, spinner, "Failed to show order");
     }
   });

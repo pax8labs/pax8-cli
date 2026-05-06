@@ -467,6 +467,6 @@ Examples:
 
       out.write("\n");
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to load status");
+      await handleCommandError(error, spinner, "Failed to load status");
     }
   });

@@ -64,6 +64,6 @@ Examples:
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts delete ${contact.id}`))}  ${chalk.dim("delete this contact")}\n`);
       process.stderr.write("\n");
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to show contact");
+      await handleCommandError(error, spinner, "Failed to show contact");
     }
   });

@@ -126,6 +126,6 @@ Examples:
         );
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list subscriptions");
+      await handleCommandError(error, spinner, "Failed to list subscriptions");
     }
   });

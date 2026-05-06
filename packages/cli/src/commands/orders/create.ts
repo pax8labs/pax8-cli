@@ -56,7 +56,7 @@ Examples:
     let argsHash: string | null = null;
     if (idempotencyKey !== undefined) {
       if (!isValidKey(idempotencyKey)) {
-        handleCommandError(
+        await handleCommandError(
           new CliError(
             `Invalid idempotency key: "${idempotencyKey}"`,
             [
@@ -83,7 +83,7 @@ Examples:
         const cached = await loadEntry(commandName, idempotencyKey);
         if (cached) {
           if (cached.argsHash !== argsHash) {
-            handleCommandError(
+            await handleCommandError(
               new CliError(
                 "Idempotency key reused with different arguments — refusing to retry.",
                 [
@@ -415,7 +415,7 @@ Examples:
         if (error.statusCode === 404) {
           // Extract a short searchable name from the full product name
           const shortName = displayProduct.replace(/\s*\[.*?\]\s*/g, "").replace(/\s*\(.*?\)\s*/g, "").trim().split(" ").slice(0, 4).join(" ");
-          handleCommandError(
+          await handleCommandError(
             new CliError(
               `"${displayProduct}" can't be ordered for ${displayCompany}`,
               [
@@ -448,7 +448,7 @@ Examples:
           }
           steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
 
-          handleCommandError(
+          await handleCommandError(
             new CliError(
               `Can't order "${displayProduct}" for ${displayCompany}`,
               causes,
@@ -475,7 +475,7 @@ Examples:
           }
           steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
 
-          handleCommandError(
+          await handleCommandError(
             new CliError(
               `Can't order "${displayProduct}" for ${displayCompany}`,
               causes,
@@ -487,6 +487,6 @@ Examples:
         }
       }
 
-      handleCommandError(error, undefined, "Failed to create order");
+      await handleCommandError(error, undefined, "Failed to create order");
     }
   });

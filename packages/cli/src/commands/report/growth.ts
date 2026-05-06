@@ -130,6 +130,6 @@ Examples:
 
       out.write("\n");
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to analyze growth");
+      await handleCommandError(error, spinner, "Failed to analyze growth");
     }
   });

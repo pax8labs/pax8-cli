@@ -120,6 +120,6 @@ Examples:
         process.stderr.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list webhooks");
+      await handleCommandError(error, spinner, "Failed to list webhooks");
     }
   });

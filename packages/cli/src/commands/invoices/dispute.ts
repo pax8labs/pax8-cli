@@ -259,7 +259,7 @@ paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
     let argsHash: string | null = null;
     if (idempotencyKey !== undefined) {
       if (!isValidKey(idempotencyKey)) {
-        handleCommandError(
+        await handleCommandError(
           new CliError(
             `Invalid idempotency key: "${idempotencyKey}"`,
             [
@@ -286,7 +286,7 @@ paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
         const cached = await loadEntry(commandName, idempotencyKey);
         if (cached) {
           if (cached.argsHash !== argsHash) {
-            handleCommandError(
+            await handleCommandError(
               new CliError(
                 "Idempotency key reused with different arguments — refusing to retry.",
                 [
@@ -495,9 +495,9 @@ paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
     } catch (error) {
       restoreStdout();
       if (error instanceof CliError) {
-        handleCommandError(error, spinner);
+        await handleCommandError(error, spinner);
       }
-      handleCommandError(
+      await handleCommandError(
         error instanceof Error
           ? new CliError(
               `Failed to file dispute: ${error.message}`,

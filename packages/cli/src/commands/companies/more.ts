@@ -309,6 +309,6 @@ Examples:
         process.exit(1);
         throw new Error("process.exit intercepted");
       }
-      handleCommandError(error, spinner, "Failed to load company summary");
+      await handleCommandError(error, spinner, "Failed to load company summary");
     }
   });

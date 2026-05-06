@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { getTelemetry } from "@pax8/core";
 import { stopAllActiveSpinners } from "./spinner.js";
 
 /**
@@ -111,6 +112,14 @@ export function installSigintHandler(): void {
       }
     }
 
-    process.exit(130);
+    // Best-effort telemetry flush before exit (#145). flushAndShutdown is a
+    // no-op fast path when telemetry is disabled, so opt-out users pay no
+    // latency. Bounded internally by a 1s timeout for the SIGINT path —
+    // tighter than the regular error path because the user is actively
+    // hitting Ctrl+C and expects an immediate exit.
+    void getTelemetry()
+      .flushAndShutdown(1000)
+      .catch(() => {})
+      .finally(() => process.exit(130));
   });
 }

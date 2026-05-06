@@ -189,7 +189,7 @@ Examples:
         process.stderr.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to audit invoices");
+      await handleCommandError(error, spinner, "Failed to audit invoices");
     }
   });
 

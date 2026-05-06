@@ -56,6 +56,6 @@ Examples:
       );
       process.stderr.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to send test delivery");
+      await handleCommandError(error, undefined, "Failed to send test delivery");
     }
   });

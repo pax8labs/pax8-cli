@@ -104,6 +104,6 @@ Examples:
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes show ${quote.id}`))}  ${chalk.dim("view quote details")}\n`);
       process.stderr.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to create quote");
+      await handleCommandError(error, undefined, "Failed to create quote");
     }
   });

@@ -110,6 +110,6 @@ Examples:
         }
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to show company");
+      await handleCommandError(error, spinner, "Failed to show company");
     }
   });

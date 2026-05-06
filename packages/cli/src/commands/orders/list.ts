@@ -80,6 +80,6 @@ Examples:
         );
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to list orders");
+      await handleCommandError(error, spinner, "Failed to list orders");
     }
   });

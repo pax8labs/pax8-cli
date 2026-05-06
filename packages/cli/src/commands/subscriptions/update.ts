@@ -93,6 +93,6 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Price:".padEnd(18))}${formatCurrency(updated.price ?? 0)}\n`);
       process.stdout.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to update subscription");
+      await handleCommandError(error, undefined, "Failed to update subscription");
     }
   });

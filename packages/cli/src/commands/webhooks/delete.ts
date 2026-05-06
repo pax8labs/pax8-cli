@@ -78,6 +78,6 @@ Examples:
       );
       process.stderr.write("\n");
     } catch (error) {
-      handleCommandError(error, undefined, "Failed to delete webhook");
+      await handleCommandError(error, undefined, "Failed to delete webhook");
     }
   });

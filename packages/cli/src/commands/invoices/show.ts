@@ -67,6 +67,6 @@ Examples:
         process.stderr.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to show invoice");
+      await handleCommandError(error, spinner, "Failed to show invoice");
     }
   });

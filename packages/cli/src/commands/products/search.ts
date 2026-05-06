@@ -79,6 +79,6 @@ Examples:
         process.stderr.write("\n");
       }
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to search products");
+      await handleCommandError(error, spinner, "Failed to search products");
     }
   });

@@ -147,6 +147,69 @@ describe("Telemetry", () => {
     await expect(fs.access(tmpDir)).rejects.toThrow();
   });
 
+  it("flushAndShutdown is a no-op fast path when telemetry is disabled (#145)", async () => {
+    const t = new Telemetry();
+    expect(t.isEnabled()).toBe(false);
+
+    // Stub a posthog with a shutdown that would hang for a long time. The
+    // disabled fast path must skip it entirely so opt-out users pay no
+    // latency.
+    let posthogShutdownCalled = false;
+    (t as any).posthog = {
+      shutdown: () => {
+        posthogShutdownCalled = true;
+        return new Promise(() => {}); // never resolves
+      },
+    };
+
+    const start = Date.now();
+    await t.flushAndShutdown(2000);
+    const elapsed = Date.now() - start;
+
+    expect(posthogShutdownCalled).toBe(false);
+    expect(elapsed).toBeLessThan(50);
+  });
+
+  it("flushAndShutdown is bounded by the timeout when posthog hangs (#145)", async () => {
+    const t = new Telemetry();
+    (t as any).enabled = true;
+    // Buffer something so flush() actually runs.
+    t.track(makeEvent());
+
+    // Hanging shutdown — must not wedge the CLI on exit.
+    (t as any).posthog = {
+      capture: () => {},
+      flush: async () => {},
+      shutdown: () => new Promise(() => {}),
+    };
+
+    const start = Date.now();
+    await t.flushAndShutdown(50);
+    const elapsed = Date.now() - start;
+
+    // Allow some slack for CI; the point is "doesn't take seconds".
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it("flushAndShutdown awaits a fast posthog shutdown to completion (#145)", async () => {
+    const t = new Telemetry();
+    (t as any).enabled = true;
+    t.track(makeEvent());
+
+    let shutdownCalled = false;
+    (t as any).posthog = {
+      capture: () => {},
+      flush: async () => {},
+      shutdown: async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        shutdownCalled = true;
+      },
+    };
+
+    await t.flushAndShutdown(2000);
+    expect(shutdownCalled).toBe(true);
+  });
+
   it("never includes sensitive data in events", () => {
     const event = makeEvent({
       flags: ["--company", "--json"],

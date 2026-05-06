@@ -141,6 +141,6 @@ Examples:
 
       process.stdout.write("\n");
     } catch (error) {
-      handleCommandError(error, spinner, "Failed to show product");
+      await handleCommandError(error, spinner, "Failed to show product");
     }
   });
