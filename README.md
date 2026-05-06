@@ -51,7 +51,7 @@ PAX8_DEMO=1 pax8 status
 ```bash
 pax8 status                              # estimated MRR, renewals, growth opportunities
 pax8 recommendations list                # Cross-sell and seat gap opportunities
-pax8 recommendations act                 # Walk through and place orders (y/s/q)
+pax8 recommendations act                 # Multi-select picker → batch order
 pax8 companies list                      # Browse customers (type # to drill in)
 pax8 companies more "Acme Corp"          # Full customer summary
 ```
@@ -95,9 +95,10 @@ pax8 recommendations list                              # All growth opportunitie
 pax8 recommendations list --company "Acme Corp"        # For one customer
 pax8 recommendations list --product "AvePoint"         # Filter by product
 pax8 recommendations list --priority high              # High priority only
-pax8 recommendations act                               # Walk through and order
+pax8 recommendations act                               # Multi-select picker → batch order
 pax8 recommendations act --company "Acme Corp"         # Act on one customer
 pax8 recommendations act --product "backup"            # Add backup everywhere
+pax8 recommendations act --yes                         # Non-interactive: place all matches
 ```
 
 ### Orders
@@ -167,7 +168,7 @@ $ pax8
 pax8> status
 pax8> companies list
 pax8> 3                          # Drill into company #3
-pax8> recommendations act        # Walk through recs
+pax8> recommendations act        # Multi-select picker → batch order
 pax8> exit
 ```
 

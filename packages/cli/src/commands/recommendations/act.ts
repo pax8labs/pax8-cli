@@ -1,70 +1,49 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { createInterface } from "readline";
-import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation } from "@pax8/core";
+import prompts from "prompts";
+import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation, ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
-import { handleCommandError } from "../../lib/errors.js";
+import { handleCommandError, CliError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { filterRecommendations } from "./filter.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import { setTelemetryFields } from "../../lib/telemetry-context.js";
+import { replCmd } from "../../lib/confirm.js";
 
-async function prompt(question: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  return new Promise((resolve) => {
-    rl.question(question, (a) => { rl.close(); resolve(a.trim()); });
-  });
+interface PlacementResult {
+  ordered: boolean;
+  mrrCaptured: number;
 }
 
-async function actOnRec(rec: Recommendation, index: number, total: number, ctx: CommandContext): Promise<"ordered" | "skipped" | "quit"> {
+/**
+ * Place a single order for an already-confirmed recommendation. No prompts —
+ * the user has already approved the batch upstream (either via the
+ * multi-select + confirm flow, or via the `--yes` bypass).
+ */
+async function placeOrder(rec: Recommendation, ctx: CommandContext): Promise<PlacementResult> {
   const product = rec.suggestedProducts?.[0] ?? "product";
-  const seats = rec.targetSeats ?? "?";
-  const uplift = rec.estimatedMrrUplift ? chalk.green(` +${formatCurrency(rec.estimatedMrrUplift)}/mo`) : "";
-
-  process.stderr.write(chalk.bold(`\n  [${index + 1}/${total}] ${rec.companyName}\n`));
-  process.stderr.write(`  ${rec.type === "seat_gap" ? "Seat Gap" : "Cross-sell"}: ${product} (${seats} seats)${uplift}\n`);
-  process.stderr.write(chalk.dim(`  ${rec.reason.slice(0, 120)}\n`));
 
   if (!rec.orderCommand) {
-    process.stderr.write(chalk.dim("\n  No orderable product available — skipping.\n"));
-    return "skipped";
+    process.stderr.write(chalk.dim(`  No orderable product available for ${rec.companyName} — skipping.\n`));
+    return { ordered: false, mrrCaptured: 0 };
   }
 
-  const answer = await prompt(`\n  ${chalk.cyan("[y]")} order  ${chalk.dim("[c] change qty")}  ${chalk.dim("[s] skip")}  ${chalk.dim("[q] quit")}  > `);
-
-  if (answer === "q" || answer === "quit") return "quit";
-  if (answer !== "y" && answer !== "yes" && answer !== "c" && answer !== "change" && answer !== "") return "skipped";
-
-  // Parse and execute order
-  const companyMatch = rec.orderCommand.match(/--company\s+"([^"]+)"|--company\s+(\S+)/);
+  // Parse the existing orderCommand for company/product/quantity hints.
   const productMatch = rec.orderCommand.match(/--product\s+"([^"]+)"|--product\s+(\S+)/);
   const qtyMatch = rec.orderCommand.match(/--quantity\s+(\S+)/);
-  if (!companyMatch || !productMatch) {
-    process.stderr.write(chalk.red("  Could not parse order.\n"));
-    return "skipped";
+  if (!productMatch) {
+    process.stderr.write(chalk.red(`  Could not parse order for ${rec.companyName}.\n`));
+    return { ordered: false, mrrCaptured: 0 };
   }
 
-  let quantity = parseInt(qtyMatch?.[1] ?? String(rec.targetSeats ?? 1), 10);
+  const quantity = parseInt(qtyMatch?.[1] ?? String(rec.targetSeats ?? 1), 10);
 
-  if (answer === "c" || answer === "change") {
-    const qtyAnswer = await prompt(`  Quantity? [${quantity}] `);
-    if (qtyAnswer !== "") {
-      const parsed = parseInt(qtyAnswer, 10);
-      if (isNaN(parsed) || parsed <= 0) {
-        process.stderr.write(chalk.yellow("  Cancelled.\n"));
-        return "skipped";
-      }
-      quantity = parsed;
-    }
-  }
-
-  // Use companyId directly from the rec (already resolved)
-  // Resolve product: try the matched value as a product ID first, fall back to search
+  // Resolve product: try the matched value as a product ID first, fall back
+  // to a name search.
   const matchedProduct = productMatch[1] ?? productMatch[2];
   let productId = matchedProduct;
-  // If it doesn't look like a UUID/ID, resolve by name
   if (matchedProduct && !/^[0-9a-f-]{8,}$/i.test(matchedProduct) && !matchedProduct.startsWith("prod-")) {
     try {
       const searchResult = await ctx.api.products.search(matchedProduct);
@@ -75,9 +54,9 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
     } catch { /* use as-is */ }
   }
 
-  const spinner = createSpinner("Creating order...").start();
+  const spinner = createSpinner(`Ordering ${product} for ${rec.companyName}...`).start();
   try {
-    // Resolve commitmentTermId from existing subscription for the SAME product
+    // Resolve commitmentTermId from existing subscription for the SAME product.
     let commitmentTermId: string | undefined;
     try {
       const subs = await ctx.api.subscriptions.list({
@@ -106,7 +85,7 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
       doneOrder();
     }
 
-    // Look up unit price from product pricing
+    // Look up unit price from product pricing.
     let unitPrice: number | null = null;
     try {
       const pricing = await ctx.api.products.getPricing(productId).catch(() => null);
@@ -119,11 +98,9 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
       }
     } catch { /* best effort */ }
 
-    // Calculate cost impact
     const monthlyCost = unitPrice ? calculateMrr(unitPrice, quantity, "Monthly") : null;
     const annualCost = monthlyCost ? Number((monthlyCost * 12).toFixed(2)) : null;
 
-    // Fall back to recommendation's MRR estimate if no pricing found
     const displayMrr = monthlyCost ?? (rec.estimatedMrrUplift
       ? (rec.targetSeats && quantity !== rec.targetSeats
         ? Number((rec.estimatedMrrUplift * (quantity / rec.targetSeats)).toFixed(2))
@@ -154,20 +131,37 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
       process.stderr.write(`  ${chalk.dim("Annual cost:".padEnd(18))}${chalk.dim("—")}\n`);
     }
     process.stderr.write("\n");
-    return "ordered";
+
+    const mrrCaptured = displayMrr ?? rec.estimatedMrrUplift ?? 0;
+    return { ordered: true, mrrCaptured };
   } catch (error) {
-    spinner.fail("Order failed");
+    spinner.fail(`Order failed for ${rec.companyName}`);
     const msg = error instanceof Error ? error.message : String(error);
     process.stderr.write(chalk.dim(`  ${msg.slice(0, 100)}\n`));
-    return "skipped";
+    return { ordered: false, mrrCaptured: 0 };
   }
 }
 
+/**
+ * Build a one-line label for the multi-select picker. Companies with a
+ * `[demo]` prefix get cleaned up via `formatCompanyName` for display.
+ */
+function recLabel(rec: Recommendation): string {
+  const product = rec.suggestedProducts?.[0] ?? "product";
+  const seats = rec.targetSeats ?? "?";
+  const uplift = rec.estimatedMrrUplift
+    ? ` (+${formatCurrency(rec.estimatedMrrUplift)}/mo)`
+    : "";
+  const kind = rec.type === "seat_gap" ? "Bump" : "Add";
+  return `${formatCompanyName(rec.companyName)}: ${kind} ${product} (${seats} seats)${uplift}`;
+}
+
 export const recommendationsActCommand = new Command("act")
-  .description("Walk through recommendations one by one and place orders")
+  .description("Pick recommendations from a multi-select picker and place orders in a batch")
   .option("--company <id|name>", "Filter to a specific company")
   .option("--product <name>", "Filter to a specific product (e.g. 'AvePoint', 'Entra')")
   .option("--priority <level>", "Filter by priority (high, medium, low)")
+  .option("-y, --yes", "Skip the picker and confirmation; place all matching recommendations")
   .allowExcessArguments(true)
   .addHelpText(
     "after",
@@ -175,7 +169,8 @@ export const recommendationsActCommand = new Command("act")
 Examples:
   pax8 recommendations act
   pax8 recommendations act --company "Summit Healthcare"
-  pax8 recommendations act --priority high`
+  pax8 recommendations act --priority high
+  pax8 recommendations act --yes                    # non-interactive: place all`
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
@@ -213,25 +208,139 @@ Examples:
 
       if (recs.length === 0) {
         process.stderr.write(chalk.green("\n  No actionable recommendations.\n\n"));
+        // Still emit zero-counters so dashboards see the run.
+        setTelemetryFields({
+          recs_presented: 0,
+          recs_ordered: 0,
+          recs_skipped: 0,
+        });
         return;
       }
 
-      process.stderr.write(`\n  ${chalk.bold(`${recs.length} recommendations`)} — let's go through them.\n`);
-      process.stderr.write(chalk.dim(`  Press y to order, s to skip, q to quit.\n`));
+      // Recommendations arrive ranked by priority/MRR uplift from
+      // getRecommendations(); preserve that order for the picker.
+      const totalUplift = recs.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+      const totalUpliftLabel = totalUplift > 0
+        ? chalk.green(`${formatCurrency(totalUplift)}/mo MRR uplift available`)
+        : "";
 
-      let ordered = 0;
-      let skipped = 0;
-      let mrrCaptured = 0;
+      // Decide which recs to act on. Three paths:
+      //   1. --yes: bypass prompts entirely → all recs.
+      //   2. TTY interactive: multi-select picker + confirm.
+      //   3. Non-TTY without --yes: error cleanly.
+      let toPlace: Recommendation[];
 
-      for (let i = 0; i < recs.length; i++) {
-        const result = await actOnRec(recs[i], i, recs.length, ctx);
-        if (result === "ordered") {
-          ordered++;
-          mrrCaptured += recs[i].estimatedMrrUplift ?? 0;
+      if (options.yes) {
+        toPlace = recs;
+        process.stderr.write(
+          `\n  ${chalk.bold(`${recs.length} recommendations`)} for batch ordering` +
+          (totalUpliftLabel ? ` — ${totalUpliftLabel}` : "") + ".\n"
+        );
+      } else if (!process.stdin.isTTY) {
+        throw new CliError(
+          "Cannot show interactive picker — stdin is not a TTY",
+          ["pax8 recommendations act needs a terminal for the multi-select prompt"],
+          [
+            `Pass ${replCmd("--yes")} to place every matching recommendation without prompting`,
+            `Filter the list first: ${replCmd("pax8 recommendations act")} --company "<name>" --yes`,
+            `Or run ${replCmd("pax8 recommendations list --json")} to inspect them, then place orders individually with ${replCmd("pax8 orders create")}`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      } else {
+        process.stderr.write(
+          `\n  Found ${chalk.bold(`${recs.length} recommendations`)}` +
+          (totalUpliftLabel ? ` — ${totalUpliftLabel}` : "") + ".\n\n"
+        );
+
+        let cancelled = false;
+        const picked = await prompts(
+          {
+            type: "multiselect",
+            name: "selected",
+            message: "Select recommendations to act on",
+            choices: recs.map((rec) => ({
+              title: recLabel(rec),
+              value: rec,
+              selected: false,
+            })),
+            instructions: false,
+            hint: "space to toggle, a to toggle all, enter to submit",
+          },
+          {
+            onCancel: () => {
+              cancelled = true;
+              return false;
+            },
+          },
+        );
+
+        if (cancelled) {
+          process.stderr.write(chalk.yellow("\n  Cancelled — no orders placed.\n\n"));
+          process.exit(130);
         }
-        if (result === "skipped") skipped++;
-        if (result === "quit") break;
+
+        const selected = (picked.selected as Recommendation[] | undefined) ?? [];
+        if (selected.length === 0) {
+          process.stderr.write(chalk.dim("\n  No recommendations selected — nothing to do.\n\n"));
+          setTelemetryFields({
+            recs_presented: recs.length,
+            recs_ordered: 0,
+            recs_skipped: recs.length,
+          });
+          return;
+        }
+
+        const selectedUplift = selected.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+        const upliftStr = selectedUplift > 0
+          ? ` for ${chalk.green(formatCurrency(selectedUplift) + "/mo")} MRR uplift`
+          : "";
+
+        const confirmAnswer = await prompts(
+          {
+            type: "confirm",
+            name: "go",
+            message: `About to place ${selected.length} order${selected.length === 1 ? "" : "s"}${upliftStr}. Proceed?`,
+            initial: false,
+          },
+          {
+            onCancel: () => {
+              cancelled = true;
+              return false;
+            },
+          },
+        );
+
+        if (cancelled) {
+          process.stderr.write(chalk.yellow("\n  Cancelled — no orders placed.\n\n"));
+          process.exit(130);
+        }
+
+        if (!confirmAnswer.go) {
+          process.stderr.write(chalk.dim("\n  Not confirmed — no orders placed.\n\n"));
+          setTelemetryFields({
+            recs_presented: recs.length,
+            recs_ordered: 0,
+            recs_skipped: recs.length,
+          });
+          return;
+        }
+
+        toPlace = selected;
       }
+
+      // Place each chosen order using the existing per-order placement logic.
+      let ordered = 0;
+      let mrrCaptured = 0;
+      for (const rec of toPlace) {
+        const result = await placeOrder(rec, ctx);
+        if (result.ordered) {
+          ordered++;
+          mrrCaptured += result.mrrCaptured;
+        }
+      }
+      const skipped = recs.length - ordered;
 
       // Summary
       process.stderr.write(chalk.dim("\n  ─────────────────────────────\n"));
