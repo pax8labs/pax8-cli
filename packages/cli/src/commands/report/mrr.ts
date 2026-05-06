@@ -103,7 +103,7 @@ Examples:
           { key: "mrr", header: "Est. MRR" },
           { key: "pctOfTotal", header: "% of Total" },
         ];
-        output(companies as unknown as Record<string, unknown>[], { format: "csv", columns });
+        output(companies, { format: "csv", columns });
         return;
       }
 

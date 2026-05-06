@@ -38,10 +38,7 @@ Examples:
       );
 
       if (ctx.outputFormat === "json") {
-        output(
-          [{ ...quote, total } as unknown as Record<string, unknown>],
-          { format: "json" },
-        );
+        output([{ ...quote, total }], { format: "json" });
         return;
       }
 
@@ -53,7 +50,7 @@ Examples:
           { key: "unitPrice", header: "Unit Price" },
           { key: "subtotal", header: "Subtotal" },
         ];
-        output(lineItems as unknown as Record<string, unknown>[], { format: "csv", columns });
+        output(lineItems, { format: "csv", columns });
         return;
       }
 
@@ -80,7 +77,7 @@ Examples:
           { key: "unitPrice", header: "Unit", width: 12, format: (v) => v != null ? formatCurrency(Number(v)) : "—" },
           { key: "subtotal", header: "Subtotal", width: 14, format: (v) => v != null ? formatCurrency(Number(v)) : "—" },
         ];
-        output(lineItems as unknown as Record<string, unknown>[], { format: ctx.outputFormat, columns });
+        output(lineItems, { format: ctx.outputFormat, columns });
       }
 
       process.stderr.write(chalk.dim("\n  Try next:\n"));

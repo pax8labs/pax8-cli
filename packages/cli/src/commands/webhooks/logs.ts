@@ -140,7 +140,7 @@ Examples:
         },
       ];
 
-      output(allLogs as unknown as Record<string, unknown>[], {
+      output(allLogs, {
         format: ctx.outputFormat,
         columns,
       });

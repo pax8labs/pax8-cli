@@ -31,7 +31,7 @@ Examples:
       spinner.stop();
 
       if (ctx.outputFormat === "json") {
-        output([contact as unknown as Record<string, unknown>], { format: "json" });
+        output([contact], { format: "json" });
         return;
       }
 
@@ -45,7 +45,7 @@ Examples:
           { key: "companyId", header: "Company ID" },
           { key: "types", header: "Types", format: (v: unknown) => Array.isArray(v) ? v.join("|") : String(v ?? "") },
         ];
-        output([contact as unknown as Record<string, unknown>], { format: "csv", columns });
+        output([contact], { format: "csv", columns });
         return;
       }
 

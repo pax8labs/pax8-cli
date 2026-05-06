@@ -104,7 +104,7 @@ Examples:
       updateSpinner.succeed("Quote updated");
 
       if (ctx.outputFormat === "json") {
-        output([updated as unknown as Record<string, unknown>], { format: "json" });
+        output([updated], { format: "json" });
         return;
       }
 
