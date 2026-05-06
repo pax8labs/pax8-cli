@@ -133,7 +133,7 @@ Examples:
 
       process.stdout.write(
         chalk.dim(
-          `\n  ${report.items.length} renewals within ${withinDays} days — ${formatCurrency(report.totalMrrAtRisk)} MRR at risk\n`
+          `\n  ${report.items.length} renewals within ${withinDays} days — ${formatCurrency(report.totalMrrAtRisk)} estimated MRR at risk\n`
         )
       );
 

@@ -90,7 +90,7 @@ function brailleBar(value: number, max: number, width: number): { bar: string; l
 export const statusCommand = new Command("status")
   .description("Quick snapshot of your Pax8 business")
   .option("--all", "Show full dashboard with all sections")
-  .option("--customers", "Show top customers by MRR")
+  .option("--customers", "Show top customers by estimated MRR")
   .option("--renewals", "Show upcoming renewal details")
   .option("--growth", "Show growth opportunities")
   .addHelpText("after", `
@@ -255,12 +255,12 @@ Examples:
       // ── Revenue headline ─────────────────────────────────────────
       out.write("\n");
       out.write(chalk.bold("  Pax8 Business Snapshot\n\n"));
-      out.write(`  ${chalk.cyan.bold(formatCurrency(mrr))}/mo MRR  ·  ${chalk.cyan.bold(formatCurrency(arr))}/yr ARR\n\n`);
+      out.write(`  ${chalk.cyan.bold(formatCurrency(mrr))}/mo estimated MRR  ·  ${chalk.cyan.bold(formatCurrency(arr))}/yr ARR\n\n`);
       out.write(`  ${chalk.dim("Companies:")}     ${companiesResult.page.totalElements}\n`);
       out.write(`  ${chalk.dim("Active subs:")}   ${activeSubs.length} across ${companyIds.size} companies\n`);
       out.write(`  ${chalk.dim("Total seats:")}   ${totalSeats.toLocaleString()}\n`);
       if (companyIds.size > 0) {
-        out.write(`  ${chalk.dim("Avg MRR/co:")}    ${formatCurrency(mrr / companyIds.size)}\n`);
+        out.write(`  ${chalk.dim("Avg est. MRR/co:")} ${formatCurrency(mrr / companyIds.size)}\n`);
       }
 
       // ── Recent Activity ──────────────────────────────────────────
