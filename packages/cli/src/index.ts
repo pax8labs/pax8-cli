@@ -23,7 +23,7 @@ import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
 import { initCommand } from "./commands/init.js";
 import { reportBugCommand } from "./commands/report-bug.js";
-import { handleCommandError } from "./lib/errors.js";
+import { handleCommandError, flushTelemetryBeforeExit } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
 import { consumeTelemetryFields } from "./lib/telemetry-context.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
@@ -31,7 +31,6 @@ import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
 import { loadConfig, getTelemetry } from "@pax8/core";
 import type { Command as CommandType } from "commander";
-import { classifyError } from "./lib/classify-error.js";
 
 /**
  * Build the full dotted command name from a Commander command,
@@ -396,35 +395,12 @@ async function main(): Promise<void> {
   } else {
     const program = createProgram();
     await program.parseAsync(process.argv).catch(async (err) => {
-      // Track failed command execution via telemetry
-      try {
-        const telemetry = getTelemetry();
-        if (telemetry.isEnabled()) {
-          // Determine which command was attempted from argv
-          const args = process.argv.slice(2).filter((a) => !a.startsWith("-"));
-          const subcommand = args.join(".") || "unknown";
-
-          telemetry.track({
-            event: "command_executed",
-            command: args[0] ?? "unknown",
-            subcommand,
-            flags: process.argv.slice(2).filter((a) => a.startsWith("--")).sort(),
-            duration_ms: 0, // Duration not available for top-level errors
-            success: false,
-            error_code: classifyError(err),
-            cli_version: typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0",
-            node_version: process.version,
-            os: process.platform,
-            demo_mode: process.env.PAX8_DEMO === "1",
-          });
-
-          await telemetry.flush().catch(() => {});
-          await telemetry.shutdown().catch(() => {});
-        }
-      } catch {
-        // Telemetry must never interfere with error handling
-      }
-
+      // The canonical command_executed failure event is emitted by the
+      // postAction hook above; handleCommandError + the uncaughtException /
+      // unhandledRejection handlers flush via flushTelemetryBeforeExit().
+      // The catch here just ensures the buffer is drained on the parseAsync
+      // boundary before propagating to handleCommandError.
+      await flushTelemetryBeforeExit();
       await handleCommandError(err);
     });
   }
