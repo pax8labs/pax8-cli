@@ -120,7 +120,7 @@ export function createProgram(): Command {
 
     const quip = getTimeQuip();
     if (quip) {
-      console.error(quip);
+      process.stderr.write(quip + "\n");
     }
 
     // Show demo mode banner if active
