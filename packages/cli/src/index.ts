@@ -31,6 +31,8 @@ import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
 import { loadConfig, getTelemetry } from "@pax8/core";
 import type { Command as CommandType } from "commander";
+import { startRepl } from "./lib/repl.js";
+import { showWelcomeScreen } from "./lib/welcome.js";
 
 /**
  * Build the full dotted command name from a Commander command,
@@ -74,7 +76,7 @@ export function createProgram(): Command {
   const program = new Command();
   program
     .name("pax8")
-    .description("Pax8 open source CLI \u2014 manage cloud marketplace operations from the terminal")
+    .description("Pax8 open source CLI — manage cloud marketplace operations from the terminal")
     .version(typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0")
     .option("--json", "Output as JSON")
     .option("--csv", "Output as CSV")
@@ -134,7 +136,7 @@ export function createProgram(): Command {
       }
     }
     if (isDemo) {
-      process.stderr.write(chalk.dim("  \u2728 Demo mode \u2014 showing sample data\n"));
+      process.stderr.write(chalk.dim("  ✨ Demo mode — showing sample data\n"));
     }
 
     // Load telemetry enabled state (reads config once)
@@ -187,188 +189,6 @@ export function createProgram(): Command {
   return program;
 }
 
-function showWelcomeScreen(): void {
-  const version = typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0";
-
-  const W = 48;
-  const rule = chalk.cyan("\u2500".repeat(W));
-
-  const pax8Art = [
-    "    \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557  \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2557 ",
-    "    \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u255a\u2588\u2588\u2557\u2588\u2588\u2554\u255d\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557",
-    "    \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2554\u255d \u255a\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
-    "    \u2588\u2588\u2554\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551 \u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557",
-    "    \u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u255d \u2588\u2588\u2557\u255a\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
-    "    \u255a\u2550\u255d     \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u255d ",
-  ];
-
-  const subtitle = "    C O M M A N D   L I N E";
-  const tagline = "   Manage your cloud marketplace from the terminal";
-  const versionLine = `   v${version} \u00b7 Open Source \u00b7 Pax8 Labs`;
-
-  const lines = [
-    "",
-    `  ${rule}`,
-    "",
-    ...pax8Art.map((l) => chalk.cyan.bold(`  ${l}`)),
-    "",
-    `  ${chalk.dim(subtitle)}`,
-    "",
-    `  ${chalk.dim(tagline)}`,
-    `  ${chalk.dim(versionLine)}`,
-    "",
-    `  ${rule}`,
-    "",
-    `  ${chalk.dim("Get started:")}`,
-    `    ${chalk.cyan("auth login")}        ${chalk.dim("Set up API credentials")}`,
-    `    ${chalk.cyan("init --demo")}       ${chalk.dim("Try with sample data")}`,
-    `    ${chalk.cyan("companies list")}    ${chalk.dim("List your customers")}`,
-    `    ${chalk.cyan("doctor")}            ${chalk.dim("Check your setup")}`,
-    "",
-    `  ${chalk.dim("Run")} help ${chalk.dim("for all commands.")}`,
-    "",
-  ];
-  process.stdout.write(lines.join("\n"));
-}
-
-async function startRepl(): Promise<void> {
-  const { createInterface } = await import("node:readline");
-  const { spawn } = await import("node:child_process");
-  const { fileURLToPath } = await import("node:url");
-  const { resolve: resolvePath } = await import("node:path");
-  const path = await import("node:path");
-  const fs = await import("node:fs");
-  const { homedir } = await import("node:os");
-
-  const cliPath = resolvePath(fileURLToPath(import.meta.url), "../index.js");
-
-  showWelcomeScreen();
-  process.stdout.write(chalk.dim("  Type a command, or ") + chalk.cyan("help") + chalk.dim(" / ") + chalk.cyan("exit") + "\n\n");
-
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stderr,
-    prompt: chalk.cyan.bold("pax8> "),
-    terminal: process.stdin.isTTY ?? false,
-  });
-
-  rl.prompt();
-
-  rl.on("line", (line: string) => {
-    const input = line.trim();
-
-    if (!input) {
-      rl.prompt();
-      return;
-    }
-
-    if (input === "exit" || input === "quit" || input === "q") {
-      rl.close();
-      return;
-    }
-
-    if (input === "help") {
-      const prog = createProgram();
-      prog.outputHelp();
-      process.stdout.write("\n");
-      rl.prompt();
-      return;
-    }
-
-    let args = tokenize(input);
-    if (args[0] === "pax8") {
-      args.shift();
-    }
-
-    // Handle bare number input — check for pending actions from last list/recommendations
-    if (args.length === 1 && /^\d+$/.test(args[0])) {
-      try {
-        const actionsPath = path.join(homedir(), ".pax8", "pending-actions.json");
-        const raw = JSON.parse(fs.readFileSync(actionsPath, "utf-8"));
-        // Validate shape before trusting — prevent command injection via file tampering
-        const actions = Array.isArray(raw) ? raw.filter(
-          (a: unknown): a is { key: string; command?: string; rec?: { orderCommand?: string; suggestedProducts?: string[] } } =>
-            typeof a === "object" && a !== null &&
-            typeof (a as Record<string, unknown>).key === "string" &&
-            ((a as Record<string, unknown>).command === undefined || typeof (a as Record<string, unknown>).command === "string") &&
-            ((a as Record<string, unknown>).rec === undefined || typeof (a as Record<string, unknown>).rec === "object")
-        ) : [];
-        const picked = actions.find((a) => a.key === args[0]);
-        if (picked) {
-          if (picked.command && /^pax8\s+\w/.test(picked.command)) {
-            // Generic command template (e.g. from companies list) — must start with "pax8 <subcommand>"
-            args = tokenize(picked.command.replace(/^pax8\s+/, ""));
-          } else if (picked.rec) {
-            // Recommendation action
-            if (picked.rec.orderCommand && /^pax8\s+orders\s+create\b/.test(picked.rec.orderCommand)) {
-              // Only allow order create commands from recommendations
-              args = tokenize(picked.rec.orderCommand.replace(/^pax8\s+/, ""));
-            } else {
-              const searchTerm = picked.rec.suggestedProducts?.[0] ?? "product";
-              args = ["products", "search", searchTerm];
-            }
-          }
-        }
-      } catch { /* no pending actions */ }
-    }
-
-    // Run each command as a child process so it can never crash the REPL.
-    // Use "inherit" for all stdio so the child gets the real TTY
-    // (needed for table output detection and spinner animations).
-    // Pause the REPL readline while the child runs so stdin input
-    // (like "y" for confirmations) doesn't leak back to the REPL.
-    rl.pause();
-    const child = spawn("node", [cliPath, ...args], {
-      env: { ...process.env, FORCE_COLOR: "1", PAX8_REPL: "1" },
-      stdio: "inherit",
-    });
-
-    child.on("close", () => {
-      process.stdout.write("\n");
-      rl.resume();
-      rl.prompt();
-    });
-  });
-
-  return new Promise<void>((resolve) => {
-    rl.on("close", () => {
-      process.stdout.write(chalk.dim("\n  Goodbye.\n\n"));
-      resolve();
-    });
-  });
-}
-
-/**
- * Tokenize a command line string, respecting quoted strings.
- * "companies more "Acme Corp" --json" -> ["companies", "more", "Acme Corp", "--json"]
- */
-function tokenize(input: string): string[] {
-  const tokens: string[] = [];
-  let current = "";
-  let inQuote: string | null = null;
-
-  for (const ch of input) {
-    if (inQuote) {
-      if (ch === inQuote) {
-        inQuote = null;
-      } else {
-        current += ch;
-      }
-    } else if (ch === '"' || ch === "'") {
-      inQuote = ch;
-    } else if (ch === " " || ch === "\t") {
-      if (current) {
-        tokens.push(current);
-        current = "";
-      }
-    } else {
-      current += ch;
-    }
-  }
-  if (current) tokens.push(current);
-  return tokens;
-}
-
 async function main(): Promise<void> {
   // Install the SIGINT handler before doing anything else so Ctrl+C during
   // startup (token loading, config parsing, cache warmer spawn) still gets
@@ -388,7 +208,7 @@ async function main(): Promise<void> {
 
   if (process.argv.length <= 2) {
     if (process.stdin.isTTY) {
-      await startRepl();
+      await startRepl(createProgram);
     } else {
       showWelcomeScreen();
     }
