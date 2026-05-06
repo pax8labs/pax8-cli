@@ -51,8 +51,8 @@ describe("demo-data", () => {
   });
 
   describe("expected company count", () => {
-    it("has exactly 5 companies", () => {
-      expect(companies).toHaveLength(5);
+    it("has exactly 6 companies", () => {
+      expect(companies).toHaveLength(6);
     });
 
     it("includes all expected companies by name", () => {
@@ -62,6 +62,7 @@ describe("demo-data", () => {
       expect(names).toContain("Redwood Manufacturing");
       expect(names).toContain("Bright Minds Academy");
       expect(names).toContain("Pinnacle Financial Advisors");
+      expect(names).toContain("Acme Corp");
     });
   });
 
