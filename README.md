@@ -337,6 +337,8 @@ When a command fails, the CLI prints recovery hints and a one-line nudge:
 
 The reporter is **opt-in per invocation**, not via a config setting. Nothing leaves your machine without explicit `[y/N]` confirmation — the command always prints the body to stdout *first*, so you can see exactly what would be submitted.
 
+**Maintainer-side drift watcher:** Pax8 also runs an internal scheduled GitHub Action (`.github/workflows/api-watch.yml`) that queries the same PostHog telemetry stream every 6 hours and opens a maintainer issue when `ERROR_API_VALIDATION` events spike above a threshold. This is a purely aggregate, server-side view used for maintainer triage — it reads only the anonymised event counts and CLI version strings already in PostHog. Partners' data is unchanged; no new data collection is involved.
+
 ```bash
 pax8 report-bug             # interactive: review the body, then [y/N]
 pax8 report-bug --print     # print the redacted Markdown body and exit
