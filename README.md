@@ -243,7 +243,7 @@ git clone https://github.com/pax8labs/pax8-cli.git
 cd pax8-cli
 pnpm install
 pnpm build
-pnpm test              # full test suite (~840 tests)
+pnpm test              # comprehensive test suite (800+ tests across unit, CLI integration, and e2e flows; see CI for current count)
 pnpm test:coverage
 ```
 
@@ -255,12 +255,85 @@ pnpm test:coverage
 
 ### Telemetry
 
-Anonymous, opt-in usage telemetry via PostHog. Tracks command names, duration, and revenue processed — never credentials, company data, or PII.
+Anonymous, **opt-in** usage telemetry via PostHog. Off by default — `telemetry.enabled` defaults to `false` in config and the CLI sends nothing until you explicitly opt in.
 
 ```bash
-pax8 telemetry enable    # Opt in
-pax8 telemetry disable   # Opt out
+pax8 telemetry enable     # Opt in
+pax8 telemetry disable    # Opt out
+pax8 telemetry status     # Check current state
 ```
+
+The CLI also honors two ambient environment variables (no opt-in required) and short-circuits before constructing the PostHog client:
+
+- `PAX8_TELEMETRY_DISABLED=1`
+- `DO_NOT_TRACK=1` (the [Console Do Not Track](https://consoledonottrack.com) standard)
+
+**Single event:** `command_executed`
+
+| Property | Sent | Notes |
+|---|---|---|
+| `command` | always | The top-level command, e.g. `companies` |
+| `subcommand` | when present | Dotted path, e.g. `recommendations.list` |
+| `flags` | always | The flag *names* the user passed (no values) |
+| `duration_ms` | always | Wall-clock duration in ms |
+| `success` | always | Boolean |
+| `error_code` | on error | One of the `ERROR_*` constants from `@pax8/core` |
+| `cli_version` | always | From package.json |
+| `node_version` | always | `process.version` |
+| `os` | always | `process.platform` |
+| `demo_mode` | always | Whether `PAX8_DEMO=1` was set |
+| `company_count` | optional segment marker | Bucket of how many companies the partner has — never a list of names or IDs |
+| `rec_count`, `recs_presented`, `recs_ordered`, `recs_skipped`, `recs_mrr_captured` | recommendations commands | Aggregate counts only |
+| `order_success`, `order_total_dollars`, `order_mrr_impact`, `order_seats` | `orders create` | Aggregate transaction outcome only |
+
+The anonymous `distinct_id` is `sha256(hostname + ":" + username)` truncated to 16 hex chars — computed locally, never reversible to its inputs.
+
+**Never sent:**
+
+- API client_id, client_secret, OAuth tokens
+- Customer / company / subscription / order IDs
+- Customer or company names
+- Command argument values (only flag *names* — `--company`, never `--company "Acme Corp"`)
+- Partner identifiers, account names, billing data
+- Stack traces, file paths, environment variables
+- Any PII
+
+**On the embedded PostHog key:** the project key shipped in the bundle is the public, write-only PostHog *project ingestion* key — this is the standard pattern for OSS analytics, and [PostHog's own guidance](https://posthog.com/docs/api#public-posthog-api) recommends embedding it. It cannot read events back, only append.
+
+### Network egress
+
+For partners on restricted networks, this is the complete allowlist of hosts the CLI may contact:
+
+| Host | When | Required? |
+|---|---|---|
+| `https://api.pax8.com` | Every API call | Always |
+| `https://api.pax8.com/v1/token` | OAuth client-credentials token exchange | Always (during auth) |
+| `https://us.i.posthog.com` | Telemetry capture | Only when `pax8 telemetry enable` has been set AND no opt-out env var is present |
+
+No other network egress. The CLI does not contact npm, GitHub, the Pax8 portal, the marketing site, or any auto-update service at runtime.
+
+### Using @pax8/core as a standalone library
+
+All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and MRR analytics are all importable. See [`packages/core/README.md`](packages/core/README.md) for the full API; here is a minimal end-to-end example:
+
+```ts
+import { Pax8Client, getUpcomingRenewals, ALL_SUBS_PAGE_SIZE } from "@pax8/core";
+
+const client = new Pax8Client({
+  clientId: process.env.PAX8_CLIENT_ID!,
+  clientSecret: process.env.PAX8_CLIENT_SECRET!,
+});
+
+const { content: subs } = await client.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE });
+const report = getUpcomingRenewals(subs, 30);
+
+console.log(`${report.items.length} renewals in 30 days, $${report.totalMrrAtRisk}/mo at risk`);
+for (const r of report.items.slice(0, 5)) {
+  console.log(`  ${r.daysUntil}d  ${r.companyName}  ${r.productName}  $${r.mrr}/mo`);
+}
+```
+
+The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface.
 
 ## Documentation
 
@@ -277,3 +350,7 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE)
+
+---
+
+Pax8 and the Pax8 logo are trademarks of Pax8, Inc.
