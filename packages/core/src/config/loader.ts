@@ -40,12 +40,13 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     const content = await fs.readFile(filePath, "utf-8");
     const raw = YAML.parse(content);
     return ConfigSchema.parse(raw);
-  } catch (err: any) {
-    if (err?.code === "ENOENT") {
+  } catch (err: unknown) {
+    const e = err as { code?: string; name?: string };
+    if (e?.code === "ENOENT") {
       return getDefaultConfig();
     }
     // If it's a Zod validation error, re-throw as-is
-    if (err?.name === "ZodError") {
+    if (e?.name === "ZodError") {
       throw err;
     }
     throw err;

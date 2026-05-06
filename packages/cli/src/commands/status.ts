@@ -7,7 +7,7 @@ import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.j
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
 import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
-import type { Subscription } from "@pax8/core";
+import type { Subscription, Company, Product, Order } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 
@@ -114,10 +114,10 @@ Examples:
       ]);
 
       const emptyPage = { number: 0, totalPages: 0, totalElements: 0 };
-      const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as any[], page: { ...emptyPage } };
-      const subsResult = subsSettled.status === 'fulfilled' ? subsSettled.value : { content: [] as any[], page: { ...emptyPage } };
-      const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as any[], page: { ...emptyPage } };
-      const ordersResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [] as any[], page: { ...emptyPage } };
+      const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as Company[], page: { ...emptyPage } };
+      const subsResult = subsSettled.status === 'fulfilled' ? subsSettled.value : { content: [] as Subscription[], page: { ...emptyPage } };
+      const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as Product[], page: { ...emptyPage } };
+      const ordersResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [] as Order[], page: { ...emptyPage } };
 
       if (companiesSettled.status === 'rejected') {
         process.stderr.write(chalk.yellow("  ⚠ Could not load companies\n"));

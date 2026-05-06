@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- accessing private members for testing */
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -71,11 +71,6 @@ describe("Telemetry", () => {
     await fs.mkdir(tmpDir, { recursive: true });
     const configPath = path.join(tmpDir, "config.yaml");
     await fs.writeFile(configPath, 'version: "1.0"\ntelemetry:\n  enabled: false\n', "utf-8");
-
-    // Monkey-patch the loader to use our temp config
-    const loader = await import("../config/loader.js");
-    const origLoad = loader.loadConfig;
-    const origSave = loader.saveConfig;
 
     // We can't easily mock ESM, so we test the public interface with real config.
     // Instead, test the state toggle:

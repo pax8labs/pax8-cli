@@ -32,6 +32,9 @@ jobs:
       - name: Typecheck
         run: pnpm -r exec tsc --noEmit
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Test
         run: pnpm test
         env:

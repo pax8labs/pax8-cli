@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runCli, runCliExpectSuccess } from "./test-utils.js";
+import { runCliExpectSuccess } from "./test-utils.js";
 import * as os from "node:os";
 import * as path from "node:path";
 

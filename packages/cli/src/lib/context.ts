@@ -62,7 +62,7 @@ export interface GlobalOptions {
   verbose?: boolean;
   noColor?: boolean;
   config?: string;
-  parent?: any;
+  parent?: unknown;
 }
 
 export function getOutputFormat(
