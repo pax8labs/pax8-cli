@@ -85,7 +85,7 @@ pax8 invoices list --json [--company <id|name>] [--status Paid|Unpaid]
 pax8 invoices audit --json [--month YYYY-MM] [--company <id|name>]
 pax8 products search "<query>" --json
 pax8 recommendations list --json [--priority high|medium|low] [--company <id|name>] [--product <name>]
-pax8 recommendations act [--company <id|name>] [--product <name>]    # interactive — only for human-in-the-loop sessions
+pax8 recommendations act [--company <id|name>] [--product <name>] [--yes]    # multi-select picker; --yes places all without prompting
 pax8 orders list --json
 pax8 orders create --company <id|name> --product <id|name> --quantity <n> [--billing-term Monthly|Annual]
 pax8 cost sim --company <id|name> --product <id|name> --quantity <n> [--from <id|name>] [--billing-term Monthly|Annual] --json
@@ -123,6 +123,8 @@ pax8 recommendations list --json --priority high
 pax8 companies list --json
 ```
 For each rec, show: company, missing product, estimated MRR uplift. The JSON output includes an `orderCommand` field — that's the exact `pax8 orders create …` to run. **Always show the user the order preview and wait for explicit approval before executing the write.**
+
+For an interactive batch flow, hand the human `pax8 recommendations act` (with `--company` / `--product` / `--priority` filters as needed) — it presents a multi-select picker and a single batch confirmation rather than a per-rec y/s/q walk. The agent should not pass `--yes` unless the user has approved the entire matching set.
 
 ### Portfolio MRR
 Run in parallel:

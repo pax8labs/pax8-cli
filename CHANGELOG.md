@@ -25,5 +25,6 @@ Initial public release.
 ### Changed
 
 - Display labels rebranded from "MRR" to "estimated MRR" to reflect that the value is computed locally and not the partner's actual billed revenue. Command paths (`pax8 report mrr`), JSON output keys (`mrr`, `mrrUplift`, etc.), and telemetry properties unchanged (#166).
+- `pax8 recommendations act` now shows a multi-select picker for batch ordering instead of a one-at-a-time `y/s/q` walk; `-y` / `--yes` bypass unchanged.
 
 [0.1.0]: https://github.com/pax8labs/pax8-cli/releases/tag/v0.1.0
