@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { createInterface } from "readline";
-import { ALL_SUBS_PAGE_SIZE, getRecommendations, getTelemetry, type Recommendation } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation } from "@pax8/core";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -9,6 +9,7 @@ import { formatCurrency, formatCompanyName, formatQuantity, calculateMrr } from 
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { filterRecommendations } from "./filter.js";
 import { markWriteInFlight } from "../../lib/signals.js";
+import { setTelemetryFields } from "../../lib/telemetry-context.js";
 
 async function prompt(question: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
@@ -239,25 +240,14 @@ Examples:
       if (mrrCaptured > 0) process.stderr.write(chalk.green(` · ${formatCurrency(mrrCaptured)}/mo MRR captured`));
       process.stderr.write("\n\n");
 
-      // Track recommendation flow
-      try {
-        const tel = getTelemetry();
-        tel.track({
-          event: "command_executed",
-          command: "recommendations.act",
-          flags: [],
-          duration_ms: 0,
-          success: true,
-          cli_version: "0.1.0",
-          node_version: process.version,
-          os: process.platform,
-          demo_mode: process.env.PAX8_DEMO === "1",
-          recs_presented: recs.length,
-          recs_ordered: ordered,
-          recs_skipped: skipped,
-          recs_mrr_captured: mrrCaptured > 0 ? mrrCaptured : undefined,
-        });
-      } catch { /* telemetry never breaks the CLI */ }
+      // Contribute aggregate counts to the single command_executed event
+      // emitted by the postAction hook (#146 — was double-firing).
+      setTelemetryFields({
+        recs_presented: recs.length,
+        recs_ordered: ordered,
+        recs_skipped: skipped,
+        recs_mrr_captured: mrrCaptured > 0 ? mrrCaptured : undefined,
+      });
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to process recommendations");
     }

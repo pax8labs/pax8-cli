@@ -12,12 +12,12 @@ import {
   ERROR_API_VALIDATION,
   ERROR_INVALID_INPUT,
   ERROR_PRODUCT_NOT_FOUND,
-  getTelemetry,
 } from "@pax8/core";
 import type { CreateOrderInput, OrderLineItemInput, BillingTerm } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { hashArgs, isValidKey, loadEntry, saveEntry } from "../../lib/idempotency.js";
+import { setTelemetryFields } from "../../lib/telemetry-context.js";
 
 export const ordersCreateCommand = new Command("create")
   .description("Create a new order")
@@ -330,26 +330,15 @@ Examples:
 
       spinner.succeed("Order created 🎉");
 
-      // Track revenue
-      try {
-        const tel = getTelemetry();
-        const orderMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : undefined;
-        tel.track({
-          event: "command_executed",
-          command: "orders.create",
-          flags: [],
-          duration_ms: 0,
-          success: true,
-          cli_version: "0.1.0",
-          node_version: process.version,
-          os: process.platform,
-          demo_mode: process.env.PAX8_DEMO === "1",
-          order_success: true,
-          order_total_dollars: unitPrice ? unitPrice * confirmedQty : undefined,
-          order_mrr_impact: orderMrr ?? undefined,
-          order_seats: confirmedQty,
-        });
-      } catch { /* telemetry never breaks the CLI */ }
+      // Contribute revenue counters to the single command_executed event
+      // emitted by the postAction hook (#146 — was double-firing).
+      const orderMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : undefined;
+      setTelemetryFields({
+        order_success: true,
+        order_total_dollars: unitPrice ? unitPrice * confirmedQty : undefined,
+        order_mrr_impact: orderMrr,
+        order_seats: confirmedQty,
+      });
 
       if (ctx.outputFormat === "json") {
         const jsonMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : null;

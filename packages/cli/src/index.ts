@@ -23,6 +23,7 @@ import { versionCommand } from "./commands/version.js";
 import { initCommand } from "./commands/init.js";
 import { handleCommandError } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
+import { consumeTelemetryFields } from "./lib/telemetry-context.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
@@ -146,6 +147,9 @@ export function createProgram(): Command {
   program.hook("postAction", async (_thisCommand, actionCommand) => {
     try {
       const telemetry = getTelemetry();
+      // Always consume so a leftover from a (rare) early-returning handler
+      // doesn't leak into a later command run in the same process (REPL).
+      const handlerProps = consumeTelemetryFields();
       if (!telemetry.isEnabled()) return;
 
       const startTime = commandStartTimes.get(actionCommand) ?? Date.now();
@@ -153,6 +157,9 @@ export function createProgram(): Command {
       const flags = extractCommandFlags(actionCommand);
       const isDemo = process.env.PAX8_DEMO === "1" || false;
 
+      // Single canonical event for every command run (#146). Handlers
+      // contribute aggregate counters via setTelemetryFields(); they no
+      // longer call telemetry.track() directly.
       telemetry.track({
         event: "command_executed",
         command: subcommand.split(".")[0] ?? subcommand,
@@ -164,6 +171,7 @@ export function createProgram(): Command {
         node_version: process.version,
         os: process.platform,
         demo_mode: isDemo,
+        ...handlerProps,
       });
 
       // Fire-and-forget flush
