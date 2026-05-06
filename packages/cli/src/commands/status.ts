@@ -10,7 +10,7 @@ import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.j
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
 import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
-import type { Subscription, Company, Product, Order } from "@pax8/core";
+import type { Subscription, Company, Product, Order, RenewalReport, Recommendation } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 
@@ -77,8 +77,8 @@ function tokenizeCmd(cmd: string): string[] {
 }
 
 function brailleBar(value: number, max: number, width: number): { bar: string; len: number } {
-  const full = "\u28FF"; // ⣿ (both columns)
-  const half = "\u2847"; // ⡇ (left column only)
+  const full = "⣿"; // ⣿ (both columns)
+  const half = "⡇"; // ⡇ (left column only)
   const ratio = max > 0 ? value / max : 0;
   const filled = ratio * width * 2; // 2 sub-positions per character
   const wholeChars = Math.floor(filled / 2);
@@ -86,6 +86,73 @@ function brailleBar(value: number, max: number, width: number): { bar: string; l
   const len = wholeChars + (hasHalf && wholeChars < width ? 1 : 0);
   const bar = full.repeat(wholeChars) + (hasHalf && wholeChars < width ? half : "");
   return { bar, len };
+}
+
+// ── Section renderers ─────────────────────────────────────────────────────────
+
+function renderCustomersSection(
+  out: NodeJS.WriteStream,
+  topCustomers: CompanyStats[],
+  mrr: number,
+  divider: () => void,
+): void {
+  if (topCustomers.length === 0) return;
+  divider();
+  out.write(chalk.bold("  Top Customers\n\n"));
+  const maxNameLen = Math.min(Math.max(...topCustomers.map((c) => c.name.length)), 28);
+  const maxMrr = topCustomers[0]?.mrr ?? 0;
+  const barWidth = 18;
+  for (const c of topCustomers) {
+    const name = c.name.length > maxNameLen ? c.name.slice(0, maxNameLen - 1) + "…" : c.name.padEnd(maxNameLen);
+    const pctNum = mrr > 0 ? ((c.mrr / mrr) * 100) : 0;
+    const pctStr = `${pctNum.toFixed(0)}%`;
+    const { bar, len } = brailleBar(c.mrr, maxMrr, barWidth);
+    const pad = barWidth - len;
+    out.write(`  ${chalk.bold(name)}  ${formatCurrency(c.mrr).padStart(10)}/mo  ${chalk.cyan(bar)}${chalk.dim("⠀".repeat(pad))}  ${chalk.dim(pctStr.padStart(4))}\n`);
+  }
+}
+
+function renderRenewalsSection(
+  out: NodeJS.WriteStream,
+  renewals: RenewalReport,
+  divider: () => void,
+): void {
+  if (renewals.items.length === 0) return;
+  divider();
+  const urgent = renewals.items.filter((r) => r.daysUntilRenewal <= 14);
+  const upcoming = renewals.items.filter((r) => r.daysUntilRenewal > 14);
+  const header = urgent.length > 0
+    ? `Renewals  ${chalk.red.bold(`${urgent.length} urgent`)}${upcoming.length > 0 ? chalk.dim(` · ${upcoming.length} upcoming`) : ""}`
+    : `Renewals  ${chalk.yellow(`${renewals.items.length} in next 30d`)}`;
+  out.write(chalk.bold(`  ${header}`) + chalk.dim(`  ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk\n\n`));
+  for (const r of renewals.items.slice(0, 10)) {
+    const days = r.daysUntilRenewal;
+    const urgencyTag = days <= 7 ? chalk.red.bold(` ${days}d`) : days <= 14 ? chalk.yellow(` ${days}d`) : chalk.dim(` ${days}d`);
+    out.write(`  ${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${r.companyName} — ${r.productName}${urgencyTag} ${chalk.dim(`(${formatCurrency(r.mrrAtRisk)}/mo)`)}\n`);
+  }
+  if (renewals.items.length > 10) {
+    out.write(chalk.dim(`\n  … and ${renewals.items.length - 10} more\n`));
+  }
+  out.write(chalk.dim(`\n    → ${replCmd("pax8 subscriptions renewals")}\n`));
+}
+
+function renderGrowthSection(
+  out: NodeJS.WriteStream,
+  highRecs: Recommendation[],
+  divider: () => void,
+): void {
+  if (highRecs.length === 0) return;
+  const uplift = highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0);
+  divider();
+  out.write(chalk.bold(`  Growth Opportunities  `) + chalk.green.bold(`${formatCurrency(uplift)}/mo`) + chalk.dim(` potential uplift\n\n`));
+  for (const r of highRecs.slice(0, 10)) {
+    const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
+    out.write(`  ${chalk.green("+")} ${r.companyName} — ${r.title}${upliftStr}\n`);
+  }
+  if (highRecs.length > 10) {
+    out.write(chalk.dim(`\n  … and ${highRecs.length - 10} more\n`));
+  }
+  out.write(chalk.dim(`\n    → ${replCmd("pax8 recommendations act")}  walk through and order\n`));
 }
 
 // ── Command ──────────────────────────────────────────────────────────────────
@@ -369,55 +436,18 @@ Examples:
       }
 
       // ── Top Customers (--customers / --all) ──────────────────────
-      if (showCustomers && topCustomers.length > 0) {
-        divider();
-        out.write(chalk.bold("  Top Customers\n\n"));
-        const maxNameLen = Math.min(Math.max(...topCustomers.map((c) => c.name.length)), 28);
-        const maxMrr = topCustomers[0]?.mrr ?? 0;
-        const barWidth = 18;
-        for (const c of topCustomers) {
-          const name = c.name.length > maxNameLen ? c.name.slice(0, maxNameLen - 1) + "\u2026" : c.name.padEnd(maxNameLen);
-          const pctNum = mrr > 0 ? ((c.mrr / mrr) * 100) : 0;
-          const pctStr = `${pctNum.toFixed(0)}%`;
-          const { bar, len } = brailleBar(c.mrr, maxMrr, barWidth);
-          const pad = barWidth - len;
-          out.write(`  ${chalk.bold(name)}  ${formatCurrency(c.mrr).padStart(10)}/mo  ${chalk.cyan(bar)}${chalk.dim("\u2800".repeat(pad))}  ${chalk.dim(pctStr.padStart(4))}\n`);
-        }
+      if (showCustomers) {
+        renderCustomersSection(out, topCustomers, mrr, divider);
       }
 
       // ── Renewals (--renewals / --all) ────────────────────────────
-      if (showRenewals && renewals.items.length > 0) {
-        divider();
-        const urgent = renewals.items.filter((r) => r.daysUntilRenewal <= 14);
-        const upcoming = renewals.items.filter((r) => r.daysUntilRenewal > 14);
-        const header = urgent.length > 0
-          ? `Renewals  ${chalk.red.bold(`${urgent.length} urgent`)}${upcoming.length > 0 ? chalk.dim(` · ${upcoming.length} upcoming`) : ""}`
-          : `Renewals  ${chalk.yellow(`${renewals.items.length} in next 30d`)}`;
-        out.write(chalk.bold(`  ${header}`) + chalk.dim(`  ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk\n\n`));
-        for (const r of renewals.items.slice(0, 10)) {
-          const days = r.daysUntilRenewal;
-          const urgencyTag = days <= 7 ? chalk.red.bold(` ${days}d`) : days <= 14 ? chalk.yellow(` ${days}d`) : chalk.dim(` ${days}d`);
-          out.write(`  ${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${r.companyName} — ${r.productName}${urgencyTag} ${chalk.dim(`(${formatCurrency(r.mrrAtRisk)}/mo)`)}\n`);
-        }
-        if (renewals.items.length > 10) {
-          out.write(chalk.dim(`\n  … and ${renewals.items.length - 10} more\n`));
-        }
-        out.write(chalk.dim(`\n    → ${replCmd("pax8 subscriptions renewals")}\n`));
+      if (showRenewals) {
+        renderRenewalsSection(out, renewals, divider);
       }
 
       // ── Growth (--growth / --all) ────────────────────────────────
-      if (showGrowth && highRecs.length > 0) {
-        const uplift = highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0);
-        divider();
-        out.write(chalk.bold(`  Growth Opportunities  `) + chalk.green.bold(`${formatCurrency(uplift)}/mo`) + chalk.dim(` potential uplift\n\n`));
-        for (const r of highRecs.slice(0, 10)) {
-          const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
-          out.write(`  ${chalk.green("+")} ${r.companyName} — ${r.title}${upliftStr}\n`);
-        }
-        if (highRecs.length > 10) {
-          out.write(chalk.dim(`\n  … and ${highRecs.length - 10} more\n`));
-        }
-        out.write(chalk.dim(`\n    → ${replCmd("pax8 recommendations act")}  walk through and order\n`));
+      if (showGrowth) {
+        renderGrowthSection(out, highRecs, divider);
       }
 
       // ── Trials (--all only) ──────────────────────────────────────
