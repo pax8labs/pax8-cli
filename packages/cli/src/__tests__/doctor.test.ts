@@ -40,6 +40,33 @@ describe("pax8 doctor", () => {
     expect(result.stdout).toContain("diagnostic");
     expect(result.stdout).toContain("Examples:");
   });
+
+  it("reports the default API base URL when PAX8_API_BASE is unset", async () => {
+    const result = await runCliExpectSuccess(["doctor"], { PAX8_API_BASE: "" });
+    expect(result.stdout).toMatch(/✓.*API base URL/);
+    expect(result.stdout).toContain("https://api.pax8.com/v1");
+    expect(result.stdout).toContain("default");
+  });
+
+  it("reports the overridden API base URL when PAX8_API_BASE is set", async () => {
+    const result = await runCliExpectSuccess(["doctor"], {
+      PAX8_API_BASE: "https://api-staging.pax8.com/v1",
+    });
+    expect(result.stdout).toMatch(/✓.*API base URL/);
+    expect(result.stdout).toContain("https://api-staging.pax8.com/v1");
+    expect(result.stdout).toContain("overridden via PAX8_API_BASE");
+    // staging != prod, so it should also flag "non-prod"
+    expect(result.stdout).toContain("non-prod");
+  });
+
+  it("does not flag non-prod when PAX8_API_BASE is explicitly set to the prod URL", async () => {
+    const result = await runCliExpectSuccess(["doctor"], {
+      PAX8_API_BASE: "https://api.pax8.com/v1",
+    });
+    expect(result.stdout).toMatch(/✓.*API base URL/);
+    expect(result.stdout).toContain("overridden via PAX8_API_BASE");
+    expect(result.stdout).not.toContain("non-prod");
+  });
 });
 
 describe("checkMcp", () => {
