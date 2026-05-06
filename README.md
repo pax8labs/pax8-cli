@@ -177,7 +177,19 @@ export PAX8_CLIENT_ID=your-client-id
 export PAX8_CLIENT_SECRET=your-client-secret
 ```
 
-Generate API credentials in the [Pax8 Integrations Hub](https://app.pax8.com). For detailed setup instructions, see the [Credential Setup Guide](docs/credential-setup.md).
+Generate API credentials in the [Pax8 Integrations Hub](https://app.pax8.com). For detailed setup instructions, see the [Credential Setup Guide](docs/credential-setup.md). A copy-pasteable starter is in [`.env.example`](.env.example).
+
+### Pointing at a non-prod environment
+
+By default, the CLI talks to `https://api.pax8.com/v1`. Partners testing against a sandbox or staging environment can override the base URL without code changes:
+
+```bash
+export PAX8_API_BASE=https://staging-api.pax8.com/v1/
+pax8 status
+pax8 doctor   # confirms the active API base in its output
+```
+
+`PAX8_API_BASE` is honored by both the API client and the OAuth token endpoint, so a single override switches the whole CLI (and any process embedding `@pax8/core`) to the alternate environment.
 
 ## Demo Mode
 
