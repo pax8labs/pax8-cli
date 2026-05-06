@@ -33,3 +33,11 @@ Vulnerabilities in the Pax8 API itself should be reported to Pax8 directly at ht
 - Credentials are never logged, displayed in output, or included in telemetry
 - Tokens are cached in memory only and never written to disk
 - The `--verbose` flag logs API request URLs and status codes but never request/response bodies
+
+## OAuth scope
+
+Pax8 API credentials carry the full set of permissions associated with the issuing partner account — there is currently no per-scope or read-only credential type at the API level. Treat them as account-equivalent and store them only on machines you trust. To revoke credentials, see <https://app.pax8.com> (Integrations Hub → API Credentials).
+
+## Claude skill data flow
+
+When a partner uses [`@pax8/claude-skill`](packages/claude-skill) via Claude Code, command output flows to Anthropic via Claude Code as part of the agent loop — i.e. whatever the CLI prints in response to a tool invocation becomes part of the model's context for that turn. This is the normal Claude Code data flow and is governed by Anthropic's policies. Pax8 does not receive or store skill conversations and is not involved in that data path.
