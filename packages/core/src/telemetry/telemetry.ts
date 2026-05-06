@@ -22,10 +22,6 @@ export interface TelemetryEvent {
   demo_mode: boolean;
   /** Full subcommand path, e.g. "recommendations.list" */
   subcommand?: string;
-  /** Number of companies the user has (segment size) */
-  company_count?: number;
-  /** For recommendations commands, how many recs were found */
-  rec_count?: number;
   /** For order create, did the order actually succeed */
   order_success?: boolean;
   /** Revenue: order total in dollars (unit_price × quantity) */
@@ -183,8 +179,6 @@ export class Telemetry {
             os: event.os,
             demo_mode: event.demo_mode,
             ...(event.subcommand !== undefined && { subcommand: event.subcommand }),
-            ...(event.company_count !== undefined && { company_count: event.company_count }),
-            ...(event.rec_count !== undefined && { rec_count: event.rec_count }),
             ...(event.order_success !== undefined && { order_success: event.order_success }),
             ...(event.order_total_dollars !== undefined && { order_total_dollars: event.order_total_dollars }),
             ...(event.order_mrr_impact !== undefined && { order_mrr_impact: event.order_mrr_impact }),

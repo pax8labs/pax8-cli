@@ -282,8 +282,7 @@ The CLI also honors two ambient environment variables (no opt-in required) and s
 | `node_version` | always | `process.version` |
 | `os` | always | `process.platform` |
 | `demo_mode` | always | Whether `PAX8_DEMO=1` was set |
-| `company_count` | optional segment marker | Bucket of how many companies the partner has — never a list of names or IDs |
-| `rec_count`, `recs_presented`, `recs_ordered`, `recs_skipped`, `recs_mrr_captured` | recommendations commands | Aggregate counts only |
+| `recs_presented`, `recs_ordered`, `recs_skipped`, `recs_mrr_captured` | `recommendations act` | Aggregate counts only |
 | `order_success`, `order_total_dollars`, `order_mrr_impact`, `order_seats` | `orders create` | Aggregate transaction outcome only |
 
 The anonymous `distinct_id` is `sha256(hostname + ":" + username)` truncated to 16 hex chars — computed locally, never reversible to its inputs.
