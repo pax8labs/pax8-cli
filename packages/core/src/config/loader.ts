@@ -8,6 +8,14 @@ const DEFAULT_CONFIG_DIR = path.join(homedir(), ".pax8");
 const DEFAULT_CONFIG_FILE = "config.yaml";
 
 export function getConfigDir(): string {
+  // PAX8_CONFIG_DIR overrides the default so tests can isolate state per-test
+  // and avoid clobbering the user's real ~/.pax8 dir. This is intentionally
+  // read on every call so tests that set/unset the env var between runs are
+  // honored without needing to reset module state.
+  const override = process.env.PAX8_CONFIG_DIR;
+  if (override && override.length > 0) {
+    return override;
+  }
   return DEFAULT_CONFIG_DIR;
 }
 
@@ -18,7 +26,7 @@ export async function ensureConfigDir(): Promise<string> {
 }
 
 function defaultConfigPath(): string {
-  return path.join(DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE);
+  return path.join(getConfigDir(), DEFAULT_CONFIG_FILE);
 }
 
 function getDefaultConfig(): Config {

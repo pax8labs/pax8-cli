@@ -26,15 +26,24 @@ function makeEvent(overrides: Partial<TelemetryEvent> = {}): TelemetryEvent {
 
 describe("Telemetry", () => {
   const originalEnv = { ...process.env };
+  let isolatedConfigDir: string;
 
   beforeEach(() => {
     resetTelemetry();
     delete process.env.PAX8_TELEMETRY_DISABLED;
     delete process.env.DO_NOT_TRACK;
+    // Each test gets its own config dir so we don't clobber the user's real
+    // ~/.pax8 or race against other test files that touch config.yaml.
+    isolatedConfigDir = path.join(
+      os.tmpdir(),
+      `pax8-telemetry-cfg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    process.env.PAX8_CONFIG_DIR = isolatedConfigDir;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.env = { ...originalEnv };
+    await fs.rm(isolatedConfigDir, { recursive: true, force: true }).catch(() => {});
   });
 
   it("is disabled by default", () => {
