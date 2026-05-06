@@ -12,6 +12,19 @@ updates:
       production-dependencies:
         dependency-type: "production"
         update-types: ["minor", "patch"]
+    # Defer known-breaking npm major bumps until a deliberate v0.2.x
+    # upgrade plan. Each requires source updates / migration work that
+    # shouldn't ride alongside an unrelated PR. Revisit per-package
+    # post-v0.1.0.
+    ignore:
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "ora"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "commander"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
