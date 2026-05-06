@@ -12,6 +12,7 @@ Initial public release.
 - **Closed-loop ordering** — `recommendations act` walks portfolio gaps and places the orders interactively; `invoices audit → invoices dispute` files billing disputes against detected discrepancies.
 - **`@pax8/core` standalone SDK** — all renewal, audit, recommendation, and analytics logic exposed as an importable library with zero CLI dependencies, suitable for embedding in portals, Lambdas, or partner tooling.
 - **`@pax8/claude-skill`** — agent skill that wraps the CLI as AI tools for Claude Code, Cursor, Copilot, and any framework that can run shell commands; ships with a read-only vs. write safety contract.
+- `AGENTS.md` at repo root — cross-runtime agent entry point (Cursor, aider, OpenCode, etc.).
 - **Demo mode** (`PAX8_DEMO=1`) — every command runs against an in-memory fixture, so partners can evaluate the tool with no credentials and CI runs end-to-end against the same surface.
 - **OAuth 2.0 client-credentials flow** — secure local credential storage at `~/.pax8/credentials.json` with mode `0600`, tokens cached in memory only and never persisted, automatic refresh at 23h.
 - **Structured `--json` output with `nextActions`** — `status`, `report mrr/growth`, and `invoices audit` always include contextual next-step hints; list commands opt in via `--with-actions` to ride a `{ data, nextActions }` envelope alongside the flat JSON array (#97).
