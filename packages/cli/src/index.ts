@@ -22,6 +22,7 @@ import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
 import { initCommand } from "./commands/init.js";
+import { reportBugCommand } from "./commands/report-bug.js";
 import { handleCommandError } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
 import { consumeTelemetryFields } from "./lib/telemetry-context.js";
@@ -104,6 +105,7 @@ export function createProgram(): Command {
   program.addCommand(doctorCommand);
   program.addCommand(completionsCommand);
   program.addCommand(versionCommand);
+  program.addCommand(reportBugCommand());
 
   // Easter egg commands (hidden from main help)
   program.addCommand(mooCommand, { hidden: true });

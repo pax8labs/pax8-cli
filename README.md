@@ -310,6 +310,40 @@ The anonymous `distinct_id` is `sha256(hostname + ":" + username)` truncated to 
 
 **On the embedded PostHog key:** the project key shipped in the bundle is the public, write-only PostHog *project ingestion* key — this is the standard pattern for OSS analytics, and [PostHog's own guidance](https://posthog.com/docs/api#public-posthog-api) recommends embedding it. It cannot read events back, only append.
 
+### Reporting bugs
+
+When a command fails, the CLI prints recovery hints and a one-line nudge:
+
+```
+✗ ERROR_AUTH_EXPIRED  Authentication failed.
+
+  Recovery steps:
+    → Your credentials may have expired. Run pax8 auth login to re-authenticate.
+
+  → Help us fix this: run pax8 report-bug to file a sanitized report
+```
+
+`pax8 report-bug` files a GitHub issue against [`pax8labs/pax8-cli`](https://github.com/pax8labs/pax8-cli) prefilled with the *redacted* envelope of the most recent failure. It runs through a redactor (see [`packages/cli/src/lib/redactor.ts`](packages/cli/src/lib/redactor.ts)) that strips:
+
+- UUIDs (replaced with `<REDACTED:UUID>`)
+- Email addresses (`<REDACTED:EMAIL>`)
+- `$HOME` paths on macOS / Linux / Windows / `~/...` form (`<REDACTED:PATH>` — the suffix after the username is preserved so the tail of the path is still useful for debugging)
+- JWTs and `Bearer` tokens (`<REDACTED:JWT>` / `<REDACTED:TOKEN>`)
+- Long opaque hex / base64-shaped strings (`>=32` chars; covers Pax8 client secrets and similar) (`<REDACTED:TOKEN>`)
+
+The reporter is **opt-in per invocation**, not via a config setting. Nothing leaves your machine without explicit `[y/N]` confirmation — the command always prints the body to stdout *first*, so you can see exactly what would be submitted.
+
+```bash
+pax8 report-bug             # interactive: review the body, then [y/N]
+pax8 report-bug --print     # print the redacted Markdown body and exit
+pax8 report-bug --json      # print the redacted envelope as JSON (for piping)
+pax8 report-bug -y          # submit without prompting (for scripts)
+```
+
+If you have [`gh`](https://cli.github.com) installed and authenticated, the command shells out to `gh issue create`. Otherwise it falls back to opening a prefilled issue URL via your platform's default browser (`open` on macOS, `xdg-open` on Linux, `start` on Windows). No new npm dependencies — only Node's built-in `child_process`.
+
+The error envelope persisted to `~/.pax8/last-error.json` (mode 0600) is what `pax8 report-bug` reads. It contains the same fields as the `--json` error output (`code`, `message`, `causes`, `recoverySteps`, `docsUrl`), plus the command name, flag *names* (no values), CLI / Node / OS versions, and an ISO timestamp. The redactor runs over this envelope on every invocation — so even though the file on disk is your own data, the report you submit cannot leak the content of an argument or a path under your home directory.
+
 ### Network egress
 
 For partners on restricted networks, this is the complete allowlist of hosts the CLI may contact:
@@ -319,8 +353,9 @@ For partners on restricted networks, this is the complete allowlist of hosts the
 | `https://api.pax8.com` | Every API call | Always |
 | `https://api.pax8.com/v1/token` | OAuth client-credentials token exchange | Always (during auth) |
 | `https://us.i.posthog.com` | Telemetry capture | Only when `pax8 telemetry enable` has been set AND no opt-out env var is present |
+| `https://github.com/pax8labs/pax8-cli/issues/new` | Bug-report submission | Only when you run `pax8 report-bug` AND confirm `[y/N]` (or pass `-y`). When `gh` is installed, the upload happens via `gh`; otherwise the URL is opened in your default browser |
 
-No other network egress. The CLI does not contact npm, GitHub, the Pax8 portal, the marketing site, or any auto-update service at runtime.
+No other network egress. The CLI does not contact npm, the Pax8 portal, the marketing site, or any auto-update service at runtime.
 
 ### Using @pax8/core as a standalone library
 
