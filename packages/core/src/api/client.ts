@@ -12,9 +12,18 @@ export interface Pax8ClientOptions {
   cacheTtlMs?: number;
 }
 
-const DEFAULT_BASE_URL = "https://api.pax8.com/v1";
+const FALLBACK_BASE_URL = "https://api.pax8.com/v1";
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_RETRIES = 3;
+
+/**
+ * Resolve the API base URL. Honors `PAX8_API_BASE` so partners can point at
+ * a non-prod environment without code changes; falls back to production.
+ * Exported so the CLI can surface it in `pax8 doctor`.
+ */
+export function getDefaultBaseUrl(): string {
+  return process.env.PAX8_API_BASE || FALLBACK_BASE_URL;
+}
 
 export class Pax8Client {
   private readonly tokenManager: { getToken(): Promise<string> };
@@ -26,7 +35,7 @@ export class Pax8Client {
 
   constructor(options: Pax8ClientOptions) {
     this.tokenManager = options.tokenManager;
-    this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+    this.baseUrl = (options.baseUrl ?? getDefaultBaseUrl()).replace(/\/+$/, "");
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
     this.debug = options.debug ?? false;
     this.cacheTtlMs = options.cacheTtlMs ?? 3_600_000; // 1 hour default

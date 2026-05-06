@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import { replCmd } from "../lib/confirm.js";
-import { CredentialStore, loadConfig } from "@pax8/core";
+import { CredentialStore, getDefaultBaseUrl, loadConfig } from "@pax8/core";
 
 const CONFIG_DIR = path.join(os.homedir(), ".pax8");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
@@ -22,6 +22,16 @@ interface CheckResult {
   name: string;
   passed: boolean;
   detail?: string;
+}
+
+async function checkApiBase(): Promise<CheckResult> {
+  const base = getDefaultBaseUrl();
+  const isProd = base.replace(/\/+$/, "") === "https://api.pax8.com/v1";
+  const overridden = !!process.env.PAX8_API_BASE;
+  const detail = overridden
+    ? `${base} (overridden via PAX8_API_BASE${isProd ? "" : " — non-prod"})`
+    : `${base} (default)`;
+  return { name: "API base URL", passed: true, detail };
 }
 
 async function checkNodeVersion(): Promise<CheckResult> {
@@ -315,8 +325,9 @@ Examples:
     process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));
 
     // Run all checks in parallel for speed
-    const [nodeV, configF, authC, credPerms, tokenC, apiCs, cacheC, telC, mcpC] = await Promise.all([
+    const [nodeV, apiBase, configF, authC, credPerms, tokenC, apiCs, cacheC, telC, mcpC] = await Promise.all([
       checkNodeVersion(),
+      checkApiBase(),
       checkConfigFile(),
       checkAuth(),
       checkCredentialPermissions(),
@@ -326,7 +337,7 @@ Examples:
       checkTelemetry(),
       checkMcp(),
     ]);
-    const checks: CheckResult[] = [nodeV, configF, authC, credPerms, tokenC, ...apiCs, cacheC, telC, mcpC];
+    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenC, ...apiCs, cacheC, telC, mcpC];
 
     let allPassed = true;
     for (const check of checks) {
