@@ -238,6 +238,8 @@ Claude: runs pax8 recommendations list --json, returns prioritized gaps
 
 Works with Claude Code, Cursor, Copilot, and any agent framework that can run shell commands.
 
+For non-Claude agent runtimes, see [`AGENTS.md`](AGENTS.md) at the repo root.
+
 ## Core library
 
 All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and MRR analytics are all importable from a portal feature, a Lambda, a dashboard, or your own tool. The CLI is one consumer; the durable asset is the domain knowledge in `core`. See [`packages/core/README.md`](packages/core/README.md) for the install, import example, and capability list.
