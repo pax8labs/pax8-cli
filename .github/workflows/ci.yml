@@ -29,6 +29,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Typecheck
+        run: pnpm -r exec tsc --noEmit
+
       - name: Test
         run: pnpm test
         env:

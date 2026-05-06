@@ -32,7 +32,7 @@ Examples:
       spinner.stop();
 
       // Calculate MRR impact
-      const mrr = calculateMrr(sub.price, sub.quantity, String(sub.billingTerm ?? "Monthly"));
+      const mrr = calculateMrr(sub.price ?? 0, sub.quantity, String(sub.billingTerm ?? "Monthly"));
 
       if (ctx.outputFormat !== "quiet") {
         process.stdout.write(chalk.red.bold("\n  Subscription to be cancelled:\n\n"));

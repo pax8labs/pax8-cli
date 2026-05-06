@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency } from "../../lib/formatters.js";
@@ -43,7 +43,7 @@ Examples:
       });
       spinner.stop();
 
-      const columns = [
+      const columns: Column[] = [
         { key: "productName", header: "Product", width: 35 },
         { key: "companyName", header: "Company", width: 22 },
         { key: "quantity", header: "Qty", width: 8 },
@@ -54,7 +54,7 @@ Examples:
           format: (v) => formatCurrency(Number(v)),
         },
         {
-          key: "total",
+          key: "subtotal",
           header: "Subtotal",
           width: 14,
           format: (v) => formatCurrency(Number(v)),

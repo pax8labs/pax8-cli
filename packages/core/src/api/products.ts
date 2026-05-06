@@ -28,6 +28,28 @@ export class ProductsApi {
     return PaginatedProductSchema.parse(raw);
   }
 
+  /**
+   * Search products by free-text query. Convenience wrapper over `list()`
+   * that mirrors the upstream API's single-keyword behavior: passes the
+   * longest token to the upstream `search` param and lets the caller
+   * filter the rest client-side if needed.
+   */
+  async search(query: string, params?: {
+    page?: number;
+    size?: number;
+    vendorName?: string;
+  }): Promise<PaginatedResponse<Product>> {
+    const tokens = query.split(/\s+/).filter(Boolean);
+    const apiKeyword = tokens.reduce(
+      (best, t) => (t.length >= best.length ? t : best),
+      "",
+    );
+    return this.list({
+      ...params,
+      search: apiKeyword || undefined,
+    });
+  }
+
   async get(id: string): Promise<Product> {
     const raw = await this.client.get<unknown>(`/products/${id}`);
     return ProductSchema.parse(raw);

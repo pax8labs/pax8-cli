@@ -18,7 +18,7 @@ Examples:
   pax8 products search defender --vendor Microsoft
   pax8 products search backup --json`
   )
-  .action(async (query, options, command) => {
+  .action(async (query: string, options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
     const spinner = createSpinner("Fetching products...");

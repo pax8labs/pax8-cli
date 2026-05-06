@@ -60,8 +60,8 @@ Examples:
           address: {
             street: "",
             city: allOpts.city || "",
-            stateOrProvince: allOpts.state || "",
-            postalCode: allOpts.zip || "",
+            state: allOpts.state || "",
+            zip: allOpts.zip || "",
             country: allOpts.country || "US",
           },
         });

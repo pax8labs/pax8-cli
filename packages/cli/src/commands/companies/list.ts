@@ -88,7 +88,7 @@ Examples:
         spinner.text = "Analyzing portfolio coverage...";
 
         // Fetch all subscriptions for the listed companies
-        const companyIds = result.content.map((c: Record<string, unknown>) => String(c.id));
+        const companyIds = result.content.map((c) => String(c.id));
         const subsResult = await ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" });
         const subs = subsResult.content;
 
@@ -132,7 +132,7 @@ Examples:
 
       // Row numbers continue across pages (page 2 starts at 26, not 1)
       const startNum = apiPage * pageSize;
-      const numbered = result.content.map((c: Record<string, unknown>, i: number) => {
+      const numbered = result.content.map((c, i) => {
         const row: Record<string, unknown> = {
           ...c,
           _num: String(startNum + i + 1),
@@ -158,7 +158,7 @@ Examples:
       });
 
       await saveLastList(
-        result.content.map((c: Record<string, unknown>, i: number) => ({
+        result.content.map((c, i) => ({
           index: startNum + i + 1,
           id: String(c.id),
           name: String(c.name),
@@ -173,7 +173,7 @@ Examples:
         const dir = join(homedir(), ".pax8");
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(
-          result.content.map((c: Record<string, unknown>, i: number) => ({
+          result.content.map((_c, i) => ({
             key: String(startNum + i + 1),
             command: `companies more ${startNum + i + 1}`,
           }))
@@ -243,7 +243,7 @@ Examples:
 
         // Interactive: pick a company to drill into
         const steps: NextStep[] = result.content.map(
-          (c: Record<string, unknown>, i: number) => ({
+          (c, i) => ({
             key: String(startNum + i + 1),
             label: String(c.name),
             command: ["companies", "more", String(c.name)],

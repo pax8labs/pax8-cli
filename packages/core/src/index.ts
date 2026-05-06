@@ -4,12 +4,12 @@
 // external consumers. Re-exports are explicit (no `export *`) so that adding
 // a new file under `src/` does not silently grow the public surface.
 //
-// Anything intentionally kept exported but not part of the documented public
-// API (because the CLI in this repo depends on it) is marked with `@internal`
-// JSDoc on its declaration. With `stripInternal: true` enabled in tsconfig,
-// those symbols still exist at runtime for the CLI but are stripped from the
-// generated `dist/index.d.ts` so external TypeScript consumers don't see them
-// in IDE autocomplete.
+// Symbols that the bundled `@pax8/cli` relies on (e.g. `FileCache` for
+// post-write cache invalidation, `resetTelemetry` for test harnesses) are
+// kept here in the public surface. They aren't the front-of-pitch API, but
+// they're harmless to expose and external consumers may legitimately want
+// them for advanced use cases — easier than maintaining a separate internal
+// entrypoint.
 
 // ─── API client + per-resource sub-clients ──────────────────────────────────
 
@@ -205,10 +205,11 @@ export type {
 /**
  * On-disk cache for API responses, keyed by request path + params.
  *
- * @internal Used by the bundled `@pax8/cli` for cache invalidation after
- * write operations. Not part of the documented public API — external
- * consumers should rely on the cache being managed transparently by
- * `Pax8Client` and not depend on this class directly.
+ * Used by the bundled `@pax8/cli` for cache invalidation after write
+ * operations. External consumers should generally rely on the cache being
+ * managed transparently by `Pax8Client` and not depend on this class
+ * directly, but it is exported for advanced use cases (custom cache
+ * directories, manual eviction, etc.).
  */
 export { FileCache } from "./services/cache.js";
 
@@ -234,9 +235,8 @@ export type { TelemetryEvent } from "./telemetry/telemetry.js";
 
 /**
  * Reset the singleton `Telemetry` instance. Used by the test suite to ensure
- * isolation between tests.
- *
- * @internal
+ * isolation between tests, and exported so external test harnesses can do the
+ * same.
  */
 export { resetTelemetry } from "./telemetry/telemetry.js";
 

@@ -47,6 +47,13 @@ importers:
       '@pax8/cli':
         specifier: workspace:*
         version: link:../cli
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.6.0
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
 
   packages/cli:
     dependencies:

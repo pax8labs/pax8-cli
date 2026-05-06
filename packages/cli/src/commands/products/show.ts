@@ -68,7 +68,7 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Vendor:")} ${product.vendorName}\n`);
       process.stdout.write(`  ${chalk.dim("SKU:")} ${product.sku}\n`);
       process.stdout.write(
-        `  ${chalk.dim("Unit:")} ${product.unitOfMeasure}\n`
+        `  ${chalk.dim("Unit:")} ${product.unitOfMeasurement ?? ""}\n`
       );
       process.stdout.write(
         `  ${chalk.dim("Description:")} ${product.shortDescription}\n`
@@ -105,15 +105,23 @@ Examples:
         process.stdout.write(
           `\n  ${chalk.cyan.bold("Provisioning Requirements")}\n`
         );
+        const fields = provisioning.fields ?? [];
+        const requiresDomain = fields.some((f) => f.name === "domain");
+        const requiresTenant = fields.some((f) => f.name === "tenantId");
         process.stdout.write(
-          `  ${chalk.dim("Requires Domain:")} ${provisioning.requiresDomain ? "Yes" : "No"}\n`
+          `  ${chalk.dim("Requires Domain:")} ${requiresDomain ? "Yes" : "No"}\n`
         );
         process.stdout.write(
-          `  ${chalk.dim("Requires Tenant:")} ${provisioning.requiresTenant ? "Yes" : "No"}\n`
+          `  ${chalk.dim("Requires Tenant:")} ${requiresTenant ? "Yes" : "No"}\n`
         );
-        if (provisioning.fields.length > 0) {
+        if (provisioning.vendorPrerequisites) {
           process.stdout.write(
-            `  ${chalk.dim("Fields:")} ${provisioning.fields.join(", ")}\n`
+            `  ${chalk.dim("Prerequisites:")} ${provisioning.vendorPrerequisites}\n`
+          );
+        }
+        if (fields.length > 0) {
+          process.stdout.write(
+            `  ${chalk.dim("Fields:")} ${fields.map((f) => f.name).join(", ")}\n`
           );
         }
       }
@@ -122,11 +130,11 @@ Examples:
         process.stdout.write(
           `\n  ${chalk.cyan.bold("Dependencies")}\n`
         );
-        if (dependencies.dependencies.length === 0) {
+        if (dependencies.length === 0) {
           process.stdout.write(`  ${chalk.dim("No dependencies")}\n`);
         } else {
-          for (const dep of dependencies.dependencies) {
-            process.stdout.write(`  • ${dep}\n`);
+          for (const dep of dependencies) {
+            process.stdout.write(`  • ${dep.dependsOnProductId}\n`);
           }
         }
       }

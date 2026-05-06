@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { ERROR_INTERNAL, loadConfig, saveConfig } from "@pax8/core";
+import type { Config } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { CliError } from "../lib/errors.js";
 
@@ -22,7 +23,7 @@ Examples:
       if (options.demo !== undefined) {
         // Handle demo mode toggle
         const disabling = options.demo === "off";
-        const config = await loadConfig().catch(() => ({
+        const config: Config = await loadConfig().catch(() => ({
           version: "1.0" as const,
           defaults: {
             output_format: "table" as const,
