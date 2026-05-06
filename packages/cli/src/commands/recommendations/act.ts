@@ -3,8 +3,8 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import prompts from "prompts";
 import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation, ERROR_INVALID_INPUT } from "@pax8/core";
+import { ask } from "../../lib/prompts.js";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
@@ -249,32 +249,18 @@ Examples:
           (totalUpliftLabel ? ` — ${totalUpliftLabel}` : "") + ".\n\n"
         );
 
-        let cancelled = false;
-        const picked = await prompts(
-          {
-            type: "multiselect",
-            name: "selected",
-            message: "Select recommendations to act on",
-            choices: recs.map((rec) => ({
-              title: recLabel(rec),
-              value: rec,
-              selected: false,
-            })),
-            instructions: false,
-            hint: "space to toggle, a to toggle all, enter to submit",
-          },
-          {
-            onCancel: () => {
-              cancelled = true;
-              return false;
-            },
-          },
-        );
-
-        if (cancelled) {
-          process.stderr.write(chalk.yellow("\n  Cancelled — no orders placed.\n\n"));
-          process.exit(130);
-        }
+        const picked = await ask({
+          type: "multiselect",
+          name: "selected",
+          message: "Select recommendations to act on",
+          choices: recs.map((rec) => ({
+            title: recLabel(rec),
+            value: rec,
+            selected: false,
+          })),
+          instructions: false,
+          hint: "space to toggle, a to toggle all, enter to submit",
+        });
 
         const selected = (picked.selected as Recommendation[] | undefined) ?? [];
         if (selected.length === 0) {
@@ -292,25 +278,12 @@ Examples:
           ? ` for ${chalk.green(formatCurrency(selectedUplift) + "/mo")} MRR uplift`
           : "";
 
-        const confirmAnswer = await prompts(
-          {
-            type: "confirm",
-            name: "go",
-            message: `About to place ${selected.length} order${selected.length === 1 ? "" : "s"}${upliftStr}. Proceed?`,
-            initial: false,
-          },
-          {
-            onCancel: () => {
-              cancelled = true;
-              return false;
-            },
-          },
-        );
-
-        if (cancelled) {
-          process.stderr.write(chalk.yellow("\n  Cancelled — no orders placed.\n\n"));
-          process.exit(130);
-        }
+        const confirmAnswer = await ask({
+          type: "confirm",
+          name: "go",
+          message: `About to place ${selected.length} order${selected.length === 1 ? "" : "s"}${upliftStr}. Proceed?`,
+          initial: false,
+        });
 
         if (!confirmAnswer.go) {
           process.stderr.write(chalk.dim("\n  Not confirmed — no orders placed.\n\n"));
