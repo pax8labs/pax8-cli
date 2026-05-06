@@ -333,6 +333,7 @@ When a command fails, the CLI prints recovery hints and a one-line nudge:
 - `$HOME` paths on macOS / Linux / Windows / `~/...` form (`<REDACTED:PATH>` — the suffix after the username is preserved so the tail of the path is still useful for debugging)
 - JWTs and `Bearer` tokens (`<REDACTED:JWT>` / `<REDACTED:TOKEN>`)
 - Long opaque hex / base64-shaped strings (`>=32` chars; covers Pax8 client secrets and similar) (`<REDACTED:TOKEN>`)
+- **Positional argument values** (the company / customer / product names you typed at the command line) — replaced with `<REDACTED:ARG>` placeholders in both the `command` field and the `Message` body. The command structure (`companies show <REDACTED:ARG>`) is preserved so maintainers can reproduce the bug without partner-specific data ever leaving your machine.
 
 The reporter is **opt-in per invocation**, not via a config setting. Nothing leaves your machine without explicit `[y/N]` confirmation — the command always prints the body to stdout *first*, so you can see exactly what would be submitted.
 

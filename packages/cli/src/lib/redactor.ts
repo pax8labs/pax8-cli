@@ -77,15 +77,54 @@ const OPAQUE_TOKEN_RE = new RegExp(
   "g",
 );
 
+// Escape regex metacharacters so an arbitrary user-supplied positional arg
+// (e.g. `Acme Corp.` or `(Test) Co`) can be safely embedded in a RegExp.
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Word-boundary-ish character class for positional-arg matching. We treat
+// alphanumerics and `_` as "word" characters; surrounding chars must NOT be
+// in this class for the token to count as a full match. This lets us strip
+// `Inc` from `"Real Customer Inc"` (preceded by a space, followed by `"`)
+// without also stripping `Inc` out of `"Incident"` (followed by `i`).
+const ARG_BOUNDARY = "A-Za-z0-9_";
+
 /**
  * Redact a single string value. Order matters: longer/more-specific patterns
  * (JWT, Bearer, paths) run before shorter ones (UUID, hex tokens) so a JWT
  * isn't partially eaten by the hex-token rule.
+ *
+ * `argTokens` (optional) are user-supplied positional argv values — e.g.
+ * customer / company / product names typed at the command line. When
+ * present, exact full-token matches are replaced with `<REDACTED:ARG>`
+ * before the generic rules run, so an embedded company name inside an
+ * error message gets stripped even if it doesn't match any other pattern.
+ * Empty / whitespace-only / very short tokens are skipped — too risky to
+ * blanket-replace single letters or `""` across the message.
  */
-export function redactString(input: string): string {
+export function redactString(input: string, argTokens: string[] = []): string {
   if (typeof input !== "string" || input.length === 0) return input;
 
   let out = input;
+
+  // Positional-arg tokens first: exact-token replacement (boundary-aware so
+  // we don't substring-match into other words). Run longest-first so a
+  // multi-word value like "Real Customer Inc" doesn't get partially chewed
+  // by a shorter overlapping token. Skip tokens shorter than 2 chars — a
+  // 1-char positional arg is too noisy to blanket-redact.
+  if (argTokens.length > 0) {
+    const tokens = argTokens
+      .filter((t) => typeof t === "string" && t.trim().length >= 2)
+      .sort((a, b) => b.length - a.length);
+    for (const tok of tokens) {
+      const re = new RegExp(
+        `(?<![${ARG_BOUNDARY}])${escapeRegex(tok)}(?![${ARG_BOUNDARY}])`,
+        "g",
+      );
+      out = out.replace(re, "<REDACTED:ARG>");
+    }
+  }
 
   // JWTs first (most specific, includes dots).
   out = out.replace(JWT_RE, "<REDACTED:JWT>");
@@ -110,28 +149,47 @@ export function redactString(input: string): string {
   return out;
 }
 
-function redactStringArray(arr: string[] | undefined): string[] | undefined {
+function redactStringArray(
+  arr: string[] | undefined,
+  argTokens: string[] = [],
+): string[] | undefined {
   if (!arr) return arr;
-  return arr.map(redactString);
+  return arr.map((s) => redactString(s, argTokens));
 }
 
 /**
  * Redact every string-typed field of an envelope. Numeric / structural fields
  * pass through untouched.
+ *
+ * `argTokens` (optional) are the original positional argv values that the
+ * envelope-write site captured. When supplied, an exact-match (full-token,
+ * not substring) pass replaces those values with `<REDACTED:ARG>` in every
+ * string field — defense in depth against `CliError` sites that interpolate
+ * the raw arg value into `message` or `causes` (e.g.
+ * `Company not found: "${input}"`). Without this, a normal company name
+ * doesn't match any of the existing UUID / email / path / token patterns
+ * and would slip through to the report. See #170.
  */
-export function redactEnvelope(env: BugReportEnvelope): BugReportEnvelope {
+export function redactEnvelope(
+  env: BugReportEnvelope,
+  argTokens: string[] = [],
+): BugReportEnvelope {
   const out: BugReportEnvelope = { ...env };
-  out.message = redactString(env.message ?? "");
+  out.message = redactString(env.message ?? "", argTokens);
   if (env.code !== undefined) out.code = env.code; // codes are a closed registry — safe.
-  if (env.causes !== undefined) out.causes = redactStringArray(env.causes);
+  if (env.causes !== undefined) out.causes = redactStringArray(env.causes, argTokens);
   if (env.recoverySteps !== undefined) {
-    out.recoverySteps = redactStringArray(env.recoverySteps);
+    out.recoverySteps = redactStringArray(env.recoverySteps, argTokens);
   }
-  if (env.docsUrl !== undefined) out.docsUrl = redactString(env.docsUrl);
-  if (env.command !== undefined) out.command = redactString(env.command);
+  if (env.docsUrl !== undefined) out.docsUrl = redactString(env.docsUrl, argTokens);
+  // `command` is constructed at envelope-write time as `<subcmd path>
+  // <REDACTED:ARG> ...`, so the raw arg values shouldn't be present here —
+  // but pass argTokens defensively in case a caller hands us a pre-built
+  // command string.
+  if (env.command !== undefined) out.command = redactString(env.command, argTokens);
   // Flags are flag *names* only by construction; redact defensively in case
   // a future code path puts a value here.
-  if (env.flags !== undefined) out.flags = redactStringArray(env.flags);
+  if (env.flags !== undefined) out.flags = redactStringArray(env.flags, argTokens);
   // Versions and OS are non-PII metadata; pass through.
   if (env.cli_version !== undefined) out.cli_version = env.cli_version;
   if (env.node_version !== undefined) out.node_version = env.node_version;
