@@ -6,3 +6,4 @@ export {
 export { pax8_invoices_list, pax8_invoices_audit } from "./invoices.js";
 export { pax8_products_search } from "./products.js";
 export { pax8_report_mrr } from "./reports.js";
+export { pax8_recommendations } from "./recommendations.js";

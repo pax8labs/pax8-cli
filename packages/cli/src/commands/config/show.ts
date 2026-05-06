@@ -3,6 +3,7 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
+import { replCmd } from "../../lib/confirm.js";
 import YAML from "yaml";
 
 const CONFIG_DIR = path.join(os.homedir(), ".pax8");
@@ -24,7 +25,7 @@ Examples:
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         process.stdout.write(
           chalk.yellow(
-            `\n  No config file found at ${CONFIG_FILE}\n  Run: pax8 config init\n\n`
+            `\n  No config file found at ${CONFIG_FILE}\n  Run: ${replCmd("pax8 config init")}\n\n`
           )
         );
       } else {

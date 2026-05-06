@@ -135,8 +135,8 @@ export const ProductSchema = z.object({
   vendorName: z.string().optional(),
   vendor: z.string().optional(),
   sku: z.string().optional(),
-  shortDescription: z.string().optional(),
-  description: z.string().optional(),
+  shortDescription: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
   unitOfMeasurement: z.string().optional(),
   categoryName: z.string().optional(),
 });
@@ -145,20 +145,32 @@ export type Product = z.infer<typeof ProductSchema>;
 // ─── Product Pricing ─────────────────────────────────────────────────────────
 
 export const ProductPricingRateSchema = z.object({
-  minQuantity: z.number(),
-  maxQuantity: z.number().optional(),
-  unitPrice: z.number(),
-  flatPrice: z.number().optional(),
-  partnerBuyPrice: z.number().optional(),
+  partnerBuyRate: z.number(),
+  suggestedRetailPrice: z.number(),
+  startQuantityRange: z.number().optional(),
+  chargeType: z.string().optional(),
 });
 export type ProductPricingRate = z.infer<typeof ProductPricingRateSchema>;
 
-export const ProductPricingSchema = z.object({
-  id: z.string().uuid(),
+export const ProductPricingPlanSchema = z.object({
   productId: z.string().uuid(),
+  productName: z.string().optional(),
+  billingTerm: z.string(),
+  commitmentTerm: z.string().optional(),
+  commitmentTermInMonths: z.number().optional(),
+  type: z.string().optional(),
+  unitOfMeasurement: z.string().optional(),
   rates: z.array(ProductPricingRateSchema),
 });
-export type ProductPricing = z.infer<typeof ProductPricingSchema>;
+export type ProductPricingPlan = z.infer<typeof ProductPricingPlanSchema>;
+
+/** Product pricing is returned as a paginated list of pricing plans. */
+export const ProductPricingResponseSchema = z.object({
+  content: z.array(ProductPricingPlanSchema),
+});
+
+/** Convenience alias — an array of pricing plans for a product. */
+export type ProductPricing = ProductPricingPlan[];
 
 // ─── Provisioning Detail ─────────────────────────────────────────────────────
 
@@ -182,10 +194,18 @@ export type ProvisioningDetail = z.infer<typeof ProvisioningDetailSchema>;
 
 export const OrderLineItemProvisioningSchema = z.record(z.string(), z.unknown());
 
+export const CommitmentTermSchema = z.enum([
+  "Monthly",
+  "1-Year",
+  "3-Year",
+]);
+export type CommitmentTerm = z.infer<typeof CommitmentTermSchema>;
+
 export const OrderLineItemInputSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().int().min(1),
   billingTerm: BillingTermSchema.optional(),
+  commitmentTermId: z.string().uuid().optional(),
   provisioningDetails: OrderLineItemProvisioningSchema.optional(),
 });
 export type OrderLineItemInput = z.infer<typeof OrderLineItemInputSchema>;
@@ -194,6 +214,10 @@ export const OrderLineItemSchema = z.object({
   id: z.string().uuid(),
   offerId: z.string().optional(),
   productId: z.string().uuid(),
+  /** Denormalized product name (demo data convenience). */
+  productName: z.string().optional(),
+  /** Optional billing term (demo data convenience). */
+  billingTerm: BillingTermSchema.optional(),
   lineItemNumber: z.number().int().optional(),
   quantity: z.number(),
   provisioningDetails: OrderLineItemProvisioningSchema.optional(),
@@ -203,7 +227,13 @@ export type OrderLineItem = z.infer<typeof OrderLineItemSchema>;
 export const OrderSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
+  /** Denormalized company name. Returned by the demo client; the real API
+   * doesn't include it directly but the CLI populates it after lookup. */
+  companyName: z.string().optional(),
   orderedBy: z.string().optional(),
+  /** Denormalized email of the placing user (demo data convenience). */
+  orderedByEmail: z.string().optional(),
+  status: z.string().optional(),
   createdDate: z.string(),
   lineItems: z.array(OrderLineItemSchema).optional(),
 });
@@ -217,6 +247,13 @@ export type CreateOrderInput = z.infer<typeof CreateOrderInputSchema>;
 
 // ─── Subscription ────────────────────────────────────────────────────────────
 
+export const CommitmentSchema = z.object({
+  id: z.string().uuid().optional(),
+  term: z.string().optional(),
+  endDate: z.string().optional(),
+});
+export type Commitment = z.infer<typeof CommitmentSchema>;
+
 export const SubscriptionSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
@@ -229,7 +266,8 @@ export const SubscriptionSchema = z.object({
   status: SubscriptionStatusSchema,
   price: z.number().optional(),
   billingTerm: BillingTermSchema.optional(),
-  commitmentTermEndDate: z.string().optional(),
+  commitment: CommitmentSchema.optional(),
+  commitmentTermEndDate: z.string().nullable().optional(),
   companyName: z.string().optional(),
   productName: z.string().optional(),
 });
@@ -306,7 +344,7 @@ export const UsageLineSchema = z.object({
   quantity: z.number(),
   unitPrice: z.number(),
   subtotal: z.number(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   date: z.string(),
 });
 export type UsageLine = z.infer<typeof UsageLineSchema>;
@@ -425,6 +463,6 @@ export const ProductDependencySchema = z.object({
   productId: z.string().uuid(),
   dependsOnProductId: z.string().uuid(),
   dependencyType: z.string(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
 });
 export type ProductDependency = z.infer<typeof ProductDependencySchema>;

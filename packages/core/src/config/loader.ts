@@ -8,6 +8,14 @@ const DEFAULT_CONFIG_DIR = path.join(homedir(), ".pax8");
 const DEFAULT_CONFIG_FILE = "config.yaml";
 
 export function getConfigDir(): string {
+  // PAX8_CONFIG_DIR overrides the default so tests can isolate state per-test
+  // and avoid clobbering the user's real ~/.pax8 dir. This is intentionally
+  // read on every call so tests that set/unset the env var between runs are
+  // honored without needing to reset module state.
+  const override = process.env.PAX8_CONFIG_DIR;
+  if (override && override.length > 0) {
+    return override;
+  }
   return DEFAULT_CONFIG_DIR;
 }
 
@@ -18,7 +26,7 @@ export async function ensureConfigDir(): Promise<string> {
 }
 
 function defaultConfigPath(): string {
-  return path.join(DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE);
+  return path.join(getConfigDir(), DEFAULT_CONFIG_FILE);
 }
 
 function getDefaultConfig(): Config {
@@ -32,12 +40,13 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     const content = await fs.readFile(filePath, "utf-8");
     const raw = YAML.parse(content);
     return ConfigSchema.parse(raw);
-  } catch (err: any) {
-    if (err?.code === "ENOENT") {
+  } catch (err: unknown) {
+    const e = err as { code?: string; name?: string };
+    if (e?.code === "ENOENT") {
       return getDefaultConfig();
     }
     // If it's a Zod validation error, re-throw as-is
-    if (err?.name === "ZodError") {
+    if (e?.name === "ZodError") {
       throw err;
     }
     throw err;
@@ -51,5 +60,5 @@ export async function saveConfig(config: Config, configPath?: string): Promise<v
 
   const validated = ConfigSchema.parse(config);
   const content = YAML.stringify(validated);
-  await fs.writeFile(filePath, content, "utf-8");
+  await fs.writeFile(filePath, content, { encoding: "utf-8", mode: 0o600 });
 }

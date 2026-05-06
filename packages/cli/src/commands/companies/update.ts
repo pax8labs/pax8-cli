@@ -1,13 +1,17 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
+import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { resolveCompany } from "../../lib/resolve-company.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const companiesUpdateCommand = new Command("update")
   .description("Update a company")
-  .argument("<id>", "Company ID")
+  .argument("<id|name>", "Company ID or name")
   .option("--name <name>", "New company name")
   .option("--phone <phone>", "New phone number")
   .option("--website <url>", "New website URL")
@@ -20,7 +24,7 @@ Examples:
   pax8 companies update a1b2c3d4-e5f6-7890-abcd-ef1234567890 --phone "+1-555-1234"
   pax8 companies update a1b2c3d4-e5f6-7890-abcd-ef1234567890 --name "Updated" --yes`
   )
-  .action(async (id: string, options, command: Command) => {
+  .action(async (idOrName: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();
 
     try {
@@ -35,12 +39,16 @@ Examples:
         throw new CliError(
           "No updates provided",
           ["At least one update flag is required"],
-          ["Use --name, --phone, or --website to specify what to update"]
+          ["Use --name, --phone, or --website to specify what to update"],
+          undefined,
+          ERROR_INVALID_INPUT,
         );
       }
 
+      const resolved = await resolveCompany(ctx, idOrName);
+
       // Show what will be updated
-      process.stderr.write(chalk.bold(`\n  Updating company ${id}:\n\n`));
+      process.stderr.write(chalk.bold(`\n  Updating company ${resolved.name}:\n\n`));
       for (const [key, value] of Object.entries(updates)) {
         process.stderr.write(`  ${chalk.dim(key + ":")} ${value}\n`);
       }
@@ -54,8 +62,15 @@ Examples:
 
       const spinner = createSpinner("Updating company...").start();
 
-      const company = await ctx.api.companies.update(id, updates);
+      const doneUpdate = markWriteInFlight("companies");
+      let company;
+      try {
+        company = await ctx.api.companies.update(resolved.id, updates);
+      } finally {
+        doneUpdate();
+      }
 
+      await invalidateCacheAfterWrite();
       spinner.succeed("Company updated");
 
       if (ctx.outputFormat === "json") {

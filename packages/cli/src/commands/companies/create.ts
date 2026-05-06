@@ -4,6 +4,8 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
+import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const companiesCreateCommand = new Command("create")
   .description("Create a new company")
@@ -48,20 +50,27 @@ Examples:
 
       const spinner = createSpinner("Creating company...").start();
 
-      const company = await ctx.api.companies.create({
-        name: allOpts.name,
-        phone: allOpts.phone || "",
-        website: allOpts.website || "",
-        address: {
-          street: "",
-          city: allOpts.city || "",
-          stateOrProvince: allOpts.state || "",
-          postalCode: allOpts.zip || "",
-          country: allOpts.country || "US",
-        },
-      });
+      const doneCreate = markWriteInFlight("companies");
+      let company;
+      try {
+        company = await ctx.api.companies.create({
+          name: allOpts.name,
+          phone: allOpts.phone || "",
+          website: allOpts.website || "",
+          address: {
+            street: "",
+            city: allOpts.city || "",
+            state: allOpts.state || "",
+            zip: allOpts.zip || "",
+            country: allOpts.country || "US",
+          },
+        });
+      } finally {
+        doneCreate();
+      }
 
-      spinner.succeed("Company created");
+      await invalidateCacheAfterWrite();
+      spinner.succeed("Company created 🎉");
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(JSON.stringify(company, null, 2) + "\n");

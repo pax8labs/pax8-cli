@@ -1,6 +1,9 @@
 // MockPax8Client — drop-in replacement for the real API client in demo mode.
 // Returns demo data with simulated pagination, latency, and filtering.
 
+import * as nodeFs from "node:fs";
+import * as nodePath from "node:path";
+import { homedir as nodeHomedir } from "node:os";
 import {
   companies,
   subscriptions,
@@ -14,7 +17,6 @@ import {
   quotes,
   webhooks,
   webhookLogs,
-  webhookTopics,
   type Company,
   type Subscription,
   type Product,
@@ -29,6 +31,12 @@ import {
   type WebhookLog,
 } from "./demo-data.js";
 import { NotFoundError } from "../api/errors.js";
+import type {
+  CreateOrderInput,
+  ProductPricing as ProductPricingPlans,
+  ProvisioningDetail as ProvisioningDetailType,
+  ProductDependency as ProductDependencyType,
+} from "../api/types.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -50,7 +58,13 @@ export interface ListParams {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function randomDelay(): Promise<void> {
-  const ms = 50 + Math.floor(Math.random() * 150); // 50–200ms
+  // Skip delays entirely when running in test/CI or when PAX8_FAST_MOCK is set.
+  // In demo mode, use a short delay (5–20ms) so spinners still feel real
+  // without making multi-call commands painfully slow.
+  if (process.env.PAX8_TEST || process.env.CI || process.env.PAX8_FAST_MOCK) {
+    return Promise.resolve();
+  }
+  const ms = 5 + Math.floor(Math.random() * 15); // 5–20ms
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -81,20 +95,26 @@ function notFound(resource: string, id: string): NotFoundError {
 
 class CompaniesResource {
   async list(
-    params?: ListParams & { filter?: string }
+    params?: ListParams & { filter?: string; status?: string }
   ): Promise<PaginatedResponse<Company>> {
     await randomDelay();
     let filtered = companies;
     if (params?.filter) {
       const q = params.filter.toLowerCase();
-      filtered = companies.filter((c) => c.name.toLowerCase().includes(q));
+      filtered = filtered.filter((c) => c.name.toLowerCase().includes(q));
+    }
+    if (params?.status) {
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((c) => c.status.toLowerCase() === s);
     }
     return paginate(filtered, params);
   }
 
   async get(id: string): Promise<Company> {
     await randomDelay();
-    const company = companies.find((c) => c.id === id);
+    const company = companies.find((c) => c.id === id)
+      ?? companies.find((c) => c.name.toLowerCase() === id.toLowerCase())
+      ?? companies.find((c) => c.id.startsWith(id) || c.name.toLowerCase().includes(id.toLowerCase()));
     if (!company) throw notFound("Company", id);
     return company;
   }
@@ -107,8 +127,8 @@ class CompaniesResource {
       address: data.address ?? {
         street: "",
         city: "",
-        stateOrProvince: "",
-        postalCode: "",
+        state: "",
+        zip: "",
         country: "US",
       },
       phone: data.phone ?? "",
@@ -117,7 +137,7 @@ class CompaniesResource {
       billOnBehalfOfEnabled: false,
       selfServiceAllowed: false,
       orderApprovalRequired: false,
-      createdDate: new Date().toISOString().split("T")[0],
+      created: new Date().toISOString().split("T")[0],
     };
     return newCompany;
   }
@@ -132,12 +152,16 @@ class CompaniesResource {
 
 class SubscriptionsResource {
   async list(
-    params?: ListParams & { companyId?: string }
+    params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Subscription>> {
     await randomDelay();
     let filtered = subscriptions;
     if (params?.companyId) {
-      filtered = subscriptions.filter((s) => s.companyId === params.companyId);
+      filtered = filtered.filter((s) => s.companyId === params.companyId);
+    }
+    if (params?.status) {
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((sub) => sub.status.toLowerCase() === s);
     }
     return paginate(filtered, params);
   }
@@ -192,55 +216,111 @@ class SubscriptionsResource {
 
 class ProductsResource {
   async list(
-    params?: ListParams & { vendorName?: string }
+    params?: ListParams & { vendorName?: string; search?: string }
   ): Promise<PaginatedResponse<Product>> {
     await randomDelay();
     let filtered = products;
     if (params?.vendorName) {
       const v = params.vendorName.toLowerCase();
-      filtered = products.filter((p) =>
+      filtered = filtered.filter((p) =>
         p.vendorName.toLowerCase().includes(v)
       );
+    }
+    if (params?.search) {
+      // Real Pax8 API treats the entire `search` value as a single keyword:
+      // substring-matches it against the product name, but multi-word
+      // values silently return zero. Mirror that here so tests catch the
+      // multi-word footgun rather than masking it with looser matching.
+      const s = params.search.toLowerCase();
+      const isSingleWord = !/\s/.test(s);
+      filtered = isSingleWord
+        ? filtered.filter((p) => p.name.toLowerCase().includes(s))
+        : [];
     }
     return paginate(filtered, params);
   }
 
+  /**
+   * Search products by free-text query. Mirrors `ProductsApi.search()`: picks
+   * the longest token to pass to the upstream `search` param so multi-word
+   * queries don't silently return empty.
+   */
+  async search(
+    query: string,
+    params?: ListParams & { vendorName?: string }
+  ): Promise<PaginatedResponse<Product>> {
+    const tokens = query.split(/\s+/).filter(Boolean);
+    const apiKeyword = tokens.reduce(
+      (best, t) => (t.length >= best.length ? t : best),
+      "",
+    );
+    return this.list({
+      ...params,
+      search: apiKeyword || undefined,
+    });
+  }
+
   async get(id: string): Promise<Product> {
     await randomDelay();
-    const product = products.find((p) => p.id === id);
+    const product = products.find((p) => p.id === id)
+      ?? products.find((p) => p.name.toLowerCase() === id.toLowerCase())
+      ?? products.find((p) => p.id.startsWith(id) || p.name.toLowerCase().includes(id.toLowerCase()));
     if (!product) throw notFound("Product", id);
     return product;
   }
 
-  async getPricing(id: string): Promise<Product["pricing"]> {
+  async getPricing(id: string): Promise<ProductPricingPlans> {
     await randomDelay();
     const product = products.find((p) => p.id === id);
     if (!product) throw notFound("Product", id);
-    return product.pricing;
+    // Adapt the compact mock seed shape to the public `ProductPricingPlan[]`
+    // shape that `ProductsApi.getPricing()` returns, so consumers can treat
+    // the result identically across real and demo modes.
+    return product.pricing.map((p) => ({
+      productId: product.id,
+      productName: product.name,
+      billingTerm: p.billingTerm,
+      commitmentTerm: p.commitmentTerm,
+      unitOfMeasurement: product.unitOfMeasurement,
+      rates: [
+        {
+          partnerBuyRate: p.partnerBuyPrice,
+          suggestedRetailPrice: p.suggestedRetailPrice,
+        },
+      ],
+    }));
   }
 
   async getProvisioningDetails(
     id: string
-  ): Promise<{ requiresDomain: boolean; requiresTenant: boolean; fields: string[] }> {
+  ): Promise<ProvisioningDetailType> {
     await randomDelay();
     const product = products.find((p) => p.id === id);
     if (!product) throw notFound("Product", id);
+    const isMicrosoft = product.vendorName === "Microsoft";
     return {
-      requiresDomain: product.vendorName === "Microsoft",
-      requiresTenant: product.vendorName === "Microsoft",
-      fields: product.vendorName === "Microsoft" ? ["domain", "tenantId"] : [],
+      productId: product.id,
+      vendorPrerequisites: isMicrosoft
+        ? "Customer must have a Microsoft tenant and a verified domain."
+        : undefined,
+      fields: isMicrosoft
+        ? [
+            { name: "domain", label: "Tenant Domain", type: "string", required: true },
+            { name: "tenantId", label: "Microsoft Tenant ID", type: "string", required: true },
+          ]
+        : [],
     };
   }
 
-  async getDependencies(id: string): Promise<{ dependencies: string[] }> {
+  async getDependencies(_id: string): Promise<ProductDependencyType[]> {
     await randomDelay();
-    return { dependencies: [] };
+    return [];
   }
 }
 
 class InvoicesResource {
   async list(
-    params?: ListParams & { companyId?: string; month?: string }
+    params?: ListParams & { companyId?: string; month?: string; status?: string }
   ): Promise<PaginatedResponse<Invoice>> {
     await randomDelay();
     let filtered = invoices;
@@ -249,6 +329,10 @@ class InvoicesResource {
     }
     if (params?.month) {
       filtered = filtered.filter((i) => i.invoiceDate.startsWith(params.month!));
+    }
+    if (params?.status) {
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((i) => i.status.toLowerCase() === s);
     }
     return paginate(filtered, params);
   }
@@ -260,23 +344,44 @@ class InvoicesResource {
     return invoice;
   }
 
+  // Overloaded to support both real API style: listItems(id, params)
+  // and legacy mock style: listItems({ invoiceId, ... })
   async listItems(
-    params?: ListParams & { invoiceId?: string; companyId?: string; month?: string }
+    idOrParams?: string | (ListParams & { invoiceId?: string; companyId?: string; month?: string }),
+    params?: ListParams & { companyId?: string; month?: string },
   ): Promise<PaginatedResponse<InvoiceItem>> {
     await randomDelay();
     let filtered = invoiceItems;
-    if (params?.invoiceId) {
-      filtered = filtered.filter((ii) => ii.invoiceId === params.invoiceId);
+    let paginationParams: ListParams | undefined;
+
+    if (typeof idOrParams === "string") {
+      // Real API style: listItems(invoiceId, { size, ... })
+      filtered = filtered.filter((ii) => ii.invoiceId === idOrParams);
+      if (params?.companyId) {
+        filtered = filtered.filter((ii) => ii.companyId === params.companyId);
+      }
+      if (params?.month) {
+        filtered = filtered.filter((ii) =>
+          ii.billingPeriodStart.startsWith(params.month!)
+        );
+      }
+      paginationParams = params;
+    } else if (idOrParams) {
+      // Legacy mock style: listItems({ invoiceId, companyId, month, ... })
+      if (idOrParams.invoiceId) {
+        filtered = filtered.filter((ii) => ii.invoiceId === idOrParams.invoiceId);
+      }
+      if (idOrParams.companyId) {
+        filtered = filtered.filter((ii) => ii.companyId === idOrParams.companyId);
+      }
+      if (idOrParams.month) {
+        filtered = filtered.filter((ii) =>
+          ii.billingPeriodStart.startsWith(idOrParams.month!)
+        );
+      }
+      paginationParams = idOrParams;
     }
-    if (params?.companyId) {
-      filtered = filtered.filter((ii) => ii.companyId === params.companyId);
-    }
-    if (params?.month) {
-      filtered = filtered.filter((ii) =>
-        ii.billingPeriodStart.startsWith(params.month!)
-      );
-    }
-    return paginate(filtered, params);
+    return paginate(filtered, paginationParams);
   }
 
   async listDraftItems(
@@ -288,50 +393,84 @@ class InvoicesResource {
   }
 }
 
+const DEMO_ORDERS_FILE = nodePath.join(nodeHomedir(), ".pax8", "demo-orders.json");
+
 class OrdersResource {
+  private createdOrders: Order[] | null = null;
+
+  private loadCreated(): Order[] {
+    if (this.createdOrders !== null) return this.createdOrders;
+    try {
+      this.createdOrders = JSON.parse(nodeFs.readFileSync(DEMO_ORDERS_FILE, "utf-8"));
+    } catch {
+      this.createdOrders = [];
+    }
+    return this.createdOrders!;
+  }
+
+  private saveCreated(): void {
+    try {
+      nodeFs.mkdirSync(nodePath.dirname(DEMO_ORDERS_FILE), { recursive: true });
+      nodeFs.writeFileSync(DEMO_ORDERS_FILE, JSON.stringify(this.createdOrders));
+    } catch { /* best effort */ }
+  }
+
   async list(
-    params?: ListParams & { companyId?: string }
+    params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Order>> {
     await randomDelay();
-    let filtered = orders;
+    let filtered = [...orders, ...this.loadCreated()];
     if (params?.companyId) {
-      filtered = orders.filter((o) => o.companyId === params.companyId);
+      filtered = filtered.filter((o) => o.companyId === params.companyId);
+    }
+    if (params?.status) {
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((o) => o.status.toLowerCase() === s);
     }
     return paginate(filtered, params);
   }
 
   async get(id: string): Promise<Order> {
     await randomDelay();
-    const order = orders.find((o) => o.id === id);
+    const allOrders = [...orders, ...this.loadCreated()];
+    const order = allOrders.find((o) => o.id === id);
     if (!order) throw notFound("Order", id);
     return order;
   }
 
-  async create(data: Partial<Order>): Promise<Order> {
+  async create(data: CreateOrderInput): Promise<Order> {
     await randomDelay();
+    // Resolve company name from demo data
+    const company = companies.find((c) => c.id === data.companyId);
     const newOrder: Order = {
       id: `ord-demo-${Date.now()}`,
-      companyId: data.companyId ?? "",
-      companyName: data.companyName ?? "Unknown",
+      companyId: data.companyId,
+      companyName: company?.name ?? "Unknown",
       orderedBy: "Demo User",
       orderedByEmail: "demo@example.com",
       createdDate: new Date().toISOString().split("T")[0],
-      lineItems: data.lineItems ?? [],
+      lineItems: data.lineItems.map((li) => ({
+        productId: li.productId,
+        productName: products.find((p) => p.id === li.productId)?.name ?? "Unknown",
+        quantity: li.quantity,
+        billingTerm: (li.billingTerm ?? "Monthly") as "Monthly" | "Annual",
+      })),
       status: "Processing",
     };
+    this.loadCreated().push(newOrder);
+    this.saveCreated();
     return newOrder;
   }
 }
 
 class ContactsResource {
+  // Mirrors ContactsApi.list — companyId is the first positional argument.
   async list(
-    params?: ListParams & { companyId?: string }
+    companyId: string,
+    params?: ListParams,
   ): Promise<PaginatedResponse<Contact>> {
     await randomDelay();
-    let filtered = contacts;
-    if (params?.companyId) {
-      filtered = contacts.filter((c) => c.companyId === params.companyId);
-    }
+    const filtered = contacts.filter((c) => c.companyId === companyId);
     return paginate(filtered, params);
   }
 
@@ -350,10 +489,8 @@ class ContactsResource {
       firstName: data.firstName ?? "",
       lastName: data.lastName ?? "",
       email: data.email ?? "",
-      phone: data.phone ?? "",
-      type: data.type ?? "Admin",
-      isPrimary: data.isPrimary ?? false,
-      createdDate: new Date().toISOString().split("T")[0],
+      ...(data.phone ? { phone: data.phone } : {}),
+      types: data.types && data.types.length > 0 ? data.types : ["Admin"],
     };
     return newContact;
   }
@@ -374,15 +511,15 @@ class ContactsResource {
 
 class UsageResource {
   async listSummaries(
-    params?: ListParams & { companyId?: string; month?: string }
+    params?: ListParams & { companyId?: string; resourceGroup?: string }
   ): Promise<PaginatedResponse<UsageSummary>> {
     await randomDelay();
     let filtered = usageSummaries;
     if (params?.companyId) {
       filtered = filtered.filter((u) => u.companyId === params.companyId);
     }
-    if (params?.month) {
-      filtered = filtered.filter((u) => u.usageDate.startsWith(params.month!));
+    if (params?.resourceGroup) {
+      filtered = filtered.filter((u) => u.resourceGroup === params.resourceGroup);
     }
     return paginate(filtered, params);
   }
@@ -395,15 +532,11 @@ class UsageResource {
   }
 
   async listLines(
-    params?: ListParams & { usageSummaryId?: string }
+    summaryId: string,
+    params?: ListParams
   ): Promise<PaginatedResponse<UsageLine>> {
     await randomDelay();
-    let filtered = usageLines;
-    if (params?.usageSummaryId) {
-      filtered = usageLines.filter(
-        (l) => l.usageSummaryId === params.usageSummaryId
-      );
-    }
+    const filtered = usageLines.filter((l) => l.usageSummaryId === summaryId);
     return paginate(filtered, params);
   }
 }
@@ -432,11 +565,9 @@ class QuotesResource {
     const newQuote: Quote = {
       id: `quote-demo-${Date.now()}`,
       companyId: data.companyId ?? "",
-      companyName: data.companyName ?? "Unknown",
       createdDate: new Date().toISOString().split("T")[0],
-      expirationDate: data.expirationDate ?? "",
+      ...(data.expirationDate ? { expirationDate: data.expirationDate } : {}),
       status: "Draft",
-      total: data.total ?? 0,
       lineItems: data.lineItems ?? [],
     };
     return newQuote;
@@ -456,10 +587,20 @@ class QuotesResource {
   }
 }
 
+// Mock surface mirrors the real @pax8/core WebhooksApi:
+//   list()       → Webhook[]
+//   create(data) → Webhook
+//   get(id)      → Webhook
+//   update(id, data)        → Webhook
+//   updateStatus(id, status)→ Webhook
+//   delete(id)   → void
+//   test(id)     → unknown (returns a small structured payload here)
+//   getLogs(id)  → WebhookLog[]
+//   retryLog(id, logId) → unknown
 class WebhooksResource {
-  async list(params?: ListParams): Promise<PaginatedResponse<Webhook>> {
+  async list(): Promise<Webhook[]> {
     await randomDelay();
-    return paginate(webhooks, params);
+    return [...webhooks];
   }
 
   async get(id: string): Promise<Webhook> {
@@ -469,21 +610,25 @@ class WebhooksResource {
     return wh;
   }
 
-  async create(data: Partial<Webhook>): Promise<Webhook> {
+  async create(data: { url: string; topics: string[] }): Promise<Webhook> {
     await randomDelay();
+    // Generate a deterministic-ish UUID-shaped id for demo mode.
+    const newId = `99999999-aaaa-bbbb-cccc-${String(Date.now()).padStart(12, "0").slice(-12)}`;
     const newWh: Webhook = {
-      id: `wh-demo-${Date.now()}`,
-      url: data.url ?? "",
+      id: newId,
+      url: data.url,
       status: "Active",
-      topics: data.topics ?? [],
+      topics: data.topics,
       createdDate: new Date().toISOString().split("T")[0],
-      lastTriggeredDate: null,
       secret: `whsec_demo_${Date.now()}`,
     };
     return newWh;
   }
 
-  async update(id: string, data: Partial<Webhook>): Promise<Webhook> {
+  async update(
+    id: string,
+    data: { url?: string; topics?: string[]; status?: "Active" | "Disabled" }
+  ): Promise<Webhook> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
@@ -492,35 +637,12 @@ class WebhooksResource {
 
   async updateStatus(
     id: string,
-    status: "Active" | "Inactive"
+    status: "Active" | "Disabled"
   ): Promise<Webhook> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
     return { ...wh, status };
-  }
-
-  async addTopics(id: string, topics: string[]): Promise<Webhook> {
-    await randomDelay();
-    const wh = webhooks.find((w) => w.id === id);
-    if (!wh) throw notFound("Webhook", id);
-    const merged = [...new Set([...wh.topics, ...topics])];
-    return { ...wh, topics: merged };
-  }
-
-  async replaceTopics(id: string, topics: string[]): Promise<Webhook> {
-    await randomDelay();
-    const wh = webhooks.find((w) => w.id === id);
-    if (!wh) throw notFound("Webhook", id);
-    return { ...wh, topics };
-  }
-
-  async removeTopics(id: string, topics: string[]): Promise<Webhook> {
-    await randomDelay();
-    const wh = webhooks.find((w) => w.id === id);
-    if (!wh) throw notFound("Webhook", id);
-    const remaining = wh.topics.filter((t) => !topics.includes(t));
-    return { ...wh, topics: remaining };
   }
 
   async delete(id: string): Promise<void> {
@@ -529,37 +651,31 @@ class WebhooksResource {
     if (!wh) throw notFound("Webhook", id);
   }
 
-  async test(
-    id: string,
-    topic?: string
-  ): Promise<{ success: boolean; statusCode: number; responseTime: number }> {
+  async test(id: string): Promise<unknown> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
-    return { success: wh.status === "Active", statusCode: wh.status === "Active" ? 200 : 502, responseTime: 123 };
+    return {
+      success: wh.status === "Active",
+      responseCode: wh.status === "Active" ? 200 : 502,
+      sentAt: new Date().toISOString(),
+    };
   }
 
-  async logs(
-    params?: ListParams & { webhookId?: string }
-  ): Promise<PaginatedResponse<WebhookLog>> {
+  async getLogs(id: string): Promise<WebhookLog[]> {
     await randomDelay();
-    let filtered = webhookLogs;
-    if (params?.webhookId) {
-      filtered = webhookLogs.filter((l) => l.webhookId === params.webhookId);
-    }
-    return paginate(filtered, params);
+    const wh = webhooks.find((w) => w.id === id);
+    if (!wh) throw notFound("Webhook", id);
+    return webhookLogs.filter((l) => l.webhookId === id);
   }
 
-  async retry(logId: string): Promise<WebhookLog> {
+  async retryLog(id: string, logId: string): Promise<unknown> {
     await randomDelay();
-    const log = webhookLogs.find((l) => l.id === logId);
+    const wh = webhooks.find((w) => w.id === id);
+    if (!wh) throw notFound("Webhook", id);
+    const log = webhookLogs.find((l) => l.id === logId && l.webhookId === id);
     if (!log) throw notFound("WebhookLog", logId);
-    return { ...log, status: "Success", statusCode: 200 };
-  }
-
-  async listTopics(): Promise<string[]> {
-    await randomDelay();
-    return webhookTopics;
+    return { ...log, responseCode: 200, responseBody: "OK" };
   }
 }
 

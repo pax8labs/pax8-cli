@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { categorizeProduct, ALL_CATEGORIES, getRecommendations, getPortfolioCoverage, type ProductCategory } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
@@ -8,8 +9,14 @@ import {
   formatCurrency,
   formatDaysUntil,
   formatDate,
+  formatQuantity,
+  calculateMrr,
 } from "../../lib/formatters.js";
-import { resolveFromLastList } from "../../lib/last-list.js";
+import { resolveCompany } from "../../lib/resolve-company.js";
+import { replCmd } from "../../lib/confirm.js";
+import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import { output, type Column } from "../../lib/output.js";
+
 
 interface SubSummary {
   productName: string;
@@ -51,6 +58,7 @@ function daysUntil(dateStr: string | undefined): number | null {
 export const companiesMoreCommand = new Command("more")
   .description("Full company summary — subscriptions, vendors, seats, MRR, and issues")
   .argument("<name-or-number>", "Company name, ID, or # from companies list")
+  .allowExcessArguments(true)
   .addHelpText(
     "after",
     `
@@ -62,60 +70,47 @@ Examples:
   .action(async (idOrName: string, _options, command: Command) => {
     const allOpts = command.optsWithGlobals();
 
-    // Resolve numbered reference from last `companies list`
-    const fromList = await resolveFromLastList(idOrName);
-    if (fromList) {
-      idOrName = fromList.id;
+    // When the user forgets quotes (e.g. companies more [DEMO] Client 17),
+    // Commander only captures "[DEMO]" and the rest become excess args.
+    if (command.args.length > 1) {
+      idOrName = command.args.join(" ");
     }
 
-    const spinner = createSpinner("Loading company details...").start();
+    const spinner = createSpinner("Fetching company...").start();
 
     try {
       const ctx = await buildContext(allOpts);
 
-      // Resolve company
-      let company;
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName);
-      if (isUuid) {
-        company = await ctx.api.companies.get(idOrName);
-      } else {
-        const result = await ctx.api.companies.list({ size: 100 });
-        const matches = result.content.filter(
-          (c: Record<string, unknown>) => (c.name as string).toLowerCase() === idOrName.toLowerCase()
-        );
-        if (matches.length === 0) {
-          const fuzzy = result.content.filter(
-            (c: Record<string, unknown>) => (c.name as string).toLowerCase().includes(idOrName.toLowerCase())
-          );
-          if (fuzzy.length === 1) {
-            company = fuzzy[0];
-          } else if (fuzzy.length > 1) {
-            throw new Error(
-              `Multiple companies match "${idOrName}": ${fuzzy.map((c: Record<string, unknown>) => c.name).join(", ")}. Use an exact name or ID.`
-            );
-          } else {
-            throw new Error(`Company not found: ${idOrName}`);
-          }
-        } else {
-          company = matches[0];
-        }
+      // Resolve company by number, UUID, or name
+      const company = await resolveCompany(ctx, idOrName);
+
+      // Fetch subscriptions and enrich product names
+      spinner.text = `Fetching subscriptions for ${company.name}...`;
+      let subs;
+      try {
+        subs = await ctx.api.subscriptions.list({ companyId: company.id, size: 200 });
+      } catch {
+        subs = { content: [], page: { number: 0, totalPages: 0, totalElements: 0 } };
       }
+      if (subs.content.length > 0) {
+        await enrichProductNames(ctx, subs.content as Record<string, unknown>[]);
+      }
+      spinner.succeed(`Loaded ${company.name}`);
 
-      // Fetch subscriptions
-      const subs = await ctx.api.subscriptions.list({ companyId: company.id });
-      spinner.stop();
-
-      const subscriptions: SubSummary[] = subs.content.map((s: Record<string, unknown>) => {
+      const subscriptions: SubSummary[] = subs.content.map((s) => {
         const qty = Number(s.quantity) || 0;
         const price = Number(s.price) || 0;
-        const termEnd = s.commitmentTermEndDate as string | undefined;
+        const termEnd = s.commitmentTermEndDate ?? undefined;
+        const rawName = s.productName;
+        const term = String(s.billingTerm ?? "Monthly");
+        const mrr = calculateMrr(price, qty, term);
         return {
-          productName: String(s.productName),
+          productName: rawName || `Product ${String(s.productId ?? "unknown").slice(0, 8)}`,
           quantity: qty,
           price,
-          mrr: qty * price,
+          mrr,
           status: String(s.status),
-          billingTerm: String(s.billingTerm),
+          billingTerm: term,
           renewsIn: termEnd ? formatDaysUntil(termEnd) : null,
           commitmentTermEndDate: termEnd,
         };
@@ -135,7 +130,7 @@ Examples:
         existing.mrr += sub.mrr;
         vendorMap.set(vendor, existing);
       }
-      const vendors = [...vendorMap.values()].sort((a, b) => b.mrr - a.mrr);
+      const vendors = [...vendorMap.values()].map((v) => ({ ...v, mrr: Number(v.mrr.toFixed(2)) })).sort((a, b) => b.mrr - a.mrr);
 
       // Issues
       const issues: string[] = [];
@@ -143,7 +138,7 @@ Examples:
         const days = daysUntil(sub.commitmentTermEndDate);
         if (days !== null && days <= 30 && days > 0 && sub.billingTerm === "Annual") {
           issues.push(
-            `${sub.productName} (${sub.quantity} seats) renews ${sub.renewsIn} — review before auto-renewal`
+            `${sub.productName} (${formatQuantity(sub.quantity)}) renews ${sub.renewsIn} — review before auto-renewal`
           );
         }
       }
@@ -156,12 +151,45 @@ Examples:
         issues.push(`${s.productName} is on trial — convert or cancel`);
       }
 
+      // Portfolio coverage analysis
+      const coveredCategories = new Set<ProductCategory>();
+      for (const sub of activeSubs) {
+        const cats = categorizeProduct(sub.productName);
+        for (const c of cats) coveredCategories.add(c);
+      }
+      const covered = ALL_CATEGORIES.filter((c) => coveredCategories.has(c));
+      const missing = ALL_CATEGORIES.filter((c) => !coveredCategories.has(c));
+
+      // Get estimated uplift from recommendations engine
+      const subsForRecs = subs.content.map((s) => ({
+        companyId: String(s.companyId ?? company.id),
+        companyName: company.name,
+        productName: String(s.productName ?? ""),
+        productId: String(s.productId ?? ""),
+        quantity: Number(s.quantity) || 0,
+        price: Number(s.price) || 0,
+        billingTerm: String(s.billingTerm ?? "Monthly"),
+        status: String(s.status ?? ""),
+      }));
+      const recsReport = getRecommendations(subsForRecs);
+      const companyUplift = recsReport.recommendations
+        .filter((r) => r.companyId === company.id)
+        .reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+
+      const coverageInfo = {
+        coverage: `${covered.length}/${ALL_CATEGORIES.length}`,
+        coveredCategories: covered,
+        missingCategories: missing,
+        estimatedUplift: Number(companyUplift.toFixed(2)),
+      };
+
       // JSON output
       if (ctx.outputFormat === "json" || ctx.outputFormat === "csv") {
         const result = {
           company: { name: company.name, id: company.id, status: company.status },
-          summary: { active_subscriptions: activeSubs.length, total_seats: totalSeats, mrr: totalMrr, arr: totalMrr * 12 },
+          summary: { active_subscriptions: activeSubs.length, total_seats: totalSeats, mrr: Number(totalMrr.toFixed(2)), arr: Number((totalMrr * 12).toFixed(2)) },
           vendors,
+          coverage: coverageInfo,
           subscriptions: activeSubs,
           issues,
         };
@@ -175,13 +203,25 @@ Examples:
 
       process.stdout.write("\n");
       process.stdout.write(chalk.bold.white(`  ${company.name}`) + chalk.dim(`  ${company.id.slice(0, 8)}...`) + "\n");
-      process.stdout.write(`  ${formatStatus(company.status)}${chalk.dim("  ·  Since " + formatDate(company.createdDate))}` + "\n");
+      const sinceStr = company.created ? chalk.dim("  ·  Since " + formatDate(company.created)) : "";
+      process.stdout.write(`  ${formatStatus(company.status)}${sinceStr}` + "\n");
       process.stdout.write("\n");
 
       // Summary bar
       process.stdout.write(`  ${line}\n`);
+
+      if (activeSubs.length === 0 && subscriptions.length === 0) {
+        process.stdout.write(chalk.dim(`  No subscriptions yet\n`));
+        process.stdout.write(`  ${line}\n\n`);
+        process.stderr.write(chalk.dim("  Get started:\n"));
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 products search "Microsoft 365"`))}  ${chalk.dim("browse the catalog")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 products search "backup"`))}  ${chalk.dim("find backup solutions")}\n`);
+        process.stderr.write("\n");
+        return;
+      }
+
       process.stdout.write(
-        `  ${chalk.bold(String(activeSubs.length))} subscriptions` +
+        `  ${chalk.bold(String(activeSubs.length))} subscription${activeSubs.length !== 1 ? "s" : ""}` +
         `    ${chalk.bold(String(totalSeats))} seats` +
         `    ${chalk.bold.green(formatCurrency(totalMrr))}/mo` +
         `    ${chalk.dim(formatCurrency(totalMrr * 12) + "/yr")}\n`
@@ -190,28 +230,54 @@ Examples:
       process.stdout.write("\n");
 
       // Vendor breakdown
-      process.stdout.write(chalk.dim("  VENDORS\n"));
-      for (const v of vendors) {
-        const pctBar = Math.round((v.mrr / totalMrr) * 20);
-        const bar = chalk.cyan("█".repeat(pctBar)) + chalk.dim("░".repeat(20 - pctBar));
-        const pct = Math.round((v.mrr / totalMrr) * 100);
-        process.stdout.write(
-          `  ${v.vendor.padEnd(14)} ${bar} ${chalk.bold(formatCurrency(v.mrr).padStart(10))}  ${chalk.dim(String(pct) + "%")}  ${chalk.dim(v.seats + " seats")}\n`
-        );
+      if (vendors.length > 0) {
+        process.stdout.write(chalk.dim("  VENDORS\n"));
+        for (const v of vendors) {
+          const pctBar = totalMrr > 0 ? Math.round((v.mrr / totalMrr) * 20) : 0;
+          const bar = chalk.cyan("█".repeat(pctBar)) + chalk.dim("░".repeat(20 - pctBar));
+          const pct = totalMrr > 0 ? Math.round((v.mrr / totalMrr) * 100) : 0;
+          process.stdout.write(
+            `  ${v.vendor.padEnd(14)} ${bar} ${chalk.bold(formatCurrency(v.mrr).padStart(10))}  ${chalk.dim(String(pct) + "%")}  ${chalk.dim(v.seats + " seats")}\n`
+          );
+        }
+        process.stdout.write("\n");
+      }
+
+      // Portfolio coverage
+      process.stdout.write(chalk.dim("  PORTFOLIO COVERAGE") + chalk.dim(`  ${coverageInfo.coverage}\n`));
+      if (covered.length > 0) {
+        const coveredStr = covered.map((c) => chalk.green(c.replace(/_/g, " "))).join(chalk.dim(", "));
+        process.stdout.write(chalk.dim("  Covered:  ") + coveredStr + "\n");
+      }
+      if (missing.length > 0) {
+        const missingStr = missing.map((c) => chalk.yellow(c.replace(/_/g, " "))).join(chalk.dim(", "));
+        process.stdout.write(chalk.dim("  Missing:  ") + missingStr + "\n");
+      }
+      if (coverageInfo.estimatedUplift > 0) {
+        process.stdout.write(chalk.dim("  Potential: ") + chalk.green(`+${formatCurrency(coverageInfo.estimatedUplift)}/mo`) + "\n");
       }
       process.stdout.write("\n");
 
-      // Subscriptions
-      process.stdout.write(chalk.dim("  SUBSCRIPTIONS\n"));
-      for (const sub of subscriptions) {
-        const statusIcon = sub.status === "Active" ? chalk.green("●")
-          : sub.status === "Trial" ? chalk.yellow("●")
-          : chalk.red("●");
-        const renewal = sub.renewsIn ? chalk.dim(` · renews ${sub.renewsIn}`) : "";
-        process.stdout.write(
-          `  ${statusIcon} ${sub.productName.padEnd(35)} ${chalk.bold(String(sub.quantity).padStart(4))} seats  ${formatCurrency(sub.mrr).padStart(10)}/mo${renewal}\n`
-        );
-      }
+      // Subscriptions table
+      const subColumns: Column[] = [
+        { key: "statusIcon", header: "", format: (v) => String(v) },
+        { key: "productName", header: "Product" },
+        { key: "quantity", header: "Seats", format: (v) => String(v) },
+        { key: "mrrDisplay", header: "MRR", format: (v) => String(v) },
+        { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
+        { key: "renewsIn", header: "Renews", format: (v) => v ? String(v) : chalk.dim("—") },
+      ];
+
+      const subRows = subscriptions.map((sub) => ({
+        statusIcon: sub.status === "Active" ? chalk.green("●") : sub.status === "Trial" ? chalk.yellow("●") : chalk.red("●"),
+        productName: sub.productName,
+        quantity: sub.quantity,
+        mrrDisplay: formatCurrency(sub.mrr) + "/mo",
+        status: sub.status,
+        renewsIn: sub.renewsIn,
+      }));
+
+      output(subRows as Record<string, unknown>[], { format: "table", columns: subColumns });
       process.stdout.write("\n");
 
       // Issues
@@ -224,7 +290,25 @@ Examples:
       } else {
         process.stdout.write(chalk.green("  ✓ No issues found\n\n"));
       }
+
+      if (ctx.outputFormat === "table") {
+        process.stderr.write(chalk.dim("  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 recommendations list --company "${company.name}"`))}  ${chalk.dim("growth opportunities")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${company.name}"`))}  ${chalk.dim("all subscriptions")}\n`);
+        process.stderr.write("\n");
+      }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("not found") || msg.includes("404") || msg.includes("Not Found")) {
+        spinner?.stop();
+        process.stderr.write(
+          chalk.red.bold(`\n  \u2717 Could not load company summary\n`) +
+          chalk.dim(`    The company may not exist or the API returned no data.\n`) +
+          chalk.yellow(`    \u2192 Run ${chalk.cyan(replCmd("pax8 companies list"))} to see available companies\n\n`)
+        );
+        process.exit(1);
+        throw new Error("process.exit intercepted");
+      }
       handleCommandError(error, spinner, "Failed to load company summary");
     }
   });

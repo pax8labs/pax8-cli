@@ -34,7 +34,7 @@ const sampleInvoiceItem = {
   quantity: 45,
   unitPrice: 22.0,
   subtotal: 990.0,
-  productName: "Microsoft 365 Business Premium",
+  productName: "Microsoft 365 Business Premium [New Commerce Experience]",
 };
 
 const samplePaginatedInvoices = {
@@ -85,7 +85,7 @@ describe("InvoicesApi", () => {
 
     expect(client.get).toHaveBeenCalledWith(`/invoices/${INVOICE_ID}/items`, { page: 0, size: 50 });
     expect(result.content).toHaveLength(1);
-    expect(result.content[0].productName).toBe("Microsoft 365 Business Premium");
+    expect(result.content[0].productName).toBe("Microsoft 365 Business Premium [New Commerce Experience]");
   });
 
   it("listDraftItems returns paginated draft items", async () => {

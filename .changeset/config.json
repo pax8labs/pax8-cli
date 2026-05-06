@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
+  "changelog": [
+    "@changesets/changelog-github",
+    { "repo": "pax8labs/pax8-cli" }
+  ],
+  "commit": false,
+  "fixed": [],
+  "linked": [["@pax8/cli", "@pax8/core"]],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@pax8/claude-skill"]
+}

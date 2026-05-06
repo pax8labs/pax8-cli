@@ -1,4 +1,5 @@
 import type { Subscription } from "../api/types.js";
+import { subscriptionMrr } from "./analytics.js";
 
 /** The subset of Subscription fields used by the renewal tracker. */
 type RenewalSubscriptionInput = Partial<Subscription> & {
@@ -25,6 +26,7 @@ export interface RenewalReport {
   annualCount: number;
   monthlyCount: number;
   urgentCount: number; // within 14 days
+  skippedNoDate: number; // subscriptions with no commitmentTermEndDate
 }
 
 function daysBetween(a: Date, b: Date): number {
@@ -34,21 +36,20 @@ function daysBetween(a: Date, b: Date): number {
   return Math.floor((utcB - utcA) / msPerDay);
 }
 
-function computeMrrAtRisk(price: number, quantity: number, billingTerm: string): number {
-  const normalizedTerm = billingTerm.toLowerCase();
-  if (normalizedTerm.includes("annual") || normalizedTerm.includes("yearly")) {
-    return (price * quantity) / 12;
-  }
-  return price * quantity;
-}
+/** @deprecated Use subscriptionMrr from analytics.ts — this alias exists for clarity in renewal context. */
+const computeMrrAtRisk = subscriptionMrr;
 
 export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], withinDays: number): RenewalReport {
   const now = new Date();
   const items: RenewalItem[] = [];
+  let skippedNoDate = 0;
 
   for (const sub of subscriptions) {
     const endDateRaw = sub.commitmentTermEndDate ?? sub.commitmentTerm?.endDate;
-    if (!endDateRaw) continue;
+    if (!endDateRaw) {
+      skippedNoDate++;
+      continue;
+    }
 
     const renewalDate = new Date(endDateRaw);
     if (isNaN(renewalDate.getTime())) continue;
@@ -90,5 +91,6 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
     annualCount,
     monthlyCount,
     urgentCount,
+    skippedNoDate,
   };
 }

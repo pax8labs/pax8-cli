@@ -3,7 +3,7 @@ import { execCli } from "../index.js";
 export const pax8_invoices_list = {
   name: "pax8_invoices_list",
   description:
-    "List invoices with totals, status, and due dates. Can filter by month and company.",
+    "List invoices with total, balance, status, dueDate, and invoiceDate. Filter by month (YYYY-MM, defaults to current month) and/or companyId. Supports pagination. Returns companyName resolved for each invoice.",
   parameters: {
     type: "object" as const,
     properties: {
@@ -41,7 +41,7 @@ export const pax8_invoices_list = {
 export const pax8_invoices_audit = {
   name: "pax8_invoices_audit",
   description:
-    "Audit invoices for discrepancies — highlights billing anomalies, quantity mismatches, and unusual charges.",
+    "Audit invoices for discrepancies — highlights billing anomalies, quantity mismatches, and unusual charges. Returns findings with severity, description, affectedCompany, and estimatedImpact. Filter by month (YYYY-MM, defaults to current month).",
   parameters: {
     type: "object" as const,
     properties: {

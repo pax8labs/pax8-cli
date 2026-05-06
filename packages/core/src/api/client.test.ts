@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Pax8Client } from "./client.js";
+import { Pax8Client, getDefaultBaseUrl } from "./client.js";
 import { ApiError, RateLimitError } from "./errors.js";
 
 const mockTokenManager = { getToken: vi.fn().mockResolvedValue("test-token") };
@@ -8,6 +8,7 @@ function createClient(options?: Partial<{ baseUrl: string; timeout: number; debu
   return new Pax8Client({
     tokenManager: mockTokenManager,
     baseUrl: "https://api.pax8.com/v1",
+    cacheTtlMs: 0,
     ...options,
   });
 }
@@ -254,5 +255,105 @@ describe("Pax8Client", () => {
     const output = stderrSpy.mock.calls.map((c) => c[0]).join("");
     expect(output).toContain("GET");
     expect(output).toContain("/test");
+  });
+});
+
+describe("getDefaultBaseUrl", () => {
+  const originalApiBase = process.env.PAX8_API_BASE;
+
+  afterEach(() => {
+    if (originalApiBase === undefined) delete process.env.PAX8_API_BASE;
+    else process.env.PAX8_API_BASE = originalApiBase;
+  });
+
+  it("falls back to the production URL when PAX8_API_BASE is unset", () => {
+    delete process.env.PAX8_API_BASE;
+    expect(getDefaultBaseUrl()).toBe("https://api.pax8.com/v1");
+  });
+
+  it("falls back to the production URL when PAX8_API_BASE is empty string", () => {
+    process.env.PAX8_API_BASE = "";
+    expect(getDefaultBaseUrl()).toBe("https://api.pax8.com/v1");
+  });
+
+  it("honors PAX8_API_BASE when set", () => {
+    process.env.PAX8_API_BASE = "https://api-staging.pax8.com/v1";
+    expect(getDefaultBaseUrl()).toBe("https://api-staging.pax8.com/v1");
+  });
+
+  it("re-reads the env on every call (lazy lookup, not cached)", () => {
+    delete process.env.PAX8_API_BASE;
+    expect(getDefaultBaseUrl()).toBe("https://api.pax8.com/v1");
+
+    process.env.PAX8_API_BASE = "https://example.test/v1";
+    expect(getDefaultBaseUrl()).toBe("https://example.test/v1");
+
+    process.env.PAX8_API_BASE = "https://other.test/v2";
+    expect(getDefaultBaseUrl()).toBe("https://other.test/v2");
+
+    delete process.env.PAX8_API_BASE;
+    expect(getDefaultBaseUrl()).toBe("https://api.pax8.com/v1");
+  });
+});
+
+describe("Pax8Client + PAX8_API_BASE", () => {
+  let originalFetch: typeof globalThis.fetch;
+  const originalApiBase = process.env.PAX8_API_BASE;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    mockTokenManager.getToken.mockResolvedValue("test-token");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+    if (originalApiBase === undefined) delete process.env.PAX8_API_BASE;
+    else process.env.PAX8_API_BASE = originalApiBase;
+  });
+
+  it("uses PAX8_API_BASE for the request URL when no explicit baseUrl is passed", async () => {
+    process.env.PAX8_API_BASE = "https://api-staging.pax8.com/v1";
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/companies");
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toContain("https://api-staging.pax8.com/v1/companies");
+  });
+
+  it("strips trailing slashes from PAX8_API_BASE before composing the URL", async () => {
+    process.env.PAX8_API_BASE = "https://api-staging.pax8.com/v1//";
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/companies");
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    // Should not double up slashes between base and path
+    expect(url.toString()).toBe("https://api-staging.pax8.com/v1/companies");
+  });
+
+  it("explicit baseUrl option overrides PAX8_API_BASE", async () => {
+    process.env.PAX8_API_BASE = "https://api-staging.pax8.com/v1";
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.example.com/v1",
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/companies");
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toContain("https://api.example.com/v1/companies");
+    expect(url.toString()).not.toContain("staging");
   });
 });

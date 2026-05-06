@@ -7,7 +7,8 @@ import {
   CreateContactInputSchema,
   UpdateContactInputSchema,
   ProductSchema,
-  ProductPricingSchema,
+  ProductPricingResponseSchema,
+  ProductPricingPlanSchema,
   ProvisioningDetailSchema,
   OrderSchema,
   OrderLineItemSchema,
@@ -171,7 +172,7 @@ describe("UpdateContactInputSchema", () => {
 describe("ProductSchema", () => {
   const valid = {
     id: uuid,
-    name: "Microsoft 365 Business Premium",
+    name: "Microsoft 365 Business Premium [New Commerce Experience]",
     vendorName: "Microsoft",
     vendor: "microsoft",
     sku: "M365-BP",
@@ -201,30 +202,41 @@ describe("ProductSchema", () => {
 
 // ─── Product Pricing ─────────────────────────────────────────────────────────
 
-describe("ProductPricingSchema", () => {
-  const valid = {
-    id: uuid,
-    productId: uuid2,
+describe("ProductPricingResponseSchema", () => {
+  const validPlan = {
+    productId: uuid,
+    billingTerm: "Monthly",
+    commitmentTerm: "Monthly",
+    commitmentTermInMonths: 1,
+    type: "Flat",
+    unitOfMeasurement: "User",
     rates: [
-      { minQuantity: 1, maxQuantity: 99, unitPrice: 22.0, flatPrice: 0, partnerBuyPrice: 18.0 },
-      { minQuantity: 100, unitPrice: 20.0, partnerBuyPrice: 16.0 },
+      { partnerBuyRate: 1.692, suggestedRetailPrice: 1.8, startQuantityRange: 0, chargeType: "Per Unit" },
     ],
   };
 
-  it("validates a correct payload", () => {
-    expect(ProductPricingSchema.parse(valid)).toEqual(valid);
+  it("validates a correct paginated pricing response", () => {
+    const response = { content: [validPlan] };
+    const parsed = ProductPricingResponseSchema.parse(response);
+    expect(parsed.content).toHaveLength(1);
+    expect(parsed.content[0].billingTerm).toBe("Monthly");
+    expect(parsed.content[0].commitmentTerm).toBe("Monthly");
+  });
+
+  it("validates a pricing plan", () => {
+    expect(ProductPricingPlanSchema.parse(validPlan)).toEqual(validPlan);
   });
 
   it("rejects missing rates", () => {
-    expect(() => ProductPricingSchema.parse({ id: uuid, productId: uuid2 })).toThrow();
+    expect(() => ProductPricingPlanSchema.parse({ productId: uuid, billingTerm: "Monthly", commitmentTerm: "Monthly" })).toThrow();
   });
 
-  it("rejects invalid rate (missing minQuantity)", () => {
+  it("rejects missing billingTerm", () => {
     expect(() =>
-      ProductPricingSchema.parse({
-        id: uuid,
-        productId: uuid2,
-        rates: [{ unitPrice: 22.0 }],
+      ProductPricingPlanSchema.parse({
+        productId: uuid,
+        commitmentTerm: "Monthly",
+        rates: [{ partnerBuyRate: 1.0, suggestedRetailPrice: 1.5 }],
       }),
     ).toThrow();
   });
@@ -273,6 +285,8 @@ describe("OrderSchema", () => {
   });
 
   it("validates without lineItems", () => {
+    // Strip lineItems via destructure; the unused name is the rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { lineItems, ...rest } = valid;
     expect(OrderSchema.parse(rest)).toEqual(rest);
   });
@@ -335,7 +349,7 @@ describe("SubscriptionSchema", () => {
     billingTerm: "Annual",
     commitmentTermEndDate: "2025-01-01T00:00:00Z",
     companyName: "Acme Corp",
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
   };
 
   it("validates a correct payload", () => {
@@ -425,6 +439,8 @@ describe("SubscriptionHistorySchema", () => {
   });
 
   it("validates without previousQuantity", () => {
+    // Strip previousQuantity via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { previousQuantity, ...rest } = valid;
     expect(SubscriptionHistorySchema.parse(rest)).toEqual(rest);
   });
@@ -457,6 +473,8 @@ describe("InvoiceSchema", () => {
   });
 
   it("rejects missing total", () => {
+    // Strip total via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { total, ...rest } = valid;
     expect(() => InvoiceSchema.parse(rest)).toThrow();
   });
@@ -474,7 +492,7 @@ describe("InvoiceItemSchema", () => {
     unitPrice: 22.5,
     subtotal: 1012.5,
     companyId: uuid,
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     companyName: "Acme Corp",
   };
 
@@ -559,6 +577,8 @@ describe("UsageLineSchema", () => {
   });
 
   it("rejects missing date", () => {
+    // Strip date via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { date, ...rest } = valid;
     expect(() => UsageLineSchema.parse(rest)).toThrow();
   });
@@ -583,6 +603,8 @@ describe("QuoteSchema", () => {
   });
 
   it("validates without lineItems", () => {
+    // Strip lineItems via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { lineItems, ...rest } = valid;
     expect(QuoteSchema.parse(rest)).toEqual(rest);
   });
@@ -619,6 +641,8 @@ describe("WebhookSchema", () => {
   });
 
   it("rejects missing topics", () => {
+    // Strip topics via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { topics, ...rest } = valid;
     expect(() => WebhookSchema.parse(rest)).toThrow();
   });
@@ -678,6 +702,8 @@ describe("WebhookLogSchema", () => {
   });
 
   it("rejects missing responseCode", () => {
+    // Strip responseCode via destructure; rest-sibling idiom.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { responseCode, ...rest } = valid;
     expect(() => WebhookLogSchema.parse(rest)).toThrow();
   });

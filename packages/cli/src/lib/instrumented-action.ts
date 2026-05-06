@@ -1,6 +1,5 @@
 import {
   getTelemetry,
-  type TelemetryEvent,
   AuthError,
   RateLimitError,
   ValidationError,
@@ -80,13 +79,8 @@ export function instrumentedAction(
 
       throw error; // Re-throw so normal error handling still works
     } finally {
-      // Best-effort flush + shutdown PostHog client
-      try {
-        await telemetry.flush();
-        await telemetry.shutdown();
-      } catch {
-        // Never let telemetry failures break the CLI
-      }
+      // Fire-and-forget — never block the CLI on telemetry
+      telemetry.flush().then(() => telemetry.shutdown()).catch(() => {});
     }
   };
 }

@@ -162,18 +162,18 @@ describe("demo-data", () => {
   });
 
   describe("subscriptions per company", () => {
-    it("Summit Healthcare Partners has 5 subscriptions", () => {
+    it("Summit Healthcare Partners has 3 subscriptions", () => {
       const summit = subscriptions.filter(
         (s) => s.companyId === "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
       );
-      expect(summit).toHaveLength(5);
+      expect(summit).toHaveLength(3);
     });
 
-    it("Coastline Legal Group has 3 subscriptions", () => {
+    it("Coastline Legal Group has 2 subscriptions", () => {
       const coastline = subscriptions.filter(
         (s) => s.companyId === "b2c3d4e5-f6a7-8901-bcde-f12345678901"
       );
-      expect(coastline).toHaveLength(3);
+      expect(coastline).toHaveLength(2);
     });
 
     it("Redwood Manufacturing has 7 subscriptions", () => {

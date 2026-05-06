@@ -20,7 +20,8 @@ export const ordersShowCommand = new Command("show")
     `
 Examples:
   pax8 orders show ord-summit-001
-  pax8 orders show ord-summit-001 --json`
+  pax8 orders show ord-summit-001 --json
+  pax8 orders show ord-summit-001 --csv`
   )
   .action(async (id: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -54,10 +55,10 @@ Examples:
       // Table / detail view
       process.stdout.write("\n");
       process.stdout.write(chalk.bold(`  Order ${order.id}\n\n`));
-      process.stdout.write(`  ${chalk.dim("Company:")}    ${order.companyName}\n`);
-      process.stdout.write(`  ${chalk.dim("Status:")}     ${formatStatus(order.status)}\n`);
-      process.stdout.write(`  ${chalk.dim("Date:")}       ${formatDate(order.createdDate)}\n`);
-      process.stdout.write(`  ${chalk.dim("Ordered By:")} ${order.orderedBy} (${order.orderedByEmail})\n`);
+      process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${order.companyName}\n`);
+      if (order.status) process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(order.status)}\n`);
+      process.stdout.write(`  ${chalk.dim("Date:".padEnd(18))}${formatDate(order.createdDate)}\n`);
+      process.stdout.write(`  ${chalk.dim("Ordered By:".padEnd(18))}${order.orderedBy}${order.orderedByEmail ? ` (${order.orderedByEmail})` : ""}\n`);
       process.stdout.write("\n");
 
       if (order.lineItems && order.lineItems.length > 0) {

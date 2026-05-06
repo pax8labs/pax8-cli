@@ -10,6 +10,7 @@ import {
   formatCompanyName,
 } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
+import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 
 const columns: Column[] = [
   {
@@ -36,17 +37,23 @@ const columns: Column[] = [
 export const subscriptionsListCommand = new Command("list")
   .description("List subscriptions")
   .option("--company <id|name>", "Filter by company ID or name")
-  .option("--page <number>", "Page number", "0")
+  .option("--status <status>", "Filter by status (Active, Cancelled, PendingManual, Trial, etc.)")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
+  .option("--with-actions", "Wrap JSON output as { subscriptions, nextActions } instead of a flat array")
   .addHelpText(
     "after",
     `
 Examples:
   pax8 subscriptions list
-  pax8 subscriptions list --company a1b2c3d4-e5f6-7890-abcd-ef1234567890
-  pax8 subscriptions list --size 10 --page 1
-  pax8 subscriptions list --json`
+  pax8 subscriptions list --company "Summit Healthcare Partners"
+  pax8 subscriptions list --status Active
+  pax8 subscriptions list --size 10 --page 2
+  pax8 subscriptions list --json
+  pax8 subscriptions list --json --with-actions
+  pax8 subscriptions list --csv
+  pax8 subscriptions list --ids-only | xargs -I{} pax8 subscriptions show {}`
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
@@ -54,14 +61,26 @@ Examples:
     const spinner = createSpinner("Fetching subscriptions...").start();
 
     try {
-      const companyId = options.company
-        ? await resolveCompanyId(ctx, options.company)
+      const companyId = allOpts.company
+        ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
+      const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
       const result = await ctx.api.subscriptions.list({
         companyId,
-        page: parseInt(options.page, 10),
-        size: parseInt(options.size, 10),
+        status: allOpts.status,
+        page: apiPage,
+        size: parseInt(allOpts.size, 10),
       });
+
+      const subs = result.content as Record<string, unknown>[];
+      // Enrich product and company names in parallel
+      const companiesPromise = ctx.api.companies.list({ size: 200 });
+      await enrichProductNames(ctx, subs);
+      try {
+        const companies = await companiesPromise;
+        const nameMap = new Map((companies.content as Array<{ id: string; name: string }>).map(c => [c.id, c.name]));
+        enrichCompanyNames(nameMap, subs);
+      } catch { /* best effort */ }
 
       spinner.stop();
 
@@ -72,10 +91,37 @@ Examples:
         return;
       }
 
+      if (ctx.outputFormat === "json" && options.withActions) {
+        const nextActions: { command: string; description: string }[] = [];
+        const subsList = result.content;
+        const trials = subsList.filter((s) => (s.status ?? "").toLowerCase() === "trial");
+        const top = subsList[0];
+        if (top) {
+          nextActions.push({
+            command: `pax8 subscriptions show ${top.id}`,
+            description: `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`,
+          });
+        }
+        if (trials.length > 0) {
+          nextActions.push({
+            command: "pax8 subscriptions list --status Trial --json",
+            description: `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`,
+          });
+        }
+        nextActions.push({
+          command: "pax8 subscriptions renewals --json --with-actions",
+          description: "Check upcoming renewals before they auto-renew",
+        });
+        process.stdout.write(
+          JSON.stringify({ subscriptions: result.content, nextActions }, null, 2) + "\n"
+        );
+        return;
+      }
+
       output(result.content, { format: ctx.outputFormat, columns });
 
       if (ctx.outputFormat === "table") {
-        process.stdout.write(
+        process.stderr.write(
           chalk.dim(`\n  ${result.page.totalElements} subscriptions\n\n`)
         );
       }

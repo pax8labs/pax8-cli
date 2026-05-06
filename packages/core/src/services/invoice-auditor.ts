@@ -78,27 +78,59 @@ function normalizeSubscription(sub: AuditSubscriptionInput): NormalizedSubscript
   };
 }
 
-function matchKey(item: { subscriptionId?: string; companyId: string; productId?: string }): string {
-  if (item.subscriptionId) return `sub:${item.subscriptionId}`;
-  return `cp:${item.companyId}:${item.productId ?? ""}`;
+function subKey(subscriptionId: string): string {
+  return `sub:${subscriptionId}`;
+}
+
+function cpKey(companyId: string, productId?: string): string {
+  return `cp:${companyId}:${productId ?? ""}`;
 }
 
 export function auditInvoices(invoiceItems: AuditInvoiceItemInput[], subscriptions: AuditSubscriptionInput[]): AuditReport {
   const normalizedInvoices = invoiceItems.map(normalizeInvoiceItem);
   const normalizedSubs = subscriptions.map(normalizeSubscription).filter((s) => s.status === "active");
 
-  const subMap = new Map<string, NormalizedSubscription>();
+  // Index each subscription under its sub: key for exact matching,
+  // and aggregate quantities under the cp: key so that multiple active
+  // subscriptions for the same company+product are summed correctly.
+  const subByIdMap = new Map<string, NormalizedSubscription>();
+  const subByCpMap = new Map<string, NormalizedSubscription>();
+  // Track which individual subs are covered by a cp: key so we can
+  // mark them as matched when the aggregated entry is matched.
+  const cpGroupMembers = new Map<string, NormalizedSubscription[]>();
+
   for (const sub of normalizedSubs) {
-    subMap.set(matchKey(sub), sub);
+    if (sub.subscriptionId) {
+      subByIdMap.set(subKey(sub.subscriptionId), sub);
+    }
+    const ck = cpKey(sub.companyId, sub.productId);
+    const existing = subByCpMap.get(ck);
+    if (existing) {
+      // Aggregate: sum quantities, keep the first entry's metadata
+      existing.quantity += sub.quantity;
+    } else {
+      // Store a copy so aggregation doesn't mutate the original
+      subByCpMap.set(ck, { ...sub });
+    }
+    // Track group members for matched-sub bookkeeping
+    let members = cpGroupMembers.get(ck);
+    if (!members) {
+      members = [];
+      cpGroupMembers.set(ck, members);
+    }
+    members.push(sub);
   }
 
-  const matchedSubKeys = new Set<string>();
+  const matchedSubs = new Set<NormalizedSubscription>();
   const discrepancies: AuditDiscrepancy[] = [];
 
   // Check each invoice item against subscriptions
   for (const inv of normalizedInvoices) {
-    const key = matchKey(inv);
-    const sub = subMap.get(key);
+    // Try sub: key first (most specific), then fall back to cp: key
+    // which has aggregated quantities across all matching subscriptions.
+    const sub =
+      (inv.subscriptionId ? subByIdMap.get(subKey(inv.subscriptionId)) : undefined) ??
+      subByCpMap.get(cpKey(inv.companyId, inv.productId));
 
     if (!sub) {
       // Invoiced but no active subscription
@@ -115,7 +147,14 @@ export function auditInvoices(invoiceItems: AuditInvoiceItemInput[], subscriptio
       continue;
     }
 
-    matchedSubKeys.add(key);
+    // Mark all individual subs in the cp: group as matched
+    const ck = cpKey(inv.companyId, inv.productId);
+    const members = cpGroupMembers.get(ck);
+    if (members) {
+      for (const m of members) matchedSubs.add(m);
+    } else {
+      matchedSubs.add(sub);
+    }
 
     const delta = inv.quantity - sub.quantity;
     if (delta === 0) continue;
@@ -135,8 +174,7 @@ export function auditInvoices(invoiceItems: AuditInvoiceItemInput[], subscriptio
 
   // Check for active subscriptions not invoiced
   for (const sub of normalizedSubs) {
-    const key = matchKey(sub);
-    if (!matchedSubKeys.has(key) && !normalizedInvoices.some((inv) => matchKey(inv) === key)) {
+    if (!matchedSubs.has(sub)) {
       discrepancies.push({
         companyId: sub.companyId,
         companyName: sub.companyName,

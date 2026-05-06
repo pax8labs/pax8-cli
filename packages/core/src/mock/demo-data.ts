@@ -9,8 +9,10 @@ function daysFromNow(days: number): string {
 }
 
 function monthsAgo(months: number): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() - months);
+  // Use UTC and the 1st of the month to avoid end-of-month rollover bugs
+  // (e.g. on April 30, naive `setMonth(month - 2)` would land on March 2, not February).
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
   return d.toISOString().split("T")[0];
 }
 
@@ -22,8 +24,10 @@ export interface Company {
   address: {
     street: string;
     city: string;
-    stateOrProvince: string;
-    postalCode: string;
+    /** Mirrors the public `Address` schema field name. */
+    state: string;
+    /** Mirrors the public `Address` schema field name. */
+    zip: string;
     country: string;
   };
   phone: string;
@@ -32,7 +36,8 @@ export interface Company {
   billOnBehalfOfEnabled: boolean;
   selfServiceAllowed: boolean;
   orderApprovalRequired: boolean;
-  createdDate: string;
+  /** Mirrors the public `Company` schema field name. */
+  created: string;
   billingContact?: { firstName: string; lastName: string; email: string };
 }
 
@@ -48,6 +53,7 @@ export interface Subscription {
   status: "Active" | "Trial" | "PendingManual" | "Cancelled" | "PendingCancel";
   price: number;
   billingTerm: "Monthly" | "Annual";
+  commitment?: { id: string; term: string; endDate: string };
   commitmentTermEndDate: string | null;
   provisioningStatus: "Provisioned" | "Pending" | "Error";
   companyName?: string; // denormalized for convenience
@@ -59,12 +65,23 @@ export interface Product {
   vendorName: string;
   sku: string;
   shortDescription: string;
-  unitOfMeasure: string;
+  /**
+   * Public field name matching `@pax8/core`'s `Product` type. Aliased as
+   * `unitOfMeasure` below for back-compat with existing seed data.
+   */
+  unitOfMeasurement: string;
   pricing: ProductPricing[];
 }
 
+/**
+ * Internal mock-data pricing shape. Seed data uses this compact form;
+ * `MockPax8Client.products.getPricing()` adapts it to the public
+ * `ProductPricingPlan` shape (with `rates[]`) so callers see the same type
+ * as the real API regardless of which client they hold.
+ */
 export interface ProductPricing {
   billingTerm: "Monthly" | "Annual";
+  commitmentTerm: "Monthly" | "1-Year" | "3-Year";
   partnerBuyPrice: number;
   suggestedRetailPrice: number;
   flatPrice?: number;
@@ -77,7 +94,8 @@ export interface Invoice {
   companyName: string;
   invoiceDate: string;
   dueDate: string;
-  status: "Unpaid" | "Paid" | "Void" | "Overdue";
+  /** Mirrors `InvoiceStatusSchema` from `@pax8/core`. */
+  status: "Unpaid" | "Paid" | "Void" | "Carry" | "Nothing";
   total: number;
   balance: number;
   currency: string;
@@ -92,7 +110,9 @@ export interface InvoiceItem {
   productName: string;
   quantity: number;
   unitPrice: number;
-  total: number;
+  /** Line subtotal — mirrors the public `InvoiceItem` schema field name. */
+  subtotal: number;
+  subscriptionId?: string;
   billingPeriodStart: string;
   billingPeriodEnd: string;
 }
@@ -109,10 +129,13 @@ export interface Order {
 }
 
 export interface OrderLineItem {
+  /** Line item id (optional — seed data omits and the mock client fills in). */
+  id?: string;
   productId: string;
   productName: string;
   quantity: number;
-  billingTerm: "Monthly" | "Annual";
+  /** Mirrors the public `BillingTerm` enum for cross-mode compatibility. */
+  billingTerm: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";
   provisioningDetails?: Record<string, string>;
 }
 
@@ -122,10 +145,8 @@ export interface Contact {
   firstName: string;
   lastName: string;
   email: string;
-  phone: string;
-  type: "Admin" | "Billing" | "Technical";
-  isPrimary: boolean;
-  createdDate: string;
+  phone?: string;
+  types: ("Admin" | "Billing" | "Technical")[];
 }
 
 export interface UsageSummary {
@@ -134,58 +155,57 @@ export interface UsageSummary {
   companyName: string;
   productId: string;
   productName: string;
-  usageDate: string;
+  date: string;
   quantity: number;
-  unitOfMeasure: string;
-  currentCharges: number;
+  unitPrice: number;
+  subtotal: number;
+  resourceGroup?: string;
 }
 
 export interface UsageLine {
   id: string;
   usageSummaryId: string;
-  resourceName: string;
+  description: string;
   quantity: number;
   unitPrice: number;
-  total: number;
+  subtotal: number;
+  date: string;
 }
 
 export interface Quote {
   id: string;
   companyId: string;
-  companyName: string;
   createdDate: string;
-  expirationDate: string;
-  status: "Draft" | "Sent" | "Accepted" | "Expired" | "Rejected";
-  total: number;
-  lineItems: QuoteLineItem[];
+  expirationDate?: string;
+  status: "Draft" | "Sent" | "Accepted" | "Declined";
+  lineItems?: QuoteLineItem[];
 }
 
 export interface QuoteLineItem {
   productId: string;
-  productName: string;
   quantity: number;
-  unitPrice: number;
-  billingTerm: "Monthly" | "Annual";
+  /** Mirrors the public `BillingTerm` enum for cross-mode compatibility. */
+  billingTerm?: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";
+  unitPrice?: number;
+  subtotal?: number;
 }
 
 export interface Webhook {
   id: string;
   url: string;
-  status: "Active" | "Inactive" | "Failed";
+  status: "Active" | "Disabled";
   topics: string[];
   createdDate: string;
-  lastTriggeredDate: string | null;
-  secret: string;
+  secret?: string;
 }
 
 export interface WebhookLog {
   id: string;
   webhookId: string;
   topic: string;
-  status: "Success" | "Failed";
-  statusCode: number;
-  triggeredDate: string;
-  responseTime: number;
+  responseCode: number;
+  responseBody?: string;
+  sentAt: string;
 }
 
 // ─── Company IDs ─────────────────────────────────────────────────────────────
@@ -205,8 +225,8 @@ export const companies: Company[] = [
     address: {
       street: "4500 Cherry Creek Dr S",
       city: "Denver",
-      stateOrProvince: "CO",
-      postalCode: "80246",
+      state: "CO",
+      zip: "80246",
       country: "US",
     },
     phone: "+1-303-555-0101",
@@ -215,7 +235,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: false,
     orderApprovalRequired: false,
-    createdDate: "2023-06-15",
+    created: "2023-06-15",
     billingContact: {
       firstName: "Rachel",
       lastName: "Thornton",
@@ -228,8 +248,8 @@ export const companies: Company[] = [
     address: {
       street: "1200 Brickell Ave, Suite 1800",
       city: "Miami",
-      stateOrProvince: "FL",
-      postalCode: "33131",
+      state: "FL",
+      zip: "33131",
       country: "US",
     },
     phone: "+1-305-555-0202",
@@ -238,7 +258,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: true,
     orderApprovalRequired: true,
-    createdDate: "2024-01-10",
+    created: "2024-01-10",
     billingContact: {
       firstName: "Marco",
       lastName: "Reyes",
@@ -251,8 +271,8 @@ export const companies: Company[] = [
     address: {
       street: "8900 NW Industrial Way",
       city: "Portland",
-      stateOrProvince: "OR",
-      postalCode: "97210",
+      state: "OR",
+      zip: "97210",
       country: "US",
     },
     phone: "+1-503-555-0303",
@@ -261,7 +281,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: false,
     orderApprovalRequired: true,
-    createdDate: "2022-09-01",
+    created: "2022-09-01",
     billingContact: {
       firstName: "Karen",
       lastName: "Olsen",
@@ -274,8 +294,8 @@ export const companies: Company[] = [
     address: {
       street: "2100 S Lamar Blvd",
       city: "Austin",
-      stateOrProvince: "TX",
-      postalCode: "78704",
+      state: "TX",
+      zip: "78704",
       country: "US",
     },
     phone: "+1-512-555-0404",
@@ -284,7 +304,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: false,
     selfServiceAllowed: false,
     orderApprovalRequired: false,
-    createdDate: "2025-03-20",
+    created: "2025-03-20",
     billingContact: {
       firstName: "Lisa",
       lastName: "Cheng",
@@ -297,8 +317,8 @@ export const companies: Company[] = [
     address: {
       street: "233 S Wacker Dr, Suite 4200",
       city: "Chicago",
-      stateOrProvince: "IL",
-      postalCode: "60606",
+      state: "IL",
+      zip: "60606",
       country: "US",
     },
     phone: "+1-312-555-0505",
@@ -307,7 +327,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: true,
     orderApprovalRequired: false,
-    createdDate: "2024-08-05",
+    created: "2024-08-05",
     billingContact: {
       firstName: "David",
       lastName: "Nakamura",
@@ -321,20 +341,22 @@ export const companies: Company[] = [
 export const products: Product[] = [
   {
     id: "prod-m365-biz-prem-0001",
-    name: "Microsoft 365 Business Premium",
+    name: "Microsoft 365 Business Premium [New Commerce Experience]",
     vendorName: "Microsoft",
     sku: "SPB",
     shortDescription:
       "Best-in-class Office apps, cloud services, and security for small to medium businesses.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 18.0,
         suggestedRetailPrice: 22.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 16.5,
         suggestedRetailPrice: 22.0,
       },
@@ -342,20 +364,22 @@ export const products: Product[] = [
   },
   {
     id: "prod-m365-biz-basic-0002",
-    name: "Microsoft 365 Business Basic",
+    name: "Microsoft 365 Business Basic [New Commerce Experience]",
     vendorName: "Microsoft",
     sku: "O365_BUSINESS_ESSENTIALS",
     shortDescription:
       "Web and mobile versions of Office apps plus cloud services.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 5.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 4.5,
         suggestedRetailPrice: 6.0,
       },
@@ -363,20 +387,22 @@ export const products: Product[] = [
   },
   {
     id: "prod-m365-e3-0003",
-    name: "Microsoft 365 E3",
+    name: "Microsoft 365 E3 [New Commerce Experience]",
     vendorName: "Microsoft",
     sku: "SPE_E3",
     shortDescription:
       "Enterprise productivity suite with advanced compliance and security.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 32.0,
         suggestedRetailPrice: 36.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 29.0,
         suggestedRetailPrice: 36.0,
       },
@@ -384,20 +410,22 @@ export const products: Product[] = [
   },
   {
     id: "prod-m365-e5-0004",
-    name: "Microsoft 365 E5",
+    name: "Microsoft 365 E5 [New Commerce Experience]",
     vendorName: "Microsoft",
     sku: "SPE_E5",
     shortDescription:
       "Full Microsoft 365 suite with advanced analytics, voice, and security.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 52.0,
         suggestedRetailPrice: 57.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 48.0,
         suggestedRetailPrice: 57.0,
       },
@@ -405,20 +433,22 @@ export const products: Product[] = [
   },
   {
     id: "prod-exo-plan1-0005",
-    name: "Exchange Online Plan 1",
+    name: "Exchange Online (Plan 1) [New Commerce Experience]",
     vendorName: "Microsoft",
     sku: "EXCHANGESTANDARD",
     shortDescription:
       "Business-class email with 50 GB mailbox and custom email domain.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 3.5,
         suggestedRetailPrice: 4.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 3.0,
         suggestedRetailPrice: 4.0,
       },
@@ -426,20 +456,22 @@ export const products: Product[] = [
   },
   {
     id: "prod-exo-plan2-0006",
-    name: "Exchange Online Plan 2",
+    name: "Exchange Online (Plan 2) [New Commerce Experience]",
     vendorName: "Microsoft",
     sku: "EXCHANGEENTERPRISE",
     shortDescription:
       "Advanced email with unlimited mailbox storage, DLP, and archiving.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 7.0,
         suggestedRetailPrice: 8.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 6.5,
         suggestedRetailPrice: 8.0,
       },
@@ -447,20 +479,22 @@ export const products: Product[] = [
   },
   {
     id: "prod-defender-biz-0007",
-    name: "Microsoft Defender for Business",
+    name: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     vendorName: "Microsoft",
-    sku: "MDB",
+    sku: "ATP_P1",
     shortDescription:
-      "Enterprise-grade endpoint security for small and medium businesses.",
-    unitOfMeasure: "Seat",
+      "Safe Attachments, Safe Links, and real-time detections for Office 365.",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 2.5,
         suggestedRetailPrice: 3.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 2.0,
         suggestedRetailPrice: 3.0,
       },
@@ -468,20 +502,22 @@ export const products: Product[] = [
   },
   {
     id: "prod-aad-p1-0008",
-    name: "Azure AD Premium P1",
+    name: "Microsoft Entra ID P1 [New Commerce Experience]",
     vendorName: "Microsoft",
     sku: "AAD_PREMIUM",
     shortDescription:
-      "Identity and access management with conditional access and MFA.",
-    unitOfMeasure: "Seat",
+      "Cloud identity and access management with conditional access, MFA, and SSO.",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 5.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 4.5,
         suggestedRetailPrice: 6.0,
       },
@@ -489,15 +525,16 @@ export const products: Product[] = [
   },
   {
     id: "prod-acronis-backup-0009",
-    name: "Acronis Cyber Backup",
-    vendorName: "Acronis",
-    sku: "ACRONIS_BACKUP_STD",
+    name: "AvePoint Cloud Backup for Microsoft 365",
+    vendorName: "AvePoint",
+    sku: "AVEPOINT_CLOUD_BACKUP_M365",
     shortDescription:
-      "Cloud backup and disaster recovery for workstations and servers.",
-    unitOfMeasure: "Seat",
+      "Comprehensive SaaS backup for Microsoft 365 including Exchange, SharePoint, OneDrive, and Teams.",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 6.0,
         suggestedRetailPrice: 8.5,
       },
@@ -505,20 +542,22 @@ export const products: Product[] = [
   },
   {
     id: "prod-s1-singularity-0010",
-    name: "SentinelOne Singularity",
-    vendorName: "SentinelOne",
-    sku: "S1_SINGULARITY_CORE",
+    name: "CrowdStrike MSSP Complete Defend",
+    vendorName: "CrowdStrike",
+    sku: "CS_MSSP_COMPLETE_DEFEND",
     shortDescription:
-      "AI-powered endpoint protection, detection, and response.",
-    unitOfMeasure: "Seat",
+      "Complete managed detection and response (MDR) with endpoint, identity, and cloud protection.",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
+        commitmentTerm: "Monthly",
         partnerBuyPrice: 4.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
+        commitmentTerm: "1-Year",
         partnerBuyPrice: 3.5,
         suggestedRetailPrice: 6.0,
       },
@@ -527,19 +566,19 @@ export const products: Product[] = [
 ];
 
 // ─── Subscriptions ───────────────────────────────────────────────────────────
-// Summit Healthcare Partners: 5 subs, ~$2,735 MRR — ALL renewing in 3 days
-// Coastline Legal Group: 3 subs, ~$1,880 MRR — renewing in 18 days
+// Summit Healthcare Partners: 3 subs, ~$2,635 MRR — ALL renewing in 3 days (missing backup + identity)
+// Coastline Legal Group: 2 subs, ~$1,760 MRR — renewing in 18 days (missing endpoint + identity + backup)
 // Redwood Manufacturing: 7 subs, ~$12,630 MRR — big complex stack, 45+ days out
 // Bright Minds Academy: 2 subs, ~$150 MRR — budget-conscious, trial expiring in 5 days
 // Pinnacle Financial Advisors: 3 subs, ~$660 MRR — renewing in 10 days
 
 export const subscriptions: Subscription[] = [
-  // ── Summit Healthcare Partners (5 subs, ~$2,735 MRR) — ALL renewing in 3 DAYS ──
+  // ── Summit Healthcare Partners (3 subs, ~$2,635 MRR) — ALL renewing in 3 DAYS ──
   {
     id: "sub-summit-m365bp-001",
     companyId: SUMMIT_ID,
     productId: "prod-m365-biz-prem-0001",
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 85,
     startDate: "2025-03-26",
     createdDate: "2025-03-20",
@@ -547,6 +586,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 22.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0001-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(3) },
     commitmentTermEndDate: daysFromNow(3), // renews in 3 days!
     provisioningStatus: "Provisioned",
     companyName: "Summit Healthcare Partners",
@@ -555,7 +595,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-summit-defender-002",
     companyId: SUMMIT_ID,
     productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 85,
     startDate: "2025-03-26",
     createdDate: "2025-03-20",
@@ -563,38 +603,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 3.0,
     billingTerm: "Annual",
-    commitmentTermEndDate: daysFromNow(3),
-    provisioningStatus: "Provisioned",
-    companyName: "Summit Healthcare Partners",
-  },
-  {
-    id: "sub-summit-aad-003",
-    companyId: SUMMIT_ID,
-    productId: "prod-aad-p1-0008",
-    productName: "Azure AD Premium P1",
-    quantity: 85,
-    startDate: "2025-03-26",
-    createdDate: "2025-03-20",
-    billingStart: "2025-03-26",
-    status: "Active",
-    price: 6.0,
-    billingTerm: "Annual",
-    commitmentTermEndDate: daysFromNow(3),
-    provisioningStatus: "Provisioned",
-    companyName: "Summit Healthcare Partners",
-  },
-  {
-    id: "sub-summit-acronis-004",
-    companyId: SUMMIT_ID,
-    productId: "prod-acronis-backup-0009",
-    productName: "Acronis Cyber Backup",
-    quantity: 20,
-    startDate: "2025-03-26",
-    createdDate: "2025-03-20",
-    billingStart: "2025-03-26",
-    status: "Active",
-    price: 8.5,
-    billingTerm: "Monthly",
+    commitment: { id: "cterm-0001-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(3) },
     commitmentTermEndDate: daysFromNow(3),
     provisioningStatus: "Provisioned",
     companyName: "Summit Healthcare Partners",
@@ -603,7 +612,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-summit-s1-005",
     companyId: SUMMIT_ID,
     productId: "prod-s1-singularity-0010",
-    productName: "SentinelOne Singularity",
+    productName: "CrowdStrike MSSP Complete Defend",
     quantity: 85,
     startDate: "2025-03-26",
     createdDate: "2025-03-20",
@@ -611,17 +620,18 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 6.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0001-0001-0001-000000000003", term: "1-Year", endDate: daysFromNow(3) },
     commitmentTermEndDate: daysFromNow(3),
     provisioningStatus: "Provisioned",
     companyName: "Summit Healthcare Partners",
   },
 
-  // ── Coastline Legal Group (3 subs, ~$1,880 MRR) — renewing in 18 days ──
+  // ── Coastline Legal Group (2 subs, ~$1,760 MRR) — renewing in 18 days ──
   {
     id: "sub-coastline-e3-001",
     companyId: COASTLINE_ID,
     productId: "prod-m365-e3-0003",
-    productName: "Microsoft 365 E3",
+    productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 40,
     startDate: "2025-04-07",
     createdDate: "2025-04-01",
@@ -629,6 +639,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 36.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0002-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(18) },
     commitmentTermEndDate: daysFromNow(18),
     provisioningStatus: "Provisioned",
     companyName: "Coastline Legal Group",
@@ -637,7 +648,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-coastline-exo2-002",
     companyId: COASTLINE_ID,
     productId: "prod-exo-plan2-0006",
-    productName: "Exchange Online Plan 2",
+    productName: "Exchange Online (Plan 2) [New Commerce Experience]",
     quantity: 40,
     startDate: "2025-04-07",
     createdDate: "2025-04-01",
@@ -645,22 +656,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 8.0,
     billingTerm: "Annual",
-    commitmentTermEndDate: daysFromNow(18),
-    provisioningStatus: "Provisioned",
-    companyName: "Coastline Legal Group",
-  },
-  {
-    id: "sub-coastline-defender-003",
-    companyId: COASTLINE_ID,
-    productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
-    quantity: 40,
-    startDate: "2025-04-07",
-    createdDate: "2025-04-01",
-    billingStart: "2025-04-07",
-    status: "Active",
-    price: 3.0,
-    billingTerm: "Annual",
+    commitment: { id: "cterm-0002-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(18) },
     commitmentTermEndDate: daysFromNow(18),
     provisioningStatus: "Provisioned",
     companyName: "Coastline Legal Group",
@@ -671,7 +667,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-redwood-e3-001",
     companyId: REDWOOD_ID,
     productId: "prod-m365-e3-0003",
-    productName: "Microsoft 365 E3",
+    productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 100,
     startDate: "2024-05-01",
     createdDate: "2024-04-25",
@@ -679,6 +675,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 36.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0003-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(55) },
     commitmentTermEndDate: daysFromNow(55),
     provisioningStatus: "Provisioned",
     companyName: "Redwood Manufacturing",
@@ -687,7 +684,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-redwood-e5-002",
     companyId: REDWOOD_ID,
     productId: "prod-m365-e5-0004",
-    productName: "Microsoft 365 E5",
+    productName: "Microsoft 365 E5 [New Commerce Experience]",
     quantity: 50,
     startDate: "2024-05-01",
     createdDate: "2024-04-25",
@@ -695,6 +692,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 57.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0003-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(55) },
     commitmentTermEndDate: daysFromNow(55),
     provisioningStatus: "Provisioned",
     companyName: "Redwood Manufacturing",
@@ -703,7 +701,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-redwood-exo1-003",
     companyId: REDWOOD_ID,
     productId: "prod-exo-plan1-0005",
-    productName: "Exchange Online Plan 1",
+    productName: "Exchange Online (Plan 1) [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
     createdDate: "2024-04-25",
@@ -711,6 +709,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 4.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0003-0001-0001-000000000003", term: "1-Year", endDate: daysFromNow(55) },
     commitmentTermEndDate: daysFromNow(55),
     provisioningStatus: "Provisioned",
     companyName: "Redwood Manufacturing",
@@ -719,7 +718,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-redwood-defender-004",
     companyId: REDWOOD_ID,
     productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
     createdDate: "2024-04-25",
@@ -727,6 +726,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 3.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0003-0001-0001-000000000004", term: "1-Year", endDate: daysFromNow(90) },
     commitmentTermEndDate: daysFromNow(90),
     provisioningStatus: "Provisioned",
     companyName: "Redwood Manufacturing",
@@ -735,7 +735,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-redwood-aad-005",
     companyId: REDWOOD_ID,
     productId: "prod-aad-p1-0008",
-    productName: "Azure AD Premium P1",
+    productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
     createdDate: "2024-04-25",
@@ -743,6 +743,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 6.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0003-0001-0001-000000000005", term: "1-Year", endDate: daysFromNow(90) },
     commitmentTermEndDate: daysFromNow(90),
     provisioningStatus: "Provisioned",
     companyName: "Redwood Manufacturing",
@@ -751,7 +752,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-redwood-s1-006",
     companyId: REDWOOD_ID,
     productId: "prod-s1-singularity-0010",
-    productName: "SentinelOne Singularity",
+    productName: "CrowdStrike MSSP Complete Defend",
     quantity: 150,
     startDate: "2024-08-01",
     createdDate: "2024-07-25",
@@ -759,6 +760,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 6.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0003-0001-0001-000000000006", term: "1-Year", endDate: daysFromNow(140) },
     commitmentTermEndDate: daysFromNow(140),
     provisioningStatus: "Provisioned",
     companyName: "Redwood Manufacturing",
@@ -767,7 +769,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-redwood-acronis-007",
     companyId: REDWOOD_ID,
     productId: "prod-acronis-backup-0009",
-    productName: "Acronis Cyber Backup",
+    productName: "AvePoint Cloud Backup for Microsoft 365",
     quantity: 30,
     startDate: "2024-09-01",
     createdDate: "2024-08-28",
@@ -785,7 +787,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-bright-m365bb-001",
     companyId: BRIGHT_ID,
     productId: "prod-m365-biz-basic-0002",
-    productName: "Microsoft 365 Business Basic",
+    productName: "Microsoft 365 Business Basic [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-10-01",
     createdDate: "2025-09-28",
@@ -801,7 +803,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-bright-defender-002",
     companyId: BRIGHT_ID,
     productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 25,
     startDate: "2026-02-20",
     createdDate: "2026-02-18",
@@ -819,7 +821,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-pinnacle-m365bp-001",
     companyId: PINNACLE_ID,
     productId: "prod-m365-biz-prem-0001",
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 15,
     startDate: "2025-04-01",
     createdDate: "2025-03-28",
@@ -827,6 +829,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 22.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0005-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(10) },
     commitmentTermEndDate: daysFromNow(10),
     provisioningStatus: "Provisioned",
     companyName: "Pinnacle Financial Advisors",
@@ -835,7 +838,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-pinnacle-defender-002",
     companyId: PINNACLE_ID,
     productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 15,
     startDate: "2025-04-01",
     createdDate: "2025-03-28",
@@ -843,6 +846,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 3.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0005-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(10) },
     commitmentTermEndDate: daysFromNow(10),
     provisioningStatus: "Provisioned",
     companyName: "Pinnacle Financial Advisors",
@@ -851,7 +855,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-pinnacle-s1-003",
     companyId: PINNACLE_ID,
     productId: "prod-s1-singularity-0010",
-    productName: "SentinelOne Singularity",
+    productName: "CrowdStrike MSSP Complete Defend",
     quantity: 15,
     startDate: "2025-04-01",
     createdDate: "2025-03-28",
@@ -859,6 +863,7 @@ export const subscriptions: Subscription[] = [
     status: "Active",
     price: 6.0,
     billingTerm: "Annual",
+    commitment: { id: "cterm-0005-0001-0001-000000000003", term: "1-Year", endDate: daysFromNow(10) },
     commitmentTermEndDate: daysFromNow(10),
     provisioningStatus: "Provisioned",
     companyName: "Pinnacle Financial Advisors",
@@ -869,58 +874,47 @@ export const subscriptions: Subscription[] = [
 // Last 3 months of invoices with line items.
 // Current month discrepancies:
 //   - Summit Healthcare: M365 BP invoiced 95 seats, only 85 active ($220 overcharge)
-//   - Summit Healthcare: Acronis invoiced 30 units, only 20 active ($85 overcharge)
 //   - Redwood Manufacturing: E5 line MISSING from invoice ($2,850 undercharge — free E5!)
-//   - Coastline Legal: billed correctly (clean — shows audit works both ways)
+//   - Coastline Legal: billed correctly (clean — only 2 subs, both match)
 //   - Pinnacle: Defender invoiced 20 seats, only 15 active ($15 overcharge)
-//   - Bright Minds: Azure AD P1 on invoice (25 seats, $150) but NO subscription (unexpected)
-// Total overcharge: ~$470/mo | Total undercharge: ~$2,850/mo | Net: MSP losing $2,380/mo
+//   - Bright Minds: Entra ID P1 on invoice (25 seats, $150) but NO subscription (unexpected)
+// Total overcharge: ~$235/mo | Total undercharge: ~$2,850/mo | Net: MSP losing $2,615/mo
 
-const currentMonth = new Date().toISOString().slice(0, 7); // e.g. "2026-03"
-const lastMonth = (() => {
-  const d = new Date();
-  d.setMonth(d.getMonth() - 1);
-  return d.toISOString().slice(0, 7);
-})();
-const twoMonthsAgo = (() => {
-  const d = new Date();
-  d.setMonth(d.getMonth() - 2);
-  return d.toISOString().slice(0, 7);
-})();
+// `monthsAgo` returns YYYY-MM-DD; slice to YYYY-MM for invoice month grouping.
+const currentMonth = monthsAgo(0).slice(0, 7); // e.g. "2026-04"
+const lastMonth = monthsAgo(1).slice(0, 7);
+const twoMonthsAgo = monthsAgo(2).slice(0, 7);
 
 // Summit current month invoice line item totals:
 // M365 BP: 95 * 22 = 2,090 (OVERCHARGE: should be 85 * 22 = 1,870)
 // Defender: 85 * 3 = 255
-// Azure AD P1: 85 * 6 = 510
-// Acronis: 30 * 8.5 = 255 (OVERCHARGE: should be 20 * 8.5 = 170)
-// SentinelOne: 85 * 6 = 510
-// Total: 3,620
+// CrowdStrike: 85 * 6 = 510
+// Total: 2,855
 
 // Coastline current month invoice line item totals:
 // M365 E3: 40 * 36 = 1,440
 // Exchange Online Plan 2: 40 * 8 = 320
-// Defender: 40 * 3 = 120
-// Total: 1,880
+// Total: 1,760
 
 // Redwood current month invoice line item totals:
 // M365 E3: 100 * 36 = 3,600
 // Exchange Online Plan 1: 150 * 4 = 600
 // Defender: 150 * 3 = 450
-// Azure AD P1: 150 * 6 = 900
-// SentinelOne: 150 * 6 = 900
-// Acronis: 30 * 8.5 = 255
+// Entra ID P1: 150 * 6 = 900
+// CrowdStrike: 150 * 6 = 900
+// AvePoint: 30 * 8.5 = 255
 // NOTE: E5 line MISSING (should be 50 * 57 = 2,850)
 // Total: 6,705
 
 // Bright Minds current month invoice line item totals:
 // M365 Business Basic: 25 * 6 = 150
-// Azure AD P1: 25 * 6 = 150 (UNEXPECTED: no subscription exists!)
+// Entra ID P1: 25 * 6 = 150 (UNEXPECTED: no subscription exists!)
 // Total: 300
 
 // Pinnacle current month invoice line item totals:
 // M365 BP: 15 * 22 = 330
 // Defender: 20 * 3 = 60 (OVERCHARGE: should be 15 * 3 = 45)
-// SentinelOne: 15 * 6 = 90
+// CrowdStrike: 15 * 6 = 90
 // Total: 480
 
 export const invoices: Invoice[] = [
@@ -932,8 +926,8 @@ export const invoices: Invoice[] = [
     invoiceDate: `${currentMonth}-01`,
     dueDate: `${currentMonth}-15`,
     status: "Unpaid",
-    total: 3620.0,
-    balance: 3620.0,
+    total: 2855.0,
+    balance: 2855.0,
     currency: "USD",
   },
   {
@@ -943,8 +937,8 @@ export const invoices: Invoice[] = [
     invoiceDate: `${currentMonth}-01`,
     dueDate: `${currentMonth}-15`,
     status: "Unpaid",
-    total: 1880.0,
-    balance: 1880.0,
+    total: 1760.0,
+    balance: 1760.0,
     currency: "USD",
   },
   {
@@ -989,7 +983,7 @@ export const invoices: Invoice[] = [
     invoiceDate: `${lastMonth}-01`,
     dueDate: `${lastMonth}-15`,
     status: "Paid",
-    total: 2735.0,
+    total: 2380.0,
     balance: 0,
     currency: "USD",
   },
@@ -1000,7 +994,7 @@ export const invoices: Invoice[] = [
     invoiceDate: `${lastMonth}-01`,
     dueDate: `${lastMonth}-15`,
     status: "Paid",
-    total: 1880.0,
+    total: 1760.0,
     balance: 0,
     currency: "USD",
   },
@@ -1046,7 +1040,7 @@ export const invoices: Invoice[] = [
     invoiceDate: `${twoMonthsAgo}-01`,
     dueDate: `${twoMonthsAgo}-15`,
     status: "Paid",
-    total: 2735.0,
+    total: 2380.0,
     balance: 0,
     currency: "USD",
   },
@@ -1057,7 +1051,7 @@ export const invoices: Invoice[] = [
     invoiceDate: `${twoMonthsAgo}-01`,
     dueDate: `${twoMonthsAgo}-15`,
     status: "Paid",
-    total: 1880.0,
+    total: 1760.0,
     balance: 0,
     currency: "USD",
   },
@@ -1097,10 +1091,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: SUMMIT_ID,
     companyName: "Summit Healthcare Partners",
     productId: "prod-m365-biz-prem-0001",
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 95, // active is 85 → overcharge of 10 * $22 = $220
     unitPrice: 22.0,
-    total: 2090.0,
+    subtotal: 2090.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1110,37 +1104,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: SUMMIT_ID,
     companyName: "Summit Healthcare Partners",
     productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 85,
     unitPrice: 3.0,
-    total: 255.0,
-    billingPeriodStart: `${currentMonth}-01`,
-    billingPeriodEnd: `${currentMonth}-28`,
-  },
-  {
-    id: "ii-summit-curr-003",
-    invoiceId: "inv-summit-curr-001",
-    companyId: SUMMIT_ID,
-    companyName: "Summit Healthcare Partners",
-    productId: "prod-aad-p1-0008",
-    productName: "Azure AD Premium P1",
-    quantity: 85,
-    unitPrice: 6.0,
-    total: 510.0,
-    billingPeriodStart: `${currentMonth}-01`,
-    billingPeriodEnd: `${currentMonth}-28`,
-  },
-  // DISCREPANCY: Acronis invoiced 30 units, only 20 active → $85/mo overcharge
-  {
-    id: "ii-summit-curr-004",
-    invoiceId: "inv-summit-curr-001",
-    companyId: SUMMIT_ID,
-    companyName: "Summit Healthcare Partners",
-    productId: "prod-acronis-backup-0009",
-    productName: "Acronis Cyber Backup",
-    quantity: 30, // active is 20 → overcharge of 10 * $8.50 = $85
-    unitPrice: 8.5,
-    total: 255.0,
+    subtotal: 255.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1150,10 +1117,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: SUMMIT_ID,
     companyName: "Summit Healthcare Partners",
     productId: "prod-s1-singularity-0010",
-    productName: "SentinelOne Singularity",
+    productName: "CrowdStrike MSSP Complete Defend",
     quantity: 85,
     unitPrice: 6.0,
-    total: 510.0,
+    subtotal: 510.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1165,10 +1132,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: COASTLINE_ID,
     companyName: "Coastline Legal Group",
     productId: "prod-m365-e3-0003",
-    productName: "Microsoft 365 E3",
+    productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 40,
     unitPrice: 36.0,
-    total: 1440.0,
+    subtotal: 1440.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1178,23 +1145,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: COASTLINE_ID,
     companyName: "Coastline Legal Group",
     productId: "prod-exo-plan2-0006",
-    productName: "Exchange Online Plan 2",
+    productName: "Exchange Online (Plan 2) [New Commerce Experience]",
     quantity: 40,
     unitPrice: 8.0,
-    total: 320.0,
-    billingPeriodStart: `${currentMonth}-01`,
-    billingPeriodEnd: `${currentMonth}-28`,
-  },
-  {
-    id: "ii-coastline-curr-003",
-    invoiceId: "inv-coastline-curr-001",
-    companyId: COASTLINE_ID,
-    companyName: "Coastline Legal Group",
-    productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
-    quantity: 40,
-    unitPrice: 3.0,
-    total: 120.0,
+    subtotal: 320.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1207,10 +1161,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: REDWOOD_ID,
     companyName: "Redwood Manufacturing",
     productId: "prod-m365-e3-0003",
-    productName: "Microsoft 365 E3",
+    productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 100,
     unitPrice: 36.0,
-    total: 3600.0,
+    subtotal: 3600.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1221,10 +1175,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: REDWOOD_ID,
     companyName: "Redwood Manufacturing",
     productId: "prod-exo-plan1-0005",
-    productName: "Exchange Online Plan 1",
+    productName: "Exchange Online (Plan 1) [New Commerce Experience]",
     quantity: 150,
     unitPrice: 4.0,
-    total: 600.0,
+    subtotal: 600.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1234,10 +1188,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: REDWOOD_ID,
     companyName: "Redwood Manufacturing",
     productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 150,
     unitPrice: 3.0,
-    total: 450.0,
+    subtotal: 450.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1247,10 +1201,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: REDWOOD_ID,
     companyName: "Redwood Manufacturing",
     productId: "prod-aad-p1-0008",
-    productName: "Azure AD Premium P1",
+    productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 150,
     unitPrice: 6.0,
-    total: 900.0,
+    subtotal: 900.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1260,10 +1214,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: REDWOOD_ID,
     companyName: "Redwood Manufacturing",
     productId: "prod-s1-singularity-0010",
-    productName: "SentinelOne Singularity",
+    productName: "CrowdStrike MSSP Complete Defend",
     quantity: 150,
     unitPrice: 6.0,
-    total: 900.0,
+    subtotal: 900.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1273,26 +1227,26 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: REDWOOD_ID,
     companyName: "Redwood Manufacturing",
     productId: "prod-acronis-backup-0009",
-    productName: "Acronis Cyber Backup",
+    productName: "AvePoint Cloud Backup for Microsoft 365",
     quantity: 30,
     unitPrice: 8.5,
-    total: 255.0,
+    subtotal: 255.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
 
   // ── Bright Minds Academy current month ──
-  // DISCREPANCY: Azure AD P1 on invoice but NO active subscription → $150/mo unexpected
+  // DISCREPANCY: Entra ID P1 on invoice but NO active subscription → $150/mo unexpected
   {
     id: "ii-bright-curr-001",
     invoiceId: "inv-bright-curr-001",
     companyId: BRIGHT_ID,
     companyName: "Bright Minds Academy",
     productId: "prod-m365-biz-basic-0002",
-    productName: "Microsoft 365 Business Basic",
+    productName: "Microsoft 365 Business Basic [New Commerce Experience]",
     quantity: 25,
     unitPrice: 6.0,
-    total: 150.0,
+    subtotal: 150.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1302,10 +1256,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: BRIGHT_ID,
     companyName: "Bright Minds Academy",
     productId: "prod-aad-p1-0008",
-    productName: "Azure AD Premium P1",
-    quantity: 25, // No active Azure AD P1 subscription → unexpected charge
+    productName: "Microsoft Entra ID P1 [New Commerce Experience]",
+    quantity: 25, // No active Entra ID P1 subscription → unexpected charge
     unitPrice: 6.0,
-    total: 150.0,
+    subtotal: 150.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1318,10 +1272,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: PINNACLE_ID,
     companyName: "Pinnacle Financial Advisors",
     productId: "prod-m365-biz-prem-0001",
-    productName: "Microsoft 365 Business Premium",
+    productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 15,
     unitPrice: 22.0,
-    total: 330.0,
+    subtotal: 330.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1331,10 +1285,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: PINNACLE_ID,
     companyName: "Pinnacle Financial Advisors",
     productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Business",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 20, // active is 15 → overcharge of 5 * $3 = $15
     unitPrice: 3.0,
-    total: 60.0,
+    subtotal: 60.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1344,10 +1298,10 @@ export const invoiceItems: InvoiceItem[] = [
     companyId: PINNACLE_ID,
     companyName: "Pinnacle Financial Advisors",
     productId: "prod-s1-singularity-0010",
-    productName: "SentinelOne Singularity",
+    productName: "CrowdStrike MSSP Complete Defend",
     quantity: 15,
     unitPrice: 6.0,
-    total: 90.0,
+    subtotal: 90.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1367,7 +1321,7 @@ export const orders: Order[] = [
     lineItems: [
       {
         productId: "prod-s1-singularity-0010",
-        productName: "SentinelOne Singularity",
+        productName: "CrowdStrike MSSP Complete Defend",
         quantity: 85,
         billingTerm: "Annual",
       },
@@ -1384,7 +1338,7 @@ export const orders: Order[] = [
     lineItems: [
       {
         productId: "prod-acronis-backup-0009",
-        productName: "Acronis Cyber Backup",
+        productName: "AvePoint Cloud Backup for Microsoft 365",
         quantity: 30,
         billingTerm: "Monthly",
       },
@@ -1401,13 +1355,13 @@ export const orders: Order[] = [
     lineItems: [
       {
         productId: "prod-m365-biz-prem-0001",
-        productName: "Microsoft 365 Business Premium",
+        productName: "Microsoft 365 Business Premium [New Commerce Experience]",
         quantity: 5,
         billingTerm: "Annual",
       },
       {
         productId: "prod-defender-biz-0007",
-        productName: "Microsoft Defender for Business",
+        productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
         quantity: 5,
         billingTerm: "Annual",
       },
@@ -1424,19 +1378,13 @@ export const orders: Order[] = [
     lineItems: [
       {
         productId: "prod-m365-e3-0003",
-        productName: "Microsoft 365 E3",
+        productName: "Microsoft 365 E3 [New Commerce Experience]",
         quantity: 40,
         billingTerm: "Annual",
       },
       {
         productId: "prod-exo-plan2-0006",
-        productName: "Exchange Online Plan 2",
-        quantity: 40,
-        billingTerm: "Annual",
-      },
-      {
-        productId: "prod-defender-biz-0007",
-        productName: "Microsoft Defender for Business",
+        productName: "Exchange Online (Plan 2) [New Commerce Experience]",
         quantity: 40,
         billingTerm: "Annual",
       },
@@ -1453,7 +1401,7 @@ export const orders: Order[] = [
     lineItems: [
       {
         productId: "prod-m365-biz-basic-0002",
-        productName: "Microsoft 365 Business Basic",
+        productName: "Microsoft 365 Business Basic [New Commerce Experience]",
         quantity: 25,
         billingTerm: "Monthly",
       },
@@ -1471,9 +1419,7 @@ export const contacts: Contact[] = [
     lastName: "Thornton",
     email: "rachel.thornton@summithealthcare.example.com",
     phone: "+1-303-555-0111",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2023-06-15",
+    types: ["Admin"],
   },
   {
     id: "contact-summit-002",
@@ -1482,9 +1428,7 @@ export const contacts: Contact[] = [
     lastName: "Bridger",
     email: "tom.bridger@summithealthcare.example.com",
     phone: "+1-303-555-0112",
-    type: "Billing",
-    isPrimary: false,
-    createdDate: "2023-08-20",
+    types: ["Billing"],
   },
   {
     id: "contact-coastline-001",
@@ -1493,9 +1437,7 @@ export const contacts: Contact[] = [
     lastName: "Reyes",
     email: "marco.reyes@coastlinelegal.example.com",
     phone: "+1-305-555-0211",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2024-01-10",
+    types: ["Admin"],
   },
   {
     id: "contact-coastline-002",
@@ -1504,9 +1446,7 @@ export const contacts: Contact[] = [
     lastName: "Vasquez",
     email: "sarah.vasquez@coastlinelegal.example.com",
     phone: "+1-305-555-0212",
-    type: "Technical",
-    isPrimary: false,
-    createdDate: "2024-03-15",
+    types: ["Technical"],
   },
   {
     id: "contact-redwood-001",
@@ -1515,9 +1455,7 @@ export const contacts: Contact[] = [
     lastName: "Olsen",
     email: "karen.olsen@redwoodmfg.example.com",
     phone: "+1-503-555-0311",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2022-09-01",
+    types: ["Admin"],
   },
   {
     id: "contact-bright-001",
@@ -1526,9 +1464,7 @@ export const contacts: Contact[] = [
     lastName: "Cheng",
     email: "lisa.cheng@brightminds.example.com",
     phone: "+1-512-555-0411",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2025-03-20",
+    types: ["Admin"],
   },
   {
     id: "contact-bright-002",
@@ -1537,9 +1473,7 @@ export const contacts: Contact[] = [
     lastName: "Ortiz",
     email: "james.ortiz@brightminds.example.com",
     phone: "+1-512-555-0412",
-    type: "Billing",
-    isPrimary: false,
-    createdDate: "2025-05-10",
+    types: ["Billing"],
   },
   {
     id: "contact-pinnacle-001",
@@ -1548,9 +1482,7 @@ export const contacts: Contact[] = [
     lastName: "Nakamura",
     email: "david.nakamura@pinnaclefa.example.com",
     phone: "+1-312-555-0511",
-    type: "Admin",
-    isPrimary: true,
-    createdDate: "2024-08-05",
+    types: ["Admin"],
   },
   {
     id: "contact-pinnacle-002",
@@ -1559,9 +1491,7 @@ export const contacts: Contact[] = [
     lastName: "Park",
     email: "emily.park@pinnaclefa.example.com",
     phone: "+1-312-555-0512",
-    type: "Technical",
-    isPrimary: false,
-    createdDate: "2024-09-15",
+    types: ["Technical"],
   },
 ];
 
@@ -1569,91 +1499,58 @@ export const contacts: Contact[] = [
 
 export const usageSummaries: UsageSummary[] = [
   {
-    id: "usage-summit-acronis-curr",
-    companyId: SUMMIT_ID,
-    companyName: "Summit Healthcare Partners",
-    productId: "prod-acronis-backup-0009",
-    productName: "Acronis Cyber Backup",
-    usageDate: `${currentMonth}-15`,
-    quantity: 320,
-    unitOfMeasure: "GB",
-    currentCharges: 170.0,
-  },
-  {
     id: "usage-redwood-acronis-curr",
     companyId: REDWOOD_ID,
     companyName: "Redwood Manufacturing",
     productId: "prod-acronis-backup-0009",
-    productName: "Acronis Cyber Backup",
-    usageDate: `${currentMonth}-15`,
+    productName: "AvePoint Cloud Backup for Microsoft 365",
+    date: `${currentMonth}-15`,
     quantity: 850,
-    unitOfMeasure: "GB",
-    currentCharges: 255.0,
-  },
-  {
-    id: "usage-summit-acronis-last",
-    companyId: SUMMIT_ID,
-    companyName: "Summit Healthcare Partners",
-    productId: "prod-acronis-backup-0009",
-    productName: "Acronis Cyber Backup",
-    usageDate: `${lastMonth}-15`,
-    quantity: 290,
-    unitOfMeasure: "GB",
-    currentCharges: 170.0,
+    unitPrice: 0.3,
+    subtotal: 255.0,
+    resourceGroup: "Backup",
   },
   {
     id: "usage-redwood-acronis-last",
     companyId: REDWOOD_ID,
     companyName: "Redwood Manufacturing",
     productId: "prod-acronis-backup-0009",
-    productName: "Acronis Cyber Backup",
-    usageDate: `${lastMonth}-15`,
+    productName: "AvePoint Cloud Backup for Microsoft 365",
+    date: `${lastMonth}-15`,
     quantity: 810,
-    unitOfMeasure: "GB",
-    currentCharges: 255.0,
+    unitPrice: 0.3,
+    subtotal: 243.0,
+    resourceGroup: "Backup",
   },
 ];
 
 export const usageLines: UsageLine[] = [
   {
-    id: "uline-summit-001",
-    usageSummaryId: "usage-summit-acronis-curr",
-    resourceName: "EMR Server Backup - HIPAA01",
-    quantity: 180,
-    unitPrice: 0.531,
-    total: 95.58,
-  },
-  {
-    id: "uline-summit-002",
-    usageSummaryId: "usage-summit-acronis-curr",
-    resourceName: "File Server Backup - FS01",
-    quantity: 140,
-    unitPrice: 0.531,
-    total: 74.34,
-  },
-  {
     id: "uline-redwood-001",
     usageSummaryId: "usage-redwood-acronis-curr",
-    resourceName: "ERP Server Backup - SAP01",
+    description: "ERP Server Backup - SAP01",
     quantity: 400,
     unitPrice: 0.3,
-    total: 120.0,
+    subtotal: 120.0,
+    date: `${currentMonth}-15`,
   },
   {
     id: "uline-redwood-002",
     usageSummaryId: "usage-redwood-acronis-curr",
-    resourceName: "CAD Server Backup - CAD01",
+    description: "CAD Server Backup - CAD01",
     quantity: 250,
     unitPrice: 0.3,
-    total: 75.0,
+    subtotal: 75.0,
+    date: `${currentMonth}-15`,
   },
   {
     id: "uline-redwood-003",
     usageSummaryId: "usage-redwood-acronis-curr",
-    resourceName: "Domain Controller Backup - DC01",
+    description: "Domain Controller Backup - DC01",
     quantity: 200,
     unitPrice: 0.3,
-    total: 60.0,
+    subtotal: 60.0,
+    date: `${currentMonth}-15`,
   },
 ];
 
@@ -1663,61 +1560,55 @@ export const quotes: Quote[] = [
   {
     id: "quote-summit-001",
     companyId: SUMMIT_ID,
-    companyName: "Summit Healthcare Partners",
     createdDate: "2026-03-10",
     expirationDate: "2026-04-10",
     status: "Sent",
-    total: 1140.0,
     lineItems: [
       {
         productId: "prod-m365-e3-0003",
-        productName: "Microsoft 365 E3",
         quantity: 5,
         unitPrice: 36.0,
         billingTerm: "Annual",
+        subtotal: 180.0,
       },
       {
         productId: "prod-aad-p1-0008",
-        productName: "Azure AD Premium P1",
         quantity: 5,
         unitPrice: 6.0,
         billingTerm: "Annual",
+        subtotal: 30.0,
       },
     ],
   },
   {
     id: "quote-bright-001",
     companyId: BRIGHT_ID,
-    companyName: "Bright Minds Academy",
     createdDate: "2026-03-05",
     expirationDate: "2026-04-05",
     status: "Draft",
-    total: 75.0,
     lineItems: [
       {
         productId: "prod-defender-biz-0007",
-        productName: "Microsoft Defender for Business",
         quantity: 25,
         unitPrice: 3.0,
         billingTerm: "Monthly",
+        subtotal: 75.0,
       },
     ],
   },
   {
     id: "quote-redwood-001",
     companyId: REDWOOD_ID,
-    companyName: "Redwood Manufacturing",
     createdDate: "2026-02-20",
     expirationDate: "2026-03-20",
     status: "Accepted",
-    total: 456.0,
     lineItems: [
       {
         productId: "prod-m365-e5-0004",
-        productName: "Microsoft 365 E5",
         quantity: 8,
         unitPrice: 57.0,
         billingTerm: "Annual",
+        subtotal: 456.0,
       },
     ],
   },
@@ -1725,9 +1616,14 @@ export const quotes: Quote[] = [
 
 // ─── Webhooks ────────────────────────────────────────────────────────────────
 
+// Webhook IDs as UUIDs (real Pax8 API uses UUIDs)
+const WEBHOOK_SUBS_ID = "11111111-2222-3333-4444-555555555501";
+const WEBHOOK_INVOICES_ID = "11111111-2222-3333-4444-555555555502";
+const WEBHOOK_ORDERS_ID = "11111111-2222-3333-4444-555555555503";
+
 export const webhooks: Webhook[] = [
   {
-    id: "wh-001",
+    id: WEBHOOK_SUBS_ID,
     url: "https://hooks.example.com/pax8/subscriptions",
     status: "Active",
     topics: [
@@ -1736,74 +1632,66 @@ export const webhooks: Webhook[] = [
       "subscription.cancelled",
     ],
     createdDate: "2025-06-01",
-    lastTriggeredDate: "2026-03-18",
     secret: "whsec_demo_abc123",
   },
   {
-    id: "wh-002",
+    id: WEBHOOK_INVOICES_ID,
     url: "https://hooks.example.com/pax8/invoices",
     status: "Active",
     topics: ["invoice.created", "invoice.paid"],
     createdDate: "2025-08-15",
-    lastTriggeredDate: "2026-03-01",
     secret: "whsec_demo_def456",
   },
   {
-    id: "wh-003",
+    id: WEBHOOK_ORDERS_ID,
     url: "https://hooks.example.com/pax8/orders",
-    status: "Failed",
+    status: "Disabled",
     topics: ["order.created", "order.completed"],
     createdDate: "2025-11-20",
-    lastTriggeredDate: "2026-02-10",
     secret: "whsec_demo_ghi789",
   },
 ];
 
 export const webhookLogs: WebhookLog[] = [
   {
-    id: "whlog-001",
-    webhookId: "wh-001",
+    id: "22222222-3333-4444-5555-666666666601",
+    webhookId: WEBHOOK_SUBS_ID,
     topic: "subscription.updated",
-    status: "Success",
-    statusCode: 200,
-    triggeredDate: "2026-03-18T14:23:00Z",
-    responseTime: 145,
+    responseCode: 200,
+    responseBody: "OK",
+    sentAt: "2026-03-18T14:23:00Z",
   },
   {
-    id: "whlog-002",
-    webhookId: "wh-001",
+    id: "22222222-3333-4444-5555-666666666602",
+    webhookId: WEBHOOK_SUBS_ID,
     topic: "subscription.created",
-    status: "Success",
-    statusCode: 200,
-    triggeredDate: "2026-03-15T10:12:00Z",
-    responseTime: 98,
+    responseCode: 200,
+    responseBody: "OK",
+    sentAt: "2026-03-15T10:12:00Z",
   },
   {
-    id: "whlog-003",
-    webhookId: "wh-002",
+    id: "22222222-3333-4444-5555-666666666603",
+    webhookId: WEBHOOK_INVOICES_ID,
     topic: "invoice.created",
-    status: "Success",
-    statusCode: 200,
-    triggeredDate: "2026-03-01T06:00:00Z",
-    responseTime: 210,
+    responseCode: 200,
+    responseBody: "OK",
+    sentAt: "2026-03-01T06:00:00Z",
   },
   {
-    id: "whlog-004",
-    webhookId: "wh-003",
+    id: "22222222-3333-4444-5555-666666666604",
+    webhookId: WEBHOOK_ORDERS_ID,
     topic: "order.created",
-    status: "Failed",
-    statusCode: 502,
-    triggeredDate: "2026-02-10T09:45:00Z",
-    responseTime: 5023,
+    responseCode: 502,
+    responseBody: "Bad Gateway",
+    sentAt: "2026-02-10T09:45:00Z",
   },
   {
-    id: "whlog-005",
-    webhookId: "wh-003",
+    id: "22222222-3333-4444-5555-666666666605",
+    webhookId: WEBHOOK_ORDERS_ID,
     topic: "order.completed",
-    status: "Failed",
-    statusCode: 0,
-    triggeredDate: "2026-02-10T10:00:00Z",
-    responseTime: 30000,
+    responseCode: 0,
+    responseBody: "Timeout after 30000ms",
+    sentAt: "2026-02-10T10:00:00Z",
   },
 ];
 

@@ -4,8 +4,10 @@ import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { confirm } from "../../lib/confirm.js";
-import { formatQuantity, formatCurrency } from "../../lib/formatters.js";
+import { confirmWithChange } from "../../lib/confirm.js";
+import { formatQuantity, formatCurrency, formatStatus } from "../../lib/formatters.js";
+import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const subscriptionsUpdateCommand = new Command("update")
   .description("Update a subscription")
@@ -34,18 +36,21 @@ Examples:
       const updateData: Record<string, unknown> = {};
 
       if (options.quantity !== undefined) {
-        const newQty = parseInt(options.quantity, 10);
+        let newQty = parseInt(options.quantity, 10);
 
-        // Warn on quantity reduction
-        if (newQty < sub.quantity) {
-          const confirmed = await confirm(
-            `This will reduce from ${sub.quantity} to ${newQty} seats. Continue?`
-          );
-          if (!confirmed) {
-            process.stderr.write(chalk.yellow("\n  Update cancelled.\n\n"));
-            return;
-          }
+        // Confirm quantity change (with option to adjust)
+        const confirmedQty = await confirmWithChange(
+          newQty < sub.quantity
+            ? `Reduce from ${formatQuantity(sub.quantity)} to ${formatQuantity(newQty)}?`
+            : `Update from ${formatQuantity(sub.quantity)} to ${formatQuantity(newQty)}?`,
+          newQty,
+          { label: "New quantity" },
+        );
+        if (confirmedQty === null) {
+          process.stderr.write(chalk.yellow("\n  Update cancelled.\n\n"));
+          return;
         }
+        newQty = confirmedQty;
 
         updateData.quantity = newQty;
       }
@@ -62,32 +67,30 @@ Examples:
       }
 
       const updateSpinner = createSpinner("Updating subscription...").start();
-      const updated = await ctx.api.subscriptions.update(id, updateData);
+      const doneUpdate = markWriteInFlight("subscriptions");
+      let updated;
+      try {
+        updated = await ctx.api.subscriptions.update(id, updateData);
+      } finally {
+        doneUpdate();
+      }
+      await invalidateCacheAfterWrite();
       updateSpinner.succeed("Subscription updated");
 
       if (ctx.outputFormat === "json") {
-        output([updated], { format: "json" });
+        output([updated as unknown as Record<string, unknown>], { format: "json" });
         return;
       }
 
       if (ctx.outputFormat === "quiet") return;
 
       process.stdout.write("\n");
-      process.stdout.write(
-        `  ${chalk.bold("ID")}                ${updated.id}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.bold("Product")}           ${updated.productName}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.bold("Quantity")}          ${formatQuantity(updated.quantity)}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.bold("Billing Term")}      ${updated.billingTerm}\n`
-      );
-      process.stdout.write(
-        `  ${chalk.bold("Price")}             ${formatCurrency(updated.price)}\n`
-      );
+      process.stdout.write(`  ${chalk.dim("ID:".padEnd(18))}${updated.id}\n`);
+      process.stdout.write(`  ${chalk.dim("Product:".padEnd(18))}${updated.productName}\n`);
+      process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(updated.status)}\n`);
+      process.stdout.write(`  ${chalk.dim("Quantity:".padEnd(18))}${formatQuantity(updated.quantity)}\n`);
+      process.stdout.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${updated.billingTerm}\n`);
+      process.stdout.write(`  ${chalk.dim("Price:".padEnd(18))}${formatCurrency(updated.price ?? 0)}\n`);
       process.stdout.write("\n");
     } catch (error) {
       handleCommandError(error, undefined, "Failed to update subscription");
