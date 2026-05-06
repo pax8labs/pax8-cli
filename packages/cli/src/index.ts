@@ -31,7 +31,7 @@ import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
 import { loadConfig, getTelemetry } from "@pax8/core";
 import type { Command as CommandType } from "commander";
-import { classifyError } from "./lib/instrumented-action.js";
+import { classifyError } from "./lib/classify-error.js";
 
 /**
  * Build the full dotted command name from a Commander command,
