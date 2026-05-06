@@ -317,19 +317,28 @@ No other network egress. The CLI does not contact npm, GitHub, the Pax8 portal, 
 All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and MRR analytics are all importable. See [`packages/core/README.md`](packages/core/README.md) for the full API; here is a minimal end-to-end example:
 
 ```ts
-import { Pax8Client, getUpcomingRenewals, ALL_SUBS_PAGE_SIZE } from "@pax8/core";
+import {
+  Pax8Client,
+  TokenManager,
+  SubscriptionsApi,
+  getUpcomingRenewals,
+  ALL_SUBS_PAGE_SIZE,
+} from "@pax8/core";
 
-const client = new Pax8Client({
+const tokenManager = new TokenManager({
   clientId: process.env.PAX8_CLIENT_ID!,
   clientSecret: process.env.PAX8_CLIENT_SECRET!,
 });
 
-const { content: subs } = await client.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE });
-const report = getUpcomingRenewals(subs, 30);
+const client = new Pax8Client({ tokenManager });
+const subscriptions = new SubscriptionsApi(client);
+
+const { content } = await subscriptions.list({ size: ALL_SUBS_PAGE_SIZE });
+const report = getUpcomingRenewals(content, 30);
 
 console.log(`${report.items.length} renewals in 30 days, $${report.totalMrrAtRisk}/mo at risk`);
 for (const r of report.items.slice(0, 5)) {
-  console.log(`  ${r.daysUntil}d  ${r.companyName}  ${r.productName}  $${r.mrr}/mo`);
+  console.log(`  ${r.daysUntilRenewal}d  ${r.companyName}  ${r.productName}  $${r.mrrAtRisk}/mo`);
 }
 ```
 
