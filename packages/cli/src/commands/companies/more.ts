@@ -56,7 +56,7 @@ function daysUntil(dateStr: string | undefined): number | null {
 }
 
 export const companiesMoreCommand = new Command("more")
-  .description("Full company summary — subscriptions, vendors, seats, MRR, and issues")
+  .description("Full company summary — subscriptions, vendors, seats, estimated MRR, and issues")
   .argument("<name-or-number>", "Company name, ID, or # from companies list")
   .allowExcessArguments(true)
   .addHelpText(
@@ -263,7 +263,7 @@ Examples:
         { key: "statusIcon", header: "", format: (v) => String(v) },
         { key: "productName", header: "Product" },
         { key: "quantity", header: "Seats", format: (v) => String(v) },
-        { key: "mrrDisplay", header: "MRR", format: (v) => String(v) },
+        { key: "mrrDisplay", header: "Est. MRR", format: (v) => String(v) },
         { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
         { key: "renewsIn", header: "Renews", format: (v) => v ? String(v) : chalk.dim("—") },
       ];

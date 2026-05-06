@@ -14,7 +14,7 @@ Requires Node.js 20+. ESM only.
 
 ## Quick example
 
-Compute upcoming renewals and total MRR at risk for the next 30 days:
+Compute upcoming renewals and total estimated MRR at risk for the next 30 days:
 
 ```ts
 import { Pax8Client, getUpcomingRenewals } from "@pax8/core";
@@ -32,7 +32,7 @@ const report = getUpcomingRenewals(subscriptions, companyNameById, {
   withinDays: 30,
 });
 
-console.log(`${report.items.length} renewals, $${report.totalMrrAtRisk.toFixed(2)} MRR at risk`);
+console.log(`${report.items.length} renewals, $${report.totalMrrAtRisk.toFixed(2)} estimated MRR at risk`);
 for (const item of report.items.slice(0, 5)) {
   console.log(`  ${item.companyName} — ${item.productName} in ${item.daysUntilRenewal}d`);
 }
@@ -52,7 +52,7 @@ const subscriptions = await client.subscriptions.listAll();
 
 The durable asset — questions this package answers without you having to assemble them from raw API calls:
 
-- **Renewal tracker** (`getUpcomingRenewals`) — which subscriptions renew within N days, how much MRR is at risk, sorted by urgency. The Pax8 API has no renewals endpoint; this parses commitment dates and computes the report.
+- **Renewal tracker** (`getUpcomingRenewals`) — which subscriptions renew within N days, how much estimated MRR is at risk, sorted by urgency. The Pax8 API has no renewals endpoint; this parses commitment dates and computes the report.
 - **Invoice auditor** (`auditInvoices`) — cross-references invoice line items against active subscriptions to flag overcharges, undercharges, and orphan line items with dollar impact.
 - **Recommendation engine** (`getRecommendations`, `getPortfolioCoverage`) — analyzes each customer's stack against backup / security / identity / productivity categories, identifies gaps, estimates MRR uplift, and emits ready-to-execute order parameters.
 - **MRR analytics** (`subscriptionMrr`, `computeMrr`, `computeGrowth`) — per-subscription MRR with annual-to-monthly amortization; aggregation by company/product/vendor; growth deltas across snapshots.

@@ -30,7 +30,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 
 For every write command below:
 
-1. **Show the user exactly what will change** — the command you're about to run, the affected resource(s), and the expected effect (price, quantity, MRR delta, etc. when applicable).
+1. **Show the user exactly what will change** — the command you're about to run, the affected resource(s), and the expected effect (price, quantity, estimated MRR delta, etc. when applicable).
 2. **Wait for explicit approval** — a clear "yes / go ahead / do it." Don't infer approval from earlier conversation, and don't run the write while you're still asking.
 3. **Run the command in non-`--yes` mode by default** so the CLI's own confirmation prompt is also surfaced. Pass `--yes` only when the user has already approved this exact action.
 
@@ -54,8 +54,8 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 - **No clarifying questions.** Use sensible defaults: all companies, current month, 30-day renewal window, top 10 results.
 - **Parallel fetches.** When you need two independent calls (e.g. subs + companies), run them in parallel.
 - **Resolve names, hide UUIDs.** Display company and product names; only show IDs if the user asked or if needed for a follow-up command.
-- **Order previews are mandatory.** Run `orders create` without `--yes` so the user sees price/total/MRR before confirming. Pass `--yes` only when the user has already approved this specific order.
-- **Lead with the number.** Total MRR, count of renewals, dollar impact — top of the response. Top 3-5 rows, not every row.
+- **Order previews are mandatory.** Run `orders create` without `--yes` so the user sees price/total/estimated MRR before confirming. Pass `--yes` only when the user has already approved this specific order.
+- **Lead with the number.** Total estimated MRR, count of renewals, dollar impact — top of the response. Top 3-5 rows, not every row.
 
 (Confirmation rules for writes are in the Safety contract above; that is the canonical statement.)
 
@@ -108,7 +108,7 @@ The CLI computes MRR for you in `pax8 status`, `pax8 report mrr`, and `pax8 comp
 ```
 pax8 subscriptions renewals --json --within 30d
 ```
-Sort by `daysUntilRenewal` ascending. Lead with count + total MRR at risk. Show top 5 (company, product, days, MRR). Offer to drill into any one with `pax8 subscriptions show <id> --json`.
+Sort by `daysUntilRenewal` ascending. Lead with count + total estimated MRR at risk. Show top 5 (company, product, days, estimated MRR). Offer to drill into any one with `pax8 subscriptions show <id> --json`.
 
 ### Invoice audit → action
 ```
@@ -130,7 +130,7 @@ Run in parallel:
 pax8 report mrr --json
 pax8 companies list --json
 ```
-`report mrr` already breaks down by company. Lead with total MRR and top 5 customers; offer per-vendor or per-product breakdown if the user asks.
+`report mrr` already breaks down by company. Lead with total estimated MRR and top 5 customers; offer per-vendor or per-product breakdown if the user asks.
 
 ### "What if?" — cost simulation
 ```

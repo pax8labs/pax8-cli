@@ -237,7 +237,7 @@ Examples:
       process.stderr.write(chalk.dim("\n  ─────────────────────────────\n"));
       process.stderr.write(`  ${chalk.green.bold(`${ordered} ordered`)}`);
       if (skipped > 0) process.stderr.write(chalk.dim(` · ${skipped} skipped`));
-      if (mrrCaptured > 0) process.stderr.write(chalk.green(` · ${formatCurrency(mrrCaptured)}/mo MRR captured`));
+      if (mrrCaptured > 0) process.stderr.write(chalk.green(` · ${formatCurrency(mrrCaptured)}/mo estimated MRR captured`));
       process.stderr.write("\n\n");
 
       // Contribute aggregate counts to the single command_executed event

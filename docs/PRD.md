@@ -150,8 +150,8 @@ pax8 companies update <id> --name "New Name"
 
 **Smart behaviors:**
 - Fuzzy name matching: `pax8 companies show acme` finds "Acme Corp LLC"
-- `show` auto-includes subscription summary (count + MRR) without extra flags
-- `list` shows inline MRR per company when data is cached
+- `show` auto-includes subscription summary (count + estimated MRR) without extra flags
+- `list` shows inline estimated MRR per company when data is cached
 
 ### Contacts
 
@@ -458,12 +458,12 @@ For gaps requiring Pax8 changes, the CLI provides the best available alternative
 ```
 $ pax8 companies list
 
-  Name                 ID                                     Subscriptions   MRR
+  Name                 ID                                     Subscriptions   Est. MRR
   Acme Corp            a1b2c3d4-e5f6-7890-abcd-ef1234567890   12             $2,450.00
   Contoso Ltd          b2c3d4e5-f6a7-8901-bcde-f12345678901   8              $8,920.00
   Fabrikam             c3d4e5f6-a7b8-9012-cdef-123456789012   3              $180.00
 
-  3 companies | $11,550.00 total MRR
+  3 companies | $11,550.00 total estimated MRR
 ```
 
 **JSON output (for pipes/scripts):**
@@ -516,7 +516,7 @@ $ pax8 subscriptions cancel abc123
   Company:    Acme Corp
   Product:    Microsoft 365 Business Premium
   Quantity:   45 seats
-  MRR Impact: -$1,012.50/mo
+  Est. MRR Impact: -$1,012.50/mo
 
   This cannot be undone. Type "cancel" to confirm: _
 ```

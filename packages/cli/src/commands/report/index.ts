@@ -4,7 +4,7 @@ import { reportGrowthCommand } from "./growth.js";
 
 export function registerReportCommands(program: Command): void {
   const report = new Command("report").description(
-    "MRR and growth reporting"
+    "Estimated MRR (subscriptions) and growth (invoices) reporting"
   );
 
   report.addCommand(reportMrrCommand);

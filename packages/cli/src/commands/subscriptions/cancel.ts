@@ -31,7 +31,7 @@ Examples:
       const sub = await ctx.api.subscriptions.get(id);
       spinner.stop();
 
-      // Calculate MRR impact
+      // Calculate estimated MRR impact
       const mrr = calculateMrr(sub.price ?? 0, sub.quantity, String(sub.billingTerm ?? "Monthly"));
 
       if (ctx.outputFormat !== "quiet") {
@@ -39,7 +39,7 @@ Examples:
         process.stdout.write(`  ${chalk.bold("Company")}      ${sub.companyName ?? sub.companyId}\n`);
         process.stdout.write(`  ${chalk.bold("Product")}      ${sub.productName}\n`);
         process.stdout.write(`  ${chalk.bold("Quantity")}     ${formatQuantity(sub.quantity)}\n`);
-        process.stdout.write(`  ${chalk.bold("MRR Impact")}   ${chalk.red("-" + formatCurrency(mrr))}\n`);
+        process.stdout.write(`  ${chalk.bold("Est. MRR Impact")}   ${chalk.red("-" + formatCurrency(mrr))}\n`);
         process.stdout.write("\n");
       }
 

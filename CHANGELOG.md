@@ -18,8 +18,12 @@ Initial public release.
 - **Idempotency keys on write commands** — `--idempotency-key <uuid>` is accepted on every mutation command (#91).
 - **Machine-readable error codes** — every `CliError` carries a stable `code` (one of the `ERROR_*` constants from `@pax8/core`) so agents and scripts can branch on outcome without parsing strings (#90).
 - **Output formats** — `--json`, `--csv`, `--quiet`, plus `--with-actions` (envelope mode) and `--ids-only` (one ID per line, for piping into the next command's `--company` filter).
-- **Cost simulator (`pax8 cost sim`)** — model SKU swaps, quantity changes, and add-product scenarios with monthly/annual MRR delta, before actually placing the order. Pure compute over pricing data; `simulateCostChange()` is also exported from `@pax8/core` for embedders (#3).
+- **Cost simulator (`pax8 cost sim`)** — model SKU swaps, quantity changes, and add-product scenarios with monthly/annual estimated MRR delta, before actually placing the order. Pure compute over pricing data; `simulateCostChange()` is also exported from `@pax8/core` for embedders (#3).
 - **Vitest test suite** — ~840 tests across unit, CLI integration (subprocess), and e2e flows, runnable end-to-end under `PAX8_DEMO=1`.
 - `pax8 auth login` now masks the client secret in interactive mode (no more plaintext echo).
+
+### Changed
+
+- Display labels rebranded from "MRR" to "estimated MRR" to reflect that the value is computed locally and not the partner's actual billed revenue. Command paths (`pax8 report mrr`), JSON output keys (`mrr`, `mrrUplift`, etc.), and telemetry properties unchanged (#166).
 
 [0.1.0]: https://github.com/pax8labs/pax8-cli/releases/tag/v0.1.0

@@ -19,9 +19,9 @@ The Pax8 API is a CRUD layer — it returns raw subscriptions, invoices, and pro
 
 This CLI computes what the API doesn't:
 
-- **Renewal tracking** — no renewals endpoint exists; the CLI parses commitment dates, calculates MRR at risk, and sorts by urgency
+- **Renewal tracking** — no renewals endpoint exists; the CLI parses commitment dates, calculates estimated MRR at risk, and sorts by urgency
 - **Invoice auditing** — cross-references invoice line items against active subscriptions to flag overcharges and undercharges with dollar impact
-- **Upsell recommendations** — analyzes each customer's stack, identifies gaps, estimates MRR uplift, and returns ready-to-execute order commands
+- **Upsell recommendations** — analyzes each customer's stack, identifies gaps, estimates MRR uplift, and returns ready-to-execute order commands (note: uplift estimates are computed locally from price × quantity, not partner-billed revenue)
 - **MRR analytics** — aggregation by company/product/vendor with annual-to-monthly amortization
 
 Every command supports `--json`, so humans and AI agents use the same tool.
@@ -49,7 +49,7 @@ PAX8_DEMO=1 pax8 status
 ## Demo Flow (90 seconds)
 
 ```bash
-pax8 status                              # MRR, renewals, growth opportunities
+pax8 status                              # estimated MRR, renewals, growth opportunities
 pax8 recommendations list                # Cross-sell and seat gap opportunities
 pax8 recommendations act                 # Walk through and place orders (y/s/q)
 pax8 companies list                      # Browse customers (type # to drill in)
@@ -61,7 +61,7 @@ pax8 companies more "Acme Corp"          # Full customer summary
 ### Dashboard
 
 ```bash
-pax8 status                    # Quick snapshot: MRR, renewals, recs, trials
+pax8 status                    # Quick snapshot: estimated MRR, renewals, recs, trials
 pax8 status --all              # Full dashboard with top customers and details
 pax8 status --renewals         # Focus on upcoming renewals
 pax8 status --growth           # Focus on growth opportunities
@@ -73,7 +73,7 @@ pax8 status --growth           # Focus on growth opportunities
 pax8 companies list                            # List all (type # to drill in)
 pax8 companies list --status Active            # Filter by status
 pax8 companies show "Acme Corp"                # Company details
-pax8 companies more "Acme Corp"                # Full summary: subs, vendors, MRR, issues
+pax8 companies more "Acme Corp"                # Full summary: subs, vendors, estimated MRR, issues
 ```
 
 ### Subscriptions
@@ -108,7 +108,7 @@ pax8 orders create --company "Acme" --product "M365 Business Premium" --quantity
 pax8 orders show <id>                                  # Check order status
 ```
 
-The order preview shows unit price, total, and MRR impact before you confirm.
+The order preview shows unit price, total, and estimated MRR impact before you confirm.
 
 ### Cost Simulation
 

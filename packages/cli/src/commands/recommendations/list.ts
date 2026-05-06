@@ -367,7 +367,7 @@ Examples:
 
       if (totalUplift > 0) {
         process.stderr.write(
-          chalk.green(` — ${formatCurrency(totalUplift)}/mo potential MRR uplift`)
+          chalk.green(` — ${formatCurrency(totalUplift)}/mo estimated MRR uplift`)
         );
       }
 
