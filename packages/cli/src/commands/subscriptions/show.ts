@@ -54,17 +54,18 @@ Examples:
       if (ctx.outputFormat === "json") {
         if (options.history) {
           const history = await ctx.api.subscriptions.getHistory(id);
-          output([{ ...sub, history: history.changes }], {
+          const changes = Array.isArray(history) ? history : history.changes;
+          output([{ ...sub, history: changes }], {
             format: "json",
           });
         } else {
-          output([sub], { format: "json" });
+          output([sub as unknown as Record<string, unknown>], { format: "json" });
         }
         return;
       }
 
       if (ctx.outputFormat === "csv") {
-        output([sub], { format: "csv" });
+        output([sub as unknown as Record<string, unknown>], { format: "csv" });
         return;
       }
 
@@ -75,14 +76,14 @@ Examples:
       const fields: [string, string][] = [
         ["ID", sub.id],
         ["Company", sub.companyName ?? sub.companyId],
-        ["Product", sub.productName],
+        ["Product", sub.productName ?? ""],
         ["Quantity", formatQuantity(sub.quantity)],
         ["Status", formatStatus(sub.status)],
-        ["Price", formatCurrency(sub.price)],
-        ["Billing Term", sub.billingTerm],
+        ["Price", formatCurrency(sub.price ?? 0)],
+        ["Billing Term", sub.billingTerm ?? ""],
         ["Start Date", formatDate(sub.startDate)],
         ["Created", formatDate(sub.createdDate)],
-        ["Provisioning", sub.provisioningStatus],
+        ["Provisioning", (sub as { provisioningStatus?: string }).provisioningStatus ?? ""],
       ];
 
       if (sub.commitmentTermEndDate) {
@@ -99,9 +100,10 @@ Examples:
       // Show history if requested
       if (options.history) {
         const history = await ctx.api.subscriptions.getHistory(id);
-        if (history.changes.length > 0) {
+        const changes = Array.isArray(history) ? history : history.changes;
+        if (changes.length > 0) {
           process.stdout.write(chalk.bold("  Change History\n\n"));
-          output(history.changes, {
+          output(changes as unknown as Record<string, unknown>[], {
             format: "table",
             columns: historyColumns,
           });

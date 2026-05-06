@@ -46,7 +46,7 @@ export function getTerminalWidth(): number {
   return Infinity;
 }
 
-function formatTable(data: Record<string, unknown>[], columns: Column[]): void {
+function formatTable(data: readonly Record<string, unknown>[], columns: Column[]): void {
   const termWidth = getTerminalWidth();
 
   // Build column widths: use explicit widths where specified,
@@ -84,11 +84,11 @@ function formatTable(data: Record<string, unknown>[], columns: Column[]): void {
   }
 }
 
-function formatJSON(data: Record<string, unknown>[]): void {
+function formatJSON(data: readonly Record<string, unknown>[]): void {
   process.stdout.write(JSON.stringify(data, null, 2) + "\n");
 }
 
-function formatCSV(data: Record<string, unknown>[], columns: Column[]): void {
+function formatCSV(data: readonly Record<string, unknown>[], columns: Column[]): void {
   // Header row
   const header = columns.map((col) => escapeCSV(col.header)).join(",");
   process.stdout.write(header + "\n");
@@ -106,38 +106,50 @@ function formatCSV(data: Record<string, unknown>[], columns: Column[]): void {
   }
 }
 
-export function output(data: Record<string, unknown>[], options: OutputOptions): void {
+/**
+ * Render `data` to stdout in the format selected by `options`.
+ *
+ * The parameter type is intentionally widened to `readonly object[]` so that
+ * callers can pass typed domain rows (e.g. `Subscription[]`, `Invoice[]`)
+ * without having to assert `as Record<string, unknown>[]`. Internally we
+ * treat each row as a string-keyed bag for `columns[i].format(row[col.key])`
+ * lookups, which is safe for any plain object.
+ */
+export function output(data: readonly object[], options: OutputOptions): void {
   const { format, columns } = options;
+
+  // Treat each row as a generic string-keyed bag for column lookups.
+  const rows = data as readonly Record<string, unknown>[];
 
   if (format === "quiet") {
     return;
   }
 
   if (format === "json") {
-    formatJSON(data);
+    formatJSON(rows);
     return;
   }
 
   if (!columns || columns.length === 0) {
     if (format === "table") {
       // Fallback: show as JSON if no columns defined
-      formatJSON(data);
+      formatJSON(rows);
     } else if (format === "csv") {
       // Infer columns from first item
-      if (data.length > 0) {
-        const inferred: Column[] = Object.keys(data[0]).map((key) => ({
+      if (rows.length > 0) {
+        const inferred: Column[] = Object.keys(rows[0]).map((key) => ({
           key,
           header: key,
         }));
-        formatCSV(data, inferred);
+        formatCSV(rows, inferred);
       }
     }
     return;
   }
 
   if (format === "table") {
-    formatTable(data, columns);
+    formatTable(rows, columns);
   } else if (format === "csv") {
-    formatCSV(data, columns);
+    formatCSV(rows, columns);
   }
 }

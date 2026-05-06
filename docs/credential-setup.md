@@ -46,7 +46,14 @@ pax8 auth login    # validates and saves
 pax8 status        # works directly — env vars are checked first
 ```
 
-Environment variables take priority over the stored credentials file, so you can use them to temporarily override saved credentials.
+Environment variables take priority over the stored credentials file, so you can use them to temporarily override saved credentials. A copy-pasteable starter for these (and the optional `PAX8_API_BASE` / `PAX8_DEMO` toggles) is in [`.env.example`](../.env.example) at the repo root.
+
+To point the CLI at a sandbox or staging environment, also set `PAX8_API_BASE`:
+
+```bash
+export PAX8_API_BASE=https://staging-api.pax8.com/v1/
+pax8 doctor   # surfaces the active API base in its output
+```
 
 **PowerShell:**
 

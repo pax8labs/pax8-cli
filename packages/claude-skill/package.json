@@ -1,15 +1,21 @@
 {
   "name": "@pax8/claude-skill",
   "version": "0.1.0",
+  "private": true,
   "description": "Claude Code skill for AI-assisted Pax8 operations",
   "type": "module",
   "main": "./src/index.ts",
   "files": ["src", "skill.md"],
   "scripts": {
-    "build": "echo 'no build needed'"
+    "build": "echo 'no build needed'",
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "@pax8/cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.5.0"
   },
   "repository": {
     "type": "git",

@@ -1,13 +1,14 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { createInterface } from "readline";
-import { getRecommendations, getTelemetry, type Recommendation } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, getRecommendations, getTelemetry, type Recommendation } from "@pax8/core";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { filterRecommendations } from "./filter.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 async function prompt(question: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
@@ -75,14 +76,34 @@ async function actOnRec(rec: Recommendation, index: number, total: number, ctx: 
 
   const spinner = createSpinner("Creating order...").start();
   try {
-    const order = await ctx.api.orders.create({
-      companyId: rec.companyId,
-      lineItems: [{
-        productId,
-        quantity,
-        billingTerm: "Monthly",
-      }],
-    });
+    // Resolve commitmentTermId from existing subscription for the SAME product
+    let commitmentTermId: string | undefined;
+    try {
+      const subs = await ctx.api.subscriptions.list({
+        companyId: rec.companyId,
+        status: "Active",
+      });
+      const match = subs.content.find((s) =>
+        s.productId === productId && s.commitment?.id
+      );
+      if (match?.commitment?.id) commitmentTermId = match.commitment.id;
+    } catch { /* best effort */ }
+
+    const doneOrder = markWriteInFlight("orders");
+    let order;
+    try {
+      order = await ctx.api.orders.create({
+        companyId: rec.companyId,
+        lineItems: [{
+          productId,
+          quantity,
+          billingTerm: "Monthly",
+          ...(commitmentTermId ? { commitmentTermId } : {}),
+        }],
+      });
+    } finally {
+      doneOrder();
+    }
 
     // Look up unit price from product pricing
     let unitPrice: number | null = null;
@@ -168,7 +189,7 @@ Examples:
 
     try {
       const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: 1000, status: "Active" }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
         ctx.api.companies.list({ size: 200 }),
       ]);
 

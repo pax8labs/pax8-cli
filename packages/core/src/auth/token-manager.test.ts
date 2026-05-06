@@ -183,3 +183,71 @@ describe("TokenManager", () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 });
+
+describe("TokenManager + PAX8_API_BASE", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  const originalApiBase = process.env.PAX8_API_BASE;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalApiBase === undefined) delete process.env.PAX8_API_BASE;
+    else process.env.PAX8_API_BASE = originalApiBase;
+  });
+
+  it("derives the token URL from PAX8_API_BASE when set", async () => {
+    process.env.PAX8_API_BASE = "https://api-staging.pax8.com/v1";
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ access_token: MOCK_TOKEN }), { status: 200 })
+    );
+
+    const manager = createManager();
+    await manager.getToken();
+
+    const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api-staging.pax8.com/v1/token");
+  });
+
+  it("uses the production token URL when PAX8_API_BASE is unset", async () => {
+    delete process.env.PAX8_API_BASE;
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ access_token: MOCK_TOKEN }), { status: 200 })
+    );
+
+    const manager = createManager();
+    await manager.getToken();
+
+    const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.pax8.com/v1/token");
+  });
+
+  it("normalizes a trailing slash on PAX8_API_BASE before appending /token", async () => {
+    process.env.PAX8_API_BASE = "https://api-staging.pax8.com/v1/";
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ access_token: MOCK_TOKEN }), { status: 200 })
+    );
+
+    const manager = createManager();
+    await manager.getToken();
+
+    const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    // The trailing slash must NOT result in `//token`.
+    expect(url).toBe("https://api-staging.pax8.com/v1/token");
+  });
+
+  it("normalizes multiple trailing slashes on PAX8_API_BASE", async () => {
+    process.env.PAX8_API_BASE = "https://api-staging.pax8.com/v1///";
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ access_token: MOCK_TOKEN }), { status: 200 })
+    );
+
+    const manager = createManager();
+    await manager.getToken();
+
+    const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api-staging.pax8.com/v1/token");
+  });
+});

@@ -1,13 +1,13 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext, ALL_SUBS_SIZE, warnIfTruncated } from "../lib/context.js";
+import { buildContext, warnIfTruncated } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
-import { getUpcomingRenewals } from "@pax8/core";
+import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
-import type { Subscription } from "@pax8/core";
+import type { Subscription, Company, Product, Order } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 
@@ -108,16 +108,16 @@ Examples:
     try {
       const [companiesSettled, subsSettled, productsSettled, ordersSettled] = await Promise.allSettled([
         ctx.api.companies.list({ size: 200 }),
-        ctx.api.subscriptions.list({ size: ALL_SUBS_SIZE }),
+        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE }),
         ctx.api.products.list({ size: 200 }),
         ctx.api.orders.list({ size: 200 }),
       ]);
 
       const emptyPage = { number: 0, totalPages: 0, totalElements: 0 };
-      const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as any[], page: { ...emptyPage } };
-      const subsResult = subsSettled.status === 'fulfilled' ? subsSettled.value : { content: [] as any[], page: { ...emptyPage } };
-      const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as any[], page: { ...emptyPage } };
-      const ordersResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [] as any[], page: { ...emptyPage } };
+      const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as Company[], page: { ...emptyPage } };
+      const subsResult = subsSettled.status === 'fulfilled' ? subsSettled.value : { content: [] as Subscription[], page: { ...emptyPage } };
+      const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as Product[], page: { ...emptyPage } };
+      const ordersResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [] as Order[], page: { ...emptyPage } };
 
       if (companiesSettled.status === 'rejected') {
         process.stderr.write(chalk.yellow("  ⚠ Could not load companies\n"));
@@ -134,7 +134,7 @@ Examples:
         companyNames.set(c.id, c.name);
       }
 
-      warnIfTruncated(subsResult, ALL_SUBS_SIZE);
+      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
       const allSubs = subsResult.content;
       enrichCompanyNames(companyNames, allSubs);
@@ -227,10 +227,12 @@ Examples:
             companyName: o.companyName,
             status: o.status,
             createdDate: o.createdDate,
-            lineItems: o.lineItems?.map((li) => ({
-              productName: (li as Record<string, unknown>).productName ?? li.productId,
-              quantity: li.quantity,
-            })),
+            lineItems: o.lineItems?.map(
+              (li: { productId: string; productName?: string; quantity: number }) => ({
+                productName: li.productName ?? li.productId,
+                quantity: li.quantity,
+              }),
+            ),
           })),
           nextActions,
         }, null, 2) + "\n");
@@ -268,10 +270,12 @@ Examples:
         for (const o of recentOrders.slice(0, 5)) {
           const items = o.lineItems ?? [];
           const productDesc = items.length > 0
-            ? items.map((li) => {
-                const name = (li as Record<string, unknown>).productName ?? "product";
-                return `${name} (${li.quantity} seats)`;
-              }).join(", ")
+            ? items.map(
+                (li: { productName?: string; quantity: number }) => {
+                  const name = li.productName ?? "product";
+                  return `${name} (${li.quantity} seats)`;
+                },
+              ).join(", ")
             : "order placed";
           const ago = formatTimeAgo(new Date(o.createdDate));
           out.write(`  ${chalk.green("✓")} ${o.companyName} — ${productDesc}  ${chalk.dim(ago)}\n`);
@@ -424,6 +428,41 @@ Examples:
           out.write(chalk.dim(`\n  … and ${trials.length - 5} more\n`));
         }
         out.write(chalk.dim(`\n    → ${replCmd("pax8 subscriptions list --status Trial")}\n`));
+      }
+
+      // ── Quick Actions (--all) ─────────────────────────────────────
+      if (showAll) {
+        const allActions: NextStep[] = [];
+
+        if (renewals.items.length > 0) {
+          allActions.push({
+            key: String(allActions.length + 1),
+            label: `${chalk.yellow("!")} ${renewals.items.length} renewal${renewals.items.length > 1 ? "s" : ""} in the next 30 days`,
+            command: ["subscriptions", "renewals"],
+          });
+        }
+
+        if (highRecs.length > 0) {
+          allActions.push({
+            key: String(allActions.length + 1),
+            label: `${chalk.green("+")} Walk through ${highRecs.length} growth opportunities`,
+            command: ["recommendations", "act"],
+          });
+        }
+
+        if (topCustomers.length > 0) {
+          allActions.push({
+            key: String(allActions.length + 1),
+            label: `Drill into ${topCustomers[0].name}`,
+            command: tokenizeCmd(`companies more "${topCustomers[0].name}"`),
+          });
+        }
+
+        if (allActions.length > 0) {
+          divider();
+          out.write(chalk.bold("  Quick Actions\n\n"));
+          await promptNextSteps(allActions);
+        }
       }
 
       out.write("\n");

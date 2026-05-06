@@ -63,7 +63,7 @@ describe("getRecommendations", () => {
       (r) => r.companyId === "c1" && r.title.includes("Datto")
     );
     expect(rec).toBeDefined();
-    expect(rec!.orderCommand).toContain("Datto SaaS Protection");
+    expect(rec!.orderCommand).toContain("prod-bk");
     expect(rec!.productAvailable).toBe(true);
   });
 

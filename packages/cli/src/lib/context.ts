@@ -13,14 +13,12 @@ import {
   TokenManager,
   CredentialStore,
   loadConfig,
+  ERROR_AUTH_MISSING,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
 import { spawn } from "node:child_process";
 import { CliError } from "./errors.js";
 import { replCmd } from "./confirm.js";
-
-/** Page size for fetching "all" subscriptions in aggregate commands. */
-export const ALL_SUBS_SIZE = 1000;
 
 /**
  * Emit a stderr warning when a paginated result hits the page size limit,
@@ -64,7 +62,7 @@ export interface GlobalOptions {
   verbose?: boolean;
   noColor?: boolean;
   config?: string;
-  parent?: any;
+  parent?: unknown;
 }
 
 export function getOutputFormat(
@@ -99,7 +97,9 @@ export async function buildContext(
     telemetry: { enabled: false },
   }));
 
-  const isDemo = process.env.PAX8_DEMO === "1" || config.demo === true;
+  const isDemo =
+    process.env.PAX8_DEMO === "1" ||
+    ("demo" in config && config.demo === true);
   const outputFormat = getOutputFormat(options, config.defaults?.output_format);
 
   let api: ApiClient | MockPax8Client;
@@ -121,6 +121,7 @@ export async function buildContext(
           `Or use demo mode: PAX8_DEMO=1 ${replCmd("pax8")} <command> (macOS/Linux) or $env:PAX8_DEMO="1"; ${replCmd("pax8")} <command> (PowerShell)`,
         ],
         "https://devx.pax8.com/",
+        ERROR_AUTH_MISSING,
       );
     }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { resolveCompany, resolveCompanyId } from "./resolve-company.js";
 import type { CommandContext } from "./context.js";
 

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
@@ -12,9 +12,10 @@ export const invoicesListCommand = new Command("list")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
   .option("--company <id|name>", "Filter by company ID or name")
   .option("--status <status>", "Filter by status (Unpaid, Paid, Void, Overdue)")
-  .option("--page <number>", "Page number (0-based)", "0")
+  .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
+  .option("--with-actions", "Wrap JSON output as { invoices, nextActions } instead of a flat array")
   .addHelpText(
     "after",
     `
@@ -23,35 +24,39 @@ Examples:
   pax8 invoices list --month 2026-03
   pax8 invoices list --company "Summit Healthcare"
   pax8 invoices list --status Unpaid
-  pax8 invoices list --json`
+  pax8 invoices list --json
+  pax8 invoices list --json --with-actions
+  pax8 invoices list --csv
+  pax8 invoices list --ids-only | xargs -I{} pax8 invoices show {}`
   )
   .action(async (options, command) => {
-    const globalOpts = command.optsWithGlobals();
-    const ctx = await buildContext(globalOpts);
+    const allOpts = command.optsWithGlobals();
+    const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Fetching invoices...");
 
     try {
       spinner.start();
-      const companyId = options.company
-        ? await resolveCompanyId(ctx, options.company)
+      const companyId = allOpts.company
+        ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
+      const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
       const result = await ctx.api.invoices.list({
-        month: options.month,
+        month: allOpts.month,
         companyId,
-        status: options.status,
-        page: parseInt(options.page, 10),
-        size: parseInt(options.size, 10),
+        status: allOpts.status,
+        page: apiPage,
+        size: parseInt(allOpts.size, 10),
       });
       spinner.stop();
 
-      if (globalOpts.idsOnly) {
+      if (allOpts.idsOnly) {
         for (const item of result.content) {
           process.stdout.write(item.id + "\n");
         }
         return;
       }
 
-      const columns = [
+      const columns: Column[] = [
         {
           key: "id",
           header: "ID",
@@ -84,6 +89,33 @@ Examples:
           format: (v) => formatCurrency(Number(v)),
         },
       ];
+
+      if (ctx.outputFormat === "json" && options.withActions) {
+        const nextActions: { command: string; description: string }[] = [];
+        const invoices = result.content;
+        const unpaid = invoices.filter((inv) =>
+          ["unpaid", "overdue"].includes(String((inv as Record<string, unknown>).status ?? "").toLowerCase())
+        );
+        if (unpaid.length > 0) {
+          nextActions.push({
+            command: `pax8 invoices show ${unpaid[0].id}`,
+            description: `Review the first unpaid invoice (${unpaid.length} unpaid total)`,
+          });
+        } else if (invoices.length > 0) {
+          nextActions.push({
+            command: `pax8 invoices show ${invoices[0].id}`,
+            description: "Drill into the most recent invoice",
+          });
+        }
+        nextActions.push({
+          command: "pax8 invoices audit --json",
+          description: "Audit invoices against active subscriptions for billing discrepancies",
+        });
+        process.stdout.write(
+          JSON.stringify({ invoices: result.content, nextActions }, null, 2) + "\n"
+        );
+        return;
+      }
 
       output(result.content, { format: ctx.outputFormat, columns });
 

@@ -97,11 +97,11 @@ Examples:
       }
       spinner.succeed(`Loaded ${company.name}`);
 
-      const subscriptions: SubSummary[] = subs.content.map((s: Record<string, unknown>) => {
+      const subscriptions: SubSummary[] = subs.content.map((s) => {
         const qty = Number(s.quantity) || 0;
         const price = Number(s.price) || 0;
-        const termEnd = s.commitmentTermEndDate as string | undefined;
-        const rawName = s.productName as string | undefined;
+        const termEnd = s.commitmentTermEndDate ?? undefined;
+        const rawName = s.productName;
         const term = String(s.billingTerm ?? "Monthly");
         const mrr = calculateMrr(price, qty, term);
         return {
@@ -161,7 +161,7 @@ Examples:
       const missing = ALL_CATEGORIES.filter((c) => !coveredCategories.has(c));
 
       // Get estimated uplift from recommendations engine
-      const subsForRecs = subs.content.map((s: Record<string, unknown>) => ({
+      const subsForRecs = subs.content.map((s) => ({
         companyId: String(s.companyId ?? company.id),
         companyName: company.name,
         productName: String(s.productName ?? ""),
@@ -203,7 +203,7 @@ Examples:
 
       process.stdout.write("\n");
       process.stdout.write(chalk.bold.white(`  ${company.name}`) + chalk.dim(`  ${company.id.slice(0, 8)}...`) + "\n");
-      const sinceStr = company.createdDate ? chalk.dim("  ·  Since " + formatDate(company.createdDate)) : "";
+      const sinceStr = company.created ? chalk.dim("  ·  Since " + formatDate(company.created)) : "";
       process.stdout.write(`  ${formatStatus(company.status)}${sinceStr}` + "\n");
       process.stdout.write("\n");
 

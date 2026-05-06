@@ -1,26 +1,32 @@
 import { describe, it, expect } from "vitest";
-import { runCli, runCliExpectSuccess } from "./test-utils.js";
+import { runCliExpectSuccess } from "./test-utils.js";
 
 describe("pax8 recommendations", () => {
   describe("recommendations list", () => {
-    it("returns recommendations in JSON format", async () => {
+    it("returns a flat array of recommendations in JSON by default", async () => {
       const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBeGreaterThan(0);
+      expect(data[0]).toHaveProperty("companyId");
+      expect(data[0]).toHaveProperty("companyName");
+      expect(data[0]).toHaveProperty("type");
+      expect(data[0]).toHaveProperty("priority");
+    });
+
+    it("--with-actions wraps in { recommendations, nextActions, unmatchedProducts }", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--with-actions"]);
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("recommendations");
       expect(data).toHaveProperty("nextActions");
+      expect(data).toHaveProperty("unmatchedProducts");
       expect(Array.isArray(data.recommendations)).toBe(true);
-      expect(data.recommendations.length).toBeGreaterThan(0);
-      expect(data.recommendations[0]).toHaveProperty("companyId");
-      expect(data.recommendations[0]).toHaveProperty("companyName");
-      expect(data.recommendations[0]).toHaveProperty("type");
-      expect(data.recommendations[0]).toHaveProperty("priority");
-      // nextActions should have command and description
       expect(Array.isArray(data.nextActions)).toBe(true);
+      expect(data.nextActions.length).toBeLessThanOrEqual(5);
       if (data.nextActions.length > 0) {
         expect(data.nextActions[0]).toHaveProperty("command");
         expect(data.nextActions[0]).toHaveProperty("description");
       }
-      expect(data.nextActions.length).toBeLessThanOrEqual(5);
     });
 
     it("filters by exact company name", async () => {
@@ -28,8 +34,8 @@ describe("pax8 recommendations", () => {
         "recommendations", "list", "--company", "Bright Minds Academy", "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.recommendations.length).toBeGreaterThan(0);
-      for (const rec of data.recommendations) {
+      expect(data.length).toBeGreaterThan(0);
+      for (const rec of data) {
         expect(rec.companyName).toBe("Bright Minds Academy");
       }
     });
@@ -39,8 +45,8 @@ describe("pax8 recommendations", () => {
         "recommendations", "list", "--company", "Bright", "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.recommendations.length).toBeGreaterThan(0);
-      for (const rec of data.recommendations) {
+      expect(data.length).toBeGreaterThan(0);
+      for (const rec of data) {
         expect(rec.companyName.toLowerCase()).toContain("bright");
       }
     });
@@ -52,8 +58,8 @@ describe("pax8 recommendations", () => {
         "recommendations", "list", "--company", "Bright", "Minds", "Academy", "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.recommendations.length).toBeGreaterThan(0);
-      for (const rec of data.recommendations) {
+      expect(data.length).toBeGreaterThan(0);
+      for (const rec of data) {
         expect(rec.companyName).toBe("Bright Minds Academy");
       }
     });
@@ -63,8 +69,8 @@ describe("pax8 recommendations", () => {
         "recommendations", "list", "--priority", "high", "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.recommendations.length).toBeGreaterThan(0);
-      for (const rec of data.recommendations) {
+      expect(data.length).toBeGreaterThan(0);
+      for (const rec of data) {
         expect(rec.priority).toBe("high");
       }
     });
@@ -74,13 +80,12 @@ describe("pax8 recommendations", () => {
         "recommendations", "list", "--company", "NonExistentCorp99999", "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.recommendations).toEqual([]);
-      expect(data.nextActions).toEqual([]);
+      expect(data).toEqual([]);
     });
 
     it("JSON output includes both available and unavailable recs for downstream filtering", async () => {
       const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
-      const allRecs = JSON.parse(result.stdout).recommendations;
+      const allRecs = JSON.parse(result.stdout);
 
       // Some recs should have productAvailable: true, some false
       const available = allRecs.filter((r: { productAvailable: boolean }) => r.productAvailable);
@@ -100,8 +105,8 @@ describe("pax8 recommendations", () => {
       const withAll = await runCliExpectSuccess(["recommendations", "list", "--include-all", "--json"]);
       const withoutAll = await runCliExpectSuccess(["recommendations", "list", "--json"]);
 
-      const allRecs = JSON.parse(withAll.stdout).recommendations;
-      const defaultRecs = JSON.parse(withoutAll.stdout).recommendations;
+      const allRecs = JSON.parse(withAll.stdout);
+      const defaultRecs = JSON.parse(withoutAll.stdout);
 
       // Both should return the same set since JSON output is pre-filter
       // (JSON returns all recs; filtering only affects table mode)

@@ -7,6 +7,7 @@ import { handleCommandError } from "../../lib/errors.js";
 import { confirmWithChange } from "../../lib/confirm.js";
 import { formatQuantity, formatCurrency, formatStatus } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
+import { markWriteInFlight } from "../../lib/signals.js";
 
 export const subscriptionsUpdateCommand = new Command("update")
   .description("Update a subscription")
@@ -66,12 +67,18 @@ Examples:
       }
 
       const updateSpinner = createSpinner("Updating subscription...").start();
-      const updated = await ctx.api.subscriptions.update(id, updateData);
+      const doneUpdate = markWriteInFlight("subscriptions");
+      let updated;
+      try {
+        updated = await ctx.api.subscriptions.update(id, updateData);
+      } finally {
+        doneUpdate();
+      }
       await invalidateCacheAfterWrite();
       updateSpinner.succeed("Subscription updated");
 
       if (ctx.outputFormat === "json") {
-        output([updated], { format: "json" });
+        output([updated as unknown as Record<string, unknown>], { format: "json" });
         return;
       }
 
@@ -83,7 +90,7 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(updated.status)}\n`);
       process.stdout.write(`  ${chalk.dim("Quantity:".padEnd(18))}${formatQuantity(updated.quantity)}\n`);
       process.stdout.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${updated.billingTerm}\n`);
-      process.stdout.write(`  ${chalk.dim("Price:".padEnd(18))}${formatCurrency(updated.price)}\n`);
+      process.stdout.write(`  ${chalk.dim("Price:".padEnd(18))}${formatCurrency(updated.price ?? 0)}\n`);
       process.stdout.write("\n");
     } catch (error) {
       handleCommandError(error, undefined, "Failed to update subscription");

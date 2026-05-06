@@ -62,7 +62,7 @@ function parseTableRows(
 
   // Filter to lines containing column separators (│ or |)
   const dataLines = lines.filter(
-    (line) => line.includes("│") || (line.includes("|") && !line.match(/^[\s─┼+\-]+$/))
+    (line) => line.includes("│") || (line.includes("|") && !line.match(/^[\s─┼+-]+$/))
   );
 
   if (dataLines.length === 0) {
@@ -107,7 +107,7 @@ describe("table output — TTY-aware rendering", () => {
       const result = await runTable(["companies", "list", "--csv"]);
       expect(result.exitCode).toBe(0);
       // CSV should never contain ANSI escape sequences
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
       const lines = result.stdout.trim().split("\n");
       // Header + data rows
       expect(lines.length).toBeGreaterThan(1);
@@ -124,7 +124,7 @@ describe("table output — TTY-aware rendering", () => {
     it("JSON output has no ANSI codes", async () => {
       const result = await runTable(["companies", "list", "--json"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
       // Should be valid JSON
       expect(() => JSON.parse(result.stdout)).not.toThrow();
     });
@@ -134,7 +134,7 @@ describe("table output — TTY-aware rendering", () => {
     it("CSV output has consistent columns and no ANSI", async () => {
       const result = await runTable(["subscriptions", "list", "--csv"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
       const lines = result.stdout.trim().split("\n");
       expect(lines.length).toBeGreaterThan(1);
       expect(lines[0]).toContain("Company");
@@ -145,7 +145,7 @@ describe("table output — TTY-aware rendering", () => {
     it("JSON output is clean", async () => {
       const result = await runTable(["subscriptions", "list", "--json"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(true);
     });
@@ -161,10 +161,9 @@ describe("table output — TTY-aware rendering", () => {
         "90d",
       ]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
       const data = JSON.parse(result.stdout);
-      expect(data).toHaveProperty("renewals");
-      expect(Array.isArray(data.renewals)).toBe(true);
+      expect(Array.isArray(data)).toBe(true);
     });
 
     it("CSV output has no ANSI codes", async () => {
@@ -176,7 +175,7 @@ describe("table output — TTY-aware rendering", () => {
         "90d",
       ]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
     });
   });
 
@@ -184,15 +183,15 @@ describe("table output — TTY-aware rendering", () => {
     it("JSON output is clean", async () => {
       const result = await runTable(["recommendations", "list", "--json"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
       const data = JSON.parse(result.stdout);
-      expect(data).toHaveProperty("recommendations");
+      expect(Array.isArray(data)).toBe(true);
     });
 
     it("CSV output has no ANSI codes", async () => {
       const result = await runTable(["recommendations", "list", "--csv"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
     });
   });
 
@@ -200,7 +199,7 @@ describe("table output — TTY-aware rendering", () => {
     it("CSV output has consistent columns and no ANSI", async () => {
       const result = await runTable(["invoices", "list", "--csv"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
       const lines = result.stdout.trim().split("\n");
       expect(lines.length).toBeGreaterThan(1);
       expect(lines[0]).toContain("Company");
@@ -210,7 +209,7 @@ describe("table output — TTY-aware rendering", () => {
     it("JSON output is clean", async () => {
       const result = await runTable(["invoices", "list", "--json"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain("\x1b[");
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(true);
     });
@@ -267,7 +266,7 @@ describe("table rendering — unit tests", () => {
             trimmed.endsWith("┘") ||
             trimmed.endsWith("┐") ||
             trimmed.endsWith("┤") ||
-            trimmed.match(/[─┼+\-]$/)
+            trimmed.match(/[─┼+-]$/)
         ).toBeTruthy();
       }
     } finally {
@@ -349,7 +348,7 @@ describe("table rendering — unit tests", () => {
 
       const written = stdoutWrite.mock.calls.map((c) => c[0]).join("");
       // CSV should NOT contain ANSI codes — it uses raw values, not formatters
-      expect(written).not.toMatch(/\x1b\[/);
+      expect(written).not.toContain("\x1b[");
       expect(written).toContain("Active");
     } finally {
       stdoutWrite.mockRestore();
@@ -369,7 +368,7 @@ describe("table rendering — unit tests", () => {
       output(data, { format: "json" });
 
       const written = stdoutWrite.mock.calls.map((c) => c[0]).join("");
-      expect(written).not.toMatch(/\x1b\[/);
+      expect(written).not.toContain("\x1b[");
       expect(() => JSON.parse(written)).not.toThrow();
     } finally {
       stdoutWrite.mockRestore();

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
+import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 orders", () => {
   describe("orders list", () => {
@@ -41,7 +41,7 @@ describe("pax8 orders", () => {
         "orders",
         "list",
         "--page",
-        "0",
+        "1",
         "--size",
         "2",
         "--json",
