@@ -31,7 +31,12 @@ import {
   type WebhookLog,
 } from "./demo-data.js";
 import { NotFoundError } from "../api/errors.js";
-import type { CreateOrderInput } from "../api/types.js";
+import type {
+  CreateOrderInput,
+  ProductPricing as ProductPricingPlans,
+  ProvisioningDetail as ProvisioningDetailType,
+  ProductDependency as ProductDependencyType,
+} from "../api/types.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -122,8 +127,8 @@ class CompaniesResource {
       address: data.address ?? {
         street: "",
         city: "",
-        stateOrProvince: "",
-        postalCode: "",
+        state: "",
+        zip: "",
         country: "US",
       },
       phone: data.phone ?? "",
@@ -132,7 +137,7 @@ class CompaniesResource {
       billOnBehalfOfEnabled: false,
       selfServiceAllowed: false,
       orderApprovalRequired: false,
-      createdDate: new Date().toISOString().split("T")[0],
+      created: new Date().toISOString().split("T")[0],
     };
     return newCompany;
   }
@@ -235,6 +240,26 @@ class ProductsResource {
     return paginate(filtered, params);
   }
 
+  /**
+   * Search products by free-text query. Mirrors `ProductsApi.search()`: picks
+   * the longest token to pass to the upstream `search` param so multi-word
+   * queries don't silently return empty.
+   */
+  async search(
+    query: string,
+    params?: ListParams & { vendorName?: string }
+  ): Promise<PaginatedResponse<Product>> {
+    const tokens = query.split(/\s+/).filter(Boolean);
+    const apiKeyword = tokens.reduce(
+      (best, t) => (t.length >= best.length ? t : best),
+      "",
+    );
+    return this.list({
+      ...params,
+      search: apiKeyword || undefined,
+    });
+  }
+
   async get(id: string): Promise<Product> {
     await randomDelay();
     const product = products.find((p) => p.id === id)
@@ -244,29 +269,52 @@ class ProductsResource {
     return product;
   }
 
-  async getPricing(id: string): Promise<Product["pricing"]> {
+  async getPricing(id: string): Promise<ProductPricingPlans> {
     await randomDelay();
     const product = products.find((p) => p.id === id);
     if (!product) throw notFound("Product", id);
-    return product.pricing;
+    // Adapt the compact mock seed shape to the public `ProductPricingPlan[]`
+    // shape that `ProductsApi.getPricing()` returns, so consumers can treat
+    // the result identically across real and demo modes.
+    return product.pricing.map((p) => ({
+      productId: product.id,
+      productName: product.name,
+      billingTerm: p.billingTerm,
+      commitmentTerm: p.commitmentTerm,
+      unitOfMeasurement: product.unitOfMeasurement,
+      rates: [
+        {
+          partnerBuyRate: p.partnerBuyPrice,
+          suggestedRetailPrice: p.suggestedRetailPrice,
+        },
+      ],
+    }));
   }
 
   async getProvisioningDetails(
     id: string
-  ): Promise<{ requiresDomain: boolean; requiresTenant: boolean; fields: string[] }> {
+  ): Promise<ProvisioningDetailType> {
     await randomDelay();
     const product = products.find((p) => p.id === id);
     if (!product) throw notFound("Product", id);
+    const isMicrosoft = product.vendorName === "Microsoft";
     return {
-      requiresDomain: product.vendorName === "Microsoft",
-      requiresTenant: product.vendorName === "Microsoft",
-      fields: product.vendorName === "Microsoft" ? ["domain", "tenantId"] : [],
+      productId: product.id,
+      vendorPrerequisites: isMicrosoft
+        ? "Customer must have a Microsoft tenant and a verified domain."
+        : undefined,
+      fields: isMicrosoft
+        ? [
+            { name: "domain", label: "Tenant Domain", type: "string", required: true },
+            { name: "tenantId", label: "Microsoft Tenant ID", type: "string", required: true },
+          ]
+        : [],
     };
   }
 
-  async getDependencies(id: string): Promise<{ dependencies: string[] }> {
+  async getDependencies(_id: string): Promise<ProductDependencyType[]> {
     await randomDelay();
-    return { dependencies: [] };
+    return [];
   }
 }
 

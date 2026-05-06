@@ -89,13 +89,13 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Website:".padEnd(18))}${company.website || chalk.dim("—")}\n`);
       if (company.address) {
         const addr = company.address;
-        const parts = [addr.city, addr.stateOrProvince, addr.postalCode, addr.country].filter(Boolean);
+        const parts = [addr.city, addr.state, addr.zip, addr.country].filter(Boolean);
         process.stdout.write(`  ${chalk.dim("Address:".padEnd(18))}${addr.street || ""}\n`);
         if (parts.length > 0) {
           process.stdout.write(`  ${"".padEnd(18)}${parts.join(", ")}\n`);
         }
       }
-      process.stdout.write(`  ${chalk.dim("Created:".padEnd(18))}${company.createdDate}\n`);
+      process.stdout.write(`  ${chalk.dim("Created:".padEnd(18))}${company.created ?? ""}\n`);
       process.stdout.write("\n");
 
       if (allOpts.subscriptions) {

@@ -227,10 +227,12 @@ Examples:
             companyName: o.companyName,
             status: o.status,
             createdDate: o.createdDate,
-            lineItems: o.lineItems?.map((li) => ({
-              productName: (li as Record<string, unknown>).productName ?? li.productId,
-              quantity: li.quantity,
-            })),
+            lineItems: o.lineItems?.map(
+              (li: { productId: string; productName?: string; quantity: number }) => ({
+                productName: li.productName ?? li.productId,
+                quantity: li.quantity,
+              }),
+            ),
           })),
           nextActions,
         }, null, 2) + "\n");
@@ -268,10 +270,12 @@ Examples:
         for (const o of recentOrders.slice(0, 5)) {
           const items = o.lineItems ?? [];
           const productDesc = items.length > 0
-            ? items.map((li) => {
-                const name = (li as Record<string, unknown>).productName ?? "product";
-                return `${name} (${li.quantity} seats)`;
-              }).join(", ")
+            ? items.map(
+                (li: { productName?: string; quantity: number }) => {
+                  const name = li.productName ?? "product";
+                  return `${name} (${li.quantity} seats)`;
+                },
+              ).join(", ")
             : "order placed";
           const ago = formatTimeAgo(new Date(o.createdDate));
           out.write(`  ${chalk.green("✓")} ${o.companyName} — ${productDesc}  ${chalk.dim(ago)}\n`);

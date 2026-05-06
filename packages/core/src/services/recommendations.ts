@@ -204,7 +204,15 @@ function findSeatGaps(companySubs: SubscriptionInput[]): SeatGap[] {
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
-type SubscriptionInput = Partial<Subscription> & {
+/**
+ * Loose input shape accepted by the recommendations engine. We use
+ * `Omit<Partial<Subscription>, "status" | "billingTerm"> & {...}` rather than
+ * a plain intersection so callers can pass rows whose `status` /
+ * `billingTerm` are wider strings (e.g. demo-data rows or hand-built
+ * objects from a script) without having to satisfy the strict literal
+ * unions on `Subscription`.
+ */
+type SubscriptionInput = Omit<Partial<Subscription>, "status" | "billingTerm"> & {
   companyId?: string;
   productName?: string;
   companyName?: string;

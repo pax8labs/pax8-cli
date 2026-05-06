@@ -99,7 +99,7 @@ describe("pax8 invoices", () => {
       expect(data[0]).toHaveProperty("productName");
       expect(data[0]).toHaveProperty("quantity");
       expect(data[0]).toHaveProperty("unitPrice");
-      expect(data[0]).toHaveProperty("total");
+      expect(data[0]).toHaveProperty("subtotal");
     });
 
     it("filters items by invoice ID", async () => {

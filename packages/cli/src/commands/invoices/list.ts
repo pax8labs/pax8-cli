@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
@@ -56,7 +56,7 @@ Examples:
         return;
       }
 
-      const columns = [
+      const columns: Column[] = [
         {
           key: "id",
           header: "ID",

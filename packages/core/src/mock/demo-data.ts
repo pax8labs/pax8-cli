@@ -24,8 +24,10 @@ export interface Company {
   address: {
     street: string;
     city: string;
-    stateOrProvince: string;
-    postalCode: string;
+    /** Mirrors the public `Address` schema field name. */
+    state: string;
+    /** Mirrors the public `Address` schema field name. */
+    zip: string;
     country: string;
   };
   phone: string;
@@ -34,7 +36,8 @@ export interface Company {
   billOnBehalfOfEnabled: boolean;
   selfServiceAllowed: boolean;
   orderApprovalRequired: boolean;
-  createdDate: string;
+  /** Mirrors the public `Company` schema field name. */
+  created: string;
   billingContact?: { firstName: string; lastName: string; email: string };
 }
 
@@ -62,10 +65,20 @@ export interface Product {
   vendorName: string;
   sku: string;
   shortDescription: string;
-  unitOfMeasure: string;
+  /**
+   * Public field name matching `@pax8/core`'s `Product` type. Aliased as
+   * `unitOfMeasure` below for back-compat with existing seed data.
+   */
+  unitOfMeasurement: string;
   pricing: ProductPricing[];
 }
 
+/**
+ * Internal mock-data pricing shape. Seed data uses this compact form;
+ * `MockPax8Client.products.getPricing()` adapts it to the public
+ * `ProductPricingPlan` shape (with `rates[]`) so callers see the same type
+ * as the real API regardless of which client they hold.
+ */
 export interface ProductPricing {
   billingTerm: "Monthly" | "Annual";
   commitmentTerm: "Monthly" | "1-Year" | "3-Year";
@@ -81,7 +94,8 @@ export interface Invoice {
   companyName: string;
   invoiceDate: string;
   dueDate: string;
-  status: "Unpaid" | "Paid" | "Void" | "Overdue";
+  /** Mirrors `InvoiceStatusSchema` from `@pax8/core`. */
+  status: "Unpaid" | "Paid" | "Void" | "Carry" | "Nothing";
   total: number;
   balance: number;
   currency: string;
@@ -96,7 +110,9 @@ export interface InvoiceItem {
   productName: string;
   quantity: number;
   unitPrice: number;
-  total: number;
+  /** Line subtotal — mirrors the public `InvoiceItem` schema field name. */
+  subtotal: number;
+  subscriptionId?: string;
   billingPeriodStart: string;
   billingPeriodEnd: string;
 }
@@ -113,10 +129,13 @@ export interface Order {
 }
 
 export interface OrderLineItem {
+  /** Line item id (optional — seed data omits and the mock client fills in). */
+  id?: string;
   productId: string;
   productName: string;
   quantity: number;
-  billingTerm: "Monthly" | "Annual";
+  /** Mirrors the public `BillingTerm` enum for cross-mode compatibility. */
+  billingTerm: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";
   provisioningDetails?: Record<string, string>;
 }
 
@@ -165,7 +184,8 @@ export interface Quote {
 export interface QuoteLineItem {
   productId: string;
   quantity: number;
-  billingTerm?: "Monthly" | "Annual";
+  /** Mirrors the public `BillingTerm` enum for cross-mode compatibility. */
+  billingTerm?: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";
   unitPrice?: number;
   subtotal?: number;
 }
@@ -205,8 +225,8 @@ export const companies: Company[] = [
     address: {
       street: "4500 Cherry Creek Dr S",
       city: "Denver",
-      stateOrProvince: "CO",
-      postalCode: "80246",
+      state: "CO",
+      zip: "80246",
       country: "US",
     },
     phone: "+1-303-555-0101",
@@ -215,7 +235,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: false,
     orderApprovalRequired: false,
-    createdDate: "2023-06-15",
+    created: "2023-06-15",
     billingContact: {
       firstName: "Rachel",
       lastName: "Thornton",
@@ -228,8 +248,8 @@ export const companies: Company[] = [
     address: {
       street: "1200 Brickell Ave, Suite 1800",
       city: "Miami",
-      stateOrProvince: "FL",
-      postalCode: "33131",
+      state: "FL",
+      zip: "33131",
       country: "US",
     },
     phone: "+1-305-555-0202",
@@ -238,7 +258,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: true,
     orderApprovalRequired: true,
-    createdDate: "2024-01-10",
+    created: "2024-01-10",
     billingContact: {
       firstName: "Marco",
       lastName: "Reyes",
@@ -251,8 +271,8 @@ export const companies: Company[] = [
     address: {
       street: "8900 NW Industrial Way",
       city: "Portland",
-      stateOrProvince: "OR",
-      postalCode: "97210",
+      state: "OR",
+      zip: "97210",
       country: "US",
     },
     phone: "+1-503-555-0303",
@@ -261,7 +281,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: false,
     orderApprovalRequired: true,
-    createdDate: "2022-09-01",
+    created: "2022-09-01",
     billingContact: {
       firstName: "Karen",
       lastName: "Olsen",
@@ -274,8 +294,8 @@ export const companies: Company[] = [
     address: {
       street: "2100 S Lamar Blvd",
       city: "Austin",
-      stateOrProvince: "TX",
-      postalCode: "78704",
+      state: "TX",
+      zip: "78704",
       country: "US",
     },
     phone: "+1-512-555-0404",
@@ -284,7 +304,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: false,
     selfServiceAllowed: false,
     orderApprovalRequired: false,
-    createdDate: "2025-03-20",
+    created: "2025-03-20",
     billingContact: {
       firstName: "Lisa",
       lastName: "Cheng",
@@ -297,8 +317,8 @@ export const companies: Company[] = [
     address: {
       street: "233 S Wacker Dr, Suite 4200",
       city: "Chicago",
-      stateOrProvince: "IL",
-      postalCode: "60606",
+      state: "IL",
+      zip: "60606",
       country: "US",
     },
     phone: "+1-312-555-0505",
@@ -307,7 +327,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: true,
     orderApprovalRequired: false,
-    createdDate: "2024-08-05",
+    created: "2024-08-05",
     billingContact: {
       firstName: "David",
       lastName: "Nakamura",
@@ -326,7 +346,7 @@ export const products: Product[] = [
     sku: "SPB",
     shortDescription:
       "Best-in-class Office apps, cloud services, and security for small to medium businesses.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -349,7 +369,7 @@ export const products: Product[] = [
     sku: "O365_BUSINESS_ESSENTIALS",
     shortDescription:
       "Web and mobile versions of Office apps plus cloud services.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -372,7 +392,7 @@ export const products: Product[] = [
     sku: "SPE_E3",
     shortDescription:
       "Enterprise productivity suite with advanced compliance and security.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -395,7 +415,7 @@ export const products: Product[] = [
     sku: "SPE_E5",
     shortDescription:
       "Full Microsoft 365 suite with advanced analytics, voice, and security.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -418,7 +438,7 @@ export const products: Product[] = [
     sku: "EXCHANGESTANDARD",
     shortDescription:
       "Business-class email with 50 GB mailbox and custom email domain.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -441,7 +461,7 @@ export const products: Product[] = [
     sku: "EXCHANGEENTERPRISE",
     shortDescription:
       "Advanced email with unlimited mailbox storage, DLP, and archiving.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -464,7 +484,7 @@ export const products: Product[] = [
     sku: "ATP_P1",
     shortDescription:
       "Safe Attachments, Safe Links, and real-time detections for Office 365.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -487,7 +507,7 @@ export const products: Product[] = [
     sku: "AAD_PREMIUM",
     shortDescription:
       "Cloud identity and access management with conditional access, MFA, and SSO.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -510,7 +530,7 @@ export const products: Product[] = [
     sku: "AVEPOINT_CLOUD_BACKUP_M365",
     shortDescription:
       "Comprehensive SaaS backup for Microsoft 365 including Exchange, SharePoint, OneDrive, and Teams.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -527,7 +547,7 @@ export const products: Product[] = [
     sku: "CS_MSSP_COMPLETE_DEFEND",
     shortDescription:
       "Complete managed detection and response (MDR) with endpoint, identity, and cloud protection.",
-    unitOfMeasure: "Seat",
+    unitOfMeasurement: "Seat",
     pricing: [
       {
         billingTerm: "Monthly",
@@ -1074,7 +1094,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 95, // active is 85 → overcharge of 10 * $22 = $220
     unitPrice: 22.0,
-    total: 2090.0,
+    subtotal: 2090.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1087,7 +1107,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 85,
     unitPrice: 3.0,
-    total: 255.0,
+    subtotal: 255.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1100,7 +1120,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 85,
     unitPrice: 6.0,
-    total: 510.0,
+    subtotal: 510.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1115,7 +1135,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 40,
     unitPrice: 36.0,
-    total: 1440.0,
+    subtotal: 1440.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1128,7 +1148,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Exchange Online (Plan 2) [New Commerce Experience]",
     quantity: 40,
     unitPrice: 8.0,
-    total: 320.0,
+    subtotal: 320.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1144,7 +1164,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 100,
     unitPrice: 36.0,
-    total: 3600.0,
+    subtotal: 3600.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1158,7 +1178,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Exchange Online (Plan 1) [New Commerce Experience]",
     quantity: 150,
     unitPrice: 4.0,
-    total: 600.0,
+    subtotal: 600.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1171,7 +1191,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 150,
     unitPrice: 3.0,
-    total: 450.0,
+    subtotal: 450.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1184,7 +1204,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 150,
     unitPrice: 6.0,
-    total: 900.0,
+    subtotal: 900.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1197,7 +1217,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 150,
     unitPrice: 6.0,
-    total: 900.0,
+    subtotal: 900.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1210,7 +1230,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "AvePoint Cloud Backup for Microsoft 365",
     quantity: 30,
     unitPrice: 8.5,
-    total: 255.0,
+    subtotal: 255.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1226,7 +1246,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft 365 Business Basic [New Commerce Experience]",
     quantity: 25,
     unitPrice: 6.0,
-    total: 150.0,
+    subtotal: 150.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1239,7 +1259,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 25, // No active Entra ID P1 subscription → unexpected charge
     unitPrice: 6.0,
-    total: 150.0,
+    subtotal: 150.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1255,7 +1275,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 15,
     unitPrice: 22.0,
-    total: 330.0,
+    subtotal: 330.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1268,7 +1288,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 20, // active is 15 → overcharge of 5 * $3 = $15
     unitPrice: 3.0,
-    total: 60.0,
+    subtotal: 60.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1281,7 +1301,7 @@ export const invoiceItems: InvoiceItem[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 15,
     unitPrice: 6.0,
-    total: 90.0,
+    subtotal: 90.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
