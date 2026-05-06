@@ -15,7 +15,7 @@ import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { markWriteInFlight } from "../../lib/signals.js";
-import { hashArgs, isValidKey, loadEntry, saveEntry } from "../../lib/idempotency.js";
+import { hashArgs, isValidKey, withIdempotency } from "../../lib/idempotency.js";
 
 /**
  * NOTE: The Pax8 v1 API does not expose a public dispute / write-off / credit
@@ -258,104 +258,44 @@ paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
 
     // ── Idempotency handling ────────────────────────────────────────────────
     const idempotencyKey: string | undefined = allOpts.idempotencyKey;
-    const commandName = "invoices.dispute";
-    let argsHash: string | null = null;
-    if (idempotencyKey !== undefined) {
-      if (!isValidKey(idempotencyKey)) {
-        await handleCommandError(
-          new CliError(
-            `Invalid idempotency key: "${idempotencyKey}"`,
-            [
-              "Idempotency keys must be 8–128 characters of letters, digits, '-', '_', or '.'",
-              "UUID v4 is recommended.",
-            ],
-            [
-              "Generate one with: uuidgen",
-              `Example: ${replCmd("pax8 invoices dispute")} ... --idempotency-key 9f3b2c1e-7d4f-4a8b-9c2d-1e2f3a4b5c6d`,
-            ],
-            undefined,
-            ERROR_INVALID_INPUT satisfies Pax8ErrorCode,
-          ),
-        );
-      }
-      argsHash = hashArgs({
-        discrepancy: allOpts.discrepancy,
-        company: allOpts.company,
-        product: allOpts.product,
-        month: allOpts.month,
-        reason: allOpts.reason,
-      });
-      try {
-        const cached = await loadEntry(commandName, idempotencyKey);
-        if (cached) {
-          if (cached.argsHash !== argsHash) {
-            await handleCommandError(
-              new CliError(
-                "Idempotency key reused with different arguments — refusing to retry.",
-                [
-                  `The key "${idempotencyKey}" was previously used for ${cached.command} with a different argument set.`,
-                  "Replaying with new arguments would risk a double-write or a misleading 'cached' response.",
-                ],
-                [
-                  "Generate a new idempotency key for the new request.",
-                  `Or wait 24h for the old entry to expire (cached at ${cached.createdAt}).`,
-                ],
-              ),
-            );
-          }
-          process.stderr.write(chalk.dim("  (idempotent replay)\n"));
-          if (cached.output) process.stdout.write(cached.output);
-          process.exit(cached.exitCode);
-          return;
-        }
-      } catch (err) {
-        if (err instanceof CliError) throw err;
-        if (process.env.PAX8_DEBUG) {
-          process.stderr.write(`[debug] idempotency cache read failed: ${err}\n`);
-        }
-      }
+    if (idempotencyKey !== undefined && !isValidKey(idempotencyKey)) {
+      await handleCommandError(
+        new CliError(
+          `Invalid idempotency key: "${idempotencyKey}"`,
+          [
+            "Idempotency keys must be 8–128 characters of letters, digits, '-', '_', or '.'",
+            "UUID v4 is recommended.",
+          ],
+          [
+            "Generate one with: uuidgen",
+            `Example: ${replCmd("pax8 invoices dispute")} ... --idempotency-key 9f3b2c1e-7d4f-4a8b-9c2d-1e2f3a4b5c6d`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT satisfies Pax8ErrorCode,
+        ),
+      );
     }
-
-    // Capture stdout for idempotent replay
-    let captured = "";
-    let succeeded = false;
-    const realStdoutWrite = process.stdout.write.bind(process.stdout);
-    if (idempotencyKey) {
-      (process.stdout.write as unknown as (chunk: string | Uint8Array) => boolean) = (
-        chunk: string | Uint8Array,
-      ): boolean => {
-        const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8");
-        captured += text;
-        return realStdoutWrite(chunk as string);
-      };
-    }
-    const restoreStdout = (): void => {
-      if (idempotencyKey) {
-        process.stdout.write = realStdoutWrite as typeof process.stdout.write;
-      }
-    };
-    const persistEntry = async (): Promise<void> => {
-      if (!idempotencyKey || !succeeded || argsHash === null) return;
-      try {
-        await saveEntry({
-          key: idempotencyKey,
-          command: commandName,
-          argsHash,
-          output: captured,
-          exitCode: 0,
-          createdAt: new Date().toISOString(),
-        });
-      } catch (err) {
-        if (process.env.PAX8_DEBUG) {
-          process.stderr.write(`[debug] idempotency cache write failed: ${err}\n`);
-        }
-      }
-    };
+    const argsHash = hashArgs({
+      discrepancy: allOpts.discrepancy,
+      company: allOpts.company,
+      product: allOpts.product,
+      month: allOpts.month,
+      reason: allOpts.reason,
+    });
 
     const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Locating discrepancy...");
 
     try {
+      await withIdempotency<boolean>(
+        {
+          commandName: "invoices.dispute",
+          idempotencyKey,
+          argsHash,
+          // Don't cache "user cancelled at confirm" as a successful run.
+          shouldPersist: (didWrite) => didWrite,
+        },
+        async (): Promise<boolean> => {
       // Validate that we have something to look up
       if (!allOpts.discrepancy && !allOpts.company) {
         throw new CliError(
@@ -425,8 +365,7 @@ paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
         if (ctx.outputFormat !== "json" && ctx.outputFormat !== "quiet") {
           process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
         }
-        restoreStdout();
-        return;
+        return false;
       }
 
       // ── Persist the draft (the "write" half of the closed loop) ─────────
@@ -466,17 +405,11 @@ paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
           ],
         };
         process.stdout.write(JSON.stringify(enriched, null, 2) + "\n");
-        succeeded = true;
-        await persistEntry();
-        restoreStdout();
-        return;
+        return true;
       }
 
       if (ctx.outputFormat === "quiet") {
-        succeeded = true;
-        await persistEntry();
-        restoreStdout();
-        return;
+        return true;
       }
 
       process.stdout.write("\n");
@@ -492,11 +425,11 @@ paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
       process.stderr.write(`    ${chalk.cyan(`Paste the template above into the Pax8 portal billing support form.`)}\n`);
       process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 invoices audit`))} ${chalk.dim("re-audit later to confirm resolution")}\n\n`);
 
-      succeeded = true;
-      await persistEntry();
-      restoreStdout();
+          return true;
+        },
+      );
     } catch (error) {
-      restoreStdout();
+      // withIdempotency restores stdout via try/finally before bubbling here.
       if (error instanceof CliError) {
         await handleCommandError(error, spinner);
       }
