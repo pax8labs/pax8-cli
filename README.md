@@ -231,7 +231,7 @@ git clone https://github.com/pax8labs/pax8-cli.git
 cd pax8-cli
 pnpm install
 pnpm build
-pnpm test              # 700+ tests (739 and counting)
+pnpm test              # full test suite (~840 tests)
 pnpm test:coverage
 ```
 
