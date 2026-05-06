@@ -26,15 +26,27 @@ function makeEvent(overrides: Partial<TelemetryEvent> = {}): TelemetryEvent {
 
 describe("Telemetry — extended coverage", () => {
   const originalEnv = { ...process.env };
+  let isolatedConfigDir: string;
 
   beforeEach(() => {
     resetTelemetry();
     delete process.env.PAX8_TELEMETRY_DISABLED;
     delete process.env.DO_NOT_TRACK;
+    // Each test gets its own config dir so enable/disable/loadEnabled don't
+    // race against telemetry.test.ts (or each other) on the shared real
+    // ~/.pax8/config.yaml. This was the source of the cold-cache flake: two
+    // test files concurrently mutating the same config file produced ENOENT
+    // and Zod parse errors inside Telemetry.disable / loadEnabled.
+    isolatedConfigDir = path.join(
+      os.tmpdir(),
+      `pax8-tel-ext-cfg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    process.env.PAX8_CONFIG_DIR = isolatedConfigDir;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.env = { ...originalEnv };
+    await fs.rm(isolatedConfigDir, { recursive: true, force: true }).catch(() => {});
   });
 
   it("TELEMETRY_NOTICE is a non-empty string", () => {
