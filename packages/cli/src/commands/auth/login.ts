@@ -3,8 +3,9 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import prompts from "prompts";
+import type { PromptObject } from "prompts";
 import { CredentialStore, ERROR_AUTH_MISSING, TokenManager } from "@pax8/core";
+import { ask } from "../../lib/prompts.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
@@ -57,7 +58,7 @@ Examples:
     // weren't supplied via flags or env vars. Non-TTY without credentials
     // errors cleanly instead of hanging on a prompt.
     if ((!clientId || !clientSecret) && process.stdin.isTTY) {
-      const questions: prompts.PromptObject[] = [];
+      const questions: PromptObject[] = [];
       if (!clientId) {
         questions.push({
           type: "text",
@@ -77,11 +78,7 @@ Examples:
         });
       }
 
-      const answers = await prompts(questions, {
-        onCancel: () => {
-          throw authMissingError();
-        },
-      });
+      const answers = await ask(questions);
 
       clientId = clientId ?? (answers.clientId as string | undefined);
       clientSecret = clientSecret ?? (answers.clientSecret as string | undefined);
