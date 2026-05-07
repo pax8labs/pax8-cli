@@ -33,12 +33,15 @@ export const BillingTermSchema = z.enum([
 ]);
 export type BillingTerm = z.infer<typeof BillingTermSchema>;
 
+// Values verified against the `invoices-paged` example in
+// `partner-endpoints.json` (devx.pax8.com). The spec's Invoice properties
+// block does not declare `status` — believed to be a docs gap on Pax8's
+// side; the field is on the wire.
 export const InvoiceStatusSchema = z.enum([
   "Unpaid",
   "Paid",
   "Void",
-  "Carry",
-  "Nothing",
+  "Carried",
 ]);
 export type InvoiceStatus = z.infer<typeof InvoiceStatusSchema>;
 
@@ -300,7 +303,11 @@ export const InvoiceSchema = z.object({
   companyId: z.string().uuid(),
   invoiceDate: z.string(),
   dueDate: z.string(),
-  status: InvoiceStatusSchema,
+  // Optional defensively: the public OpenAPI Invoice properties block does
+  // not declare `status`, even though the field appears in the spec's
+  // example response. Until the spec is fixed, partners reading the schema
+  // could legitimately produce payloads without this field.
+  status: InvoiceStatusSchema.optional(),
   total: z.number(),
   balance: z.number(),
   companyName: z.string().optional(),

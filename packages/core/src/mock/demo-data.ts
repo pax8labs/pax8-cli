@@ -98,7 +98,7 @@ export interface Invoice {
   invoiceDate: string;
   dueDate: string;
   /** Mirrors `InvoiceStatusSchema` from `@pax8/core`. */
-  status: "Unpaid" | "Paid" | "Void" | "Carry" | "Nothing";
+  status: "Unpaid" | "Paid" | "Void" | "Carried";
   total: number;
   balance: number;
   currency: string;

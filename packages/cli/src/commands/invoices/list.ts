@@ -14,7 +14,7 @@ export const invoicesListCommand = new Command("list")
   .description("List invoices")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
   .option("--company <id|name>", "Filter by company ID or name")
-  .option("--status <status>", "Filter by status (Unpaid, Paid, Void, Overdue)")
+  .option("--status <status>", "Filter by status (Unpaid, Paid, Void, Carried)")
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
@@ -96,8 +96,9 @@ Examples:
       if (ctx.outputFormat === "json" && options.withActions) {
         const nextActions: { command: string; description: string }[] = [];
         const invoices = result.content;
-        const unpaid = invoices.filter((inv) =>
-          ["unpaid", "overdue"].includes(String((inv as Record<string, unknown>).status ?? "").toLowerCase())
+        const unpaid = invoices.filter(
+          (inv) =>
+            String((inv as Record<string, unknown>).status ?? "").toLowerCase() === "unpaid"
         );
         if (unpaid.length > 0) {
           nextActions.push({
