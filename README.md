@@ -397,6 +397,27 @@ for (const r of report.items.slice(0, 5)) {
 
 The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface.
 
+## Known Limitations
+
+These are tracked, prioritized for v0.1.x, and not blockers for v0.1.0. Each links to a GitHub issue with repro and fix shape.
+
+**Real-API surfaces (depend on Pax8 backend):**
+- `pax8 orders list` against busy tenants can hit the 30s default timeout — workaround: `--size 25` or smaller. A `--timeout <ms>` flag and `PAX8_API_TIMEOUT` env override are planned ([#199](https://github.com/pax8labs/pax8-cli/issues/199)).
+- `pax8 usage list` returns 404 against the live Pax8 sandbox tenant — likely a path-version mismatch in the client; demo mode works ([#212](https://github.com/pax8labs/pax8-cli/issues/212)).
+- `pax8 doctor` marks the `~/.pax8/config` file as ✗ (and exits 1) when credentials are configured purely via env vars or `PAX8_DEMO=1` ([#220](https://github.com/pax8labs/pax8-cli/issues/220)).
+
+**Demo-mode UX:**
+- Some demo fixtures are thin (`usage`, `quotes`, `webhooks`) — README quick-start commands work but produce minimal output ([#196](https://github.com/pax8labs/pax8-cli/issues/196)).
+- List commands with 0 rows render an empty table rather than a helpful empty-state message ([#197](https://github.com/pax8labs/pax8-cli/issues/197)).
+
+**Human-render UX invariants (tooling gap):**
+- The per-command e2e matrix exercises every command in subprocess (non-TTY) mode, where the CLI's agent-first contract auto-routes to JSON. Some UX invariants (no UUIDs leaking into table cells, density bounds on tables, drill-in hint visibility) only apply in TTY-render mode and need a node-pty harness — tracked as a follow-up to broaden matrix coverage.
+
+**Polish:**
+- The bare `pax8` welcome screen is static (logo + 4 hardcoded suggested commands); a "what's interesting now" live-data first-load is planned for v0.1.x.
+- No update-notifier — the CLI doesn't tell you when a newer version exists ([#183](https://github.com/pax8labs/pax8-cli/issues/183)).
+- The scheduled API-drift watcher only filters `ERROR_API_VALIDATION` events; widening to `ERROR_API_TIMEOUT` / `ERROR_API_NOT_FOUND` / etc. is tracked separately ([#213](https://github.com/pax8labs/pax8-cli/issues/213)). Also note: the watcher is silent until `POSTHOG_PROJECT_API_KEY` is provisioned in repo secrets, and telemetry is opt-in by default.
+
 ## Documentation
 
 - [Credential Setup Guide](docs/credential-setup.md)

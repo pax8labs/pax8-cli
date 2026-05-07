@@ -4,10 +4,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+### Added
+
+- **Per-command e2e UX matrix** (`e2e/per-command.test.ts` + `e2e/command-inventory.ts`): every CLI command runs through a fixed set of layers under `PAX8_DEMO=1` — smoke (exits 0, no stack traces), cross-cutting invariants (no `undefined` / `[object Object]` / debug-token leaks), per-command semantic checks (expected/forbidden output fragments), JSON contract (`--json` parses, required fields per spec, minRows for list shapes), and `--help` (exits 0, mentions command name). The inventory is the single source of truth — adding a new command means adding one entry. Catalogued bugs are marked `knownBroken` with issue links rather than papering over with weakened assertions, so regressions stay visible in CI output (#193 / #207).
+
+### Changed
+
+- **Display labels** — `report-bug` no-prior-error now exits 0 with a manual-file-a-bug pointer instead of exiting 1 silently; the with-context flow (sanitize, prompt, submit) is unchanged (#209).
+- **`auth status --json`** now emits valid JSON (`{ authenticated, mode, clientIdMasked? }`) and respects the agent-first non-TTY contract; previously it printed human-formatted text regardless of `--json` (#210).
+
+### Fixed
+
+- **`orders show <id>`** — rendered "Company: undefined" and an empty Line Items section. Now joins `companyId` → company name (matching `subscriptions show`/`invoices show` pattern) and resolves `orderItems[].productId` → product name; adds per-line-item unit price column. Same enrichment in human and `--json` output (#194).
+- **`<group> show <id> --json`** — every show command (`subscriptions`, `invoices`, `quotes`, `usage`, `products`, `contacts`) wrapped the singular resource in a length-1 array (`[{...}]`) instead of emitting a single object — agent-contract violation that broke `--json | jq '.id'` style scripting (#208).
+- **`pax8 cost sim` README examples** used shorthand product names ("M365 Business Premium", "AvePoint Cloud Backup") that didn't prefix-match the demo catalog. First-run users walking the docs hit "Product not found" (#211).
+- **List-table rendering** (`pax8 companies list`, etc.) — dropped per-row inter-row dividers and the duplicated 50-line per-row drill-in footer; lists now render cleanly with one drill-in hint at the bottom of the table (#192).
+
 ### Internal
 
-- Scheduled API-drift watcher (`.github/workflows/api-watch.yml`) opens maintainer issues when `ERROR_API_VALIDATION` spikes are detected in telemetry. First layer of the api-resilience plan tracked at #176.
-- Added `windows-latest` to the CI matrix; the test suite now runs on Windows under PowerShell on every PR. Added `fail-fast: false` so a Windows-only regression doesn't mask Ubuntu signal. Coverage step gated to `ubuntu-latest` + Node 22 only (#186).
+- Scheduled API-drift watcher (`.github/workflows/api-watch.yml`) opens maintainer issues when `ERROR_API_VALIDATION` spikes are detected in telemetry. First layer of the api-resilience plan tracked at #176 (#178).
+- Added `windows-latest` to the CI matrix; the test suite now runs on Windows under PowerShell on every PR. Added `fail-fast: false` so a Windows-only regression doesn't mask Ubuntu signal. Coverage step gated to `ubuntu-latest` + Node 22 only (#186 / #188).
+- **`e2e/test-utils.ts`** — `runCli()` now uses an isolated `PAX8_CONFIG_DIR` (mkdtemp) per call so e2e tests don't inherit the developer's `~/.pax8/last-error.json` between cases (load-bearing for the new `report-bug` live-run; general hygiene).
 
 ## [0.1.0] — 2026-05-06
 
