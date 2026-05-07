@@ -26,12 +26,23 @@
 6. Recommendations
 7. Webhooks & Events
 8. Reporting & Analytics
-9. Cross-cutting Concerns
-10. Appendix — Methodology
+9. Workflows
+10. Cross-cutting Concerns
+11. Appendix — Methodology
 
 ## Summary of Concerns
 
-Five themes need domain-owner attention before this surface is treated as a public contract. **(1)** The CLI invents an `InvoiceStatus` enum (`Unpaid`, `Paid`, `Void`, `Carry`, `Nothing`, plus `Overdue` as a filter) — the public API's `Invoice` schema has no `status` field at all, only `balance`/`carriedBalance`/`dueDate`. Whatever the CLI is doing to derive status needs explicit blessing or it should stop pretending the API has one. **(2)** Five computed surfaces (`subscriptions renewals`, `invoices audit`, `recommendations list`/`act`, `report mrr`/`growth`, `cost sim`) implement domain logic that has no API equivalent and no documented spec; partners depending on these will be depending on logic that today only exists in this repo. **(3)** The CLI normalizes `subscription.commitmentTerm.endDate` into a top-level `commitmentTermEndDate` and renames it `renewalDate` in the renewals view — convenient but a vocabulary fork. **(4)** The CLI exposes Quotes as a flat resource that hides the v2 quote model entirely (sections, attachments, access list, take-ownership, line-item bulk ops, intent types, margin percentages); the current surface is a v1-shaped subset over a v2 endpoint. **(5)** The CLI flattens Webhook v1's fine-grained sub-routes (configuration, status, topics, topic-test, topic-configuration, log retry) into `create`/`delete`/`test`/`logs` only, dropping `update`, `enable`/`disable`, retry, and topic-definition discovery.
+Five themes were flagged for domain-owner attention. After the 2026-05-07 merges (#252–#267) the picture is materially better; the items below carry their post-merge status.
+
+**(1) Invented `InvoiceStatus` enum — RESOLVED in #260.** The CLI no longer invents `Carry` and `Nothing`. The enum is now `Unpaid`, `Paid`, `Void`, `Carried` and the schema field is optional, matching the OpenAPI spec example. `Overdue` was removed as a filter alias. Pending follow-up: a docs ticket against the Pax8 OpenAPI to formally add `status` to `Invoice.properties` (it's on the wire today, just absent from the `partner-endpoints` schema).
+
+**(2) Computed surfaces still need domain-owner blessing — UNCHANGED.** Five computed surfaces (`subscriptions renewals`, `invoices audit`, `recommendations list`/`act`, `report mrr`/`growth`, `cost sim`) implement domain logic that has no API equivalent and no documented spec. Partners depending on these depend on logic that lives only in this repo. See the new "Public-blessed tier list" in Cross-cutting Concerns for how this is now framed.
+
+**(3) `commitmentTermEndDate` and `renewalDate` renames — UNCHANGED.** The CLI still normalizes `subscription.commitmentTerm.endDate` into a top-level `commitmentTermEndDate` and renames it `renewalDate` in the renewals view. Still needs a domain-owner call on canonical vocabulary.
+
+**(4) Quotes v1-shaped over v2 endpoint — PARTIALLY ADDRESSED.** #261 surfaces accept/decline workflow fields (`acceptedBy`, `declinedBy`, `respondedOn`, `revokedOn`, `publishedOn`, `published`, `referenceCode`, `salesMarginPercentage`, `intentType`) and lowercases the status help text. #264 makes `quotes update --product` a loud, default-no `REPLACES` confirmation instead of silently swapping line items. #266 adds `quotes line-items list/add/remove` and `quotes send`, so partners no longer have to round-trip through `update` to manage line items. Still deferred: attachments, sections, access-list, take-ownership/claim, library-level `/v2/quote-attachments`, and `/v2/quote-preferences`.
+
+**(5) Webhook v1 fine-grained sub-routes — PARTIALLY ADDRESSED.** #265 adds `webhooks show/update/enable/disable`. #267 adds `webhooks logs retry`, `webhooks topics list`, and `webhooks test --topic <topic>` (with topic validation against `/webhooks/topic-definitions`). `webhooks logs` is now a subcommand group (`logs list` + `logs retry`) with the bare `logs [id]` form preserved as the default action for backward-compat. Still deferred: `topics add/remove/replace`, per-topic configuration (filter expressions on a single topic), and per-topic-config CRUD.
 
 ---
 
@@ -48,8 +59,8 @@ Five themes need domain-owner attention before this surface is treated as a publ
 | `pax8 companies more` | (interactive paging helper) | | CLI-only |
 | `pax8 contacts list` | `--company <id\|name>` (required), `--page`, `--size`, `--ids-only` | size=50 | |
 | `pax8 contacts show <id>` | | | |
-| `pax8 contacts create` | `--first-name`, `--last-name`, `--email`, `--phone`, `--type`, `-y` | type=Admin | Single type only — API accepts an array |
-| `pax8 contacts update <id>` | `--first-name`, `--last-name`, `--email`, `--phone`, `--type`, `-y` | | |
+| `pax8 contacts create` | `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | type=Admin | `--type` accepts a comma-separated list (`Admin,Billing`) post-#255 |
+| `pax8 contacts update <id>` | `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | | `--type` accepts a comma-separated list post-#255 |
 | `pax8 contacts delete <id>` | `-y` | | |
 
 CLI output schemas (Zod) — `Company`: `id, name, address{street,city,state,zip,country}, phone, website, status, billOnBehalfOfEnabled, selfServiceAllowed, orderApprovalRequired, created, modified`. `Contact`: `id, firstName, lastName, email, phone, companyId, types[]`.
@@ -70,7 +81,7 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 | `updatedDate` | `modified` | CLI rename |
 | `createdDate` (Contact) | (not exposed on Contact) | Only surfaced on Company-ish resources |
 | `contacts[]` (embedded on Company) | (separate `contacts list`) | CLI separates rather than embeds |
-| `types[]` (array of `Admin\|Billing\|Technical`) | `--type <single>` | CLI takes one type; API accepts many |
+| `types[]` (array of `Admin\|Billing\|Technical`) | `--type <comma-list>` | CLI accepts multiple types as a comma-separated string [Resolved in #255] |
 
 ### Coverage
 
@@ -79,15 +90,14 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 
 ### Naming Drift Flags
 
-- `--type` accepts one value; API accepts an array. Multi-type contacts (e.g. Admin + Billing) cannot be created in one call from the CLI.
+- `--type` accepts one value; API accepts an array. [Resolved in #255 — comma-separated list now accepted on both create and update.]
 - `companies update` cannot change address or the three boolean billing flags. Confirm whether this is an intentional safety choice or an oversight.
 - CLI `Company.modified` vs API `updatedDate` — pick one and align.
 
 ### Questions for Domain Owner
 
 1. Is the CLI right to hide `externalId` from list/show, or do partners need it?
-2. Should `pax8 contacts create --type` accept multiple values to match the API?
-3. Is `companies update` deliberately address-immutable?
+2. Is `companies update` deliberately address-immutable?
 
 ---
 
@@ -100,12 +110,12 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 | `pax8 subscriptions list` | `--company`, `--status`, `--page`, `--size`, `--ids-only`, `--with-actions` | size=25 | |
 | `pax8 subscriptions show <id>` | `--history` | | |
 | `pax8 subscriptions update <id>` | `--quantity`, `--billing-term`, `-y` | | |
-| `pax8 subscriptions cancel <id>` | `-y` | | No `--cancel-date` exposed (API supports it) |
+| `pax8 subscriptions cancel <id>` | `--cancel-date <YYYY-MM-DD>`, `-y` | | `--cancel-date` for scheduled cancellation [Added in #256] |
 | `pax8 subscriptions renewals` | `--within <period>`, `--company`, `--with-actions` | within=30d | **Computed — see below** |
 
 CLI `Subscription`: `id, companyId, productId, quantity, startDate, endDate, createdDate, billingStart, status, price, billingTerm, commitment{id,term,endDate}, commitmentTermEndDate, companyName, productName`.
 
-CLI `SubscriptionStatus` enum: `Active, Cancelled, PendingManual, PendingAutomated, PendingCancel, WaitingForDetails, Trial, Converted, Inactive, Deleted`.
+CLI `SubscriptionStatus` enum: `Active, Cancelled, PendingManual, PendingAutomated, PendingCancel, WaitingForDetails, Trial, Converted, PendingActivation, Activated` [Aligned with public API in #252 — `Inactive`/`Deleted` removed; `PendingActivation`/`Activated` added].
 
 ### Public API Surface
 
@@ -130,8 +140,7 @@ API `SubscriptionStatus` enum: `Active, Cancelled, PendingManual, PendingAutomat
 
 ### Coverage
 
-- **API-only:** `vendorSubscriptionId`, `partnerCost`, `parentSubscriptionId`, `currencyCode`, `updatedDate`, `cancelDate` parameter on cancel, the `PendingActivation` and `Activated` enum values, `--sort` query, usage-summaries sub-resource (exposed via `pax8 usage` instead).
-- **CLI-only enum values:** `Inactive`, `Deleted` (added to `SubscriptionStatus` for resource lifecycle parity with companies; not on the API enum).
+- **API-only:** `vendorSubscriptionId`, `partnerCost`, `parentSubscriptionId`, `currencyCode`, `updatedDate`, `--sort` query, usage-summaries sub-resource (exposed via `pax8 usage` instead).
 - **CLI-only:** `subscriptions renewals` (entire command — see below).
 
 ### Computed-Layer Surfaces
@@ -145,14 +154,12 @@ API `SubscriptionStatus` enum: `Active, Cancelled, PendingManual, PendingAutomat
 - `commitmentTermEndDate` (top-level) is invented by the CLI normalizer; the API only nests it inside `commitmentTerm`.
 - `renewals.renewalDate` is a rename of the same field — confirm whether "renewal date" is the term Pax8 uses internally for `commitmentTerm.endDate`.
 - `--within 30d` accepts a duration shorthand (`7d`, `14d`, `30d`, `90d`); not an API convention.
-- CLI omits `PendingActivation` and `Activated` from its enum. If a partner ever sees these values on a real subscription, the Zod parse will fail.
 
 ### Questions for Domain Owner
 
 1. Is "renewal date" the right name for `commitmentTerm.endDate`, or should the CLI just call it `commitmentTermEndDate` everywhere?
 2. The CLI's MRR-at-risk calculation is `price × quantity ÷ 12 (if annual)` — is that the formula your team uses, and is it OK to make this part of a public contract?
-3. `subscriptions cancel` does not pass `cancelDate` — is "effective immediately" the only mode partners should see?
-4. Should `--billing-term` on update accept the full enum (`Monthly, Annual, 2-Year, 3-Year, One-Time, Trial, Activation`) or only `Monthly`/`Annual` as today?
+3. Should `--billing-term` on update accept the full enum (`Monthly, Annual, 2-Year, 3-Year, One-Time, Trial, Activation`) or only `Monthly`/`Annual` as today?
 
 ---
 
@@ -168,15 +175,15 @@ API `SubscriptionStatus` enum: `Active, Cancelled, PendingManual, PendingAutomat
 | `pax8 invoices audit` | `--month`, `--company` | | **Computed — see below** |
 | `pax8 invoices dispute` | `--discrepancy <id>`, `--company`, `--product`, `--month`, `--reason`, `-y` | | **Computed — see below** |
 
-CLI `Invoice`: `id, companyId, invoiceDate, dueDate, status, total, balance, companyName`.
-CLI `InvoiceStatus` enum: `Unpaid, Paid, Void, Carry, Nothing` (plus `Overdue` accepted as a filter value).
+CLI `Invoice`: `id, companyId, invoiceDate, dueDate, status?, total, balance, companyName` [`status` is now optional, post-#260].
+CLI `InvoiceStatus` enum: `Unpaid, Paid, Void, Carried` [Aligned with the OpenAPI `Invoice.example` in #260 — `Carry` renamed to `Carried`; `Nothing` and the `Overdue` filter alias removed].
 CLI `InvoiceItem`: `id, invoiceId, productId, subscriptionId, quantity, unitPrice, subtotal, companyId, productName, companyName`.
 
 ### Public API Surface
 
 `GET /invoices` (filters: `page, size, sort, status, invoiceDate, invoiceDateRangeStart, invoiceDateRangeEnd, dueDate, total, balance, carriedBalance, companyId`); `GET /invoices/{invoiceId}`; `GET /invoices/{invoiceId}/items` (`page, size`); `GET /invoices/draftItems` (`page, size, monthOffset, companyId` — CLI does not surface this).
 
-API `Invoice` fields: `id, invoiceDate, dueDate, balance, carriedBalance, total, currencyCode, partnerName, companyId, externalId`. **No `status` field is documented on the response schema.** The query parameter `status` exists but the schema does not define the field on the body.
+API `Invoice` fields: `id, invoiceDate, dueDate, balance, carriedBalance, total, currencyCode, partnerName, companyId, externalId`. The query parameter `status` and the `Invoice.example` block both reference a status field (`Unpaid, Paid, Void, Carried`); however, `Invoice.properties` in the OpenAPI does not declare it. Believed to be a docs gap on Pax8's side. **Pending follow-up: a docs ticket against the public OpenAPI to add `status` formally.**
 
 API `InvoiceItem` fields (32 total — selected): `id, productId, productName, subscriptionId, quantity, price, subTotal, total, amountDue, cost, costTotal, billingFee, billingFeeRate, salesTax, currencyCode, chargeType, rateType, type, term, unitOfMeasure, sku, vendorName, offeredBy, billedByPax8, startPeriod, endPeriod, description, details, purchaseOrderNumber, externalId, companyId, companyName`.
 
@@ -184,7 +191,7 @@ API `InvoiceItem` fields (32 total — selected): `id, productId, productName, s
 
 | API Term | CLI Term | Notes |
 |---|---|---|
-| (no `status` field; query param only) | `status` (typed enum) | **CLI invents an Invoice status — needs domain blessing.** |
+| `status` (in query param + spec example, missing from properties) | `status?` (typed enum, optional) | CLI now mirrors the spec example; pending docs fix on Pax8 side [Resolved in #260] |
 | `subTotal` (capital T) | `subtotal` | Casing change |
 | `price` | `unitPrice` | Rename |
 | `monthOffset` (draft-items query) | `--month YYYY-MM` | CLI normalizes to a calendar month |
@@ -194,7 +201,7 @@ API `InvoiceItem` fields (32 total — selected): `id, productId, productName, s
 ### Coverage
 
 - **API-only:** `/invoices/draftItems` (not surfaced anywhere), all of `currencyCode`, `partnerName`, `carriedBalance`, the full InvoiceItem cost/tax/fee/period breakdown, `externalId`.
-- **CLI-only:** `Invoice.status` enum and the `Overdue` filter alias; `invoices audit`; `invoices dispute`.
+- **CLI-only:** `invoices audit`; `invoices dispute`. (`Invoice.status` is no longer CLI-only — see #260.)
 
 ### Computed-Layer Surfaces
 
@@ -205,18 +212,15 @@ API `InvoiceItem` fields (32 total — selected): `id, productId, productName, s
 
 ### Naming Drift Flags
 
-- **`Invoice.status` is not a documented response field.** Confirm whether the API actually returns one (and the CLI is just shadowing it) or whether the CLI is deriving it from `balance`/`carriedBalance`/`dueDate`. Either way, the enum values `Carry` and `Nothing` are not standard partner vocabulary.
-- `--status Overdue` is accepted as a filter but `Overdue` is not in the typed enum — it is computed from `dueDate < today && balance > 0`.
+- `Invoice.status` is now aligned with the spec example (`Unpaid`, `Paid`, `Void`, `Carried`) and optional [Resolved in #260]. A docs ticket against the public OpenAPI to add `status` to `Invoice.properties` is the remaining follow-up.
 - `subtotal` vs `subTotal`, `unitPrice` vs `price` — pick one casing/term per concept.
 - The CLI hides everything between gross subtotal and net amount due (fees, tax, cost). Partners doing margin analysis cannot get `cost`/`partnerCost` from the CLI.
 
 ### Questions for Domain Owner
 
-1. What is the source of truth for invoice status? If the API doesn't expose one, should the CLI compute it, drop it, or wait for the API to add it?
-2. Are `Carry` and `Nothing` the right user-facing labels?
-3. Is `invoices audit`'s reconciliation logic — match by `subscriptionId` first, then `(companyId, productId)` aggregating across active subs — what your billing team would do?
-4. Should `invoices dispute` block until a real dispute API exists, or is "draft a support-template message" the right product?
-5. Should the CLI surface `costTotal` / `partnerCost` for margin tracking?
+1. Is `invoices audit`'s reconciliation logic — match by `subscriptionId` first, then `(companyId, productId)` aggregating across active subs — what your billing team would do?
+2. Should `invoices dispute` block until a real dispute API exists, or is "draft a support-template message" the right product?
+3. Should the CLI surface `costTotal` / `partnerCost` for margin tracking?
 
 ---
 
@@ -228,7 +232,7 @@ API `InvoiceItem` fields (32 total — selected): `id, productId, productName, s
 |---|---|---|---|
 | `pax8 orders list` | `--company`, `--status`, `--page`, `--size`, `--ids-only` | size=25 | Status enum is CLI-defined |
 | `pax8 orders show <id>` | | | |
-| `pax8 orders create` | `--company`, `--product`, `--quantity`, `--billing-term`, `--commitment-term`, `--commitment-term-id`, `-y`, `--idempotency-key` | qty=1, billing=Monthly | Single-line orders only |
+| `pax8 orders create` | `--company`, `--product`, `--quantity`, `--billing-term`, `--commitment-term`, `--commitment-term-id`, `--line-item <spec>` (repeatable), `--dry-run`, `-y`, `--idempotency-key` | qty=1, billing=Monthly | Multi-line via repeated `--line-item product=…,quantity=…[,billing-term=…][,commitment-term=…][,commitment-term-id=…]`; `--dry-run` maps to API `isMock=true` [Added in #259] |
 
 CLI `Order`: `id, companyId, companyName, orderedBy, orderedByEmail, status, createdDate, lineItems[{id, offerId, productId, productName, billingTerm, lineItemNumber, quantity, provisioningDetails}]`.
 
@@ -240,13 +244,17 @@ CLI `Order`: `id, companyId, companyName, orderedBy, orderedByEmail, status, cre
 
 | Command | Args / Flags | Default | Notes |
 |---|---|---|---|
-| `pax8 quotes list` | `--company`, `--status`, `--page`, `--size`, `--ids-only` | size=50 | Status enum is CLI-defined |
-| `pax8 quotes show <id>` | | | |
-| `pax8 quotes create` | `--company`, `--product`, `--quantity`, `--billing-term`, `--expiration-date`, `-y` | qty=1, billing=Monthly | Single-line only |
-| `pax8 quotes update <id>` | `--product`, `--quantity`, `--billing-term`, `--expiration-date`, `-y` | | Replaces line items wholesale |
+| `pax8 quotes list` | `--company`, `--status`, `--page`, `--size`, `--ids-only` | size=50 | Status help text now lowercase to match API (`draft, sent, ...`) [#261] |
+| `pax8 quotes show <id>` | | | Now exposes accept/decline workflow fields when present [#261] |
+| `pax8 quotes create` | `--company`, `--product`, `--quantity`, `--billing-term`, `--expiration-date`, `-y` | qty=1, billing=Monthly | Single-line shorthand; use `quotes line-items add` to add more |
+| `pax8 quotes update <id>` | `--product`, `--quantity`, `--billing-term`, `--expiration-date`, `-y` | | Now displays a default-no `REPLACES` confirmation diff before clobbering line items [#264] |
 | `pax8 quotes delete <id>` | `-y` | | |
+| `pax8 quotes line-items list <quote-id>` | `--ids-only` | | Lists line items on a quote [Added in #266] |
+| `pax8 quotes line-items add <quote-id>` | `--product` (required), `--quantity`, `--billing-term`, `-y` | qty=1, billing=Monthly | Adds a single line item via `POST /v2/quotes/{id}/line-items` [Added in #266] |
+| `pax8 quotes line-items remove <quote-id> <line-item-id>` | `-y` | | Removes a single line item [Added in #266] |
+| `pax8 quotes send <quote-id>` | `-y` | | Sets quote status to `sent` (generates customer-facing link) via `PUT /v2/quotes/{id}` [Added in #266] |
 
-CLI `Quote`: `id, companyId, createdDate, expirationDate, status, lineItems[{productId, quantity, billingTerm, unitPrice, subtotal}]`.
+CLI `Quote`: `id, companyId, createdDate, expirationDate, status, lineItems[{id, productId, quantity, billingTerm, unitPrice, subtotal}], acceptedBy?, declinedBy?, respondedOn?, revokedOn?, publishedOn?, published?, referenceCode?, salesMarginPercentage?, intentType?` [accept/decline workflow fields added in #261; line-item `id` surfaced for use with `line-items remove`].
 
 ### Public API Surface — Quotes (v2)
 
@@ -263,33 +271,34 @@ API `Quote.status` enum: `draft, assigned, sent, closed, declined, accepted, cha
 | `orderedByUserEmail` | `orderedByEmail` | Rename |
 | `orderedByUserId` | (not exposed) | |
 | `isScheduled` | (not exposed) | |
-| `isMock` (POST query) | (not exposed) | CLI does not expose dry-run flag |
+| `isMock` (POST query) | `--dry-run` | [Resolved in #259] |
 | `expiresOn` | `expirationDate` | Rename |
 | `createdOn` | `createdDate` | Rename |
-| `intentType` | (not exposed) | CLI assumes one mode |
-| `salesMarginPercentage`, `referenceCode`, `published`, `partner`, `client`, `ownedBy`, `acceptedBy`, `declinedBy`, `respondedOn`, `revokedOn`, `publishedOn`, `introMessage`, `termsAndDisclaimers`, `totals`, `quoteRequestId`, `attachments` | (not exposed) | Entire quote workflow flattened away |
-| Quote status (lowercase: `draft, sent, accepted, ...`) | `Draft, Sent, Accepted, Declined` (filter help text) | Casing mismatch |
+| `intentType` | `intentType?` (read-only) | Surfaced in `Quote` schema [Added in #261]; not yet a `--intent-type` write flag |
+| `acceptedBy`, `declinedBy`, `respondedOn`, `revokedOn`, `publishedOn`, `published`, `referenceCode`, `salesMarginPercentage` | same names (read-only, optional) | [Resolved in #261] |
+| `partner`, `client`, `ownedBy`, `introMessage`, `termsAndDisclaimers`, `totals`, `quoteRequestId`, `attachments` | (not exposed) | Still flattened away |
+| Quote status (lowercase: `draft, sent, accepted, ...`) | lowercase in `--status` filter help [#261] | [Resolved in #261] |
 
 ### Coverage
 
-- **API-only (Orders):** `--sort`, `isMock` (dry-run), `isScheduled`, `parentSubscriptionId` linkage, multi-line order creation flag exposure.
-- **API-only (Quotes):** v2 sections, attachments (library + per-quote + preferences), access-list / sharing, take-ownership, line-item bulk-delete, intent type, margin %, accept/decline workflow, totals, attached files, terms/disclaimers, intro messages, the `/v2/quote-preferences` resource entirely.
-- **CLI-only:** `idempotency-key` on `orders create`; status filter values on orders (`Completed, Processing, Failed, PendingManual` — none documented); single-line shorthand on quotes; `quotes update` as "replace all line items."
+- **API-only (Orders):** `--sort`, `isScheduled`, `parentSubscriptionId` linkage. (`isMock` and multi-line creation are now exposed — see #259.)
+- **API-only (Quotes):** v2 sections, attachments (library `/v2/quote-attachments` + per-quote `/v2/quotes/{id}/attachments` + `/v2/quote-preferences`), access-list / sharing, take-ownership / claim, line-item `bulk-delete`, totals, terms/disclaimers, intro messages, intent-type as a writable input. (Accept/decline visibility, line-item add/remove/list, send, and a destructive-update warning are now in.)
+- **CLI-only:** `idempotency-key` on `orders create`; status filter values on orders (`Completed, Processing, Failed, PendingManual` — none documented); single-line shorthand on quotes (`quotes create --product ...` is sugar for `create` then `line-items add`).
 
 ### Naming Drift Flags
 
-- The CLI's `Order.status` and `Quote.status` filter-help vocabularies do not match the API. Confirm what statuses partners actually see.
+- `Order.status` filter-help vocabulary still does not match any documented enum. Confirm what statuses partners actually see.
+- `Quote.status` filter help is now lowercase to match the API [Resolved in #261].
 - `expirationDate` (CLI) vs `expiresOn` (API): keep one.
-- The CLI quotes surface looks like a v1 quote model (one company, one expiration, line items), but it talks to `/v2/quotes`. If the v2 model is the real one, the CLI is hiding ~80% of it.
-- `quotes update` replaces all line items rather than calling the v2 line-item endpoints (`/line-items`, `/line-items/bulk-delete`). Partners may not realize this is destructive.
+- The CLI quotes surface still hides about half of the v2 model (sections, attachments, access-list, take-ownership). The newly added line-items subcommands and `send` cover the most-requested workflow gaps.
+- `quotes update --product` is no longer silently destructive — it shows a default-no `REPLACES` confirmation [Resolved in #264]. The non-destructive path is `quotes line-items add/remove` [#266].
 
 ### Questions for Domain Owner
 
-1. Is the v1-shaped quote surface deliberate, or should the CLI expose v2 concepts (sections, attachments, access list, take-ownership)?
+1. Should the CLI expose the remaining v2 quote concepts (sections, attachments, access list, take-ownership/claim) or stop at the line-item-and-send surface as today?
 2. What is the canonical Order status enum partners should see? The CLI invents `Completed, Processing, Failed, PendingManual`.
-3. Should `orders create` expose `--is-scheduled` and `--is-mock`?
-4. Should `quotes update` be additive (line-item add/remove) instead of replace-all?
-5. Multi-line orders: should the CLI accept `--line-item product=x,qty=y` repeated, or is one-line-at-a-time the right shape?
+3. Should `orders create` also expose `--is-scheduled`?
+4. Should `intentType` become a writable `--intent-type` flag on `quotes create`, or remain a read-only field?
 
 ---
 
@@ -303,7 +312,7 @@ API `Quote.status` enum: `draft, assigned, sent, closed, declined, accepted, cha
 | `pax8 products search <query>` | `--vendor` | | |
 | `pax8 products show <id\|name>` | `--pricing`, `--provisioning`, `--dependencies` | | |
 
-CLI `Product`: `id, name, vendorName, vendor, sku, shortDescription, description, unitOfMeasurement, categoryName`.
+CLI `Product`: `id, name, vendorName, vendor, sku, shortDescription, description, unitOfMeasurement` [`categoryName` removed in #254 — it was not in the API spec].
 CLI `ProductPricingPlan`: `productId, productName, billingTerm, commitmentTerm, commitmentTermInMonths, type, unitOfMeasurement, rates[{partnerBuyRate, suggestedRetailPrice, startQuantityRange, chargeType}]`.
 
 ### Public API Surface
@@ -322,25 +331,24 @@ API `Product`: `id, name, vendorName, vendorSku, altVendorSku, sku, shortDescrip
 | `unitOfMeasurement` | `unitOfMeasurement` | Matches API |
 | `unitOfMeasure` (on InvoiceItem only — see Invoices) | `unitOfMeasurement` | Inconsistent in API; CLI normalizes to long form |
 | `companyId` (pricing query) | (not exposed) | Pricing is fetched without a company filter |
-| `categoryName` | (not in API schema) | **CLI-only field — origin unclear** |
+| `categoryName` | (removed) | [Resolved in #254 — dropped from `ProductSchema`] |
 
 ### Coverage
 
 - **API-only:** `--sort` query, `vendorSku` / `altVendorSku` lookup, `requiresCommitment` flag on Product, company-scoped pricing lookup (`/products/{id}/pricing?companyId=X`).
-- **CLI-only:** `categoryName` on Product (not in `partner-endpoints.json` schema — confirm provenance), `--pricing`/`--provisioning`/`--dependencies` collapsed into one show command instead of three resources.
+- **CLI-only:** `--pricing`/`--provisioning`/`--dependencies` collapsed into one show command instead of three resources. (`categoryName` removed in #254.)
 
 ### Naming Drift Flags
 
 - `vendor` vs `vendorName` on the CLI Product schema — duplicate fields with no clear winner.
 - `unitOfMeasurement` (Product, Pricing) vs `unitOfMeasure` (InvoiceItem) — the API ships both spellings; the CLI silently normalizes to `unitOfMeasurement` everywhere. **Intentional deviation, worth confirming.**
-- `categoryName` is on the CLI Product schema but not in the public API spec. Either it comes from an undocumented field or the CLI is computing it.
+- `categoryName` removed [Resolved in #254].
 
 ### Questions for Domain Owner
 
-1. Is `categoryName` a real product attribute or is it the CLI's `categorizeProduct` output leaking through?
-2. Should `products show` accept `--company` so partners get company-scoped pricing (the API supports this)?
-3. Should `requiresCommitment` be surfaced — it changes the order flow (commitment-term required vs not).
-4. `vendorSku` and `altVendorSku` are how vendors identify their own SKU; should partners be able to look products up by them?
+1. Should `products show` accept `--company` so partners get company-scoped pricing (the API supports this)?
+2. Should `requiresCommitment` be surfaced — it changes the order flow (commitment-term required vs not).
+3. `vendorSku` and `altVendorSku` are how vendors identify their own SKU; should partners be able to look products up by them?
 
 ---
 
@@ -392,12 +400,19 @@ The seven categories, the seven cross-sell rules, the seat-gap thresholds (10 se
 | Command | Args / Flags | Default | Notes |
 |---|---|---|---|
 | `pax8 webhooks list` | `--ids-only`, `--with-actions` | | |
+| `pax8 webhooks show <id>` | | | View a single webhook subscription [Added in #265] |
 | `pax8 webhooks create` | `--url`, `--events <comma-list>`, `-y` | | |
+| `pax8 webhooks update <id>` | `--display-name`, `--authorization`, `--contact-email`, `--error-threshold`, `-y` | | Configures the four mutable fields via `PUT /webhooks/{id}/configuration` [Added in #265]; redacts `--authorization` in echo |
+| `pax8 webhooks enable <id>` | `-y` | | Sets `active=true` via `PUT /webhooks/{id}/status` [Added in #265] |
+| `pax8 webhooks disable <id>` | `-y` | | Sets `active=false` via `PUT /webhooks/{id}/status` [Added in #265] |
 | `pax8 webhooks delete <id>` | `-y` | | |
-| `pax8 webhooks test <id>` | | | Triggers a test delivery |
-| `pax8 webhooks logs [id]` | `--since`, `--ids-only`, `--with-actions` | | `[id]` optional — without it, shows logs across all webhooks |
+| `pax8 webhooks test <id>` | `--topic <topic>` | | `--topic` validates against `/webhooks/topic-definitions` then calls topic-specific test [Added in #267] |
+| `pax8 webhooks logs [id]` | `--since`, `--ids-only`, `--with-actions` | | `[id]` optional — without it, shows logs across all webhooks. Now a subcommand group; bare form preserved for backward-compat. |
+| `pax8 webhooks logs list [id]` | `--since`, `--ids-only`, `--with-actions` | | Explicit list form (same as bare `logs`) [#267] |
+| `pax8 webhooks logs retry <log-id>` | `--webhook <id>`, `-y` | | Re-delivers a failed event via `POST /webhooks/{webhookId}/logs/{logId}/retry`; resolves `--webhook` automatically by walking subscriptions if omitted [Added in #267] |
+| `pax8 webhooks topics list` | `--ids-only`, `--with-actions` | | Lists topic definitions from `GET /webhooks/topic-definitions` [Added in #267] |
 
-CLI `Webhook`: `id, url, topics[], status ('Active' \| 'Disabled'), createdDate, secret`.
+CLI `Webhook`: `id, url, topics[], status ('Active' \| 'Disabled'), createdDate, secret` [`secret` is the real HMAC-signing secret returned on `POST /webhooks` (visible only on create-response, per JSDoc clarified in #254)].
 CLI `WebhookLog`: `id, webhookId, topic, responseCode, responseBody, sentAt`.
 
 ### Public API Surface (Webhooks v1)
@@ -418,23 +433,22 @@ API `Webhook` fields: `id, accountId, displayName, url, authorization, active, c
 
 ### Coverage
 
-- **API-only:** `webhooks update` (none in CLI; API exposes config/status/topics endpoints), enable/disable (`/status`), retry log delivery (`/logs/{id}/retry`), per-topic filter configuration, topic-definitions discovery, all metadata fields (displayName, authorization, contactEmail, errorThreshold, integrationId), per-topic test (CLI uses webhook-level test).
-- **CLI-only:** Webhook `secret` field (not in API schema — confirm whether it's returned on create), cross-webhook log view (`logs` with no ID), `--since` duration filter on logs.
+- **API-only:** per-topic filter configuration / topic CRUD (`/webhooks/{id}/topics` add/replace/remove plus per-topic config), `integrationId`, `lastDeliveryStatus`. (`update`, `enable`, `disable`, `logs retry`, topic-definitions discovery, per-topic test, and the `displayName/authorization/contactEmail/errorThreshold` config fields are now exposed — see #265 and #267.)
+- **CLI-only:** cross-webhook log view (`logs` with no ID), `--since` duration filter on logs, automatic `--webhook` resolution on `logs retry`. Webhook `secret` is documented (HMAC-signing secret, visible only on create response) and is the real value from `POST /webhooks` [Documented in #254].
 
 ### Naming Drift Flags
 
 - `--events` flag vs `topics` in the API and in the CLI's own output schema. Pick one term.
 - The CLI calls webhooks "subscriptions" in help text ("Create a webhook subscription") — collides with the Subscriptions domain.
-- API `active: true/false` vs CLI `status: 'Active'/'Disabled'` — same bit, different shape.
-- CLI `secret` field is not in the API spec; if it's only shown on the create response, document that explicitly.
+- API `active: true/false` vs CLI `status: 'Active'/'Disabled'` — same bit, different shape; the new `webhooks enable`/`disable` commands abstract the boolean away.
+- `secret` provenance is now documented in the schema's JSDoc (HMAC-signing secret, returned on POST response only) [Resolved in #254].
 
 ### Questions for Domain Owner
 
-1. Is the absence of `webhooks update`, `webhooks enable`, `webhooks disable`, and `webhooks logs retry` deliberate?
-2. Should `--events` be renamed `--topics`?
-3. Should the CLI expose `displayName`, `authorization` (header), `contactEmail`, and `errorThreshold` — without these, partners can't recreate the webhook configurations a real integration uses.
-4. Where does `secret` come from? (API does not document it.)
-5. Should `webhooks` be called something else to avoid clashing with the Subscriptions domain?
+1. Should `--events` be renamed `--topics` for consistency with the API and the CLI's own `Webhook.topics[]` field?
+2. Should `webhooks` be called something else to avoid clashing with the Subscriptions domain?
+3. Should the CLI add `webhooks topics add/remove/replace` for fine-grained per-topic config, or is the current "set whole list at create time" enough?
+4. Should `webhooks update` also expose `--integration-id`?
 
 ---
 
@@ -478,7 +492,44 @@ There are no `/report`, `/mrr`, `/growth`, or `/cost` endpoints in the public AP
 
 ---
 
+## Workflows
+
+The Pax8 internal **Preliminary Workflows** doc enumerates canonical end-to-end partner flows that span multiple domains. The post-merge CLI now covers the *Automated Quoting and Sales Cycle* flow start-to-finish; each step below maps to one CLI command.
+
+### Automated Quoting and Sales Cycle
+
+| Step | API call | CLI command (post-merge) |
+|---|---|---|
+| 1. CRM trigger creates a quote draft | `POST /v2/quotes` | `pax8 quotes create --company X --product Y --quantity N` |
+| 2. Add additional line items to the draft | `POST /v2/quotes/{id}/line-items` | `pax8 quotes line-items add <quote-id> --product Y --quantity N` (#266) |
+| 3. Set status to sent (generates customer-facing link) | `PUT /v2/quotes/{id}` with `status: "sent"` | `pax8 quotes send <quote-id>` (#266) |
+| 4. Subscribe to QUOTE.Accepted webhook events | `POST /webhooks` with `topics: ["QUOTE.Accepted"]` | `pax8 webhooks create --url X --events QUOTE.Accepted`; discover topics via `pax8 webhooks topics list` (#267) |
+| 5. On QUOTE.Accepted, trigger order placement | `POST /orders` | `pax8 orders create --company X --product Y --quantity N` |
+
+**Naming-coordination note:** the workflow assumes the `pax8-submit-order` MCP tool (Linear AI-865) and the CLI's `orders create` will eventually converge on the same vocabulary. Flag-naming coordination between the CLI team and the MCP team is worth doing once, before partners start building automations against both.
+
+---
+
 ## Cross-cutting Concerns
+
+### Public-blessed tier list
+
+Independent of this CLI, the following endpoints are confirmed as public-API contract per Pax8 internal evidence. The four evidence points are:
+
+- TypeSpec contracts in `pax8-api-specs` (especially `specs/integrations/webhooks/`).
+- ADR-0078 (multi-version API with `X-API-Version` routing — v2 and v2.1 served simultaneously).
+- Partner-facing documentation that treats webhook configuration as a core surface.
+- PAE-1898 (idempotency for `POST /webhooks` per ADR-0080) and PAE-1909 (OpenAPI codegen migration).
+
+Note: "the CLI consumes endpoint X" is **not** evidence here — this doc reviews the CLI, so that would be circular.
+
+| Tier | Endpoints | Status |
+|---|---|---|
+| **Public-blessed (contract)** | `/orders`, `/subscriptions`, `/companies`, `/contacts`, `/products`, `/invoices`, `/usage-summaries`, `/webhooks` (config/topics/logs/retry), `/v2/quotes` (+ `/line-items`, `/take-ownership`) | On `api.pax8.com`; TypeSpec contracts exist; partner docs treat as core; ADRs cover versioning and idempotency. |
+| **Portal-only (not in public API)** | Storefront publishing, notification template sends, vendor resource-group mapping | Explicitly flagged as gaps in the internal API-vs-portal review; the CLI does not and should not expose these. |
+| **Computed (CLI invents)** | `subscriptions renewals`, `invoices audit`, `invoices dispute`, `recommendations list`/`act`, `report mrr`/`growth`, `cost sim`, `companies list --coverage`, `status` | No API equivalent; needs domain-owner blessing before partners depend on these as a public contract. |
+
+### Conventions
 
 **Pagination.** API returns `{ page: {size, totalElements, totalPages, number}, content: [] }` with size default 10, max 200. CLI mirrors the shape but defaults `--size` to 25 (50 on contacts/quotes/usage). API `--sort` is not surfaced anywhere in the CLI.
 
@@ -496,8 +547,13 @@ There are no `/report`, `/mrr`, `/growth`, or `/cost` endpoints in the public AP
 
 ## Appendix — Methodology
 
-- **CLI source of truth:** `packages/cli/src/commands/` and Zod schemas in `packages/core/src/api/types.ts` at commit `0d16ebf` on `main`.
+- **CLI source of truth:** `packages/cli/src/commands/` and Zod schemas in `packages/core/src/api/types.ts` at commit `61e7c35` on `main`.
 - **API source of truth:** the OpenAPI specs at devx.pax8.com, fetched 2026-05-07 from `/openapi/{authentication,partner-endpoints,quoting-endpoints,vendor-provisioning-endpoints,vendor-usage-endpoints,webhooks-api}.json`.
+- **Workflows source:** the internal Pax8 "Preliminary Workflows" doc (used as the source for the Workflows section's canonical end-to-end partner flows; the example documented here is the Automated Quoting and Sales Cycle).
 - **Hidden / non-domain CLI commands omitted from the domain sections:** `auth`, `config`, `init`, `version`, `completions`, `telemetry`, `report-bug`, `doctor` (touched under Reporting), and the hidden easter eggs `coffee` and `moo`.
 - **Out of scope:** `vendor-provisioning-endpoints.json` (provisioner-facing) and `vendor-usage-endpoints.json` (`/lines`, `/aggregate-lines` — vendor-side usage submission). The CLI consumes partner-side usage via `pax8 usage list`/`show` against `/subscriptions/{id}/usage-summaries` and `/usage-summaries/{id}/usage-lines`.
 - **Limitations:** This review reflects only public docs at devx.pax8.com. Internal Pax8 conventions not in public docs are the human-judgment work each domain owner contributes. The six OpenAPI files do not share component schemas, so cross-domain consistency (e.g. Webhook schemas in `partner-endpoints` vs `webhooks-api`) was not exhaustively reconciled.
+
+### Recent changes (since the prior baseline)
+
+11 PRs landed on 2026-05-07 closing or partially-closing issues #239–#246. The squash commits are #252–#269. This refresh re-states resolved concerns as `[Resolved in #NUM]` annotations rather than deleting them — so reviewers can still trace the history of each drift item. PR set, in merge order: #252, #254, #255, #256, #259, #260, #261, #264, #265, #266, #267.
