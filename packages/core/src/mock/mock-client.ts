@@ -20,6 +20,7 @@ import {
   quotes,
   webhooks,
   webhookLogs,
+  webhookTopicDefinitions,
   type Company,
   type Subscription,
   type Product,
@@ -32,6 +33,7 @@ import {
   type Quote,
   type Webhook,
   type WebhookLog,
+  type WebhookTopicDefinition,
 } from "./demo-data.js";
 import { NotFoundError } from "../api/errors.js";
 import type {
@@ -603,8 +605,10 @@ class QuotesResource {
 //   setStatus(id, active)       → Webhook (POST /webhooks/{id}/status)
 //   delete(id)   → void
 //   test(id)     → unknown (returns a small structured payload here)
+//   testTopic(id, topic)    → unknown
 //   getLogs(id)  → WebhookLog[]
 //   retryLog(id, logId) → unknown
+//   getTopicDefinitions()   → WebhookTopicDefinition[]
 class WebhooksResource {
   async list(): Promise<Webhook[]> {
     await randomDelay();
@@ -707,6 +711,20 @@ class WebhooksResource {
     };
   }
 
+  async testTopic(id: string, topic: string): Promise<unknown> {
+    await randomDelay();
+    const wh = webhooks.find((w) => w.id === id);
+    if (!wh) throw notFound("Webhook", id);
+    const known = webhookTopicDefinitions.some((t) => t.topic === topic);
+    if (!known) throw notFound("WebhookTopic", topic);
+    return {
+      success: wh.status === "Active",
+      responseCode: wh.status === "Active" ? 200 : 502,
+      topic,
+      sentAt: new Date().toISOString(),
+    };
+  }
+
   async getLogs(id: string): Promise<WebhookLog[]> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
@@ -721,6 +739,11 @@ class WebhooksResource {
     const log = webhookLogs.find((l) => l.id === logId && l.webhookId === id);
     if (!log) throw notFound("WebhookLog", logId);
     return { ...log, responseCode: 200, responseBody: "OK" };
+  }
+
+  async getTopicDefinitions(): Promise<WebhookTopicDefinition[]> {
+    await randomDelay();
+    return [...webhookTopicDefinitions];
   }
 }
 

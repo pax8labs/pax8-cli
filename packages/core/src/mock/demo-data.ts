@@ -240,6 +240,12 @@ export interface WebhookLog {
   sentAt: string;
 }
 
+export interface WebhookTopicDefinition {
+  topic: string;
+  name: string;
+  description: string;
+}
+
 // ─── Company IDs ─────────────────────────────────────────────────────────────
 
 const SUMMIT_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
@@ -1856,18 +1862,87 @@ export const webhookLogs: WebhookLog[] = [
 
 // ─── Available webhook topics ────────────────────────────────────────────────
 
-export const webhookTopics: string[] = [
-  "subscription.created",
-  "subscription.updated",
-  "subscription.cancelled",
-  "subscription.statusChanged",
-  "order.created",
-  "order.completed",
-  "order.failed",
-  "invoice.created",
-  "invoice.paid",
-  "invoice.overdue",
-  "company.created",
-  "company.updated",
-  "usage.reported",
+/**
+ * Topic definitions surfaced by `GET /webhooks/topic-definitions`. Mirrors
+ * the public `TopicDefinition` schema (slug + display name + description).
+ * Used by `pax8 webhooks topics list` and to validate `--topic` values
+ * passed to `pax8 webhooks test`.
+ */
+export const webhookTopicDefinitions: WebhookTopicDefinition[] = [
+  {
+    topic: "subscription.created",
+    name: "Subscription created",
+    description: "Fires when a new subscription is provisioned for a company.",
+  },
+  {
+    topic: "subscription.updated",
+    name: "Subscription updated",
+    description:
+      "Fires when seat count, billing term, or commitment changes on a subscription.",
+  },
+  {
+    topic: "subscription.cancelled",
+    name: "Subscription cancelled",
+    description: "Fires when a subscription is cancelled.",
+  },
+  {
+    topic: "subscription.statusChanged",
+    name: "Subscription status changed",
+    description:
+      "Fires when a subscription transitions between Active, Trial, Suspended, or Cancelled.",
+  },
+  {
+    topic: "order.created",
+    name: "Order created",
+    description: "Fires when a new order is submitted to the marketplace.",
+  },
+  {
+    topic: "order.completed",
+    name: "Order completed",
+    description: "Fires when an order finishes provisioning successfully.",
+  },
+  {
+    topic: "order.failed",
+    name: "Order failed",
+    description: "Fires when an order errors during provisioning.",
+  },
+  {
+    topic: "invoice.created",
+    name: "Invoice created",
+    description: "Fires when a new invoice is generated for a billing period.",
+  },
+  {
+    topic: "invoice.paid",
+    name: "Invoice paid",
+    description: "Fires when an invoice is marked paid.",
+  },
+  {
+    topic: "invoice.overdue",
+    name: "Invoice overdue",
+    description: "Fires when an invoice passes its due date without payment.",
+  },
+  {
+    topic: "company.created",
+    name: "Company created",
+    description: "Fires when a new company is created in the marketplace.",
+  },
+  {
+    topic: "company.updated",
+    name: "Company updated",
+    description: "Fires when a company profile or settings are updated.",
+  },
+  {
+    topic: "usage.reported",
+    name: "Usage reported",
+    description: "Fires when metered usage is reported for a subscription.",
+  },
 ];
+
+/**
+ * Legacy flat list of topic slugs. Retained so the existing
+ * `demoWebhookTopics` re-export keeps working; new code should prefer
+ * `webhookTopicDefinitions`.
+ */
+export const webhookTopics: string[] = webhookTopicDefinitions.map(
+  (t) => t.topic,
+);

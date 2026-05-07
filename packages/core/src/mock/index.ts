@@ -15,6 +15,7 @@ export {
   webhooks,
   webhookLogs,
   webhookTopics,
+  webhookTopicDefinitions,
 } from "./demo-data.js";
 
 export { MockPax8Client } from "./mock-client.js";

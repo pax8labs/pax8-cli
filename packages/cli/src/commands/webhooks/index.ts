@@ -11,6 +11,7 @@ import { webhooksDisableCommand } from "./disable.js";
 import { webhooksDeleteCommand } from "./delete.js";
 import { webhooksTestCommand } from "./test.js";
 import { webhooksLogsCommand } from "./logs.js";
+import { webhooksTopicsCommand } from "./topics/index.js";
 
 export function registerWebhooksCommands(program: Command): void {
   const webhooks = new Command("webhooks").description(
@@ -26,6 +27,7 @@ export function registerWebhooksCommands(program: Command): void {
   webhooks.addCommand(webhooksDeleteCommand);
   webhooks.addCommand(webhooksTestCommand);
   webhooks.addCommand(webhooksLogsCommand);
+  webhooks.addCommand(webhooksTopicsCommand);
 
   program.addCommand(webhooks);
 }
