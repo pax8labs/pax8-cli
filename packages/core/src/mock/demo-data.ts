@@ -182,6 +182,25 @@ export interface Quote {
   expirationDate?: string;
   status: "Draft" | "Sent" | "Accepted" | "Declined";
   lineItems?: QuoteLineItem[];
+
+  // Workflow fields surfaced by the public quoting v2 API. All optional —
+  // they're populated only after the relevant transition has occurred.
+  acceptedBy?: QuoteRespondedBy;
+  declinedBy?: QuoteRespondedBy;
+  respondedOn?: string;
+  revokedOn?: string;
+  publishedOn?: string;
+  published?: boolean;
+  referenceCode?: string;
+  salesMarginPercentage?: number;
+  /** API: `PARTNER_TO_CLIENT` | `PAX8_TO_PARTNER` | `PAX8_TO_PARTNER_CLIENT`. */
+  intentType?: string;
+}
+
+export interface QuoteRespondedBy {
+  name?: string;
+  email?: string;
+  respondedOn?: string;
 }
 
 export interface QuoteLineItem {
@@ -1633,6 +1652,11 @@ export const quotes: Quote[] = [
     createdDate: "2026-03-10",
     expirationDate: "2026-04-10",
     status: "Sent",
+    referenceCode: "Q-2026-001",
+    intentType: "PARTNER_TO_CLIENT",
+    published: true,
+    publishedOn: "2026-03-10T14:22:00Z",
+    salesMarginPercentage: 18.5,
     lineItems: [
       {
         productId: "prod-m365-e3-0003",
@@ -1656,6 +1680,8 @@ export const quotes: Quote[] = [
     createdDate: "2026-03-05",
     expirationDate: "2026-04-05",
     status: "Draft",
+    intentType: "PARTNER_TO_CLIENT",
+    published: false,
     lineItems: [
       {
         productId: "prod-defender-biz-0007",
@@ -1672,6 +1698,17 @@ export const quotes: Quote[] = [
     createdDate: "2026-02-20",
     expirationDate: "2026-03-20",
     status: "Accepted",
+    referenceCode: "Q-2026-002",
+    intentType: "PARTNER_TO_CLIENT",
+    published: true,
+    publishedOn: "2026-02-20T16:05:00Z",
+    salesMarginPercentage: 21.0,
+    respondedOn: "2026-02-28T11:42:00Z",
+    acceptedBy: {
+      name: "Karen Olsen",
+      email: "karen.olsen@redwoodmfg.example.com",
+      respondedOn: "2026-02-28T11:42:00Z",
+    },
     lineItems: [
       {
         productId: "prod-m365-e5-0004",
@@ -1679,6 +1716,33 @@ export const quotes: Quote[] = [
         unitPrice: 57.0,
         billingTerm: "Annual",
         subtotal: 456.0,
+      },
+    ],
+  },
+  {
+    id: "quote-coastline-001",
+    companyId: COASTLINE_ID,
+    createdDate: "2026-02-12",
+    expirationDate: "2026-03-12",
+    status: "Declined",
+    referenceCode: "Q-2026-003",
+    intentType: "PARTNER_TO_CLIENT",
+    published: true,
+    publishedOn: "2026-02-12T10:00:00Z",
+    salesMarginPercentage: 15.0,
+    respondedOn: "2026-02-19T09:18:00Z",
+    declinedBy: {
+      name: "Marco Reyes",
+      email: "marco.reyes@coastlinelegal.example.com",
+      respondedOn: "2026-02-19T09:18:00Z",
+    },
+    lineItems: [
+      {
+        productId: "prod-m365-e5-0004",
+        quantity: 12,
+        unitPrice: 57.0,
+        billingTerm: "Annual",
+        subtotal: 684.0,
       },
     ],
   },
