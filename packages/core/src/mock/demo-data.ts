@@ -204,6 +204,12 @@ export interface QuoteRespondedBy {
 }
 
 export interface QuoteLineItem {
+  /**
+   * Line item identifier. Optional in the demo seed because the v1 quote
+   * surface didn't expose it; the v2 line-items endpoints (#245) require it
+   * to address individual lines (`DELETE /v2/quotes/{quoteId}/line-items/{id}`).
+   */
+  id?: string;
   productId: string;
   quantity: number;
   /** Mirrors the public `BillingTerm` enum for cross-mode compatibility. */
@@ -1675,6 +1681,7 @@ export const quotes: Quote[] = [
     salesMarginPercentage: 18.5,
     lineItems: [
       {
+        id: "li-summit-001-a",
         productId: "prod-m365-e3-0003",
         quantity: 5,
         unitPrice: 36.0,
@@ -1682,6 +1689,7 @@ export const quotes: Quote[] = [
         subtotal: 180.0,
       },
       {
+        id: "li-summit-001-b",
         productId: "prod-aad-p1-0008",
         quantity: 5,
         unitPrice: 6.0,
@@ -1700,11 +1708,20 @@ export const quotes: Quote[] = [
     published: false,
     lineItems: [
       {
+        id: "li-bright-001-a",
         productId: "prod-defender-biz-0007",
         quantity: 25,
         unitPrice: 3.0,
         billingTerm: "Monthly",
         subtotal: 75.0,
+      },
+      {
+        id: "li-bright-001-b",
+        productId: "prod-aad-p1-0008",
+        quantity: 25,
+        unitPrice: 6.0,
+        billingTerm: "Monthly",
+        subtotal: 150.0,
       },
     ],
   },
@@ -1727,6 +1744,7 @@ export const quotes: Quote[] = [
     },
     lineItems: [
       {
+        id: "li-redwood-001-a",
         productId: "prod-m365-e5-0004",
         quantity: 8,
         unitPrice: 57.0,

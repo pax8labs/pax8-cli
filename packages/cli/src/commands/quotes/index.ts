@@ -7,6 +7,8 @@ import { quotesShowCommand } from "./show.js";
 import { quotesCreateCommand } from "./create.js";
 import { quotesUpdateCommand } from "./update.js";
 import { quotesDeleteCommand } from "./delete.js";
+import { quotesSendCommand } from "./send.js";
+import { buildQuotesLineItemsCommand } from "./line-items/index.js";
 
 export function registerQuotesCommands(program: Command): void {
   const quotes = new Command("quotes").description("Manage sales quotes");
@@ -16,6 +18,8 @@ export function registerQuotesCommands(program: Command): void {
   quotes.addCommand(quotesCreateCommand);
   quotes.addCommand(quotesUpdateCommand);
   quotes.addCommand(quotesDeleteCommand);
+  quotes.addCommand(quotesSendCommand);
+  quotes.addCommand(buildQuotesLineItemsCommand());
 
   program.addCommand(quotes);
 }
