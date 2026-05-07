@@ -5,11 +5,23 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import * as fs from "node:fs";
+import * as os from "node:os";
 
 const exec = promisify(execFile);
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const CLI_PATH = resolve(__dirname, "../packages/cli/dist/index.js");
+
+// Per-call isolated config dir. Without this, the e2e suite inherits the
+// developer's `~/.pax8/last-error.json` — and tests within the same process
+// also leak state to each other (a command that fails writes last-error.json
+// which then changes report-bug's behavior on the next call). A fresh tmpdir
+// per `runCli` call gives every command a clean slate, matching the unit
+// suite's `makeTmpConfigDir` pattern.
+function makeIsolatedConfigDir(): string {
+  return fs.mkdtempSync(resolve(os.tmpdir(), "pax8-e2e-cfg-"));
+}
 
 export interface CliResult {
   stdout: string;
@@ -23,7 +35,13 @@ export async function runCli(
 ): Promise<CliResult> {
   try {
     const result = await exec("node", [CLI_PATH, ...args], {
-      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...env },
+      env: {
+        ...process.env,
+        PAX8_DEMO: "1",
+        NO_COLOR: "1",
+        PAX8_CONFIG_DIR: makeIsolatedConfigDir(),
+        ...env,
+      },
       timeout: 15000,
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };

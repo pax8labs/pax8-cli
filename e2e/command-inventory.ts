@@ -799,15 +799,10 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     command: ["report-bug"],
     group: "root",
     type: "meta",
-    // Bare `report-bug` requires a prior error in the session to report.
-    // Run with no context, it exits 1 — arguably should fall back to help
-    // text but that's a separate UX call (see #209). Skip the live run; the
-    // help-flag layer still covers --help.
-    skipLiveRun: {
-      reason:
-        "needs a prior error in session state; bare invocation exits 1 (see #209)",
-    },
-    demo: {},
+    // Fixed in #209: bare `report-bug` (no last-error context) now prints
+    // a short manual-file-a-bug pointer and exits 0. The "report the last
+    // error" flow is exercised by the unit suite.
+    demo: { expectedFragments: [/issues|github|file a bug|report/i] },
     jsonContract: { skip: { reason: "freeform / contextual output" } },
   },
 ];
