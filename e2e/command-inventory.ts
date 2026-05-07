@@ -554,6 +554,46 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     demo: {},
     jsonContract: { skip: { reason: "write command" } },
   },
+  {
+    command: ["quotes", "send"],
+    group: "quotes",
+    type: "action",
+    isWrite: true,
+    skipLiveRun: { reason: "transitions quote status to Sent; needs id + confirm" },
+    demo: {},
+    jsonContract: { skip: { reason: "write command" } },
+  },
+  {
+    command: ["quotes", "line-items", "list"],
+    group: "quotes",
+    label: "quotes line-items list <quote-id>",
+    type: "list",
+    resolveArgsKey: "quotes:first",
+    resolveArgs: async () => {
+      const id = await resolveFirstId("quotes", ["quotes", "list"]);
+      return ["quotes", "line-items", "list", id];
+    },
+    demo: { forbiddenFragments: ["undefined"] },
+    jsonContract: { arrayItemRequiredFields: ["id", "productId", "quantity"] },
+  },
+  {
+    command: ["quotes", "line-items", "add"],
+    group: "quotes",
+    type: "action",
+    isWrite: true,
+    skipLiveRun: { reason: "needs quote-id + product + quantity + confirm" },
+    demo: {},
+    jsonContract: { skip: { reason: "write command" } },
+  },
+  {
+    command: ["quotes", "line-items", "remove"],
+    group: "quotes",
+    type: "action",
+    isWrite: true,
+    skipLiveRun: { reason: "destructive + needs quote-id + line-item-id + confirm" },
+    demo: {},
+    jsonContract: { skip: { reason: "write command" } },
+  },
   // ── webhooks ──────────────────────────────────────────────────────────────
   {
     command: ["webhooks", "list"],
@@ -561,6 +601,53 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     type: "list",
     demo: { minRows: 3, forbiddenFragments: ["undefined"] },
     jsonContract: { arrayItemRequiredFields: ["id"] },
+  },
+  {
+    command: ["webhooks", "show"],
+    group: "webhooks",
+    type: "show",
+    resolveArgsKey: "webhooks:first",
+    resolveArgs: async () => {
+      const id = await resolveFirstId("webhooks", ["webhooks", "list"]);
+      return ["webhooks", "show", id];
+    },
+    demo: { forbiddenFragments: ["undefined"] },
+    jsonContract: { objectRequiredFields: ["id", "url"] },
+  },
+  {
+    command: ["webhooks", "topics", "list"],
+    group: "webhooks",
+    label: "webhooks topics list",
+    type: "list",
+    demo: { minRows: 1, forbiddenFragments: ["undefined"] },
+    jsonContract: { arrayItemRequiredFields: ["topic"] },
+  },
+  {
+    command: ["webhooks", "update"],
+    group: "webhooks",
+    type: "action",
+    isWrite: true,
+    skipLiveRun: { reason: "needs id + fields + confirm" },
+    demo: {},
+    jsonContract: { skip: { reason: "write command" } },
+  },
+  {
+    command: ["webhooks", "enable"],
+    group: "webhooks",
+    type: "action",
+    isWrite: true,
+    skipLiveRun: { reason: "transitions delivery state; needs id + confirm" },
+    demo: {},
+    jsonContract: { skip: { reason: "write command" } },
+  },
+  {
+    command: ["webhooks", "disable"],
+    group: "webhooks",
+    type: "action",
+    isWrite: true,
+    skipLiveRun: { reason: "transitions delivery state; needs id + confirm" },
+    demo: {},
+    jsonContract: { skip: { reason: "write command" } },
   },
   {
     command: ["webhooks", "logs"],
