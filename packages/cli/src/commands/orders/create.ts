@@ -177,8 +177,35 @@ Examples:
 
       // Pre-flight checks
       if (productNotFound) warnings.push("Product not found in catalog — may not be orderable");
+
+      // Hard-fail before preview when commitment is required but couldn't be
+      // auto-resolved. Previously this was a soft warning and the order
+      // proceeded; the API then rejected, but only after the user had
+      // already confirmed a preview that misleadingly displayed
+      // "Commitment: <term>". Better to surface the actionable error up
+      // front (#230). The error matches the shape of the post-submit 422
+      // handler below, so the UX is consistent whether the failure is
+      // detected pre- or post-flight.
       if (requiresCommitment && !commitmentTermId) {
-        warnings.push("Product requires a commitment term but no commitmentTermId could be resolved — order may fail. Use --commitment-term-id <uuid> to provide one directly.");
+        const displayProduct = productName || allOpts.product;
+        const displayCompany = companyName || allOpts.company;
+        await handleCommandError(
+          new CliError(
+            `Can't order "${displayProduct}" for ${displayCompany}`,
+            [
+              `Product ${displayProduct} requires a commitment term`,
+              "This product requires a commitment term ID that couldn't be auto-resolved",
+            ],
+            [
+              "If the company has an existing subscription, try: --commitment-term Monthly or --commitment-term 1-Year",
+              "Or provide the UUID directly: --commitment-term-id <uuid> (from subscription commitment.id)",
+              "If no existing subscription, provision the first one through the Pax8 portal",
+              `View product details: ${replCmd("pax8 products show")} ${allOpts.product}`,
+            ],
+            undefined,
+            ERROR_INVALID_INPUT,
+          ),
+        );
       }
 
       const totalPrice = unitPrice ? unitPrice * quantity : null;

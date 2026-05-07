@@ -165,5 +165,37 @@ describe("pax8 orders", () => {
       const combined = result.stdout + result.stderr;
       expect(combined).toMatch(/[Ii]nvalid quantity/);
     });
+
+    // Regression for #230: when a product requires a commitment term (every
+    // pricing plan has commitmentTerm) AND the customer has no existing
+    // subscription for that product (so resolveCommitmentTermId can't copy a
+    // UUID), the order command must fail at preview-time with a clear,
+    // actionable error — NOT proceed to a misleading preview ("Commitment:
+    // Monthly") and only fail after the user confirmed and the API rejected.
+    //
+    // Acme Corp does not have an M365 E3 subscription in the demo fixtures;
+    // M365 E3 has commitmentTerm on every pricing plan. Together that
+    // triggers the pre-flight check.
+    it("fails clearly when product requires commitment but no existing subscription (#230)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "1",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      // Error is surfaced before the preview/confirm — there is no "Order
+      // Preview" or "Place order" prompt in the output.
+      expect(combined).not.toMatch(/Place order/);
+      // The error names the actual failure mode and includes recovery steps.
+      expect(combined).toMatch(/requires.*commitment/i);
+      expect(combined).toMatch(/--commitment-term/);
+      expect(combined).toMatch(/Pax8 portal/);
+    });
   });
 });
