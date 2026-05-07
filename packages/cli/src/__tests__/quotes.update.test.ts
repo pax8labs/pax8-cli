@@ -9,7 +9,8 @@ import {
 
 // Demo-data fixtures the tests rely on:
 //   quote-summit-001 — 2 line items (multi-line, triggers destructive warning)
-//   quote-bright-001 — 1 line item (single-line, terser confirm)
+//   quote-bright-001 — 2 line items (multi-line, destructive-replace warning)
+//   quote-bright-002 — 1 line item (single-line, terser confirm)
 // Both expose `lineItems[].productId` so we can drive the diff path without
 // touching the live API.
 
@@ -119,7 +120,7 @@ describe("pax8 quotes update", () => {
       const result = await runCliExpectSuccess([
         "quotes",
         "update",
-        "quote-bright-001",
+        "quote-bright-002",
         "--product",
         "Microsoft 365 E3",
         "--quantity",

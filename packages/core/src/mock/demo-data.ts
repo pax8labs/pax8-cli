@@ -1726,6 +1726,25 @@ export const quotes: Quote[] = [
     ],
   },
   {
+    id: "quote-bright-002",
+    companyId: BRIGHT_ID,
+    createdDate: "2026-03-08",
+    expirationDate: "2026-04-08",
+    status: "Draft",
+    intentType: "PARTNER_TO_CLIENT",
+    published: false,
+    lineItems: [
+      {
+        id: "li-bright-002-a",
+        productId: "prod-m365-bp-0001",
+        quantity: 10,
+        unitPrice: 22.0,
+        billingTerm: "Monthly",
+        subtotal: 220.0,
+      },
+    ],
+  },
+  {
     id: "quote-redwood-001",
     companyId: REDWOOD_ID,
     createdDate: "2026-02-20",
