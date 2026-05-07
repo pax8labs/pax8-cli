@@ -90,7 +90,7 @@ describe("promptNextSteps", () => {
     expect(spawnedCommands).toHaveLength(0);
   });
 
-  it("renders each step's key, label, and command preview to stderr", async () => {
+  it("renders one concise drill-in hint with a sample, not a per-row block", async () => {
     Object.defineProperty(process.stdin, "isTTY", {
       value: true,
       writable: true,
@@ -106,12 +106,13 @@ describe("promptNextSteps", () => {
     await promptNextSteps(steps);
 
     const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
-    expect(written).toContain("[1]");
+    // The hint should reference the range and the first row's label / key as
+    // a sample, but not enumerate every row.
+    expect(written).toContain("Type 1-2");
+    expect(written).toContain("1");
     expect(written).toContain("List subscriptions");
-    expect(written).toContain("subscriptions list");
-    expect(written).toContain("[2]");
-    expect(written).toContain("Show renewals");
-    expect(written).toContain("subscriptions renewals");
+    // The second row's label should NOT be printed (the table itself is the menu).
+    expect(written).not.toContain("Show renewals");
     // No spawn since user skipped.
     expect(spawnedCommands).toHaveLength(0);
   });
