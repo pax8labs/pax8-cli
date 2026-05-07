@@ -1,7 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +37,45 @@ export async function runCli(
       exitCode: err.code ?? 1,
     };
   }
+}
+
+/**
+ * Run the CLI with the given string piped into stdin. Used to drive
+ * interactive `confirm()` prompts from subprocess tests — execFile pipes
+ * stdin but has no `input` option in the promisified form, so we drop to
+ * spawn() for this one case.
+ */
+export async function runCliWithInput(
+  args: string[],
+  input: string,
+  env?: Record<string, string>,
+): Promise<CliResult> {
+  return new Promise((resolveResult) => {
+    const child = spawn("node", [CLI_PATH, ...args], {
+      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...env },
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, 15000);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolveResult({ stdout, stderr, exitCode: code ?? 1 });
+    });
+
+    child.stdin.write(input);
+    child.stdin.end();
+  });
 }
 
 export async function runCliExpectSuccess(
