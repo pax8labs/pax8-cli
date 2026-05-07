@@ -15,6 +15,19 @@ import type { UpdateContactInput, ContactType } from "@pax8/core";
 
 const VALID_TYPES: ContactType[] = ["Admin", "Billing", "Technical"];
 
+function parseTypes(input: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input.split(",")) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 export const contactsUpdateCommand = new Command("update")
   .description("Update a contact")
   .argument("<id>", "Contact ID")
@@ -22,7 +35,7 @@ export const contactsUpdateCommand = new Command("update")
   .option("--last-name <name>", "New last name")
   .option("--email <email>", "New email")
   .option("--phone <phone>", "New phone number")
-  .option("--type <type>", "New contact type: Admin, Billing, or Technical")
+  .option("--type <types>", "Comma-separated contact types: Admin, Billing, Technical")
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
@@ -30,6 +43,7 @@ export const contactsUpdateCommand = new Command("update")
 Examples:
   pax8 contacts update contact-summit-001 --email rachel.new@example.com
   pax8 contacts update contact-summit-001 --type Billing
+  pax8 contacts update contact-summit-001 --type Admin,Billing
   pax8 contacts update contact-summit-001 --phone "+1-303-555-9999" --yes`
   )
   .action(async (id, options, command) => {
@@ -42,18 +56,28 @@ Examples:
       if (options.lastName) data.lastName = options.lastName;
       if (options.email) data.email = options.email;
       if (options.phone) data.phone = options.phone;
-      if (options.type) {
-        const type = String(options.type) as ContactType;
-        if (!VALID_TYPES.includes(type)) {
+      if (options.type !== undefined) {
+        const parsed = parseTypes(String(options.type));
+        if (parsed.length === 0) {
           throw new CliError(
-            `Invalid --type "${options.type}"`,
-            [`Allowed values: ${VALID_TYPES.join(", ")}`],
-            undefined,
+            "At least one contact type is required when --type is provided",
+            [`--type must contain one or more comma-separated values from: ${VALID_TYPES.join(", ")}`],
+            [`Try: ${replCmd("pax8 contacts update")} ${id} --type Admin,Billing`],
             undefined,
             ERROR_INVALID_INPUT,
           );
         }
-        data.types = [type];
+        const invalid = parsed.filter((t) => !VALID_TYPES.includes(t as ContactType));
+        if (invalid.length > 0) {
+          throw new CliError(
+            `Invalid --type value(s): ${invalid.map((v) => `"${v}"`).join(", ")}`,
+            [`Allowed values: ${VALID_TYPES.join(", ")}`],
+            [`Try: ${replCmd("pax8 contacts update")} ${id} --type Admin,Billing`],
+            undefined,
+            ERROR_INVALID_INPUT,
+          );
+        }
+        data.types = parsed as ContactType[];
       }
 
       if (Object.keys(data).length === 0) {
@@ -74,7 +98,7 @@ Examples:
       process.stderr.write(`  ${chalk.dim("ID:".padEnd(14))}${current.id}\n`);
       process.stderr.write(`  ${chalk.dim("Current:".padEnd(14))}${current.firstName} ${current.lastName} <${current.email}>\n\n`);
       for (const [k, v] of Object.entries(data)) {
-        const label = k === "types" ? "type" : k;
+        const label = k === "types" ? "types" : k;
         const display = Array.isArray(v) ? v.join(", ") : String(v);
         process.stderr.write(`  ${chalk.dim((label + ":").padEnd(14))}${chalk.green(display)}\n`);
       }
