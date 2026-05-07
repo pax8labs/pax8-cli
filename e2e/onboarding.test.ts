@@ -25,9 +25,12 @@ describe("E2E: Onboarding — first-time user experience", () => {
   });
 
   it("pax8 auth status shows auth info", async () => {
+    // Subprocess stdout is non-TTY, so the agent-first contract auto-emits
+    // JSON (#210). We assert on the structured shape rather than human copy.
     const result = await runCliExpectSuccess(["auth", "status"]);
-    expect(result.stdout).toContain("Authenticated");
-    expect(result.stdout).toContain("Demo");
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.authenticated).toBe(true);
+    expect(parsed.mode).toBe("demo");
   });
 
   it("pax8 companies list shows demo companies", async () => {
