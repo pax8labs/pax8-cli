@@ -41,6 +41,8 @@ export interface TelemetryEvent {
   order_seats?: number;
   /** For order create: whether the run was a dry-run validation (no real write) */
   order_dry_run?: boolean;
+  /** For order create: number of line items in the order */
+  order_line_count?: number;
   /** For recommendations act: total recs presented */
   recs_presented?: number;
   /** For recommendations act: how many were ordered */
@@ -195,6 +197,7 @@ export class Telemetry {
             ...(event.order_mrr_impact !== undefined && { order_mrr_impact: event.order_mrr_impact }),
             ...(event.order_seats !== undefined && { order_seats: event.order_seats }),
             ...(event.order_dry_run !== undefined && { order_dry_run: event.order_dry_run }),
+            ...(event.order_line_count !== undefined && { order_line_count: event.order_line_count }),
             ...(event.recs_presented !== undefined && { recs_presented: event.recs_presented }),
             ...(event.recs_ordered !== undefined && { recs_ordered: event.recs_ordered }),
             ...(event.recs_skipped !== undefined && { recs_skipped: event.recs_skipped }),
