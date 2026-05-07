@@ -17,8 +17,8 @@ export const SubscriptionStatusSchema = z.enum([
   "WaitingForDetails",
   "Trial",
   "Converted",
-  "Inactive",
-  "Deleted",
+  "PendingActivation",
+  "Activated",
 ]);
 export type SubscriptionStatus = z.infer<typeof SubscriptionStatusSchema>;
 
