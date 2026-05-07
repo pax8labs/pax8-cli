@@ -10,6 +10,7 @@ import {
   type WebhookLog,
   type CreateWebhookInput,
   type UpdateWebhookInput,
+  type UpdateWebhookConfigurationInput,
 } from "./types.js";
 
 export class WebhooksApi {
@@ -37,6 +38,32 @@ export class WebhooksApi {
 
   async updateStatus(id: string, status: string): Promise<Webhook> {
     const raw = await this.client.patch<unknown>(`/webhooks/${id}`, { status });
+    return WebhookSchema.parse(raw);
+  }
+
+  /**
+   * Update mutable configuration fields on a webhook. Mirrors the
+   * `updateConfiguration` operation (`POST /webhooks/{id}/configuration`) in
+   * webhook-manager v2/v2.1.
+   */
+  async updateConfiguration(
+    id: string,
+    data: UpdateWebhookConfigurationInput,
+  ): Promise<Webhook> {
+    const raw = await this.client.post<unknown>(
+      `/webhooks/${id}/configuration`,
+      data,
+    );
+    return WebhookSchema.parse(raw);
+  }
+
+  /**
+   * Toggle the `active` flag on a webhook. Mirrors the `updateStatus`
+   * operation (`POST /webhooks/{id}/status`) in webhook-manager v2/v2.1.
+   * The wire body is `{ active: boolean }`; the response is the full webhook.
+   */
+  async setStatus(id: string, active: boolean): Promise<Webhook> {
+    const raw = await this.client.post<unknown>(`/webhooks/${id}/status`, { active });
     return WebhookSchema.parse(raw);
   }
 

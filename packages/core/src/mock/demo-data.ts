@@ -200,6 +200,16 @@ export interface Webhook {
   topics: string[];
   createdDate: string;
   secret?: string;
+  /** Human-friendly label (Pax8 webhook-manager v2.1+). */
+  displayName?: string;
+  /** Email Pax8 notifies when delivery failures exceed `errorThreshold`. */
+  contactEmail?: string;
+  /** Consecutive failures before Pax8 notifies `contactEmail`. Capped at 20. */
+  errorThreshold?: number;
+  /** Last delivery outcome: PENDING | SUCCESS | FAILED | RETRYING. */
+  lastDeliveryStatus?: string;
+  /** ISO timestamp of last update. */
+  updatedAt?: string;
 }
 
 export interface WebhookLog {
@@ -1703,6 +1713,11 @@ export const webhooks: Webhook[] = [
     ],
     createdDate: "2025-06-01",
     secret: "whsec_demo_abc123",
+    displayName: "Subscription events",
+    contactEmail: "ops@example.com",
+    errorThreshold: 3,
+    lastDeliveryStatus: "SUCCESS",
+    updatedAt: "2026-03-18T14:23:00Z",
   },
   {
     id: WEBHOOK_INVOICES_ID,
@@ -1711,6 +1726,11 @@ export const webhooks: Webhook[] = [
     topics: ["invoice.created", "invoice.paid"],
     createdDate: "2025-08-15",
     secret: "whsec_demo_def456",
+    displayName: "Invoice events",
+    contactEmail: "billing@example.com",
+    errorThreshold: 5,
+    lastDeliveryStatus: "SUCCESS",
+    updatedAt: "2026-03-01T06:00:00Z",
   },
   {
     id: WEBHOOK_ORDERS_ID,
@@ -1719,6 +1739,11 @@ export const webhooks: Webhook[] = [
     topics: ["order.created", "order.completed"],
     createdDate: "2025-11-20",
     secret: "whsec_demo_ghi789",
+    displayName: "Order events",
+    contactEmail: "ops@example.com",
+    errorThreshold: 3,
+    lastDeliveryStatus: "FAILED",
+    updatedAt: "2026-02-10T10:00:00Z",
   },
 ];
 

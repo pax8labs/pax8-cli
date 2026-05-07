@@ -105,6 +105,7 @@ export {
   WebhookLogSchema,
   CreateWebhookInputSchema,
   UpdateWebhookInputSchema,
+  UpdateWebhookConfigurationInputSchema,
   PageInfoSchema,
   PageSchema,
   PaginatedResponseSchema,
@@ -152,6 +153,7 @@ export type {
   WebhookLog,
   CreateWebhookInput,
   UpdateWebhookInput,
+  UpdateWebhookConfigurationInput,
   PageInfo,
   PaginatedResponse,
   // Enum types

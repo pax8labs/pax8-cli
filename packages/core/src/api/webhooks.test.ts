@@ -96,6 +96,51 @@ describe("WebhooksApi", () => {
     expect(result.status).toBe("Disabled");
   });
 
+  it("updateConfiguration POSTs to /configuration with the partial body", async () => {
+    const input = {
+      displayName: "Subs prod",
+      contactEmail: "ops@example.com",
+      errorThreshold: 5,
+    };
+    const updated = { ...sampleWebhook, ...input };
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
+
+    const result = await api.updateConfiguration(WEBHOOK_ID, input);
+
+    expect(client.post).toHaveBeenCalledWith(
+      `/webhooks/${WEBHOOK_ID}/configuration`,
+      input,
+    );
+    expect(result.displayName).toBe("Subs prod");
+    expect(result.errorThreshold).toBe(5);
+  });
+
+  it("setStatus(true) POSTs to /status with { active: true }", async () => {
+    const updated = { ...sampleWebhook, status: "Active" };
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
+
+    const result = await api.setStatus(WEBHOOK_ID, true);
+
+    expect(client.post).toHaveBeenCalledWith(
+      `/webhooks/${WEBHOOK_ID}/status`,
+      { active: true },
+    );
+    expect(result.status).toBe("Active");
+  });
+
+  it("setStatus(false) POSTs to /status with { active: false }", async () => {
+    const updated = { ...sampleWebhook, status: "Disabled" };
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
+
+    const result = await api.setStatus(WEBHOOK_ID, false);
+
+    expect(client.post).toHaveBeenCalledWith(
+      `/webhooks/${WEBHOOK_ID}/status`,
+      { active: false },
+    );
+    expect(result.status).toBe("Disabled");
+  });
+
   it("delete calls client.delete", async () => {
     (client.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
