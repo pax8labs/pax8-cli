@@ -45,7 +45,7 @@ Examples:
           const nextActions: { command: string; description: string }[] = [];
           if (webhooks.length === 0) {
             nextActions.push({
-              command: "pax8 webhooks create --url <url> --events <comma-separated-events>",
+              command: "pax8 webhooks create --url <url> --topics <comma-separated-topics>",
               description: "Create your first webhook subscription",
             });
           } else {
@@ -108,7 +108,7 @@ Examples:
         if (webhooks.length === 0) {
           process.stderr.write(chalk.dim("\n  Try next:\n"));
           process.stderr.write(
-            `    ${chalk.cyan(replCmd("pax8 webhooks create --url <url> --events <events>"))}  ${chalk.dim("create your first subscription")}\n`,
+            `    ${chalk.cyan(replCmd("pax8 webhooks create --url <url> --topics <topics>"))}  ${chalk.dim("create your first subscription")}\n`,
           );
         } else {
           const first = webhooks[0];

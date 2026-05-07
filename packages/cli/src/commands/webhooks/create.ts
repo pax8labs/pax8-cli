@@ -11,7 +11,7 @@ import { confirm, replCmd } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 
-function parseEvents(input: string): string[] {
+function parseTopics(input: string): string[] {
   return input
     .split(",")
     .map((s) => s.trim())
@@ -30,17 +30,26 @@ function isValidUrl(input: string): boolean {
 export const webhooksCreateCommand = new Command("create")
   .description("Create a webhook subscription")
   .requiredOption("--url <url>", "Webhook delivery URL (https recommended)")
-  .requiredOption(
-    "--events <comma-separated-events>",
+  .option(
+    "--topics <comma-separated-topics>",
     'Topics to subscribe to, comma-separated (e.g. "subscription.created,invoice.paid")',
+  )
+  // Deprecated alias for `--topics`. Kept for backward compatibility with
+  // anyone who scripted against the v0.1 surface; emits a deprecation notice
+  // on stderr and will be removed in v1.0. Refs #273.
+  .option(
+    "--events <comma-separated-topics>",
+    "[deprecated] Alias for --topics. Will be removed in v1.0.",
   )
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
     `
 Examples:
-  pax8 webhooks create --url https://example.com/hook --events subscription.created,subscription.cancelled
-  pax8 webhooks create --url https://example.com/hook --events invoice.paid --yes`,
+  pax8 webhooks create --url https://example.com/hook --topics subscription.created,subscription.cancelled
+  pax8 webhooks create --url https://example.com/hook --topics invoice.paid --yes
+
+Note: --events is a deprecated alias for --topics; it still works but will be removed in v1.0.`,
   )
   .action(async (_options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -49,14 +58,53 @@ Examples:
       const ctx = await buildContext(allOpts);
 
       const url = String(allOpts.url);
-      const topics = parseEvents(String(allOpts.events));
+
+      // Resolve the canonical `--topics` value, accepting `--events` as a
+      // deprecated alias. Erroring if both are passed avoids a silent
+      // ambiguity when the two values disagree.
+      const topicsRaw = allOpts.topics as string | undefined;
+      const eventsRaw = allOpts.events as string | undefined;
+
+      if (topicsRaw !== undefined && eventsRaw !== undefined) {
+        throw new CliError(
+          "Specify only one of --topics or --events",
+          [
+            "--events is a deprecated alias for --topics; passing both is ambiguous.",
+          ],
+          [
+            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --topics subscription.created,invoice.paid`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+
+      if (topicsRaw === undefined && eventsRaw === undefined) {
+        throw new CliError(
+          "Missing required option: --topics",
+          ["--topics must contain one or more comma-separated topic names"],
+          [
+            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --topics subscription.created,invoice.paid`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+
+      if (eventsRaw !== undefined) {
+        process.stderr.write(
+          "warning: --events is deprecated; use --topics. Will be removed in v1.0.\n",
+        );
+      }
+
+      const topics = parseTopics(String(topicsRaw ?? eventsRaw));
 
       if (!isValidUrl(url)) {
         throw new CliError(
           `Invalid webhook URL: "${url}"`,
           ["URL must be an http:// or https:// URL"],
           [
-            `Example: ${replCmd("pax8 webhooks create")} --url https://example.com/hook --events subscription.created`,
+            `Example: ${replCmd("pax8 webhooks create")} --url https://example.com/hook --topics subscription.created`,
           ],
           undefined,
           ERROR_INVALID_INPUT,
@@ -66,9 +114,9 @@ Examples:
       if (topics.length === 0) {
         throw new CliError(
           "At least one event topic is required",
-          ["--events must contain one or more comma-separated topic names"],
+          ["--topics must contain one or more comma-separated topic names"],
           [
-            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --events subscription.created,invoice.paid`,
+            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --topics subscription.created,invoice.paid`,
           ],
           undefined,
           ERROR_INVALID_INPUT,

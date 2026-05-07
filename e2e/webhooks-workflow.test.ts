@@ -35,7 +35,7 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
     }
   });
 
-  it("pax8 webhooks create requires --url and --events", async () => {
+  it("pax8 webhooks create requires --url and --topics", async () => {
     const result = await runCliExpectFailure(["webhooks", "create"]);
     expect(result.stderr.length).toBeGreaterThan(0);
   });
@@ -46,7 +46,7 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
       "create",
       "--url",
       "not-a-url",
-      "--events",
+      "--topics",
       "subscription.created",
       "--yes",
     ]);
@@ -59,7 +59,7 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
       "create",
       "--url",
       "https://example.com/e2e-hook",
-      "--events",
+      "--topics",
       "subscription.created,invoice.paid",
       "--yes",
       "--json",

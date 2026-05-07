@@ -89,3 +89,68 @@ describe("pax8 webhooks test", () => {
     expect(inner.responseCode).toBe(502);
   });
 });
+
+describe("pax8 webhooks create — --topics canonical with --events deprecated alias (#273)", () => {
+  it("accepts --topics and persists the webhook", async () => {
+    const result = await runCliExpectSuccess([
+      "webhooks",
+      "create",
+      "--url",
+      "https://example.com/topics-hook",
+      "--topics",
+      "subscription.created,invoice.paid",
+      "--yes",
+      "--json",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(data.url).toBe("https://example.com/topics-hook");
+    expect(data.topics).toEqual(["subscription.created", "invoice.paid"]);
+    // Canonical flag must not emit the deprecation banner.
+    expect(result.stderr).not.toContain("--events is deprecated");
+  });
+
+  it("still accepts --events as a deprecated alias and warns on stderr", async () => {
+    const result = await runCliExpectSuccess([
+      "webhooks",
+      "create",
+      "--url",
+      "https://example.com/events-hook",
+      "--events",
+      "subscription.created",
+      "--yes",
+      "--json",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(data.url).toBe("https://example.com/events-hook");
+    expect(data.topics).toEqual(["subscription.created"]);
+    expect(result.stderr).toContain(
+      "--events is deprecated; use --topics. Will be removed in v1.0.",
+    );
+  });
+
+  it("errors clearly when both --topics and --events are passed", async () => {
+    const result = await runCliExpectFailure([
+      "webhooks",
+      "create",
+      "--url",
+      "https://example.com/dup-hook",
+      "--topics",
+      "subscription.created",
+      "--events",
+      "invoice.paid",
+      "--yes",
+    ]);
+    expect(result.stderr).toContain("Specify only one of --topics or --events");
+  });
+
+  it("--help mentions --topics as canonical and --events as deprecated", async () => {
+    const result = await runCliExpectSuccess([
+      "webhooks",
+      "create",
+      "--help",
+    ]);
+    expect(result.stdout).toContain("--topics");
+    expect(result.stdout).toContain("--events");
+    expect(result.stdout.toLowerCase()).toContain("deprecated");
+  });
+});

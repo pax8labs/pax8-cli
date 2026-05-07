@@ -497,7 +497,7 @@ export type WebhookLog = z.infer<typeof WebhookLogSchema>;
  * Discoverable topic exposed by `GET /webhooks/topic-definitions`.
  *
  * Per the public webhooks OpenAPI spec, every topic carries a `topic` slug
- * (the value passed to `--events` on create) plus a human `name` and
+ * (the value passed to `--topics` on create) plus a human `name` and
  * `description`. The optional `availableFilters` and `samplePayload` fields
  * are also defined by the upstream `TopicDefinition` schema; they're parsed
  * loosely (`z.unknown()`) because the CLI surface only needs `topic` and
