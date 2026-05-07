@@ -16,6 +16,19 @@ import type { CreateContactInput, ContactType } from "@pax8/core";
 
 const VALID_TYPES: ContactType[] = ["Admin", "Billing", "Technical"];
 
+function parseTypes(input: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input.split(",")) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 export const contactsCreateCommand = new Command("create")
   .description("Create a new contact for a company")
   .requiredOption("--company <id|name>", "Company ID or name (required)")
@@ -23,30 +36,42 @@ export const contactsCreateCommand = new Command("create")
   .requiredOption("--first-name <name>", "First name (required)")
   .requiredOption("--last-name <name>", "Last name (required)")
   .option("--phone <phone>", "Phone number")
-  .option("--type <type>", "Contact type: Admin, Billing, or Technical", "Admin")
+  .option("--type <types>", "Comma-separated contact types: Admin, Billing, Technical", "Admin")
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
     `
 Examples:
   pax8 contacts create --company "Summit Healthcare Partners" --email rachel@example.com --first-name Rachel --last-name Thornton
-  pax8 contacts create --company a1b2c3d4 --email tech@example.com --first-name Sam --last-name Lee --type Technical`
+  pax8 contacts create --company a1b2c3d4 --email tech@example.com --first-name Sam --last-name Lee --type Technical
+  pax8 contacts create --company a1b2c3d4 --email ops@example.com --first-name Pat --last-name Kim --type Admin,Billing`
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
 
     try {
-      const type = String(options.type) as ContactType;
-      if (!VALID_TYPES.includes(type)) {
+      const parsed = parseTypes(String(options.type));
+      if (parsed.length === 0) {
         throw new CliError(
-          `Invalid --type "${options.type}"`,
-          [`Allowed values: ${VALID_TYPES.join(", ")}`],
-          [`Try: ${replCmd("pax8 contacts create")} --type Admin ...`],
+          "At least one contact type is required",
+          [`--type must contain one or more comma-separated values from: ${VALID_TYPES.join(", ")}`],
+          [`Try: ${replCmd("pax8 contacts create")} --type Admin,Billing ...`],
           undefined,
           ERROR_INVALID_INPUT,
         );
       }
+      const invalid = parsed.filter((t) => !VALID_TYPES.includes(t as ContactType));
+      if (invalid.length > 0) {
+        throw new CliError(
+          `Invalid --type value(s): ${invalid.map((v) => `"${v}"`).join(", ")}`,
+          [`Allowed values: ${VALID_TYPES.join(", ")}`],
+          [`Try: ${replCmd("pax8 contacts create")} --type Admin,Billing ...`],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+      const types = parsed as ContactType[];
 
       const company = await resolveCompany(ctx, options.company);
 
@@ -57,7 +82,7 @@ Examples:
       if (options.phone) {
         process.stderr.write(`  ${chalk.dim("Phone:".padEnd(14))}${options.phone}\n`);
       }
-      process.stderr.write(`  ${chalk.dim("Type:".padEnd(14))}${type}\n`);
+      process.stderr.write(`  ${chalk.dim("Types:".padEnd(14))}${types.join(", ")}\n`);
       process.stderr.write(`  ${chalk.dim("Company:".padEnd(14))}${company.name}\n\n`);
 
       const ok = await confirm("Create this contact?", { default: true });
@@ -71,7 +96,7 @@ Examples:
         lastName: options.lastName,
         email: options.email,
         companyId: company.id,
-        types: [type],
+        types,
         ...(options.phone ? { phone: options.phone } : {}),
       };
 
