@@ -168,11 +168,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
       // Under PAX8_DEMO=1 this should report demo mode somewhere in output.
       expectedFragments: [/demo|not authenticated|authenticated/i],
     },
-    // `auth status --json` currently prints human text, not JSON (#210).
-    // Skip contract until that's fixed; smoke + semantic still cover this.
-    jsonContract: {
-      skip: { reason: "auth status --json does not emit JSON (#210)" },
-    },
+    jsonContract: { objectRequiredFields: ["authenticated", "mode"] },
   },
   // ── config ────────────────────────────────────────────────────────────────
   {
