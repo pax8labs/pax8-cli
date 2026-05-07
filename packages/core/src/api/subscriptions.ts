@@ -43,7 +43,13 @@ export class SubscriptionsApi {
     return SubscriptionSchema.parse(raw);
   }
 
-  async delete(id: string): Promise<void> {
-    await this.client.delete(`/subscriptions/${id}`);
+  /**
+   * Cancel a subscription. By default the cancellation is immediate; pass
+   * `cancelDate` (ISO `YYYY-MM-DD`) to schedule the cancellation for a future
+   * date — the Pax8 API forwards it as the `cancelDate` query parameter.
+   */
+  async delete(id: string, params?: { cancelDate?: string }): Promise<void> {
+    const query = params?.cancelDate ? { cancelDate: params.cancelDate } : undefined;
+    await this.client.delete(`/subscriptions/${id}`, query);
   }
 }

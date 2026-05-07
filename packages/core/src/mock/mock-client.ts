@@ -210,10 +210,13 @@ class SubscriptionsResource {
     return { ...sub, ...data, id: sub.id };
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, _params?: { cancelDate?: string }): Promise<void> {
     await randomDelay();
     const sub = subscriptions.find((s) => s.id === id);
     if (!sub) throw notFound("Subscription", id);
+    // Demo mode ignores `cancelDate`: scheduled cancellations don't materialize
+    // a future state-change in the in-memory data set, but the param is accepted
+    // so the CLI surface matches the real client signature.
   }
 }
 
