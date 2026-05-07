@@ -7,7 +7,12 @@ import type { InvoiceItem, Subscription } from "../api/types.js";
 type AuditInvoiceItemInput = Partial<InvoiceItem> & {
   companyName?: string;
   productName?: string;
-  price?: number;
+  /**
+   * Legacy alias for the canonical `price` field. Kept on the input shape so
+   * callers still passing pre-#273 invoice items (with `unitPrice`) continue
+   * to work. New code should use `price` (the public API field name).
+   */
+  unitPrice?: number;
 };
 
 /** The subset of Subscription fields used by the invoice auditor. */
@@ -64,7 +69,9 @@ function normalizeInvoiceItem(item: AuditInvoiceItemInput): NormalizedInvoiceIte
     productId: item.productId,
     productName: item.productName ?? "",
     quantity: item.quantity ?? 0,
-    unitPrice: item.unitPrice ?? item.price ?? 0,
+    // Canonical first (`price` matches the public API after #273); fall back
+    // to `unitPrice` for any callers still passing the legacy shape.
+    unitPrice: item.price ?? item.unitPrice ?? 0,
   };
 }
 

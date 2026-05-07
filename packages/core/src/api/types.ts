@@ -75,7 +75,7 @@ export const CompanySchema = z.object({
   selfServiceAllowed: z.boolean().optional(),
   orderApprovalRequired: z.boolean().optional(),
   created: z.string().optional(),
-  modified: z.string().optional(),
+  updatedDate: z.string().optional(),
 });
 export type Company = z.infer<typeof CompanySchema>;
 
@@ -321,8 +321,12 @@ export const InvoiceItemSchema = z.object({
   productId: z.string().uuid(),
   subscriptionId: z.string().uuid().optional(),
   quantity: z.number(),
-  unitPrice: z.number(),
-  subtotal: z.number(),
+  // Field names mirror the public Pax8 API: `price` (per-unit) and `subTotal`
+  // (line subtotal). Earlier CLI versions exposed these as `unitPrice` and
+  // `subtotal`; renamed in #273 (fixes #4) to align `--json` output with the
+  // upstream contract so partners reading both surfaces don't have to translate.
+  price: z.number(),
+  subTotal: z.number(),
   companyId: z.string().uuid().optional(),
   productName: z.string().optional(),
   companyName: z.string().optional(),
@@ -404,8 +408,13 @@ export type QuoteRespondedBy = z.infer<typeof QuoteRespondedBySchema>;
 export const QuoteSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
-  createdDate: z.string(),
-  expirationDate: z.string().optional(),
+  // Field names mirror the public quoting v2 API: `createdOn` and `expiresOn`.
+  // Earlier CLI versions exposed these as `createdDate` and `expirationDate`;
+  // renamed in #273 (fixes #8) to align `--json` output with the upstream
+  // contract. The `--expiration-date` CLI flag is unchanged — flag vocabulary
+  // and field vocabulary are intentionally separate concerns.
+  createdOn: z.string(),
+  expiresOn: z.string().optional(),
   status: z.string(),
   lineItems: z.array(QuoteLineItemSchema).optional(),
 
@@ -555,7 +564,7 @@ export const UpdateQuoteInputSchema = z.object({
     billingTerm: BillingTermSchema.optional(),
     provisioningDetails: z.record(z.string(), z.unknown()).optional(),
   })).optional(),
-  expirationDate: z.string().optional(),
+  expiresOn: z.string().optional(),
 });
 export type UpdateQuoteInput = z.infer<typeof UpdateQuoteInputSchema>;
 

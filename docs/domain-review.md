@@ -78,7 +78,7 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 | `address.stateOrProvince` (query) / `state` (body) | `--state` | API is inconsistent; CLI normalizes to `state` |
 | `address.postalCode` (query) / `zip` (body) | `--zip` | Same — CLI picks the shorter body field |
 | `externalId` | (not exposed) | API surfaces a partner-side external ID; CLI hides it |
-| `updatedDate` | `modified` | CLI rename |
+| `updatedDate` | `updatedDate` | Aligned with API in #273 (was `modified`) |
 | `createdDate` (Contact) | (not exposed on Contact) | Only surfaced on Company-ish resources |
 | `contacts[]` (embedded on Company) | (separate `contacts list`) | CLI separates rather than embeds |
 | `types[]` (array of `Admin\|Billing\|Technical`) | `--type <comma-list>` | CLI accepts multiple types as a comma-separated string [Resolved in #255] |
@@ -92,7 +92,7 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 
 - `--type` accepts one value; API accepts an array. [Resolved in #255 — comma-separated list now accepted on both create and update.]
 - `companies update` cannot change address or the three boolean billing flags. Confirm whether this is an intentional safety choice or an oversight.
-- CLI `Company.modified` vs API `updatedDate` — pick one and align.
+- CLI `Company.modified` vs API `updatedDate` — pick one and align. [Resolved in #273 — renamed to `updatedDate`.]
 
 ### Questions for Domain Owner
 
@@ -177,7 +177,7 @@ API `SubscriptionStatus` enum: `Active, Cancelled, PendingManual, PendingAutomat
 
 CLI `Invoice`: `id, companyId, invoiceDate, dueDate, status?, total, balance, companyName` [`status` is now optional, post-#260].
 CLI `InvoiceStatus` enum: `Unpaid, Paid, Void, Carried` [Aligned with the OpenAPI `Invoice.example` in #260 — `Carry` renamed to `Carried`; `Nothing` and the `Overdue` filter alias removed].
-CLI `InvoiceItem`: `id, invoiceId, productId, subscriptionId, quantity, unitPrice, subtotal, companyId, productName, companyName`.
+CLI `InvoiceItem`: `id, invoiceId, productId, subscriptionId, quantity, price, subTotal, companyId, productName, companyName` [`price`/`subTotal` aligned with API in #273; previously exposed as `unitPrice`/`subtotal`].
 
 ### Public API Surface
 
@@ -192,8 +192,8 @@ API `InvoiceItem` fields (32 total — selected): `id, productId, productName, s
 | API Term | CLI Term | Notes |
 |---|---|---|
 | `status` (in query param + spec example, missing from properties) | `status?` (typed enum, optional) | CLI now mirrors the spec example; pending docs fix on Pax8 side [Resolved in #260] |
-| `subTotal` (capital T) | `subtotal` | Casing change |
-| `price` | `unitPrice` | Rename |
+| `subTotal` (capital T) | `subTotal` | Aligned with API in #273 (was `subtotal`) |
+| `price` | `price` | Aligned with API in #273 (was `unitPrice`) |
 | `monthOffset` (draft-items query) | `--month YYYY-MM` | CLI normalizes to a calendar month |
 | `startPeriod`, `endPeriod`, `term`, `chargeType`, `rateType`, `type`, `billingFee`, `billingFeeRate`, `salesTax`, `cost`, `costTotal`, `amountDue`, `unitOfMeasure`, `vendorName`, `offeredBy`, `billedByPax8`, `purchaseOrderNumber`, `sku`, `externalId`, `description`, `details` | (not exposed) | InvoiceItem cost/period/category breakdown collapsed |
 | `carriedBalance`, `currencyCode`, `partnerName` (Invoice) | (not exposed) | |
@@ -213,7 +213,7 @@ API `InvoiceItem` fields (32 total — selected): `id, productId, productName, s
 ### Naming Drift Flags
 
 - `Invoice.status` is now aligned with the spec example (`Unpaid`, `Paid`, `Void`, `Carried`) and optional [Resolved in #260]. A docs ticket against the public OpenAPI to add `status` to `Invoice.properties` is the remaining follow-up.
-- `subtotal` vs `subTotal`, `unitPrice` vs `price` — pick one casing/term per concept.
+- `subtotal` vs `subTotal`, `unitPrice` vs `price` — pick one casing/term per concept. [Resolved in #273 — both renamed to match API: `subTotal` and `price`.]
 - The CLI hides everything between gross subtotal and net amount due (fees, tax, cost). Partners doing margin analysis cannot get `cost`/`partnerCost` from the CLI.
 
 ### Questions for Domain Owner
@@ -254,7 +254,7 @@ CLI `Order`: `id, companyId, companyName, orderedBy, orderedByEmail, status, cre
 | `pax8 quotes line-items remove <quote-id> <line-item-id>` | `-y` | | Removes a single line item [Added in #266] |
 | `pax8 quotes send <quote-id>` | `-y` | | Sets quote status to `sent` (generates customer-facing link) via `PUT /v2/quotes/{id}` [Added in #266] |
 
-CLI `Quote`: `id, companyId, createdDate, expirationDate, status, lineItems[{id, productId, quantity, billingTerm, unitPrice, subtotal}], acceptedBy?, declinedBy?, respondedOn?, revokedOn?, publishedOn?, published?, referenceCode?, salesMarginPercentage?, intentType?` [accept/decline workflow fields added in #261; line-item `id` surfaced for use with `line-items remove`].
+CLI `Quote`: `id, companyId, createdOn, expiresOn, status, lineItems[{id, productId, quantity, billingTerm, unitPrice, subtotal}], acceptedBy?, declinedBy?, respondedOn?, revokedOn?, publishedOn?, published?, referenceCode?, salesMarginPercentage?, intentType?` [accept/decline workflow fields added in #261; line-item `id` surfaced for use with `line-items remove`; top-level dates aligned with API in #273].
 
 ### Public API Surface — Quotes (v2)
 
@@ -272,8 +272,8 @@ API `Quote.status` enum: `draft, assigned, sent, closed, declined, accepted, cha
 | `orderedByUserId` | (not exposed) | |
 | `isScheduled` | (not exposed) | |
 | `isMock` (POST query) | `--dry-run` | [Resolved in #259] |
-| `expiresOn` | `expirationDate` | Rename |
-| `createdOn` | `createdDate` | Rename |
+| `expiresOn` | `expiresOn` | Aligned with API in #273 (was `expirationDate`); the `--expiration-date` CLI flag is intentionally unchanged |
+| `createdOn` | `createdOn` | Aligned with API in #273 (was `createdDate`) |
 | `intentType` | `intentType?` (read-only) | Surfaced in `Quote` schema [Added in #261]; not yet a `--intent-type` write flag |
 | `acceptedBy`, `declinedBy`, `respondedOn`, `revokedOn`, `publishedOn`, `published`, `referenceCode`, `salesMarginPercentage` | same names (read-only, optional) | [Resolved in #261] |
 | `partner`, `client`, `ownedBy`, `introMessage`, `termsAndDisclaimers`, `totals`, `quoteRequestId`, `attachments` | (not exposed) | Still flattened away |
@@ -289,7 +289,7 @@ API `Quote.status` enum: `draft, assigned, sent, closed, declined, accepted, cha
 
 - `Order.status` filter-help vocabulary still does not match any documented enum. Confirm what statuses partners actually see.
 - `Quote.status` filter help is now lowercase to match the API [Resolved in #261].
-- `expirationDate` (CLI) vs `expiresOn` (API): keep one.
+- `expirationDate` (CLI) vs `expiresOn` (API): keep one. [Resolved in #273 — schema renamed to `expiresOn`; the `--expiration-date` CLI flag is intentionally preserved as a deliberate ergonomics-vs-vocabulary split.]
 - The CLI quotes surface still hides about half of the v2 model (sections, attachments, access-list, take-ownership). The newly added line-items subcommands and `send` cover the most-requested workflow gaps.
 - `quotes update --product` is no longer silently destructive — it shows a default-no `REPLACES` confirmation [Resolved in #264]. The non-destructive path is `quotes line-items add/remove` [#266].
 

@@ -589,8 +589,8 @@ class QuotesResource {
     const newQuote: Quote = {
       id: `quote-demo-${Date.now()}`,
       companyId: data.companyId ?? "",
-      createdDate: new Date().toISOString().split("T")[0],
-      ...(data.expirationDate ? { expirationDate: data.expirationDate } : {}),
+      createdOn: new Date().toISOString().split("T")[0],
+      ...(data.expiresOn ? { expiresOn: data.expiresOn } : {}),
       status: "Draft",
       lineItems: data.lineItems ?? [],
     };

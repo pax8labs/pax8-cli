@@ -80,8 +80,8 @@ Examples:
         { key: "id", header: "ID", width: 14, format: (v) => chalk.dim(String(v).slice(0, 12)) },
         { key: "companyId", header: "Company ID", width: 14, format: (v) => chalk.dim(String(v).slice(0, 12)) },
         { key: "status", header: "Status", width: 12 },
-        { key: "createdDate", header: "Created", width: 14, format: (v) => formatDate(String(v)) },
-        { key: "expirationDate", header: "Expires", width: 14, format: (v) => v ? formatDate(String(v)) : "—" },
+        { key: "createdOn", header: "Created", width: 14, format: (v) => formatDate(String(v)) },
+        { key: "expiresOn", header: "Expires", width: 14, format: (v) => v ? formatDate(String(v)) : "—" },
         { key: "_items", header: "Items", width: 7 },
         { key: "_total", header: "Total", width: 12, format: (v) => formatCurrency(Number(v)) },
       ];
