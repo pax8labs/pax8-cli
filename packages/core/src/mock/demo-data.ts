@@ -1726,6 +1726,29 @@ export const quotes: Quote[] = [
     ],
   },
   {
+    // Single-line Draft quote — exercises the "terser confirm" path in
+    // `quotes update` (no destructive-warning UI when the new line-items
+    // count matches the existing count). The other Draft quote
+    // (quote-bright-001) has 2 items and triggers the destructive path.
+    id: "quote-acme-001",
+    companyId: ACME_ID,
+    createdDate: "2026-04-15",
+    expirationDate: "2026-05-15",
+    status: "Draft",
+    intentType: "PARTNER_TO_CLIENT",
+    published: false,
+    lineItems: [
+      {
+        id: "li-acme-001-a",
+        productId: "prod-m365-biz-prem-0001",
+        quantity: 10,
+        unitPrice: 22.0,
+        billingTerm: "Monthly",
+        subtotal: 220.0,
+      },
+    ],
+  },
+  {
     id: "quote-redwood-001",
     companyId: REDWOOD_ID,
     createdDate: "2026-02-20",
