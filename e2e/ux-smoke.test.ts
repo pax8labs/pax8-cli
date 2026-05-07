@@ -160,11 +160,12 @@ describe("README snippet smoke", () => {
         r.exitCode,
         `\`${snippet}\` exited ${r.exitCode}.\nOutput:\n${out.slice(0, 1500)}`
       ).toBe(0);
-      // Error-flavoured tokens shouldn't appear in a "successful" snippet run.
-      expect(
-        stripAnsi(out),
-        `\`${snippet}\` produced an error-flavoured line. Output:\n${out.slice(0, 1500)}`
-      ).not.toMatch(/\b(not found|cannot find|cannot resolve|undefined)\b/i);
+      // Don't add a redundant "no error-flavoured tokens" regex here —
+      // commands like `pax8 doctor` legitimately surface diagnostic phrases
+      // like "Config file exists (Not found. Run: pax8 config init)" in
+      // their successful output. The exit-code-0 assertion above is the
+      // load-bearing check; the per-command matrix (per-command.test.ts)
+      // catches `undefined` / `[object Object]` leaks at command granularity.
     });
   }
 });
