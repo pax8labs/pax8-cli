@@ -100,7 +100,19 @@ describe("SubscriptionsApi", () => {
 
     await api.delete(SUB_ID);
 
-    expect(client.delete).toHaveBeenCalledWith(`/subscriptions/${SUB_ID}`);
+    // No `cancelDate` → no query string forwarded.
+    expect(client.delete).toHaveBeenCalledWith(`/subscriptions/${SUB_ID}`, undefined);
+  });
+
+  it("delete forwards cancelDate as a query parameter", async () => {
+    (client.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    await api.delete(SUB_ID, { cancelDate: "2026-12-31" });
+
+    expect(client.delete).toHaveBeenCalledWith(
+      `/subscriptions/${SUB_ID}`,
+      { cancelDate: "2026-12-31" },
+    );
   });
 
   it("throws on invalid response data", async () => {

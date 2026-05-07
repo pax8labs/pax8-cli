@@ -202,6 +202,7 @@ describe("pax8 subscriptions cancel", () => {
       "--help",
     ]);
     expect(result.stdout).toContain("Cancel a subscription");
+    expect(result.stdout).toContain("--cancel-date");
   });
 
   it("errors with invalid subscription ID", async () => {
@@ -213,6 +214,65 @@ describe("pax8 subscriptions cancel", () => {
     ]);
     const combined = result.stdout + result.stderr;
     expect(combined.length).toBeGreaterThan(0);
+  });
+
+  it("rejects malformed --cancel-date", async () => {
+    const result = await runCliExpectFailure([
+      "subscriptions",
+      "cancel",
+      "sub-summit-m365bp-001",
+      "--cancel-date",
+      "12/31/2026",
+      "--yes",
+    ]);
+    const combined = result.stdout + result.stderr;
+    expect(combined).toMatch(/cancel-date/i);
+    expect(combined).toMatch(/YYYY-MM-DD/);
+  });
+
+  it("rejects calendar-impossible --cancel-date", async () => {
+    const result = await runCliExpectFailure([
+      "subscriptions",
+      "cancel",
+      "sub-summit-m365bp-001",
+      "--cancel-date",
+      "2026-02-30",
+      "--yes",
+    ]);
+    const combined = result.stdout + result.stderr;
+    expect(combined).toMatch(/cancel-date/i);
+  });
+
+  it("emits ERROR_INVALID_INPUT for bad --cancel-date in --json mode", async () => {
+    const result = await runCliExpectFailure([
+      "subscriptions",
+      "cancel",
+      "sub-summit-m365bp-001",
+      "--cancel-date",
+      "not-a-date",
+      "--yes",
+      "--json",
+    ]);
+    expect(result.stderr).toContain("ERROR_INVALID_INPUT");
+  });
+
+  it("schedules cancellation with a valid --cancel-date", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "cancel",
+      "sub-summit-m365bp-001",
+      "--cancel-date",
+      "2026-12-31",
+      "--yes",
+      "--json",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(Array.isArray(data)).toBe(true);
+    expect(data[0]).toMatchObject({
+      id: "sub-summit-m365bp-001",
+      status: "Cancelled",
+      cancelDate: "2026-12-31",
+    });
   });
 });
 

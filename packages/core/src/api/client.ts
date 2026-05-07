@@ -88,8 +88,8 @@ export class Pax8Client {
     return this.request<T>("PATCH", path, body);
   }
 
-  async delete(path: string): Promise<void> {
-    await this.request<void>("DELETE", path);
+  async delete(path: string, params?: Record<string, string | number | undefined>): Promise<void> {
+    await this.request<void>("DELETE", path, undefined, params);
   }
 
   async *getPaginated<T>(
