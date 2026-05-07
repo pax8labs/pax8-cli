@@ -3,7 +3,30 @@
 
 import chalk from "chalk";
 import type { Command } from "commander";
+import { resolve as resolvePath } from "node:path";
 import { showWelcomeScreen } from "./welcome.js";
+
+/**
+ * Resolve the path the REPL passes to `node` when spawning child processes
+ * for typed commands. Must be the same script node was invoked with —
+ * `process.argv[1]`.
+ *
+ * Why not `import.meta.url`-based resolution: tsup inlines this module
+ * into `dist/index.js`, so at runtime `import.meta.url` points at the
+ * bundled file (not the source file's location). Any relative-path math
+ * on that escapes the dist/ directory and global installs crash with
+ * MODULE_NOT_FOUND on every typed command.
+ *
+ * Exported for unit tests.
+ */
+export function resolveCliPath(scriptPath: string | undefined): string {
+  if (!scriptPath) {
+    throw new Error(
+      "REPL: cannot determine CLI entry point (process.argv[1] is empty)",
+    );
+  }
+  return resolvePath(scriptPath);
+}
 
 /**
  * Tokenize a command line string, respecting quoted strings.
@@ -39,12 +62,11 @@ export function tokenize(input: string): string[] {
 export async function startRepl(createProgram: () => Command): Promise<void> {
   const { createInterface } = await import("node:readline");
   const { spawn } = await import("node:child_process");
-  const { fileURLToPath } = await import("node:url");
-  const { resolve: resolvePath, dirname, join: pathJoin } = await import("node:path");
+  const { join: pathJoin } = await import("node:path");
   const fs = await import("node:fs");
   const { homedir } = await import("node:os");
 
-  const cliPath = resolvePath(dirname(fileURLToPath(import.meta.url)), "../index.js");
+  const cliPath = resolveCliPath(process.argv[1]);
 
   showWelcomeScreen();
   process.stdout.write(chalk.dim("  Type a command, or ") + chalk.cyan("help") + chalk.dim(" / ") + chalk.cyan("exit") + "\n\n");
