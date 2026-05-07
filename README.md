@@ -32,6 +32,8 @@ Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see t
 
 ## Quick Start
 
+Tested on macOS, Linux, and Windows under PowerShell.
+
 ```bash
 # Install
 npm install -g @pax8/cli

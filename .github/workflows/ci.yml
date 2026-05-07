@@ -8,10 +8,12 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         node-version: [20, 22]
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v6
@@ -42,7 +44,7 @@ jobs:
           NO_COLOR: "1"
 
       - name: Test coverage
-        if: matrix.node-version == 22
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
         run: pnpm test:coverage
 
       - name: Audit

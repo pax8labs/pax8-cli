@@ -115,7 +115,7 @@ describe("CredentialStore", () => {
     });
   });
 
-  describe("saveCredentials", () => {
+  describe.skipIf(process.platform === "win32")("saveCredentials", () => {
     it("creates config dir, secures it, and writes credentials file on Unix", async () => {
       vi.mocked(fs.mkdir).mockResolvedValueOnce(undefined);
       vi.mocked(fs.chmod).mockResolvedValueOnce(undefined);
@@ -169,7 +169,7 @@ describe("CredentialStore", () => {
       expect(result.detail).toContain("No credentials file");
     });
 
-    it("returns secure when file has mode 600 on Unix", async () => {
+    it.skipIf(process.platform === "win32")("returns secure when file has mode 600 on Unix", async () => {
       vi.mocked(fs.access).mockResolvedValueOnce(undefined);
       vi.mocked(fs.stat).mockResolvedValueOnce({
         mode: 0o100600,
@@ -180,7 +180,7 @@ describe("CredentialStore", () => {
       expect(result.detail).toContain("600");
     });
 
-    it("returns insecure when file has group/other permissions on Unix", async () => {
+    it.skipIf(process.platform === "win32")("returns insecure when file has group/other permissions on Unix", async () => {
       vi.mocked(fs.access).mockResolvedValueOnce(undefined);
       vi.mocked(fs.stat).mockResolvedValueOnce({
         mode: 0o100644,
@@ -192,7 +192,7 @@ describe("CredentialStore", () => {
       expect(result.detail).toContain("chmod 600");
     });
 
-    it("returns secure for owner-only non-600 mode (e.g., 700) on Unix", async () => {
+    it.skipIf(process.platform === "win32")("returns secure for owner-only non-600 mode (e.g., 700) on Unix", async () => {
       vi.mocked(fs.access).mockResolvedValueOnce(undefined);
       vi.mocked(fs.stat).mockResolvedValueOnce({
         mode: 0o100700,
@@ -203,7 +203,7 @@ describe("CredentialStore", () => {
       expect(result.detail).toContain("owner-only access");
     });
 
-    it("returns insecure when stat fails on Unix", async () => {
+    it.skipIf(process.platform === "win32")("returns insecure when stat fails on Unix", async () => {
       vi.mocked(fs.access).mockResolvedValueOnce(undefined);
       vi.mocked(fs.stat).mockRejectedValueOnce(new Error("permission denied"));
 

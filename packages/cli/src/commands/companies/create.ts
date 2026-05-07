@@ -4,7 +4,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { createSpinner } from "../../lib/spinner.js";
-import { handleCommandError, CliError } from "../../lib/errors.js";
+import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { confirm } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";

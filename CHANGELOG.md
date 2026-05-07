@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ### Internal
 
 - Scheduled API-drift watcher (`.github/workflows/api-watch.yml`) opens maintainer issues when `ERROR_API_VALIDATION` spikes are detected in telemetry. First layer of the api-resilience plan tracked at #176.
+- Added `windows-latest` to the CI matrix; the test suite now runs on Windows under PowerShell on every PR. Added `fail-fast: false` so a Windows-only regression doesn't mask Ubuntu signal. Coverage step gated to `ubuntu-latest` + Node 22 only (#186).
 
 ## [0.1.0] — 2026-05-06
 
