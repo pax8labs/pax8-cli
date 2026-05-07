@@ -36,8 +36,8 @@ Examples:
       spinner.stop();
 
       if (ctx.outputFormat === "json") {
-        const payload = options.lines ? [{ ...summary, lines }] : [summary];
-        output(payload, { format: "json" });
+        const payload = options.lines ? { ...summary, lines } : summary;
+        process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
         return;
       }
 

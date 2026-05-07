@@ -31,7 +31,7 @@ Examples:
       spinner.stop();
 
       if (ctx.outputFormat === "json") {
-        output([contact], { format: "json" });
+        process.stdout.write(JSON.stringify(contact, null, 2) + "\n");
         return;
       }
 
