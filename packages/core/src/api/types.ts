@@ -355,6 +355,13 @@ export type UsageLine = z.infer<typeof UsageLineSchema>;
 // ─── Quote ───────────────────────────────────────────────────────────────────
 
 export const QuoteLineItemSchema = z.object({
+  /**
+   * Line item identifier. Optional because the v1 quote surface didn't expose
+   * it on every line; the v2 endpoints (`POST /v2/quotes/{id}/line-items`,
+   * `DELETE .../line-items/{lineItemId}`) require it for per-line operations.
+   * Demo data populates it.
+   */
+  id: z.string().optional(),
   productId: z.string().uuid(),
   quantity: z.number(),
   billingTerm: BillingTermSchema.optional(),
@@ -455,6 +462,37 @@ export const UpdateQuoteInputSchema = z.object({
   expirationDate: z.string().optional(),
 });
 export type UpdateQuoteInput = z.infer<typeof UpdateQuoteInputSchema>;
+
+/**
+ * Input for `POST /v2/quotes/{quoteId}/line-items` — append a single standard
+ * line item. The upstream API accepts an array of mixed-type payloads
+ * (Standard / Custom / UsageBased); we expose the common Standard shape here
+ * because that's what `quotes line-items add` constructs from `--product`,
+ * `--quantity`, and `--billing-term`.
+ */
+export const AddQuoteLineItemInputSchema = z.object({
+  productId: z.string().uuid(),
+  quantity: z.number().int().positive(),
+  billingTerm: BillingTermSchema.optional(),
+});
+export type AddQuoteLineItemInput = z.infer<typeof AddQuoteLineItemInputSchema>;
+
+/**
+ * Body for `PUT /v2/quotes/{quoteId}` when transitioning a quote to `sent`.
+ * Other transitions (`accepted`, `declined`, etc.) ride a different code path.
+ */
+export const QuoteStatusTransitionSchema = z.enum([
+  "draft",
+  "assigned",
+  "sent",
+  "closed",
+  "declined",
+  "accepted",
+  "changes_requested",
+  "expired",
+  "pending",
+]);
+export type QuoteStatusTransition = z.infer<typeof QuoteStatusTransitionSchema>;
 
 // Aliases for backward compatibility
 export const PageSchema = PageInfoSchema;

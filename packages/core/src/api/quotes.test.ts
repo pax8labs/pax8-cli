@@ -94,4 +94,68 @@ describe("QuotesApi", () => {
 
     expect(client.delete).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`);
   });
+
+  it("addLineItem POSTs an array with a Standard payload then re-fetches the quote", async () => {
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
+    const productId = "d4e5f6a7-b890-1234-cdef-567890123456";
+
+    const result = await api.addLineItem(QUOTE_ID, {
+      productId,
+      quantity: 4,
+      billingTerm: "Annual",
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      `/quotes/${QUOTE_ID}/line-items`,
+      [
+        {
+          type: "Standard",
+          productId,
+          quantity: 4,
+          billingTerm: "Annual",
+        },
+      ],
+    );
+    expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`);
+    expect(result.id).toBe(QUOTE_ID);
+  });
+
+  it("removeLineItem DELETEs the nested line-item path", async () => {
+    (client.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    const lineItemId = "11111111-2222-3333-4444-555555555555";
+
+    await api.removeLineItem(QUOTE_ID, lineItemId);
+
+    expect(client.delete).toHaveBeenCalledWith(
+      `/quotes/${QUOTE_ID}/line-items/${lineItemId}`,
+    );
+  });
+
+  it("setStatus PUTs { status } to the quote endpoint", async () => {
+    (client.put as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...sampleQuote,
+      status: "sent",
+    });
+
+    const result = await api.setStatus(QUOTE_ID, "sent");
+
+    expect(client.put).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, {
+      status: "sent",
+    });
+    expect(result.status).toBe("sent");
+  });
+
+  it("send is a thin wrapper over setStatus(id, 'sent')", async () => {
+    (client.put as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...sampleQuote,
+      status: "sent",
+    });
+
+    await api.send(QUOTE_ID);
+
+    expect(client.put).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, {
+      status: "sent",
+    });
+  });
 });

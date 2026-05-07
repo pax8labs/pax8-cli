@@ -39,6 +39,8 @@ import type {
   ProductPricing as ProductPricingPlans,
   ProvisioningDetail as ProvisioningDetailType,
   ProductDependency as ProductDependencyType,
+  AddQuoteLineItemInput,
+  QuoteStatusTransition,
 } from "../api/types.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -587,6 +589,77 @@ class QuotesResource {
     await randomDelay();
     const quote = quotes.find((q) => q.id === id);
     if (!quote) throw notFound("Quote", id);
+  }
+
+  /**
+   * Append a single line item to a draft quote. Mutates the in-memory demo
+   * fixture so a follow-up `quotes show` reflects the new line. Returns the
+   * (now-mutated) quote so callers don't need to re-fetch.
+   */
+  async addLineItem(
+    quoteId: string,
+    input: AddQuoteLineItemInput,
+  ): Promise<Quote> {
+    await randomDelay();
+    const quote = quotes.find((q) => q.id === quoteId);
+    if (!quote) throw notFound("Quote", quoteId);
+    // Try to fetch a unit price from the demo product so the new line shows
+    // sensible totals in tables. Pricing lookups silently fall through —
+    // a missing price just means the line shows "—" in the UI.
+    const product = products.find((p) => p.id === input.productId);
+    const term = input.billingTerm ?? "Monthly";
+    const plan = product?.pricing.find((p) => p.billingTerm === term);
+    const unitPrice = plan?.partnerBuyPrice;
+    const newId = `li-demo-${Date.now()}`;
+    const newLine = {
+      id: newId,
+      productId: input.productId,
+      quantity: input.quantity,
+      ...(input.billingTerm ? { billingTerm: input.billingTerm } : {}),
+      ...(typeof unitPrice === "number"
+        ? { unitPrice, subtotal: unitPrice * input.quantity }
+        : {}),
+    };
+    quote.lineItems = [...(quote.lineItems ?? []), newLine];
+    return quote;
+  }
+
+  async removeLineItem(quoteId: string, lineItemId: string): Promise<void> {
+    await randomDelay();
+    const quote = quotes.find((q) => q.id === quoteId);
+    if (!quote) throw notFound("Quote", quoteId);
+    const items = quote.lineItems ?? [];
+    const idx = items.findIndex((li) => li.id === lineItemId);
+    if (idx < 0) throw notFound("QuoteLineItem", lineItemId);
+    items.splice(idx, 1);
+    quote.lineItems = items;
+  }
+
+  /**
+   * Demo-mode status transitions. The lowercase API enum maps to the
+   * capitalized demo `Quote.status` field one-for-one — most users see
+   * `Sent` after `setStatus(id, "sent")`.
+   */
+  async setStatus(id: string, status: QuoteStatusTransition): Promise<Quote> {
+    await randomDelay();
+    const quote = quotes.find((q) => q.id === id);
+    if (!quote) throw notFound("Quote", id);
+    const cap = status.charAt(0).toUpperCase() + status.slice(1);
+    // The demo Quote.status is a tight union; cast through unknown rather
+    // than widen the seed type for every caller.
+    const allowed: Record<string, Quote["status"]> = {
+      Draft: "Draft",
+      Sent: "Sent",
+      Accepted: "Accepted",
+      Declined: "Declined",
+    };
+    const next = allowed[cap] ?? quote.status;
+    quote.status = next;
+    return quote;
+  }
+
+  async send(id: string): Promise<Quote> {
+    return this.setStatus(id, "sent");
   }
 }
 
