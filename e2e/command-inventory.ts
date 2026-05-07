@@ -282,13 +282,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
       const id = await resolveFirstId("products", ["products", "list"]);
       return ["products", "show", id];
     },
-    demo: {
-      knownBroken: {
-        issue: "#208",
-        reason:
-          "show commands return [{...}] (array of one) instead of the single object — JSON-shape inconsistency",
-      },
-    },
+    demo: {},
     jsonContract: { objectRequiredFields: ["id", "name"] },
   },
   // ── subscriptions ─────────────────────────────────────────────────────────
@@ -314,10 +308,6 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
     demo: {
       forbiddenFragments: ["undefined"],
-      knownBroken: {
-        issue: "#208",
-        reason: "show JSON returns array-of-1 instead of single object",
-      },
     },
     jsonContract: { objectRequiredFields: ["id"] },
   },
@@ -407,10 +397,6 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
     demo: {
       forbiddenFragments: ["undefined"],
-      knownBroken: {
-        issue: "#208",
-        reason: "show JSON returns array-of-1 instead of single object",
-      },
     },
     jsonContract: { objectRequiredFields: ["id"] },
   },
@@ -490,10 +476,6 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
     demo: {
       forbiddenFragments: ["undefined"],
-      knownBroken: {
-        issue: "#208",
-        reason: "show JSON returns array-of-1 instead of single object",
-      },
     },
     jsonContract: { objectRequiredFields: ["id"] },
   },
@@ -543,10 +525,6 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
     demo: {
       forbiddenFragments: ["undefined"],
-      knownBroken: {
-        issue: "#208",
-        reason: "show JSON returns array-of-1 instead of single object",
-      },
     },
     jsonContract: { objectRequiredFields: ["id"] },
   },
@@ -709,10 +687,6 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
     demo: {
       forbiddenFragments: ["undefined"],
-      knownBroken: {
-        issue: "#208",
-        reason: "show JSON returns array-of-1 instead of single object",
-      },
     },
     jsonContract: { objectRequiredFields: ["id"] },
   },

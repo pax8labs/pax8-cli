@@ -80,12 +80,14 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("id", "inv-summit-curr-001");
-      expect(data[0]).toHaveProperty("companyName", "Summit Healthcare Partners");
-      expect(data[0]).toHaveProperty("total");
-      expect(data[0]).toHaveProperty("status");
-      expect(data[0]).toHaveProperty("balance");
-      expect(data[0]).toHaveProperty("currency");
+      // `show` returns a single object, not an array (#208)
+      expect(Array.isArray(data)).toBe(false);
+      expect(data).toHaveProperty("id", "inv-summit-curr-001");
+      expect(data).toHaveProperty("companyName", "Summit Healthcare Partners");
+      expect(data).toHaveProperty("total");
+      expect(data).toHaveProperty("status");
+      expect(data).toHaveProperty("balance");
+      expect(data).toHaveProperty("currency");
     });
   });
 

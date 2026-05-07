@@ -38,7 +38,9 @@ Examples:
       );
 
       if (ctx.outputFormat === "json") {
-        output([{ ...quote, total }], { format: "json" });
+        process.stdout.write(
+          JSON.stringify({ ...quote, total }, null, 2) + "\n"
+        );
         return;
       }
 

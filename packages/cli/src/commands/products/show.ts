@@ -54,7 +54,7 @@ Examples:
         if (pricing) data.pricingDetails = pricing;
         if (provisioning) data.provisioningDetails = provisioning;
         if (dependencies) data.dependencies = dependencies;
-        output([data], { format: "json" });
+        process.stdout.write(JSON.stringify(data, null, 2) + "\n");
         return;
       }
 

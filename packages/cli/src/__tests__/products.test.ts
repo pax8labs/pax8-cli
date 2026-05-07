@@ -53,8 +53,10 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("name", "Microsoft 365 Business Premium [New Commerce Experience]");
-      expect(data[0]).toHaveProperty("vendorName", "Microsoft");
+      // `show` returns a single object, not an array (#208)
+      expect(Array.isArray(data)).toBe(false);
+      expect(data).toHaveProperty("name", "Microsoft 365 Business Premium [New Commerce Experience]");
+      expect(data).toHaveProperty("vendorName", "Microsoft");
     });
 
     it("shows pricing with --pricing flag", async () => {
@@ -66,10 +68,11 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("pricingDetails");
-      expect(data[0].pricingDetails.length).toBeGreaterThan(0);
+      expect(Array.isArray(data)).toBe(false);
+      expect(data).toHaveProperty("pricingDetails");
+      expect(data.pricingDetails.length).toBeGreaterThan(0);
       // Verify pricing plan includes billingTerm, commitmentTerm, and price fields
-      const plan = data[0].pricingDetails[0];
+      const plan = data.pricingDetails[0];
       expect(plan).toHaveProperty("billingTerm");
       expect(plan).toHaveProperty("commitmentTerm");
       expect(plan).toHaveProperty("rates");
@@ -86,9 +89,10 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("provisioningDetails");
-      expect(data[0].provisioningDetails).toHaveProperty("productId");
-      expect(data[0].provisioningDetails).toHaveProperty("fields");
+      expect(Array.isArray(data)).toBe(false);
+      expect(data).toHaveProperty("provisioningDetails");
+      expect(data.provisioningDetails).toHaveProperty("productId");
+      expect(data.provisioningDetails).toHaveProperty("fields");
     });
 
     it("shows dependencies with --dependencies flag", async () => {
@@ -100,7 +104,8 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("dependencies");
+      expect(Array.isArray(data)).toBe(false);
+      expect(data).toHaveProperty("dependencies");
     });
   });
 

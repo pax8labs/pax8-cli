@@ -43,7 +43,7 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
     expect(companyIds.size).toBe(1);
   });
 
-  it("pax8 contacts show returns a single contact as JSON array", async () => {
+  it("pax8 contacts show returns a single contact object", async () => {
     const list = await runCliExpectSuccess([
       "contacts",
       "list",
@@ -55,9 +55,9 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
 
     const result = await runCliExpectSuccess(["contacts", "show", id, "--json"]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data).toHaveLength(1);
-    expect(data[0].id).toBe(id);
+    // `show` returns a single object, not an array (#208)
+    expect(Array.isArray(data)).toBe(false);
+    expect(data.id).toBe(id);
   });
 
   it("pax8 contacts show fails for unknown id", async () => {
