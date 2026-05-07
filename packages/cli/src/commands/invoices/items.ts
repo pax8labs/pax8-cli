@@ -51,13 +51,13 @@ Examples:
         { key: "companyName", header: "Company", width: 22 },
         { key: "quantity", header: "Qty", width: 8 },
         {
-          key: "unitPrice",
+          key: "price",
           header: "Unit Price",
           width: 14,
           format: (v) => formatCurrency(Number(v)),
         },
         {
-          key: "subtotal",
+          key: "subTotal",
           header: "Subtotal",
           width: 14,
           format: (v) => formatCurrency(Number(v)),

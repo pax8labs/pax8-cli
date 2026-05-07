@@ -14,7 +14,7 @@ describe("pax8 quotes", () => {
       expect(data[0]).toHaveProperty("id");
       expect(data[0]).toHaveProperty("companyId");
       expect(data[0]).toHaveProperty("status");
-      expect(data[0]).toHaveProperty("createdDate");
+      expect(data[0]).toHaveProperty("createdOn");
     });
 
     it("filters by lowercase status (matches API enum)", async () => {

@@ -30,7 +30,7 @@ describe("E2E: Billing workflow — invoice and audit", () => {
     expect(data.length).toBeGreaterThan(0);
     expect(data[0]).toHaveProperty("id");
     expect(data[0]).toHaveProperty("quantity");
-    expect(data[0]).toHaveProperty("unitPrice");
+    expect(data[0]).toHaveProperty("price");
   });
 
   it("pax8 invoices audit shows discrepancy report", async () => {

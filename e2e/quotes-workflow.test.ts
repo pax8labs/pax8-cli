@@ -14,7 +14,7 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
     expect(first).toHaveProperty("id");
     expect(first).toHaveProperty("companyId");
     expect(first).toHaveProperty("status");
-    expect(first).toHaveProperty("createdDate");
+    expect(first).toHaveProperty("createdOn");
     expect(first).toHaveProperty("lineItems");
   });
 
@@ -143,7 +143,7 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(data[0].id).toBe(id);
-    expect(data[0].expirationDate).toBe("2026-12-31");
+    expect(data[0].expiresOn).toBe("2026-12-31");
   });
 
   it("pax8 quotes update fails when no fields are provided", async () => {

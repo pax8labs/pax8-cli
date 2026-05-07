@@ -72,9 +72,9 @@ Examples:
       if (quote.intentType) {
         writeRow("Intent", quote.intentType);
       }
-      writeRow("Created", formatDate(quote.createdDate));
-      if (quote.expirationDate) {
-        writeRow("Expires", formatDate(quote.expirationDate));
+      writeRow("Created", formatDate(quote.createdOn));
+      if (quote.expiresOn) {
+        writeRow("Expires", formatDate(quote.expiresOn));
       }
       if (quote.publishedOn) {
         writeRow("Published", formatDate(quote.publishedOn));

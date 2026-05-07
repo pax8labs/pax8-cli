@@ -112,9 +112,10 @@ export interface InvoiceItem {
   productId: string;
   productName: string;
   quantity: number;
-  unitPrice: number;
+  /** Per-unit price — mirrors the public `InvoiceItem` schema field name. */
+  price: number;
   /** Line subtotal — mirrors the public `InvoiceItem` schema field name. */
-  subtotal: number;
+  subTotal: number;
   subscriptionId?: string;
   billingPeriodStart: string;
   billingPeriodEnd: string;
@@ -178,8 +179,10 @@ export interface UsageLine {
 export interface Quote {
   id: string;
   companyId: string;
-  createdDate: string;
-  expirationDate?: string;
+  /** Mirrors the public quoting v2 API field name (was `createdDate`). */
+  createdOn: string;
+  /** Mirrors the public quoting v2 API field name (was `expirationDate`). */
+  expiresOn?: string;
   status: "Draft" | "Sent" | "Accepted" | "Declined";
   lineItems?: QuoteLineItem[];
 
@@ -1204,8 +1207,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-m365-biz-prem-0001",
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 95, // active is 85 → overcharge of 10 * $22 = $220
-    unitPrice: 22.0,
-    subtotal: 2090.0,
+    price: 22.0,
+    subTotal: 2090.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1217,8 +1220,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-defender-biz-0007",
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 85,
-    unitPrice: 3.0,
-    subtotal: 255.0,
+    price: 3.0,
+    subTotal: 255.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1230,8 +1233,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-s1-singularity-0010",
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 85,
-    unitPrice: 6.0,
-    subtotal: 510.0,
+    price: 6.0,
+    subTotal: 510.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1245,8 +1248,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-m365-e3-0003",
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 40,
-    unitPrice: 36.0,
-    subtotal: 1440.0,
+    price: 36.0,
+    subTotal: 1440.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1258,8 +1261,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-exo-plan2-0006",
     productName: "Exchange Online (Plan 2) [New Commerce Experience]",
     quantity: 40,
-    unitPrice: 8.0,
-    subtotal: 320.0,
+    price: 8.0,
+    subTotal: 320.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1274,8 +1277,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-m365-e3-0003",
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 100,
-    unitPrice: 36.0,
-    subtotal: 3600.0,
+    price: 36.0,
+    subTotal: 3600.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1288,8 +1291,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-exo-plan1-0005",
     productName: "Exchange Online (Plan 1) [New Commerce Experience]",
     quantity: 150,
-    unitPrice: 4.0,
-    subtotal: 600.0,
+    price: 4.0,
+    subTotal: 600.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1301,8 +1304,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-defender-biz-0007",
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 150,
-    unitPrice: 3.0,
-    subtotal: 450.0,
+    price: 3.0,
+    subTotal: 450.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1314,8 +1317,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-aad-p1-0008",
     productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 150,
-    unitPrice: 6.0,
-    subtotal: 900.0,
+    price: 6.0,
+    subTotal: 900.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1327,8 +1330,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-s1-singularity-0010",
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 150,
-    unitPrice: 6.0,
-    subtotal: 900.0,
+    price: 6.0,
+    subTotal: 900.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1340,8 +1343,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-acronis-backup-0009",
     productName: "AvePoint Cloud Backup for Microsoft 365",
     quantity: 30,
-    unitPrice: 8.5,
-    subtotal: 255.0,
+    price: 8.5,
+    subTotal: 255.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1356,8 +1359,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-m365-biz-basic-0002",
     productName: "Microsoft 365 Business Basic [New Commerce Experience]",
     quantity: 25,
-    unitPrice: 6.0,
-    subtotal: 150.0,
+    price: 6.0,
+    subTotal: 150.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1369,8 +1372,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-aad-p1-0008",
     productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 25, // No active Entra ID P1 subscription → unexpected charge
-    unitPrice: 6.0,
-    subtotal: 150.0,
+    price: 6.0,
+    subTotal: 150.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1385,8 +1388,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-m365-biz-prem-0001",
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 15,
-    unitPrice: 22.0,
-    subtotal: 330.0,
+    price: 22.0,
+    subTotal: 330.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1398,8 +1401,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-defender-biz-0007",
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 20, // active is 15 → overcharge of 5 * $3 = $15
-    unitPrice: 3.0,
-    subtotal: 60.0,
+    price: 3.0,
+    subTotal: 60.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1411,8 +1414,8 @@ export const invoiceItems: InvoiceItem[] = [
     productId: "prod-s1-singularity-0010",
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 15,
-    unitPrice: 6.0,
-    subtotal: 90.0,
+    price: 6.0,
+    subTotal: 90.0,
     billingPeriodStart: `${currentMonth}-01`,
     billingPeriodEnd: `${currentMonth}-28`,
   },
@@ -1671,8 +1674,8 @@ export const quotes: Quote[] = [
   {
     id: "quote-summit-001",
     companyId: SUMMIT_ID,
-    createdDate: "2026-03-10",
-    expirationDate: "2026-04-10",
+    createdOn: "2026-03-10",
+    expiresOn: "2026-04-10",
     status: "Sent",
     referenceCode: "Q-2026-001",
     intentType: "PARTNER_TO_CLIENT",
@@ -1701,8 +1704,8 @@ export const quotes: Quote[] = [
   {
     id: "quote-bright-001",
     companyId: BRIGHT_ID,
-    createdDate: "2026-03-05",
-    expirationDate: "2026-04-05",
+    createdOn: "2026-03-05",
+    expiresOn: "2026-04-05",
     status: "Draft",
     intentType: "PARTNER_TO_CLIENT",
     published: false,
@@ -1732,8 +1735,8 @@ export const quotes: Quote[] = [
     // (quote-bright-001) has 2 items and triggers the destructive path.
     id: "quote-acme-001",
     companyId: ACME_ID,
-    createdDate: "2026-04-15",
-    expirationDate: "2026-05-15",
+    createdOn: "2026-04-15",
+    expiresOn: "2026-05-15",
     status: "Draft",
     intentType: "PARTNER_TO_CLIENT",
     published: false,
@@ -1751,8 +1754,8 @@ export const quotes: Quote[] = [
   {
     id: "quote-redwood-001",
     companyId: REDWOOD_ID,
-    createdDate: "2026-02-20",
-    expirationDate: "2026-03-20",
+    createdOn: "2026-02-20",
+    expiresOn: "2026-03-20",
     status: "Accepted",
     referenceCode: "Q-2026-002",
     intentType: "PARTNER_TO_CLIENT",
@@ -1779,8 +1782,8 @@ export const quotes: Quote[] = [
   {
     id: "quote-coastline-001",
     companyId: COASTLINE_ID,
-    createdDate: "2026-02-12",
-    expirationDate: "2026-03-12",
+    createdOn: "2026-02-12",
+    expiresOn: "2026-03-12",
     status: "Declined",
     referenceCode: "Q-2026-003",
     intentType: "PARTNER_TO_CLIENT",

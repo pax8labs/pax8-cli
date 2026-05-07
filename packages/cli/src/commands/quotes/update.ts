@@ -128,7 +128,10 @@ Note:
       }
 
       if (options.expirationDate) {
-        data.expirationDate = options.expirationDate;
+        // The `--expiration-date` CLI flag (camelCased to `options.expirationDate`
+        // by Commander) intentionally keeps its v0.1 vocabulary, but the schema
+        // field is `expiresOn` after #273 to match the public quoting API.
+        data.expiresOn = options.expirationDate;
       }
 
       if (Object.keys(data).length === 0) {
@@ -153,9 +156,9 @@ Note:
       process.stderr.write(chalk.bold("\n  Update Quote:\n\n"));
       process.stderr.write(`  ${chalk.dim("ID:".padEnd(18))}${current.id}\n`);
       process.stderr.write(`  ${chalk.dim("Current status:".padEnd(18))}${current.status}\n`);
-      if (data.expirationDate) {
+      if (data.expiresOn) {
         process.stderr.write(
-          `  ${chalk.dim("New expiration:".padEnd(18))}${chalk.green(data.expirationDate)}\n`,
+          `  ${chalk.dim("New expiration:".padEnd(18))}${chalk.green(data.expiresOn)}\n`,
         );
       }
 
@@ -254,8 +257,8 @@ Note:
       process.stdout.write("\n");
       process.stdout.write(`  ${chalk.dim("ID:".padEnd(14))}${updated.id}\n`);
       process.stdout.write(`  ${chalk.dim("Status:".padEnd(14))}${updated.status}\n`);
-      if (updated.expirationDate) {
-        process.stdout.write(`  ${chalk.dim("Expires:".padEnd(14))}${updated.expirationDate}\n`);
+      if (updated.expiresOn) {
+        process.stdout.write(`  ${chalk.dim("Expires:".padEnd(14))}${updated.expiresOn}\n`);
       }
       process.stdout.write(`  ${chalk.dim("Items:".padEnd(14))}${updated.lineItems?.length ?? 0}\n`);
       process.stdout.write("\n");

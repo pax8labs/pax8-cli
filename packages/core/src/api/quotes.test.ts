@@ -22,8 +22,8 @@ const COMPANY_ID = "b2c3d4e5-f6a7-8901-bcde-f12345678901";
 const sampleQuote = {
   id: QUOTE_ID,
   companyId: COMPANY_ID,
-  createdDate: "2026-01-15",
-  expirationDate: "2026-02-15",
+  createdOn: "2026-01-15",
+  expiresOn: "2026-02-15",
   status: "Draft",
   lineItems: [],
 };
@@ -77,14 +77,14 @@ describe("QuotesApi", () => {
   });
 
   it("update sends correct body", async () => {
-    const input = { expirationDate: "2026-03-15" };
-    const updated = { ...sampleQuote, expirationDate: "2026-03-15" };
+    const input = { expiresOn: "2026-03-15" };
+    const updated = { ...sampleQuote, expiresOn: "2026-03-15" };
     (client.put as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
 
     const result = await api.update(QUOTE_ID, input);
 
     expect(client.put).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, input);
-    expect(result.expirationDate).toBe("2026-03-15");
+    expect(result.expiresOn).toBe("2026-03-15");
   });
 
   it("delete calls client.delete", async () => {

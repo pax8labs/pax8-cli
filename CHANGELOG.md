@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Changed
 
+- **`--json` field names aligned with the public Pax8 API** — `InvoiceItem.subtotal` → `subTotal`, `InvoiceItem.unitPrice` → `price`, `Company.modified` → `updatedDate`, `Quote.expirationDate` → `expiresOn`, `Quote.createdDate` → `createdOn`. Breaking for `--json` consumers; acceptable pre-1.0 since partners reading both surfaces no longer have to translate. The `--expiration-date` CLI flag on `pax8 quotes create`/`update` is intentionally unchanged — flag vocabulary and field vocabulary are separate concerns (#273).
 - **Display labels** — `report-bug` no-prior-error now exits 0 with a manual-file-a-bug pointer instead of exiting 1 silently; the with-context flow (sanitize, prompt, submit) is unchanged (#209).
 - **`auth status --json`** now emits valid JSON (`{ authenticated, mode, clientIdMasked? }`) and respects the agent-first non-TTY contract; previously it printed human-formatted text regardless of `--json` (#210).
 

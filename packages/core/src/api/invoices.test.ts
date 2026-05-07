@@ -35,8 +35,8 @@ const sampleInvoiceItem = {
   invoiceId: INVOICE_ID,
   productId: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
   quantity: 45,
-  unitPrice: 22.0,
-  subtotal: 990.0,
+  price: 22.0,
+  subTotal: 990.0,
   productName: "Microsoft 365 Business Premium [New Commerce Experience]",
 };
 

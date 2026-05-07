@@ -48,7 +48,7 @@ describe("CompanySchema", () => {
     selfServiceAllowed: false,
     orderApprovalRequired: true,
     created: "2024-01-01T00:00:00Z",
-    modified: "2024-06-15T12:00:00Z",
+    updatedDate: "2024-06-15T12:00:00Z",
   };
 
   it("validates a correct payload", () => {
@@ -509,8 +509,8 @@ describe("InvoiceItemSchema", () => {
     productId: uuid,
     subscriptionId: uuid2,
     quantity: 45,
-    unitPrice: 22.5,
-    subtotal: 1012.5,
+    price: 22.5,
+    subTotal: 1012.5,
     companyId: uuid,
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     companyName: "Acme Corp",
@@ -526,8 +526,8 @@ describe("InvoiceItemSchema", () => {
       invoiceId: uuid2,
       productId: uuid,
       quantity: 10,
-      unitPrice: 5.0,
-      subtotal: 50.0,
+      price: 5.0,
+      subTotal: 50.0,
     };
     expect(InvoiceItemSchema.parse(minimal)).toEqual(minimal);
   });
@@ -538,8 +538,8 @@ describe("InvoiceItemSchema", () => {
         id: uuid,
         invoiceId: uuid2,
         productId: uuid,
-        unitPrice: 5.0,
-        subtotal: 50.0,
+        price: 5.0,
+        subTotal: 50.0,
       }),
     ).toThrow();
   });
@@ -609,8 +609,8 @@ describe("QuoteSchema", () => {
   const valid = {
     id: uuid,
     companyId: uuid2,
-    createdDate: "2024-03-01",
-    expirationDate: "2024-04-01",
+    createdOn: "2024-03-01",
+    expiresOn: "2024-04-01",
     status: "Draft",
     lineItems: [
       { productId: uuid, quantity: 10, billingTerm: "Annual", unitPrice: 22.5, subtotal: 225.0 },
@@ -629,7 +629,7 @@ describe("QuoteSchema", () => {
 
   it("rejects missing status", () => {
     expect(() =>
-      QuoteSchema.parse({ id: uuid, companyId: uuid2, createdDate: "2024-03-01" }),
+      QuoteSchema.parse({ id: uuid, companyId: uuid2, createdOn: "2024-03-01" }),
     ).toThrow();
   });
 });
