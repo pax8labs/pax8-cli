@@ -32,7 +32,12 @@ import { consumeTelemetryFields } from "./lib/telemetry-context.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
-import { loadConfig, getTelemetry } from "@pax8/core";
+import {
+  loadConfig,
+  getTelemetry,
+  getDefaultBaseUrl,
+  getConfigDir,
+} from "@pax8/core";
 import type { Command as CommandType } from "commander";
 import { startRepl } from "./lib/repl.js";
 import { showWelcomeScreen } from "./lib/welcome.js";
@@ -208,6 +213,22 @@ async function main(): Promise<void> {
   process.on("unhandledRejection", (reason) => {
     void handleCommandError(reason).catch(() => process.exit(1));
   });
+
+  // #234 / #262: validate trust-sensitive env vars at startup, BEFORE any
+  // command dispatch or broad catches further in. If PAX8_API_BASE points
+  // at an attacker-controlled http:// host or PAX8_CONFIG_DIR resolves
+  // outside $HOME, we want the user to see the security error and exit
+  // non-zero — not have it swallowed by the preAction hook's
+  // best-effort `loadConfig()` catch. Force the lazy validators to run
+  // here; their errors land on the global handler and get the standard
+  // recovery-step rendering.
+  try {
+    getDefaultBaseUrl();
+    getConfigDir();
+  } catch (err) {
+    await flushTelemetryBeforeExit();
+    await handleCommandError(err);
+  }
 
   if (process.argv.length <= 2) {
     if (process.stdin.isTTY) {

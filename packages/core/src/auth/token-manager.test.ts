@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TokenManager } from "./token-manager.js";
 import { AuthError } from "../api/errors.js";
+import { Pax8SecurityError } from "../security/validate-env.js";
 
 const MOCK_TOKEN = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.mock-token";
 const CLIENT_ID = "test-client-id";
@@ -252,5 +253,65 @@ describe("TokenManager + PAX8_API_BASE", () => {
 
     const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api-staging.pax8.com/v1/token");
+  });
+});
+
+// #234 — getDefaultBaseUrl() now validates PAX8_API_BASE; TokenManager
+// inherits the check because it derives the /token URL from the same
+// helper. A malicious http:// host must NOT receive POSTs of client_id /
+// client_secret.
+describe("TokenManager + PAX8_API_BASE security (#234)", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  const originalApiBase = process.env.PAX8_API_BASE;
+  const originalAllow = process.env.PAX8_ALLOW_INSECURE_BASE;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalApiBase === undefined) delete process.env.PAX8_API_BASE;
+    else process.env.PAX8_API_BASE = originalApiBase;
+    if (originalAllow === undefined) delete process.env.PAX8_ALLOW_INSECURE_BASE;
+    else process.env.PAX8_ALLOW_INSECURE_BASE = originalAllow;
+  });
+
+  it("refuses to fetch a token from a plaintext http:// host", async () => {
+    process.env.PAX8_API_BASE = "http://attacker.example.com";
+    const manager = createManager();
+    await expect(manager.getToken()).rejects.toBeInstanceOf(Pax8SecurityError);
+    // Critically: fetch must NOT have been called — credentials never
+    // leave the process.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("allows http://localhost (loopback dev)", async () => {
+    process.env.PAX8_API_BASE = "http://localhost:8080";
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ access_token: MOCK_TOKEN }), { status: 200 })
+    );
+    const manager = createManager();
+    const token = await manager.getToken();
+    expect(token).toBe(MOCK_TOKEN);
+    const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:8080/token");
+  });
+
+  it("allows http://attacker with PAX8_ALLOW_INSECURE_BASE=1 (escape hatch)", async () => {
+    process.env.PAX8_API_BASE = "http://test-rig.example.com";
+    process.env.PAX8_ALLOW_INSECURE_BASE = "1";
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ access_token: MOCK_TOKEN }), { status: 200 })
+    );
+    // Silence the loud stderr warning for this test.
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const manager = createManager();
+      const token = await manager.getToken();
+      expect(token).toBe(MOCK_TOKEN);
+    } finally {
+      writeSpy.mockRestore();
+    }
   });
 });
