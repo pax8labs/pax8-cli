@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
+import { resolve as resolvePath, sep as pathSep } from "node:path";
 import { resolveCliPath, tokenize } from "./repl.js";
 
 describe("resolveCliPath", () => {
@@ -10,22 +11,20 @@ describe("resolveCliPath", () => {
   // because tsup inlines lib/repl.ts into dist/index.js. Every command typed
   // at the `pax8>` prompt then crashed with MODULE_NOT_FOUND for global
   // installs.
+  //
+  // Tests are written cross-platform: build inputs with the platform's
+  // resolver (path.resolve) so Windows CI doesn't fail just because
+  // POSIX-style absolute strings are interpreted as drive-relative.
 
-  it("returns the absolute path of process.argv[1] for a global install", () => {
-    expect(
-      resolveCliPath("/usr/local/lib/node_modules/@pax8/cli/dist/index.js"),
-    ).toBe("/usr/local/lib/node_modules/@pax8/cli/dist/index.js");
+  it("preserves an absolute path verbatim (idempotent)", () => {
+    const input = resolvePath("dist", "index.js"); // platform-correct absolute
+    expect(resolveCliPath(input)).toBe(input);
   });
 
-  it("returns the absolute path of process.argv[1] for a local repo invocation", () => {
-    expect(
-      resolveCliPath("/Users/jane/code/pax8-cli/packages/cli/dist/index.js"),
-    ).toBe("/Users/jane/code/pax8-cli/packages/cli/dist/index.js");
-  });
-
-  it("never strips the dist/ segment (the regression)", () => {
-    const repoBuild = "/repo/packages/cli/dist/index.js";
-    expect(resolveCliPath(repoBuild)).toContain("/dist/");
+  it("never strips the dist/ segment (the actual regression)", () => {
+    const input = resolvePath("packages", "cli", "dist", "index.js");
+    const result = resolveCliPath(input);
+    expect(result).toContain(`${pathSep}dist${pathSep}`);
   });
 
   it("throws when process.argv[1] is empty (cannot determine entry)", () => {
