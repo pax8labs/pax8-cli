@@ -116,10 +116,13 @@ describe("pax8 quotes update", () => {
 
   describe("single-line quote", () => {
     it("uses the terser confirm (no destructive warning)", async () => {
+      // quote-acme-001 has exactly one line item — the terser-confirm path
+      // only fires when new-count matches existing-count. Uses Acme Corp
+      // because the other Draft demo quote (quote-bright-001) has two.
       const result = await runCliExpectSuccess([
         "quotes",
         "update",
-        "quote-bright-001",
+        "quote-acme-001",
         "--product",
         "Microsoft 365 E3",
         "--quantity",
