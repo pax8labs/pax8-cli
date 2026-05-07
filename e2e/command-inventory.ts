@@ -357,17 +357,11 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
       return ["orders", "show", id];
     },
     demo: {
-      // The known #194 bug: orders show currently renders "Company: undefined"
-      // and empty Line Items. When that's fixed, drop knownBroken and add:
-      //   expectedFragments: [/Company:.*\S+/, /Line Items?\b/],
-      knownBroken: {
-        issue: "#194",
-        reason:
-          "orders show renders Company: undefined and empty Line Items — needs enrichment from companies+products fixtures",
-      },
       forbiddenFragments: ["undefined"],
     },
-    jsonContract: { objectRequiredFields: ["id"] },
+    jsonContract: {
+      objectRequiredFields: ["id", "companyId", "companyName", "lineItems"],
+    },
   },
   {
     command: ["orders", "create"],
