@@ -104,20 +104,7 @@ describe("README snippet smoke", () => {
   // silently regress — this isn't a workaround; it's a punchlist.
   // Re-running the matrix after each fix will green these without code
   // changes once the underlying CLI/README is fixed.
-  const KNOWN_FAILING = new Map<string, string>([
-    [
-      'pax8 cost sim --company "Acme Corp" --product "M365 Business Premium" --quantity 50',
-      "#211: README uses M365-shorthand product name; CLI matcher requires Microsoft 365 prefix",
-    ],
-    [
-      'pax8 cost sim --company "Acme" --product "M365 Business Premium" --from "M365 Business Basic" --quantity 45',
-      "#211: README uses M365-shorthand product name",
-    ],
-    [
-      'pax8 cost sim --company "Acme" --product "AvePoint Cloud Backup" --quantity 30 --json',
-      "#211: README product name AvePoint Cloud Backup vs demo full name AvePoint Cloud Backup for Microsoft 365",
-    ],
-  ]);
+  const KNOWN_FAILING = new Map<string, string>([]);
 
   const runnable = pax8Lines.filter(
     (l) =>
