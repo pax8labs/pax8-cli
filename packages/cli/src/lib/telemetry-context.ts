@@ -39,6 +39,7 @@ export type TelemetryExtraFields = Partial<
     | "order_total_dollars"
     | "order_mrr_impact"
     | "order_seats"
+    | "order_dry_run"
     | "recs_presented"
     | "recs_ordered"
     | "recs_skipped"
