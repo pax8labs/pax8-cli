@@ -410,6 +410,28 @@ export const WebhookLogSchema = z.object({
 });
 export type WebhookLog = z.infer<typeof WebhookLogSchema>;
 
+// ─── Webhook Topic Definition ────────────────────────────────────────────────
+
+/**
+ * Discoverable topic exposed by `GET /webhooks/topic-definitions`.
+ *
+ * Per the public webhooks OpenAPI spec, every topic carries a `topic` slug
+ * (the value passed to `--events` on create) plus a human `name` and
+ * `description`. The optional `availableFilters` and `samplePayload` fields
+ * are also defined by the upstream `TopicDefinition` schema; they're parsed
+ * loosely (`z.unknown()`) because the CLI surface only needs `topic` and
+ * `description` today and we'd rather not ship a full payload schema we
+ * don't validate against.
+ */
+export const TopicDefinitionSchema = z.object({
+  topic: z.string(),
+  name: z.string(),
+  description: z.string(),
+  availableFilters: z.array(z.unknown()).optional(),
+  samplePayload: z.unknown().optional(),
+});
+export type TopicDefinition = z.infer<typeof TopicDefinitionSchema>;
+
 // ─── Paginated Response ──────────────────────────────────────────────────────
 
 export const PageInfoSchema = z.object({

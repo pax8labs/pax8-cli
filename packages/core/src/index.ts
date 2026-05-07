@@ -103,6 +103,7 @@ export {
   UpdateQuoteInputSchema,
   WebhookSchema,
   WebhookLogSchema,
+  TopicDefinitionSchema,
   CreateWebhookInputSchema,
   UpdateWebhookInputSchema,
   PageInfoSchema,
@@ -150,6 +151,7 @@ export type {
   UpdateQuoteInput,
   Webhook,
   WebhookLog,
+  TopicDefinition,
   CreateWebhookInput,
   UpdateWebhookInput,
   PageInfo,
@@ -273,4 +275,5 @@ export {
   webhooks as demoWebhooks,
   webhookLogs as demoWebhookLogs,
   webhookTopics as demoWebhookTopics,
+  webhookTopicDefinitions as demoWebhookTopicDefinitions,
 } from "./mock/demo-data.js";
