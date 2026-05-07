@@ -468,8 +468,29 @@ describe("InvoiceSchema", () => {
     expect(InvoiceSchema.parse(valid)).toEqual(valid);
   });
 
-  it("rejects invalid status", () => {
+  it("validates Carried status", () => {
+    expect(InvoiceSchema.parse({ ...valid, status: "Carried" })).toEqual({
+      ...valid,
+      status: "Carried",
+    });
+  });
+
+  it("validates a payload with missing status (status is optional per spec gap)", () => {
+    // Strip status via destructure; rest-sibling idiom.
+    const { status, ...rest } = valid;
+    expect(InvoiceSchema.parse(rest)).toEqual(rest);
+  });
+
+  it("rejects invalid status (Overdue)", () => {
     expect(() => InvoiceSchema.parse({ ...valid, status: "Overdue" })).toThrow();
+  });
+
+  it("rejects legacy Carry status (typo replaced by Carried)", () => {
+    expect(() => InvoiceSchema.parse({ ...valid, status: "Carry" })).toThrow();
+  });
+
+  it("rejects legacy Nothing status (removed dead value)", () => {
+    expect(() => InvoiceSchema.parse({ ...valid, status: "Nothing" })).toThrow();
   });
 
   it("rejects missing total", () => {
