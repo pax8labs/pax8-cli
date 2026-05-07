@@ -182,7 +182,6 @@ describe("ProductSchema", () => {
     shortDescription: "Cloud productivity suite",
     description: "Full Microsoft 365 Business Premium package",
     unitOfMeasurement: "seat",
-    categoryName: "Productivity",
   };
 
   it("validates a correct payload", () => {

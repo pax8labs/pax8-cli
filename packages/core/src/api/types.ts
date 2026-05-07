@@ -141,7 +141,6 @@ export const ProductSchema = z.object({
   shortDescription: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   unitOfMeasurement: z.string().optional(),
-  categoryName: z.string().optional(),
 });
 export type Product = z.infer<typeof ProductSchema>;
 
@@ -381,6 +380,13 @@ export const WebhookSchema = z.object({
   topics: z.array(z.string()),
   status: WebhookStatusSchema,
   createdDate: z.string(),
+  /**
+   * HMAC signing secret for verifying delivery payloads. Surfaced by the API
+   * on the create (POST) response so subscribers can capture it once; not
+   * documented in the public webhooks OpenAPI spec and not guaranteed to be
+   * returned on subsequent GET calls. Optional for that reason — consumers
+   * should record it at create time. See issue #241.
+   */
   secret: z.string().optional(),
 });
 export type Webhook = z.infer<typeof WebhookSchema>;
