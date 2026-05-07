@@ -183,7 +183,12 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     group: "config",
     type: "meta",
     demo: {
-      expectedFragments: [/\.pax8|\/pax8|config/i],
+      // Just assert the output looks path-like — at least one path
+      // separator. The path itself depends on PAX8_CONFIG_DIR (which the
+      // e2e harness sets to a per-test mkdtemp in #209's hygiene fix), so
+      // matching against `.pax8` / `/pax8` / `config` is fragile across
+      // platforms (Windows temp paths don't contain any of those tokens).
+      expectedFragments: [/[/\\]/],
     },
     jsonContract: { skip: { reason: "prints a single path" } },
   },
