@@ -240,6 +240,16 @@ export {
 export { ConfigSchema } from "./config/schema.js";
 export type { Config } from "./config/schema.js";
 
+// ─── Security: env var validation + safe file writes ────────────────────────
+
+export {
+  validateBaseUrl,
+  validateConfigDir,
+  Pax8SecurityError,
+} from "./security/validate-env.js";
+export { safeWriteFileSync } from "./security/safe-write.js";
+export { redactDebugBody } from "./security/redact-debug.js";
+
 // ─── Telemetry ──────────────────────────────────────────────────────────────
 
 export {

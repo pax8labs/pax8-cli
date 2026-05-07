@@ -7,6 +7,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { safeWriteFileSync } from "../security/safe-write.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -69,7 +70,12 @@ export class CredentialStore {
     }
 
     const data = JSON.stringify({ clientId, clientSecret }, null, 2);
-    await fs.writeFile(CREDENTIALS_FILE, data, { mode: 0o600 });
+    // #262: use the safe-write helper so an existing symlink at
+    // CREDENTIALS_FILE causes the write to fail (ELOOP) rather than
+    // landing the credentials at the symlink's target. The 0o600 mode is
+    // applied atomically at file-creation time, eliminating the small
+    // window where an old `writeFile + chmod` flow had default perms.
+    safeWriteFileSync(CREDENTIALS_FILE, data);
 
     if (isWindows) {
       await this.secureFileWindows(CREDENTIALS_FILE);

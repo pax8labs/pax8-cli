@@ -5,6 +5,15 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["packages/*/src/**/*.test.ts", "e2e/**/*.test.ts"],
+    // #262: tests routinely point PAX8_CONFIG_DIR at `os.tmpdir()` (which
+    // resolves outside `os.homedir()` on macOS / Linux) for isolation. The
+    // new validateConfigDir() guard would reject those by default, so opt
+    // every test worker (and every subprocess spawned by `runCli`) into
+    // the explicit escape hatch. Production users without this var get
+    // the strict default.
+    env: {
+      PAX8_ALLOW_NON_HOME_CONFIG: "1",
+    },
     // Sets NODE_V8_COVERAGE on the parent so child processes spawned by
     // `runCli()` deposit their v8 profiles into a known directory, which the
     // custom coverage provider then merges into the final report.

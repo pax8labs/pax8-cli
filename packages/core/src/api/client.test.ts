@@ -4,6 +4,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Pax8Client, getDefaultBaseUrl } from "./client.js";
 import { ApiError, RateLimitError } from "./errors.js";
+import {
+  Pax8SecurityError,
+  validateBaseUrl,
+} from "../security/validate-env.js";
+import { redactDebugBody } from "../security/redact-debug.js";
+import { ERROR_INVALID_INPUT } from "../errors/codes.js";
 
 const mockTokenManager = { getToken: vi.fn().mockResolvedValue("test-token") };
 
@@ -358,5 +364,218 @@ describe("Pax8Client + PAX8_API_BASE", () => {
     const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url.toString()).toContain("https://api.example.com/v1/companies");
     expect(url.toString()).not.toContain("staging");
+  });
+});
+
+// #234 — `validateBaseUrl` blocks plaintext URLs that would leak bearer
+// tokens; loopback addresses and the `PAX8_ALLOW_INSECURE_BASE=1` opt-in
+// remain accepted.
+describe("validateBaseUrl (#234)", () => {
+  const originalAllow = process.env.PAX8_ALLOW_INSECURE_BASE;
+
+  afterEach(() => {
+    if (originalAllow === undefined) delete process.env.PAX8_ALLOW_INSECURE_BASE;
+    else process.env.PAX8_ALLOW_INSECURE_BASE = originalAllow;
+  });
+
+  it("accepts a normal https URL as-is", () => {
+    expect(validateBaseUrl("https://api.pax8.com/v1")).toBe(
+      "https://api.pax8.com/v1",
+    );
+  });
+
+  it("rejects http://non-loopback hosts", () => {
+    let thrown: unknown;
+    try {
+      validateBaseUrl("http://api.example.com/v1");
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(Pax8SecurityError);
+    expect((thrown as Pax8SecurityError).code).toBe(ERROR_INVALID_INPUT);
+    // Recovery steps must mention the escape hatch so the user knows how
+    // to bypass when they're sure.
+    const steps = (thrown as Pax8SecurityError).recoverySteps?.join("\n") ?? "";
+    expect(steps).toContain("PAX8_ALLOW_INSECURE_BASE");
+    expect(steps).toContain("https://");
+  });
+
+  it("accepts http://localhost variants (loopback)", () => {
+    expect(validateBaseUrl("http://localhost:8080")).toBe(
+      "http://localhost:8080",
+    );
+    expect(validateBaseUrl("http://127.0.0.1:8080")).toBe(
+      "http://127.0.0.1:8080",
+    );
+    expect(validateBaseUrl("http://[::1]:8080")).toBe("http://[::1]:8080");
+    // *.localhost is also loopback per RFC 6761.
+    expect(validateBaseUrl("http://api.localhost:9000")).toBe(
+      "http://api.localhost:9000",
+    );
+  });
+
+  it("accepts http://non-localhost when PAX8_ALLOW_INSECURE_BASE=1 and emits a stderr warning", () => {
+    process.env.PAX8_ALLOW_INSECURE_BASE = "1";
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const result = validateBaseUrl("http://attacker.example.com");
+      expect(result).toBe("http://attacker.example.com");
+      // Loud warning, on every call.
+      const calls = writeSpy.mock.calls.map((c) => String(c[0])).join("");
+      expect(calls).toContain("WARNING");
+      expect(calls).toContain("attacker.example.com");
+      // Red-bold ANSI prefix is present (chalk equivalent).
+      expect(calls).toContain("\x1b[1m\x1b[31m");
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("throws a helpful error on unparseable input", () => {
+    let thrown: unknown;
+    try {
+      // Plain garbage with no scheme and no host — `new URL()` rejects this.
+      validateBaseUrl("definitely not a url");
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(Pax8SecurityError);
+    expect((thrown as Pax8SecurityError).message).toContain("Invalid PAX8_API_BASE");
+    expect((thrown as Pax8SecurityError).recoverySteps?.length).toBeGreaterThan(0);
+  });
+
+  it("rejects unsupported protocols (e.g. ftp://)", () => {
+    expect(() => validateBaseUrl("ftp://example.com/v1")).toThrow(
+      Pax8SecurityError,
+    );
+  });
+
+  it("getDefaultBaseUrl rejects a malicious http:// PAX8_API_BASE", () => {
+    const original = process.env.PAX8_API_BASE;
+    process.env.PAX8_API_BASE = "http://attacker.example.com";
+    try {
+      expect(() => getDefaultBaseUrl()).toThrow(Pax8SecurityError);
+    } finally {
+      if (original === undefined) delete process.env.PAX8_API_BASE;
+      else process.env.PAX8_API_BASE = original;
+    }
+  });
+});
+
+// #263 — debug-mode error response bodies must not echo bearer tokens or
+// secrets; `PAX8_DEBUG_RAW=1` is the escape hatch for actual debugging.
+describe("redactDebugBody (#263)", () => {
+  const originalRaw = process.env.PAX8_DEBUG_RAW;
+
+  afterEach(() => {
+    if (originalRaw === undefined) delete process.env.PAX8_DEBUG_RAW;
+    else process.env.PAX8_DEBUG_RAW = originalRaw;
+  });
+
+  it("redacts a Bearer token in the body", () => {
+    const out = redactDebugBody(
+      'unauthorized: "Bearer abc123XYZdef456_token-value-here"',
+    );
+    expect(out).toContain("Bearer <REDACTED:TOKEN>");
+    expect(out).not.toContain("abc123XYZdef456");
+  });
+
+  it("redacts a JWT-shaped token", () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+    const out = redactDebugBody(`token=${jwt}`);
+    expect(out).toContain("<REDACTED:JWT>");
+    expect(out).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+  });
+
+  it('redacts client_secret values regardless of quoting', () => {
+    const out = redactDebugBody('{"client_secret": "abc123def456ghi789jkl"}');
+    expect(out).not.toContain("abc123def456ghi789jkl");
+    expect(out).toContain("<REDACTED:TOKEN>");
+  });
+
+  it("logs short, plain error bodies verbatim", () => {
+    const plain = '{"error": "company not found", "id": "ACME"}';
+    expect(redactDebugBody(plain)).toBe(plain);
+  });
+
+  it("truncates bodies longer than 500 chars", () => {
+    // Use a simple repeated phrase that won't trip the opaque-token rule
+    // (alpha-only, with spaces and short words). The `xxxx` block alone
+    // would be redacted to `<REDACTED:TOKEN>` and become *shorter* than
+    // 500 chars, so we need natural-looking padding.
+    const big = "the quick brown fox jumps over the lazy dog ".repeat(40);
+    const out = redactDebugBody(big);
+    expect(out.length).toBeLessThan(big.length);
+    expect(out).toContain("truncated");
+  });
+
+  it("PAX8_DEBUG_RAW=1 returns the body unredacted", () => {
+    process.env.PAX8_DEBUG_RAW = "1";
+    const sensitive = 'Bearer abc123XYZdef456_token-value-here';
+    expect(redactDebugBody(sensitive)).toBe(sensitive);
+  });
+});
+
+// Integration: when debug=true and the API returns an error body containing
+// a Bearer token, the stderr trail must not contain the raw token.
+describe("Pax8Client debug error logging (#263)", () => {
+  let originalFetch: typeof globalThis.fetch;
+  const originalRaw = process.env.PAX8_DEBUG_RAW;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    mockTokenManager.getToken.mockResolvedValue("test-token");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+    if (originalRaw === undefined) delete process.env.PAX8_DEBUG_RAW;
+    else process.env.PAX8_DEBUG_RAW = originalRaw;
+  });
+
+  it("redacts a Bearer token in a 4xx error body when debug=true", async () => {
+    globalThis.fetch = mockFetchResponse(401, {
+      error: "unauthorized",
+      hint: "Bearer abc123XYZdef456_real-token-value",
+    });
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      debug: true,
+      cacheTtlMs: 0,
+    });
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      await client.get("/companies").catch(() => undefined);
+      const all = writeSpy.mock.calls.map((c) => String(c[0])).join("");
+      expect(all).toContain("error body:");
+      expect(all).toContain("<REDACTED:TOKEN>");
+      expect(all).not.toContain("abc123XYZdef456");
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("PAX8_DEBUG_RAW=1 keeps the raw body in debug logs", async () => {
+    process.env.PAX8_DEBUG_RAW = "1";
+    globalThis.fetch = mockFetchResponse(400, {
+      detail: "Bearer abc123XYZdef456_real-token-value",
+    });
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      debug: true,
+      cacheTtlMs: 0,
+    });
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      await client.get("/companies").catch(() => undefined);
+      const all = writeSpy.mock.calls.map((c) => String(c[0])).join("");
+      expect(all).toContain("abc123XYZdef456");
+    } finally {
+      writeSpy.mockRestore();
+    }
   });
 });

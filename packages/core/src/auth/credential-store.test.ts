@@ -9,6 +9,21 @@ import * as os from "node:os";
 
 vi.mock("node:fs/promises");
 
+// `safeWriteFileSync` (used by saveCredentials for #262 symlink protection)
+// reaches into `node:fs` directly. Mock it so the test stays hermetic and
+// can pin the openSync flag bag — which is the whole point of the
+// safe-write helper. The real node:fs constants are still needed (we
+// assert flags like O_NOFOLLOW), so we preserve them via importActual.
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return {
+    ...actual,
+    openSync: vi.fn(),
+    writeSync: vi.fn(),
+    closeSync: vi.fn(),
+  };
+});
+
 const CONFIG_DIR = path.join(os.homedir(), ".pax8");
 const CREDENTIALS_FILE = path.join(CONFIG_DIR, "credentials.json");
 
@@ -117,18 +132,50 @@ describe("CredentialStore", () => {
 
   describe.skipIf(process.platform === "win32")("saveCredentials", () => {
     it("creates config dir, secures it, and writes credentials file on Unix", async () => {
+      // #262: saveCredentials now uses safeWriteFileSync for the file
+      // write so the resulting file gets O_NOFOLLOW symlink protection
+      // and 0o600 permissions atomically at create time. The byte-level
+      // round-trip is covered by the dedicated safe-write tests in
+      // packages/core/src/config/loader-extended.test.ts; here we pin the
+      // call shape — protective flags + mode + correct destination — so
+      // a future refactor can't silently drop the protection.
+      const fsSync = await import("node:fs");
+      const openSync = fsSync.openSync as unknown as ReturnType<typeof vi.fn>;
+      const writeSync = fsSync.writeSync as unknown as ReturnType<typeof vi.fn>;
+      const closeSync = fsSync.closeSync as unknown as ReturnType<typeof vi.fn>;
+      openSync.mockReset();
+      writeSync.mockReset();
+      closeSync.mockReset();
+      openSync.mockReturnValue(7);
+      writeSync.mockReturnValue(0);
+
       vi.mocked(fs.mkdir).mockResolvedValueOnce(undefined);
       vi.mocked(fs.chmod).mockResolvedValueOnce(undefined);
-      vi.mocked(fs.writeFile).mockResolvedValueOnce(undefined);
 
       await store.saveCredentials("my-id", "my-secret");
 
       expect(fs.mkdir).toHaveBeenCalledWith(CONFIG_DIR, { recursive: true });
       expect(fs.chmod).toHaveBeenCalledWith(CONFIG_DIR, 0o700);
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        CREDENTIALS_FILE,
+
+      expect(openSync).toHaveBeenCalledTimes(1);
+      const [calledPath, flags, mode] = openSync.mock.calls[0] as [
+        string,
+        number,
+        number,
+      ];
+      expect(calledPath).toBe(CREDENTIALS_FILE);
+      expect(mode).toBe(0o600);
+      const C = fsSync.constants;
+      expect(flags & C.O_WRONLY).toBe(C.O_WRONLY);
+      expect(flags & C.O_CREAT).toBe(C.O_CREAT);
+      expect(flags & C.O_TRUNC).toBe(C.O_TRUNC);
+      // O_NOFOLLOW is POSIX-only; on Linux/macOS it's a non-zero constant.
+      expect(flags & C.O_NOFOLLOW).toBe(C.O_NOFOLLOW);
+
+      expect(writeSync).toHaveBeenCalledTimes(1);
+      const writtenBuf = writeSync.mock.calls[0][1] as Buffer;
+      expect(writtenBuf.toString("utf-8")).toBe(
         JSON.stringify({ clientId: "my-id", clientSecret: "my-secret" }, null, 2),
-        { mode: 0o600 }
       );
     });
   });

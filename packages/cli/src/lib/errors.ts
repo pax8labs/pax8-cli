@@ -17,8 +17,10 @@ import {
   ERROR_PRODUCT_NOT_FOUND,
   ERROR_RATE_LIMITED,
   ERROR_SUBSCRIPTION_NOT_FOUND,
+  Pax8SecurityError,
   getConfigDir,
   getTelemetry,
+  safeWriteFileSync,
   type Pax8ErrorCode,
 } from "@pax8/core";
 import { replCmd } from "./confirm.js";
@@ -258,16 +260,11 @@ function writeLastErrorEnvelope(envelope: ErrorEnvelope): void {
       timestamp: new Date().toISOString(),
     };
     const filePath = path.join(dir, "last-error.json");
-    // writeFileSync with mode applies the mode on creation; if the file
-    // already exists it keeps existing perms — chmod after to be safe.
-    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), {
-      mode: 0o600,
-    });
-    try {
-      fs.chmodSync(filePath, 0o600);
-    } catch {
-      // Some filesystems (e.g. fat32 / windows) don't support chmod; ignore.
-    }
+    // #262: safeWriteFileSync opens with O_CREAT | O_EXCL-equivalent flags
+    // and refuses to follow an existing symlink at the destination. It
+    // also sets 0o600 atomically at creation time, so the previous
+    // `writeFile then chmod` race window is gone.
+    safeWriteFileSync(filePath, JSON.stringify(payload, null, 2));
   } catch {
     // Persisting the envelope is a nice-to-have for `pax8 report-bug`. Never
     // let it interfere with the user-facing error path.
@@ -281,7 +278,12 @@ function writeLastErrorEnvelope(envelope: ErrorEnvelope): void {
 function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
   const prefix = context ? `${context}: ` : "";
 
-  if (error instanceof CliError) {
+  if (error instanceof CliError || error instanceof Pax8SecurityError) {
+    // Pax8SecurityError lives in core (it's thrown from core call sites
+    // like getDefaultBaseUrl / getConfigDir, before any cli code runs) but
+    // is structurally the same as CliError — same fields, same intent.
+    // Render it through the same path so the user sees identical output
+    // regardless of which package raised the failure.
     const env: ErrorEnvelope = { message: prefix + error.message };
     if (error.code) env.code = error.code;
     if (error.causes && error.causes.length > 0) env.causes = error.causes;
@@ -370,7 +372,7 @@ export async function handleCommandError(
 
   const prefix = context ? `${context}\n` : "";
 
-  if (error instanceof CliError) {
+  if (error instanceof CliError || error instanceof Pax8SecurityError) {
     process.stderr.write(
       chalk.red.bold(`\n  ✗ ${prefix}  ${error.message}\n`)
     );

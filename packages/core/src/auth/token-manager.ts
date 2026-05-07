@@ -67,9 +67,15 @@ export class TokenManager {
   }
 
   private async fetchToken(): Promise<string> {
+    // Resolve the token URL outside the network try/catch. getTokenUrl()
+    // can throw Pax8SecurityError (#234) when PAX8_API_BASE is rejected,
+    // and that should propagate as-is — wrapping it in AuthError ("Failed
+    // to connect…") would obscure the security error and lose the
+    // actionable recovery steps.
+    const tokenUrl = getTokenUrl();
     let response: Response;
     try {
-      response = await fetch(getTokenUrl(), {
+      response = await fetch(tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import * as path from "node:path";
 import YAML from "yaml";
 import { ConfigSchema, type Config } from "./schema.js";
+import { validateConfigDir } from "../security/validate-env.js";
 
 const DEFAULT_CONFIG_DIR = path.join(homedir(), ".pax8");
 const DEFAULT_CONFIG_FILE = "config.yaml";
@@ -15,9 +16,14 @@ export function getConfigDir(): string {
   // and avoid clobbering the user's real ~/.pax8 dir. This is intentionally
   // read on every call so tests that set/unset the env var between runs are
   // honored without needing to reset module state.
+  //
+  // Security (#262): the override is run through `validateConfigDir` so a
+  // value that resolves outside the user's home directory is rejected
+  // before it can be used as a write target. The default ($HOME/.pax8)
+  // path skips validation — there's nothing user-controllable to check.
   const override = process.env.PAX8_CONFIG_DIR;
   if (override && override.length > 0) {
-    return override;
+    return validateConfigDir(override);
   }
   return DEFAULT_CONFIG_DIR;
 }

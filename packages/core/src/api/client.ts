@@ -5,6 +5,8 @@ import { type ZodType } from "zod";
 import { ApiError, RateLimitError } from "./errors.js";
 import { PageSchema } from "./types.js";
 import { FileCache } from "../services/cache.js";
+import { validateBaseUrl } from "../security/validate-env.js";
+import { redactDebugBody } from "../security/redact-debug.js";
 
 export interface Pax8ClientOptions {
   tokenManager: { getToken(): Promise<string> };
@@ -23,9 +25,19 @@ const MAX_RETRIES = 3;
  * Resolve the API base URL. Honors `PAX8_API_BASE` so partners can point at
  * a non-prod environment without code changes; falls back to production.
  * Exported so the CLI can surface it in `pax8 doctor`.
+ *
+ * Security (#234): the env-var path is run through `validateBaseUrl` so an
+ * `http://attacker.example.com` value is rejected before it can be used as
+ * the destination for bearer-token-bearing requests. Localhost over http
+ * is allowed for development; non-localhost http requires the explicit
+ * `PAX8_ALLOW_INSECURE_BASE=1` opt-in. Wiring the validation here means
+ * every caller — `Pax8Client` constructor, `TokenManager`, future call
+ * sites — gets the check for free.
  */
 export function getDefaultBaseUrl(): string {
-  return process.env.PAX8_API_BASE || FALLBACK_BASE_URL;
+  const fromEnv = process.env.PAX8_API_BASE;
+  if (!fromEnv) return FALLBACK_BASE_URL;
+  return validateBaseUrl(fromEnv);
 }
 
 export class Pax8Client {
@@ -194,7 +206,13 @@ export class Pax8Client {
           if (!response.ok) {
             const errorBody = await safeJson(response);
             if (this.debug && errorBody) {
-              process.stderr.write(`[pax8] ${method} ${path} error body: ${JSON.stringify(errorBody, null, 2)}\n`);
+              // #263: error response bodies can echo bearer tokens, JWTs, or
+              // client_secrets if the upstream API ever surfaces them. Run
+              // through the debug-body redactor before printing. Setting
+              // `PAX8_DEBUG_RAW=1` opts back into the unredacted form for
+              // genuine debugging — not the default `--verbose` path.
+              const rendered = redactDebugBody(JSON.stringify(errorBody, null, 2));
+              process.stderr.write(`[pax8] ${method} ${path} error body: ${rendered}\n`);
             }
             throw new ApiError(
               `${response.status} ${response.statusText}`,
