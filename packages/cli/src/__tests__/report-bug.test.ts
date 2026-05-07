@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { runCli, runCliExpectFailure, runCliExpectSuccess } from "./test-utils.js";
+import { runCliExpectFailure, runCliExpectSuccess } from "./test-utils.js";
 
 // Each test gets a unique config-dir so they can run in any order and pollute
 // nothing on the host machine. We rely on the `PAX8_CONFIG_DIR` seam from
@@ -42,11 +42,44 @@ describe("pax8 report-bug", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("exits 1 when no last-error.json exists", async () => {
-    const result = await runCliExpectFailure(["report-bug", "--print"], {
+  it("no last-error context exits 0 with manual-file-a-bug instructions (#209)", async () => {
+    // Bare `report-bug` with no captured error must be helpful, not a hard
+    // exit. README lists it as a quick-start example so first-run users
+    // hit this branch; #209 changed it from exit-1-on-stderr to exit-0
+    // with a short pointer to the issue tracker.
+    const result = await runCliExpectSuccess(["report-bug"], {
       PAX8_CONFIG_DIR: tmpDir,
     });
-    expect(result.stderr).toContain("No recent error found");
+    expect(result.stdout).toContain("No recent error in this session.");
+    expect(result.stdout).toContain(
+      "https://github.com/pax8labs/pax8-cli/issues/new"
+    );
+    expect(result.stdout).toContain("pax8 report-bug --help");
+    // Instructions go to stdout (not stderr) because this is a successful,
+    // informational response — not an error. (Demo-mode banner on stderr
+    // is fine; what matters is no "No recent error found" error line.)
+    expect(result.stderr).not.toContain("No recent error");
+  });
+
+  it("no last-error context with --print also exits 0 with instructions", async () => {
+    const result = await runCliExpectSuccess(["report-bug", "--print"], {
+      PAX8_CONFIG_DIR: tmpDir,
+    });
+    expect(result.stdout).toContain("No recent error in this session.");
+  });
+
+  it("no last-error context with --json emits a no-context envelope", async () => {
+    const result = await runCliExpectSuccess(["report-bug", "--json"], {
+      PAX8_CONFIG_DIR: tmpDir,
+    });
+    const parsed = JSON.parse(result.stdout) as {
+      status?: string;
+      issueUrl?: string;
+    };
+    expect(parsed.status).toBe("no-context");
+    expect(parsed.issueUrl).toBe(
+      "https://github.com/pax8labs/pax8-cli/issues/new"
+    );
   });
 
   it("--print outputs a redacted Markdown body and does not submit", async () => {
@@ -104,13 +137,15 @@ describe("pax8 report-bug", () => {
     expect(result.stdout).toContain("[ERROR_AUTH_EXPIRED]");
   });
 
-  it("rejects malformed last-error.json gracefully", async () => {
+  it("treats malformed last-error.json as no-context (graceful fallback)", async () => {
+    // Same path as "no last-error context": readEnvelope() returns null on
+    // parse failure, so the user gets the same helpful instructions rather
+    // than a stack trace or error exit.
     await fs.writeFile(path.join(tmpDir, "last-error.json"), "not json");
-    const result = await runCli(["report-bug", "--print"], {
+    const result = await runCliExpectSuccess(["report-bug", "--print"], {
       PAX8_CONFIG_DIR: tmpDir,
     });
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("No recent error found");
+    expect(result.stdout).toContain("No recent error in this session.");
   });
 
   it("shows help text", async () => {
