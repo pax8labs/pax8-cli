@@ -81,8 +81,10 @@ describe("pax8 subscriptions show", () => {
       "sub-summit-m365bp-001",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(data[0].id).toBe("sub-summit-m365bp-001");
-    expect(data[0].productName).toBe("Microsoft 365 Business Premium [New Commerce Experience]");
+    // `show` returns a single object, not an array (#208)
+    expect(Array.isArray(data)).toBe(false);
+    expect(data.id).toBe("sub-summit-m365bp-001");
+    expect(data.productName).toBe("Microsoft 365 Business Premium [New Commerce Experience]");
   });
 
   it("shows subscription with --history", async () => {
@@ -93,10 +95,11 @@ describe("pax8 subscriptions show", () => {
       "--history",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(data[0]).toHaveProperty("history");
-    expect(Array.isArray(data[0].history)).toBe(true);
-    expect(data[0].history.length).toBeGreaterThan(0);
-    expect(data[0].history[0]).toHaveProperty("field");
+    expect(Array.isArray(data)).toBe(false);
+    expect(data).toHaveProperty("history");
+    expect(Array.isArray(data.history)).toBe(true);
+    expect(data.history.length).toBeGreaterThan(0);
+    expect(data.history[0]).toHaveProperty("field");
   });
 
   it("shows help text", async () => {

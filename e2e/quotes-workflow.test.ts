@@ -53,16 +53,16 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
     }
   });
 
-  it("pax8 quotes show returns a single quote as JSON array with computed total", async () => {
+  it("pax8 quotes show returns a single quote object with computed total", async () => {
     const list = await runCliExpectSuccess(["quotes", "list", "--json"]);
     const id = JSON.parse(list.stdout)[0].id;
 
     const result = await runCliExpectSuccess(["quotes", "show", id, "--json"]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data).toHaveLength(1);
-    expect(data[0].id).toBe(id);
-    expect(typeof data[0].total).toBe("number");
+    // `show` returns a single object, not an array (#208)
+    expect(Array.isArray(data)).toBe(false);
+    expect(data.id).toBe(id);
+    expect(typeof data.total).toBe("number");
   });
 
   it("pax8 quotes show fails for unknown id", async () => {

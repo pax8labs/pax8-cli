@@ -58,11 +58,11 @@ Examples:
         if (options.history) {
           const history = await ctx.api.subscriptions.getHistory(id);
           const changes = Array.isArray(history) ? history : history.changes;
-          output([{ ...sub, history: changes }], {
-            format: "json",
-          });
+          process.stdout.write(
+            JSON.stringify({ ...sub, history: changes }, null, 2) + "\n"
+          );
         } else {
-          output([sub], { format: "json" });
+          process.stdout.write(JSON.stringify(sub, null, 2) + "\n");
         }
         return;
       }

@@ -32,7 +32,7 @@ Examples:
       spinner.stop();
 
       if (ctx.outputFormat === "json") {
-        output([invoice], { format: "json" });
+        process.stdout.write(JSON.stringify(invoice, null, 2) + "\n");
         return;
       }
 

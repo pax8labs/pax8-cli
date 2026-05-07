@@ -55,15 +55,15 @@ describe("E2E: Usage workflow — list and show summaries", () => {
     }
   });
 
-  it("pax8 usage show returns a single summary as JSON array", async () => {
+  it("pax8 usage show returns a single summary object", async () => {
     const list = await runCliExpectSuccess(["usage", "list", "--json"]);
     const id = JSON.parse(list.stdout)[0].id;
 
     const result = await runCliExpectSuccess(["usage", "show", id, "--json"]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data).toHaveLength(1);
-    expect(data[0].id).toBe(id);
+    // `show` returns a single object, not an array (#208)
+    expect(Array.isArray(data)).toBe(false);
+    expect(data.id).toBe(id);
   });
 
   it("pax8 usage show --lines includes per-resource breakdown", async () => {
@@ -82,12 +82,13 @@ describe("E2E: Usage workflow — list and show summaries", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(data[0]).toHaveProperty("lines");
-    expect(Array.isArray(data[0].lines)).toBe(true);
-    expect(data[0].lines.length).toBeGreaterThan(0);
-    expect(data[0].lines[0]).toHaveProperty("description");
-    expect(data[0].lines[0]).toHaveProperty("subtotal");
-    expect(data[0].lines[0].usageSummaryId).toBe(summary.id);
+    expect(Array.isArray(data)).toBe(false);
+    expect(data).toHaveProperty("lines");
+    expect(Array.isArray(data.lines)).toBe(true);
+    expect(data.lines.length).toBeGreaterThan(0);
+    expect(data.lines[0]).toHaveProperty("description");
+    expect(data.lines[0]).toHaveProperty("subtotal");
+    expect(data.lines[0].usageSummaryId).toBe(summary.id);
   });
 
   it("pax8 usage show fails for unknown summary id", async () => {
