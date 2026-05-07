@@ -30,8 +30,20 @@ export class OrdersApi {
     return OrderSchema.parse(raw);
   }
 
-  async create(data: CreateOrderInput): Promise<Order> {
-    const raw = await this.client.post<unknown>("/orders", data);
+  /**
+   * Create a new order.
+   *
+   * `opts.isMock=true` appends `?isMock=true` to the request, telling the
+   * Pax8 API to validate (dry-run) the order without committing it. The
+   * response shape is the same as a real create — partners can preview
+   * what the order would look like before placing it for real.
+   */
+  async create(
+    data: CreateOrderInput,
+    opts?: { isMock?: boolean },
+  ): Promise<Order> {
+    const path = opts?.isMock ? "/orders?isMock=true" : "/orders";
+    const raw = await this.client.post<unknown>(path, data);
     return OrderSchema.parse(raw);
   }
 }

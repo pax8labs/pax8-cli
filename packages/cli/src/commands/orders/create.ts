@@ -5,8 +5,8 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError, extractErrorDetail } from "../../lib/errors.js";
-import { buildContext } from "../../lib/context.js";
-import { confirmWithChange, replCmd } from "../../lib/confirm.js";
+import { buildContext, type CommandContext } from "../../lib/context.js";
+import { confirm, confirmWithChange, replCmd } from "../../lib/confirm.js";
 import { formatStatus, formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
@@ -23,14 +23,248 @@ import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
 import { hashArgs, isValidKey, withIdempotency } from "../../lib/idempotency.js";
 import { setTelemetryFields } from "../../lib/telemetry-context.js";
 
+// ─── Multi-line parsing ───────────────────────────────────────────────────────
+//
+// Repeatable `--line-item product=name,quantity=n[,billing-term=Annual]
+// [,commitment-term=1-Year][,commitment-term-id=<uuid>]`. Commander's option
+// callback is invoked once per occurrence, with the previous accumulator as
+// the second arg — that's how we collect multiple values without `.variadic()`
+// (which greedily eats subsequent positional args).
+
+interface RawLineItem {
+  product: string;
+  quantity: number;
+  billingTerm?: string;
+  commitmentTerm?: string;
+  commitmentTermId?: string;
+  /** Original spec string, for error messages. */
+  raw: string;
+}
+
+function collectLineItem(value: string, prev: RawLineItem[]): RawLineItem[] {
+  // We only validate string shape here; product resolution happens in the
+  // action handler so we can hit the API in parallel.
+  return prev.concat([parseLineItemSpec(value)]);
+}
+
+function parseLineItemSpec(spec: string): RawLineItem {
+  const pairs = spec.split(",").map((s) => s.trim()).filter(Boolean);
+  const out: Partial<RawLineItem> = { raw: spec };
+  for (const pair of pairs) {
+    const eq = pair.indexOf("=");
+    if (eq < 0) {
+      throw new CliError(
+        `Invalid --line-item spec: "${spec}"`,
+        [`Each comma-separated entry must be key=value (got "${pair}")`],
+        [
+          `Example: --line-item product=prod-m365-biz-prem-0001,quantity=5`,
+          `Multiple lines: --line-item product=p1,quantity=5 --line-item product=p2,quantity=10,billing-term=Annual`,
+        ],
+        undefined,
+        ERROR_INVALID_INPUT,
+      );
+    }
+    const key = pair.slice(0, eq).trim().toLowerCase();
+    const val = pair.slice(eq + 1).trim();
+    switch (key) {
+      case "product":
+      case "product-id":
+      case "productid":
+        out.product = val;
+        break;
+      case "quantity":
+      case "qty": {
+        const n = parseInt(val, 10);
+        if (isNaN(n) || n <= 0) {
+          throw new CliError(
+            `Invalid quantity in --line-item "${spec}": "${val}"`,
+            ["Quantity must be a positive integer (1 or greater)"],
+            [`Example: --line-item product=<id>,quantity=5`],
+            undefined,
+            ERROR_INVALID_INPUT,
+          );
+        }
+        out.quantity = n;
+        break;
+      }
+      case "billing-term":
+      case "billingterm":
+        out.billingTerm = val;
+        break;
+      case "commitment-term":
+      case "commitmentterm":
+        out.commitmentTerm = val;
+        break;
+      case "commitment-term-id":
+      case "commitmenttermid":
+        out.commitmentTermId = val;
+        break;
+      default:
+        throw new CliError(
+          `Unknown key in --line-item "${spec}": "${key}"`,
+          [`Supported keys: product, quantity, billing-term, commitment-term, commitment-term-id`],
+          [`Example: --line-item product=prod-m365-biz-prem-0001,quantity=5,billing-term=Annual`],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+    }
+  }
+  if (!out.product) {
+    throw new CliError(
+      `Missing product in --line-item "${spec}"`,
+      ["Each --line-item must include product=<id|name>"],
+      [`Example: --line-item product=prod-m365-biz-prem-0001,quantity=5`],
+      undefined,
+      ERROR_INVALID_INPUT,
+    );
+  }
+  if (out.quantity === undefined) {
+    throw new CliError(
+      `Missing quantity in --line-item "${spec}"`,
+      ["Each --line-item must include quantity=<n>"],
+      [`Example: --line-item product=${out.product},quantity=5`],
+      undefined,
+      ERROR_INVALID_INPUT,
+    );
+  }
+  return out as RawLineItem;
+}
+
+// ─── Per-line resolution ──────────────────────────────────────────────────────
+
+interface ResolvedLine {
+  productId: string;
+  productName: string;
+  quantity: number;
+  billingTerm: string;
+  commitmentTerm?: string;
+  commitmentTermId?: string;
+  unitPrice: number | null;
+  warnings: string[];
+}
+
+/** Resolve a single line item: product → pricing → commitment. */
+async function resolveLine(
+  ctx: CommandContext,
+  companyId: string,
+  raw: RawLineItem,
+  defaultBillingTerm: string,
+): Promise<ResolvedLine> {
+  const billingTerm = raw.billingTerm ?? defaultBillingTerm;
+  let productId = raw.product;
+  let productName = raw.product;
+  let productNotFound = false;
+  const warnings: string[] = [];
+
+  const productResult = await resolveProduct(ctx, raw.product).catch(() => {
+    productNotFound = true;
+    return null;
+  });
+  if (productResult) {
+    productId = productResult.id;
+    productName = productResult.name;
+  } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(raw.product)) {
+    throw new CliError(
+      `Product not found: "${raw.product}"`,
+      ["Could not resolve product name to a product ID"],
+      [
+        `Search the catalog: ${replCmd("pax8 products search")} "${raw.product}"`,
+        `Then use the product ID in --line-item product=<id>,quantity=<n>`,
+      ],
+      undefined,
+      ERROR_PRODUCT_NOT_FOUND,
+    );
+  }
+
+  let unitPrice: number | null = null;
+  let commitmentTerm = raw.commitmentTerm;
+  let commitmentTermId = raw.commitmentTermId;
+  let requiresCommitment = false;
+
+  try {
+    const pricing = await ctx.api.products.getPricing(productId).catch(() => null);
+    if (pricing && pricing.length > 0) {
+      if (pricing.every((p) => p.commitmentTerm)) requiresCommitment = true;
+      let match = pricing.find((p) => p.billingTerm === billingTerm && p.commitmentTerm);
+      if (!match) match = pricing.find((p) => p.billingTerm === billingTerm);
+      if (match) {
+        if (!commitmentTerm && match.commitmentTerm) commitmentTerm = match.commitmentTerm;
+        const ratePrice = match.rates?.[0]?.suggestedRetailPrice
+          ?? (match as Record<string, unknown>).suggestedRetailPrice as number | undefined;
+        if (ratePrice) unitPrice = ratePrice;
+      } else {
+        const available = [...new Set(pricing.map((p) => p.billingTerm))].join(", ");
+        warnings.push(`No ${billingTerm} pricing for ${productName}. Available: ${available}`);
+      }
+    }
+  } catch (err) {
+    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] order pre-check failed: ${err}\n`);
+  }
+
+  if (!commitmentTermId && (commitmentTerm || requiresCommitment)) {
+    const info = await resolveCommitmentTermId(ctx, companyId, productId, commitmentTerm);
+    if (info) {
+      commitmentTermId = info.id;
+      if (!commitmentTerm) commitmentTerm = info.term;
+    }
+  }
+
+  if (productNotFound) warnings.push(`${productName}: product not found in catalog — may not be orderable`);
+
+  if (requiresCommitment && !commitmentTermId) {
+    // Hard-fail: a missing commitmentTermId for a product that requires one
+    // will only ever fail at the API. Surface it pre-flight so the user
+    // doesn't confirm a doomed preview (#230).
+    //
+    // Recovery steps cover both single-line (`--commitment-term ...`) and
+    // multi-line (`commitment-term=...` inside --line-item) so the message
+    // is useful regardless of which entry point the user is on.
+    throw new CliError(
+      `Can't order "${productName}"`,
+      [
+        `Product ${productName} requires a commitment term`,
+        "This product requires a commitment term ID that couldn't be auto-resolved",
+      ],
+      [
+        "If the company has an existing subscription, try: --commitment-term Monthly or --commitment-term 1-Year (or commitment-term=<term> inside --line-item)",
+        "Or provide the UUID directly: --commitment-term-id <uuid> (from subscription commitment.id)",
+        "If no existing subscription, provision the first one through the Pax8 portal",
+        `View product details: ${replCmd("pax8 products show")} ${productId}`,
+      ],
+      undefined,
+      ERROR_INVALID_INPUT,
+    );
+  }
+
+  return {
+    productId,
+    productName,
+    quantity: raw.quantity,
+    billingTerm,
+    commitmentTerm,
+    commitmentTermId,
+    unitPrice,
+    warnings,
+  };
+}
+
+// ─── Command ──────────────────────────────────────────────────────────────────
+
 export const ordersCreateCommand = new Command("create")
   .description("Create a new order")
-  .requiredOption("--company <id|name>", "Company ID or name (required)")
-  .requiredOption("--product <id|name>", "Product ID or name (required)")
-  .option("--quantity <number>", "Quantity", "1")
-  .option("--billing-term <term>", "Billing term (Monthly or Annual)", "Monthly")
+  .option("--company <id|name>", "Company ID or name (required)")
+  .option("--product <id|name>", "Product ID or name (single-line shorthand)")
+  .option("--quantity <number>", "Quantity (single-line)", "1")
+  .option("--billing-term <term>", "Billing term — Monthly or Annual (default Monthly)", "Monthly")
   .option("--commitment-term <term>", "Commitment term (Monthly, 1-Year, or 3-Year) — auto-resolves to UUID from existing subscription")
   .option("--commitment-term-id <uuid>", "Commitment term UUID (from subscription commitment.id)")
+  .option(
+    "--line-item <spec>",
+    "Add a line item: product=<id|name>,quantity=<n>[,billing-term=<term>][,commitment-term=<term>][,commitment-term-id=<uuid>]. Repeat for multi-line orders.",
+    collectLineItem,
+    [] as RawLineItem[],
+  )
+  .option("--dry-run", "Validate the order without placing it (maps to API isMock=true)")
   .option("-y, --yes", "Skip confirmation prompt")
   .option(
     "--idempotency-key <uuid>",
@@ -42,19 +276,89 @@ export const ordersCreateCommand = new Command("create")
 Examples:
   pax8 orders create --company a1b2c3d4-e5f6-7890-abcd-ef1234567890 --product prod-m365-biz-prem-0001 --quantity 5
   pax8 orders create --company a1b2c3d4 --product prod-123 --quantity 10 --billing-term Annual
-  pax8 orders create --company a1b2c3d4 --product prod-123 --yes
+  pax8 orders create --company "Acme" \\
+    --line-item product=prod-m365-biz-prem-0001,quantity=25 \\
+    --line-item product=prod-defender-p1,quantity=25,billing-term=Annual
+  pax8 orders create --company "Acme" --product prod-123 --quantity 5 --dry-run
   pax8 orders create --company a1b2c3d4 --product prod-123 --idempotency-key 9f3b2c1e-...-e1`
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
 
     // Hoist names so they're available in catch block for error messages
-    let productName: string = allOpts.product;
-    let companyName: string = allOpts.company;
+    let productName: string = allOpts.product ?? "";
+    let companyName: string = allOpts.company ?? "";
+
+    const rawLineItems: RawLineItem[] = (allOpts.lineItem as RawLineItem[]) ?? [];
+    const dryRun: boolean = !!allOpts.dryRun;
+
+    // ── Mode detection: single-line shorthand vs multi-line ──
+    //
+    // Backward compat: `--product` (with optional --quantity/--billing-term/
+    // --commitment-term) is the original single-line entry point. It MUST
+    // continue to work identically when --line-item is not used.
+    //
+    // We forbid mixing the two — merging them would be ambiguous (does
+    // --quantity apply to the --product line or all --line-items?). Better
+    // to fail fast and tell the user to pick one.
+    const hasSingleLine = !!allOpts.product;
+    const hasMultiLine = rawLineItems.length > 0;
+
+    if (!allOpts.company) {
+      await handleCommandError(
+        new CliError(
+          "Missing required option: --company",
+          ["--company <id|name> is required for orders create"],
+          [
+            `Example: ${replCmd("pax8 orders create")} --company "Acme" --product prod-123 --quantity 5`,
+            `List companies: ${replCmd("pax8 companies list")}`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        ),
+      );
+    }
+
+    if (hasSingleLine && hasMultiLine) {
+      await handleCommandError(
+        new CliError(
+          "Cannot mix --product and --line-item",
+          [
+            "--product/--quantity is the single-line shorthand and --line-item is the multi-line form",
+            "Pass one or the other, not both",
+          ],
+          [
+            `Single line: ${replCmd("pax8 orders create")} --company "Acme" --product prod-123 --quantity 5`,
+            `Multi-line:  ${replCmd("pax8 orders create")} --company "Acme" --line-item product=prod-1,quantity=5 --line-item product=prod-2,quantity=10`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        ),
+      );
+    }
+
+    if (!hasSingleLine && !hasMultiLine) {
+      await handleCommandError(
+        new CliError(
+          "Missing line item: pass --product or --line-item",
+          [
+            "An order needs at least one line item",
+          ],
+          [
+            `Single line: ${replCmd("pax8 orders create")} --company "Acme" --product prod-123 --quantity 5`,
+            `Multi-line:  ${replCmd("pax8 orders create")} --company "Acme" --line-item product=prod-1,quantity=5 --line-item product=prod-2,quantity=10`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        ),
+      );
+    }
 
     // --- Idempotency handling ---
     // The "args hash" deliberately excludes `yes` (cosmetic) and the key itself,
     // so retrying with the same key under -y or interactive confirm is allowed.
+    // It DOES include `dryRun` and the line-item array so a real submit and a
+    // dry-run with the same key are distinct cache entries.
     const idempotencyKey: string | undefined = allOpts.idempotencyKey;
     if (idempotencyKey !== undefined && !isValidKey(idempotencyKey)) {
       await handleCommandError(
@@ -71,13 +375,31 @@ Examples:
         ),
       );
     }
+
+    // Build a stable normalized "lines" array for the args hash so multi-line
+    // orders cache deterministically. For single-line we pass the same shape
+    // (one entry) so single→multi refactors don't accidentally invalidate
+    // an in-flight idempotent retry.
+    const hashLines = hasMultiLine
+      ? rawLineItems.map((l) => ({
+          product: l.product,
+          quantity: l.quantity,
+          billingTerm: l.billingTerm,
+          commitmentTerm: l.commitmentTerm,
+          commitmentTermId: l.commitmentTermId,
+        }))
+      : [{
+          product: allOpts.product,
+          quantity: allOpts.quantity,
+          billingTerm: allOpts.billingTerm,
+          commitmentTerm: allOpts.commitmentTerm,
+          commitmentTermId: allOpts.commitmentTermId,
+        }];
+
     const argsHash = hashArgs({
       company: allOpts.company,
-      product: allOpts.product,
-      quantity: allOpts.quantity,
-      billingTerm: allOpts.billingTerm,
-      commitmentTerm: allOpts.commitmentTerm,
-      commitmentTermId: allOpts.commitmentTermId,
+      lines: hashLines,
+      dryRun,
     });
 
     try {
@@ -91,180 +413,156 @@ Examples:
         },
         async (): Promise<boolean> => {
       const ctx = await buildContext(allOpts);
-      const quantity = parseInt(allOpts.quantity, 10);
 
-      if (isNaN(quantity) || quantity <= 0) {
-        throw new CliError(
-          `Invalid quantity: "${allOpts.quantity}"`,
-          ["Quantity must be a positive integer (1 or greater)"],
-          [`Example: ${replCmd("pax8 orders create")} --company <id> --product <id> --quantity 5`],
-          undefined,
-          ERROR_INVALID_INPUT,
-        );
-      }
-
-      // Resolve names, pricing, and pre-check orderability
-      let commitmentTerm = allOpts.commitmentTerm;
-      let commitmentTermId: string | undefined = allOpts.commitmentTermId;
-      let unitPrice: number | null = null;
-      let requiresCommitment = false;
-      let productNotFound = false;
-      const warnings: string[] = [];
-
-      // Resolve company (hard requirement — will throw on failure)
+      // ── Resolve company (hard requirement — will throw on failure) ──
       const companyResult = await resolveCompany(ctx, allOpts.company);
       companyName = companyResult.name;
       const resolvedCompanyId = companyResult.id;
 
-      // Resolve product — required for order creation
-      let resolvedProductId = allOpts.product;
-      const productResult = await resolveProduct(ctx, allOpts.product).catch(() => { productNotFound = true; return null; });
-      if (productResult) {
-        productName = productResult.name;
-        resolvedProductId = productResult.id;
-      } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(allOpts.product)) {
-        // Input isn't a UUID and couldn't be resolved — can't proceed
-        throw new CliError(
-          `Product not found: "${allOpts.product}"`,
-          ["Could not resolve product name to a product ID"],
-          [
-            `Search the catalog: ${replCmd("pax8 products search")} "${allOpts.product}"`,
-            `Then use the product ID: ${replCmd("pax8 orders create")} --product <product-id> ...`,
-          ],
-          undefined,
-          ERROR_PRODUCT_NOT_FOUND,
-        );
-      }
-
-      try {
-        const pricing = await ctx.api.products.getPricing(resolvedProductId).catch(() => null);
-
-        if (pricing && pricing.length > 0) {
-          // Infer commitment requirement: if every pricing plan has a commitmentTerm, the product requires one
-          if (pricing.every((p) => p.commitmentTerm)) requiresCommitment = true;
-          // Find matching plan — prefer billing term + commitment
-          let match = pricing.find((p) => p.billingTerm === allOpts.billingTerm && p.commitmentTerm);
-          if (!match) match = pricing.find((p) => p.billingTerm === allOpts.billingTerm);
-          if (match) {
-            if (!commitmentTerm && match.commitmentTerm) commitmentTerm = match.commitmentTerm;
-            const ratePrice = match.rates?.[0]?.suggestedRetailPrice
-              ?? (match as Record<string, unknown>).suggestedRetailPrice as number | undefined;
-            if (ratePrice) unitPrice = ratePrice;
-          } else {
-            // No plan matches the billing term
-            const available = [...new Set(pricing.map((p) => p.billingTerm))].join(", ");
-            warnings.push(`No ${allOpts.billingTerm} pricing found. Available: ${available}`);
-          }
-        }
-      } catch (err) {
-        if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] order pre-check failed: ${err}\n`);
-      }
-
-      // Resolve commitmentTermId from existing subscription for the SAME product.
-      // commitmentTermId UUIDs are product-specific and cannot be reused across products.
-      if (!commitmentTermId && (commitmentTerm || requiresCommitment)) {
-        const info = await resolveCommitmentTermId(
-          ctx,
-          resolvedCompanyId,
-          resolvedProductId,
-          commitmentTerm,
-        );
-        if (info) {
-          commitmentTermId = info.id;
-          if (!commitmentTerm) commitmentTerm = info.term;
-        }
-      }
-
-      // Pre-flight checks
-      if (productNotFound) warnings.push("Product not found in catalog — may not be orderable");
-
-      // Hard-fail before preview when commitment is required but couldn't be
-      // auto-resolved. Previously this was a soft warning and the order
-      // proceeded; the API then rejected, but only after the user had
-      // already confirmed a preview that misleadingly displayed
-      // "Commitment: <term>". Better to surface the actionable error up
-      // front (#230). The error matches the shape of the post-submit 422
-      // handler below, so the UX is consistent whether the failure is
-      // detected pre- or post-flight.
-      if (requiresCommitment && !commitmentTermId) {
-        const displayProduct = productName || allOpts.product;
-        const displayCompany = companyName || allOpts.company;
-        await handleCommandError(
-          new CliError(
-            `Can't order "${displayProduct}" for ${displayCompany}`,
-            [
-              `Product ${displayProduct} requires a commitment term`,
-              "This product requires a commitment term ID that couldn't be auto-resolved",
-            ],
-            [
-              "If the company has an existing subscription, try: --commitment-term Monthly or --commitment-term 1-Year",
-              "Or provide the UUID directly: --commitment-term-id <uuid> (from subscription commitment.id)",
-              "If no existing subscription, provision the first one through the Pax8 portal",
-              `View product details: ${replCmd("pax8 products show")} ${allOpts.product}`,
-            ],
+      // ── Build the working set of raw line items ──
+      let workingLines: RawLineItem[];
+      if (hasMultiLine) {
+        workingLines = rawLineItems;
+      } else {
+        const quantity = parseInt(allOpts.quantity, 10);
+        if (isNaN(quantity) || quantity <= 0) {
+          throw new CliError(
+            `Invalid quantity: "${allOpts.quantity}"`,
+            ["Quantity must be a positive integer (1 or greater)"],
+            [`Example: ${replCmd("pax8 orders create")} --company <id> --product <id> --quantity 5`],
             undefined,
             ERROR_INVALID_INPUT,
-          ),
-        );
+          );
+        }
+        workingLines = [{
+          product: allOpts.product,
+          quantity,
+          billingTerm: allOpts.billingTerm,
+          commitmentTerm: allOpts.commitmentTerm,
+          commitmentTermId: allOpts.commitmentTermId,
+          raw: `product=${allOpts.product},quantity=${quantity}`,
+        }];
       }
 
-      const totalPrice = unitPrice ? unitPrice * quantity : null;
-      const mrr = totalPrice
-        ? calculateMrr(unitPrice!, quantity, allOpts.billingTerm)
-        : null;
+      // ── Resolve every line in parallel (product → pricing → commitment) ──
+      // resolveLine throws CliError on hard failures (product-not-found,
+      // commitment-required-but-unresolvable). Promise.all surfaces the
+      // first; the catch block below routes it through handleCommandError.
+      const resolvedLines = await Promise.all(
+        workingLines.map((l) =>
+          resolveLine(ctx, resolvedCompanyId, l, allOpts.billingTerm),
+        ),
+      );
 
-      process.stderr.write(chalk.bold("\n  📦 Order Preview:\n\n"));
+      // For backward-compat error messages: when single-line, set the hoisted
+      // productName to the resolved name.
+      if (!hasMultiLine && resolvedLines[0]) {
+        productName = resolvedLines[0].productName;
+      }
+
+      // ── Preview ──
+      const isMulti = resolvedLines.length > 1;
+      const banner = dryRun
+        ? chalk.yellow.bold("\n  📦 DRY RUN — Order Preview (no order will be placed):\n\n")
+        : chalk.bold("\n  📦 Order Preview:\n\n");
+      process.stderr.write(banner);
       process.stderr.write(`  ${chalk.dim("Company:".padEnd(18))}${companyName}\n`);
-      process.stderr.write(`  ${chalk.dim("Product:".padEnd(18))}${productName}\n`);
-      process.stderr.write(`  ${chalk.dim("Quantity:".padEnd(18))}${formatQuantity(quantity)}\n`);
-      process.stderr.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${allOpts.billingTerm}\n`);
-      if (commitmentTerm) {
-        process.stderr.write(`  ${chalk.dim("Commitment:".padEnd(18))}${commitmentTerm}\n`);
-      }
-      if (unitPrice) {
-        process.stderr.write(`  ${chalk.dim("Unit Price:".padEnd(18))}${formatCurrency(unitPrice)}/seat/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
-      }
-      if (totalPrice) {
-        process.stderr.write(`\n  ${chalk.dim("Total:".padEnd(18))}${chalk.bold(formatCurrency(totalPrice))}/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
-      }
-      if (mrr) {
-        process.stderr.write(`  ${chalk.dim("Est. MRR Impact:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(mrr) + "/mo")}\n`);
+      if (!isMulti) {
+        const line = resolvedLines[0];
+        process.stderr.write(`  ${chalk.dim("Product:".padEnd(18))}${line.productName}\n`);
+        process.stderr.write(`  ${chalk.dim("Quantity:".padEnd(18))}${formatQuantity(line.quantity)}\n`);
+        process.stderr.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${line.billingTerm}\n`);
+        if (line.commitmentTerm) {
+          process.stderr.write(`  ${chalk.dim("Commitment:".padEnd(18))}${line.commitmentTerm}\n`);
+        }
+        if (line.unitPrice) {
+          process.stderr.write(`  ${chalk.dim("Unit Price:".padEnd(18))}${formatCurrency(line.unitPrice)}/seat/${line.billingTerm === "Annual" ? "yr" : "mo"}\n`);
+        }
+      } else {
+        process.stderr.write(`  ${chalk.dim("Line Items:".padEnd(18))}${resolvedLines.length}\n\n`);
+        resolvedLines.forEach((line, idx) => {
+          process.stderr.write(`  ${chalk.dim(`#${idx + 1}`.padEnd(4))}${chalk.bold(line.productName)}\n`);
+          process.stderr.write(`        ${chalk.dim("Quantity:".padEnd(14))}${formatQuantity(line.quantity)}\n`);
+          process.stderr.write(`        ${chalk.dim("Billing:".padEnd(14))}${line.billingTerm}\n`);
+          if (line.commitmentTerm) {
+            process.stderr.write(`        ${chalk.dim("Commitment:".padEnd(14))}${line.commitmentTerm}\n`);
+          }
+          if (line.unitPrice) {
+            const unitPer = line.billingTerm === "Annual" ? "yr" : "mo";
+            const lineTotal = line.unitPrice * line.quantity;
+            process.stderr.write(`        ${chalk.dim("Unit Price:".padEnd(14))}${formatCurrency(line.unitPrice)}/seat/${unitPer}\n`);
+            process.stderr.write(`        ${chalk.dim("Subtotal:".padEnd(14))}${formatCurrency(lineTotal)}/${unitPer}\n`);
+          }
+          if (idx < resolvedLines.length - 1) process.stderr.write("\n");
+        });
       }
 
-      // Show warnings
-      if (warnings.length > 0) {
+      // ── Totals (sum across lines, normalized to monthly for MRR) ──
+      const totalMonthly = resolvedLines.reduce((acc, l) => {
+        if (!l.unitPrice) return acc;
+        return acc + calculateMrr(l.unitPrice, l.quantity, l.billingTerm);
+      }, 0);
+      const allPriced = resolvedLines.every((l) => l.unitPrice !== null);
+      if (allPriced && totalMonthly > 0) {
+        process.stderr.write(`\n  ${chalk.dim("Est. MRR Impact:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(totalMonthly) + "/mo")}\n`);
+      }
+
+      // ── Aggregated warnings ──
+      const allWarnings = resolvedLines.flatMap((l) => l.warnings);
+      if (allWarnings.length > 0) {
         process.stderr.write("\n");
-        for (const w of warnings) {
+        for (const w of allWarnings) {
           process.stderr.write(chalk.yellow(`  ⚠ ${w}\n`));
         }
       }
 
       process.stderr.write("\n");
 
-      const confirmedQty = await confirmWithChange(
-        `Place order for ${formatQuantity(quantity)}?`,
-        quantity,
-      );
-      if (confirmedQty === null) {
-        process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
-        return false;
+      // ── Confirmation ──
+      // Single-line, non-dry-run keeps the existing [y/n/c] flow that lets
+      // users edit the quantity inline. Multi-line and dry-run use a simple
+      // [y/n] — there's no single quantity to edit in multi-line, and a
+      // dry-run wants to lock the input as-is so the validation reflects
+      // exactly what would be submitted.
+      let confirmedQuantities: number[];
+      if (dryRun || isMulti) {
+        const promptText = dryRun
+          ? `Run dry-run validation?`
+          : `Place this order?`;
+        const ok = await confirm(promptText, { default: true });
+        if (!ok) {
+          process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
+          return false;
+        }
+        confirmedQuantities = resolvedLines.map((l) => l.quantity);
+      } else {
+        const line = resolvedLines[0];
+        const confirmedQty = await confirmWithChange(
+          `Place order for ${formatQuantity(line.quantity)}?`,
+          line.quantity,
+        );
+        if (confirmedQty === null) {
+          process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
+          return false;
+        }
+        confirmedQuantities = [confirmedQty];
       }
 
-      const spinner = createSpinner("Creating order...").start();
+      const spinner = createSpinner(dryRun ? "Validating order..." : "Creating order...").start();
 
-      // Only pass fields defined in OrderLineItemInput — do not include
-      // display-only fields like productName which are not part of the API input schema.
-      const lineItem: OrderLineItemInput = {
-        productId: resolvedProductId,
-        quantity: confirmedQty,
-        billingTerm: allOpts.billingTerm as BillingTerm,
-        ...(commitmentTermId ? { commitmentTermId } : {}),
-      };
+      // ── Build API input ──
+      const lineItems: OrderLineItemInput[] = resolvedLines.map((line, idx) => ({
+        productId: line.productId,
+        quantity: confirmedQuantities[idx],
+        billingTerm: line.billingTerm as BillingTerm,
+        ...(line.commitmentTermId ? { commitmentTermId: line.commitmentTermId } : {}),
+      }));
 
       const orderInput: CreateOrderInput = {
         companyId: resolvedCompanyId,
-        lineItems: [lineItem],
+        lineItems,
       };
+
       // TODO: When the Pax8 API adds support for an `Idempotency-Key` request
       // header on POST /orders (not currently documented in the existing
       // `OrdersApi.create` shape — see packages/core/src/api/orders.ts), pass
@@ -273,55 +571,90 @@ Examples:
       const doneWrite = markWriteInFlight("orders");
       let order;
       try {
-        order = await ctx.api.orders.create(orderInput);
+        order = await ctx.api.orders.create(orderInput, { isMock: dryRun });
       } finally {
         doneWrite();
       }
-      await invalidateCacheAfterWrite();
+      // Dry-runs don't mutate any partner state, so there's nothing to
+      // invalidate. Real creates need the cache busted so subsequent
+      // `orders list` / `subscriptions list` calls reflect the new state.
+      if (!dryRun) await invalidateCacheAfterWrite();
 
-      spinner.succeed("Order created 🎉");
+      if (dryRun) {
+        spinner.succeed("Dry-run validation succeeded");
+      } else {
+        spinner.succeed("Order created 🎉");
+      }
 
-      // Contribute revenue counters to the single command_executed event
-      // emitted by the postAction hook (#146 — was double-firing).
-      const orderMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : undefined;
+      // ── Telemetry ──
+      const totalSeats = confirmedQuantities.reduce((a, b) => a + b, 0);
+      const orderTotalDollars = resolvedLines.reduce((acc, l, idx) => {
+        if (!l.unitPrice) return acc;
+        return acc + l.unitPrice * confirmedQuantities[idx];
+      }, 0);
+      const orderMrrImpact = resolvedLines.reduce((acc, l, idx) => {
+        if (!l.unitPrice) return acc;
+        return acc + calculateMrr(l.unitPrice, confirmedQuantities[idx], l.billingTerm);
+      }, 0);
       setTelemetryFields({
-        order_success: true,
-        order_total_dollars: unitPrice ? unitPrice * confirmedQty : undefined,
-        order_mrr_impact: orderMrr,
-        order_seats: confirmedQty,
+        order_success: !dryRun,
+        order_dry_run: dryRun || undefined,
+        order_total_dollars: orderTotalDollars > 0 ? orderTotalDollars : undefined,
+        order_mrr_impact: orderMrrImpact > 0 ? orderMrrImpact : undefined,
+        order_seats: totalSeats,
+        order_line_count: resolvedLines.length,
       });
 
+      // ── JSON output ──
       if (ctx.outputFormat === "json") {
-        const jsonMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : null;
-        const monthlyCost = jsonMrr; // MRR is by definition the monthly cost
+        const jsonMrr = orderMrrImpact > 0 ? Number(orderMrrImpact.toFixed(2)) : null;
+        const monthlyCost = jsonMrr;
         const annualCost = jsonMrr ? Number((jsonMrr * 12).toFixed(2)) : null;
-        const enriched = {
+        const enriched: Record<string, unknown> = {
           ...order,
-          unitPrice: unitPrice ?? null,
+          dryRun: dryRun || undefined,
           monthlyCost: monthlyCost ?? null,
           annualCost: annualCost ?? null,
         };
+        // Single-line back-compat: surface unitPrice at the top level when
+        // there's exactly one line item, matching the pre-#246 shape.
+        if (!isMulti && resolvedLines[0]?.unitPrice !== null) {
+          enriched.unitPrice = resolvedLines[0]?.unitPrice ?? null;
+        }
         process.stdout.write(JSON.stringify(enriched, null, 2) + "\n");
         return true;
       }
 
-      // Post-order summary with financial impact
-      const finalMrr = unitPrice ? calculateMrr(unitPrice, confirmedQty, allOpts.billingTerm) : null;
-      const finalAnnual = finalMrr ? Number((finalMrr * 12).toFixed(2)) : null;
+      // ── Human output ──
+      if (dryRun) {
+        process.stdout.write(chalk.yellow.bold("\n  DRY RUN — no order placed\n"));
+      }
 
       process.stdout.write("\n");
       process.stdout.write(`  ${chalk.dim("Order ID:".padEnd(18))}${order.id}\n`);
       if (order.status) process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(order.status)}\n`);
-      process.stdout.write(`  ${chalk.dim("Product:".padEnd(18))}${productName}\n`);
       process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${companyName}\n`);
-      process.stdout.write(`  ${chalk.dim("Seats:".padEnd(18))}${formatQuantity(confirmedQty)}\n`);
-      if (unitPrice) {
-        process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${formatCurrency(unitPrice)}/seat/${allOpts.billingTerm === "Annual" ? "yr" : "mo"}\n`);
+
+      if (!isMulti) {
+        const line = resolvedLines[0];
+        const seats = confirmedQuantities[0];
+        process.stdout.write(`  ${chalk.dim("Product:".padEnd(18))}${line.productName}\n`);
+        process.stdout.write(`  ${chalk.dim("Seats:".padEnd(18))}${formatQuantity(seats)}\n`);
+        if (line.unitPrice) {
+          process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${formatCurrency(line.unitPrice)}/seat/${line.billingTerm === "Annual" ? "yr" : "mo"}\n`);
+        } else {
+          process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${chalk.dim("—")}\n`);
+        }
       } else {
-        process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${chalk.dim("—")}\n`);
+        process.stdout.write(`  ${chalk.dim("Line Items:".padEnd(18))}${resolvedLines.length}\n`);
+        resolvedLines.forEach((line, idx) => {
+          process.stdout.write(`    ${chalk.dim(`#${idx + 1}`)} ${line.productName} × ${formatQuantity(confirmedQuantities[idx])} (${line.billingTerm})\n`);
+        });
       }
-      if (finalMrr) {
-        process.stdout.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.green.bold(formatCurrency(finalMrr) + "/mo")}\n`);
+
+      const finalAnnual = orderMrrImpact > 0 ? Number((orderMrrImpact * 12).toFixed(2)) : null;
+      if (orderMrrImpact > 0) {
+        process.stdout.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.green.bold(formatCurrency(orderMrrImpact) + "/mo")}\n`);
       } else {
         process.stdout.write(`  ${chalk.dim("Monthly cost:".padEnd(18))}${chalk.dim("—")}\n`);
       }
@@ -331,10 +664,17 @@ Examples:
         process.stdout.write(`  ${chalk.dim("Annual cost:".padEnd(18))}${chalk.dim("—")}\n`);
       }
       process.stdout.write("\n");
-      // Next steps
+
+      // ── Next steps ──
       process.stderr.write(chalk.dim("  Try next:\n"));
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders show ${order.id}`))}  ${chalk.dim("check order status")}\n`);
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${companyName}"`))}  ${chalk.dim("view subscriptions")}\n`);
+      if (dryRun) {
+        // After a successful dry-run, the next obvious step is to submit
+        // the same payload for real.
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders create ... (re-run without --dry-run)`))}  ${chalk.dim("place the order")}\n`);
+      } else {
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders show ${order.id}`))}  ${chalk.dim("check order status")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${companyName}"`))}  ${chalk.dim("view subscriptions")}\n`);
+      }
       process.stderr.write("\n");
           return true;
         },
@@ -345,7 +685,7 @@ Examples:
       // can retry with the same key.
       // Provide order-specific error messages with actionable guidance
       if (error instanceof ApiError) {
-        const displayProduct = productName || allOpts.product;
+        const displayProduct = productName || allOpts.product || "product";
         const displayCompany = companyName || allOpts.company;
 
         if (error.statusCode === 404) {
@@ -382,7 +722,7 @@ Examples:
             causes.push("Order validation failed — check quantity, billing term, or provisioning requirements");
             steps.push("Ensure the quantity meets minimum/maximum seat requirements");
           }
-          steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
+          steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product ?? displayProduct}`);
 
           await handleCommandError(
             new CliError(
@@ -409,7 +749,7 @@ Examples:
             if (detail) causes.push(detail);
             steps.push("Double-check all order parameters (product ID, company ID, quantity)");
           }
-          steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product}`);
+          steps.push(`View product details: ${replCmd("pax8 products show")} ${allOpts.product ?? displayProduct}`);
 
           await handleCommandError(
             new CliError(

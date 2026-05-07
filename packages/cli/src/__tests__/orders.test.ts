@@ -166,6 +166,65 @@ describe("pax8 orders", () => {
       expect(combined).toMatch(/[Ii]nvalid quantity/);
     });
 
+    it("errors when neither --product nor --line-item is passed", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/--product|--line-item/);
+    });
+
+    it("errors when --product and --line-item are mixed (#246)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--product",
+        "prod-m365-biz-prem-0001",
+        "--quantity",
+        "5",
+        "--line-item",
+        "product=prod-defender-p1,quantity=10",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      // Error should call out the conflict explicitly rather than picking
+      // one side or trying to merge them.
+      expect(combined).toMatch(/Cannot mix.*--product.*--line-item|--product.*--line-item.*not both/i);
+    });
+
+    it("errors on malformed --line-item spec (#246)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--line-item",
+        "garbage-no-equals-sign",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/Invalid --line-item|key=value/i);
+    });
+
+    it("errors when --line-item is missing required keys (#246)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--line-item",
+        "product=prod-defender-p1",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/quantity/i);
+    });
+
     // Regression for #230: when a product requires a commitment term (every
     // pricing plan has commitmentTerm) AND the customer has no existing
     // subscription for that product (so resolveCommitmentTermId can't copy a
@@ -196,6 +255,121 @@ describe("pax8 orders", () => {
       expect(combined).toMatch(/requires.*commitment/i);
       expect(combined).toMatch(/--commitment-term/);
       expect(combined).toMatch(/Pax8 portal/);
+    });
+  });
+
+  describe("orders create — multi-line and dry-run (#246)", () => {
+    it("creates a single-line order (back-compat smoke test)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--product",
+        "prod-m365-biz-prem-0001",
+        "--quantity",
+        "5",
+        "--billing-term",
+        "Monthly",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.id).toMatch(/^ord-demo-/);
+      expect(data.companyName).toBe("Acme Corp");
+      expect(data.lineItems).toHaveLength(1);
+      expect(data.lineItems[0].quantity).toBe(5);
+      // Single-line back-compat: unitPrice is at the top level (pre-#246
+      // shape) when there's exactly one line item.
+      expect(data).toHaveProperty("unitPrice");
+      // Dry-run flag is not set in normal mode.
+      expect(data.dryRun).toBeUndefined();
+    });
+
+    it("creates a multi-line order with --line-item (#246)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--line-item",
+        "product=prod-m365-biz-prem-0001,quantity=5",
+        "--line-item",
+        "product=prod-defender-biz-0007,quantity=3,billing-term=Monthly",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.id).toMatch(/^ord-demo-/);
+      expect(data.companyName).toBe("Acme Corp");
+      expect(data.lineItems).toHaveLength(2);
+      expect(data.lineItems[0].productId).toBe("prod-m365-biz-prem-0001");
+      expect(data.lineItems[0].quantity).toBe(5);
+      expect(data.lineItems[1].productId).toBe("prod-defender-biz-0007");
+      expect(data.lineItems[1].quantity).toBe(3);
+    });
+
+    it("performs a dry-run without persisting the order (#246)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--product",
+        "prod-m365-biz-prem-0001",
+        "--quantity",
+        "5",
+        "--dry-run",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      // The mock client signals a dry-run via the synthetic id prefix.
+      expect(data.id).toMatch(/^ord-dryrun-/);
+      expect(data.dryRun).toBe(true);
+      expect(data.companyName).toBe("Acme Corp");
+      expect(data.lineItems).toHaveLength(1);
+      // The dry-run banner appears on stderr, never stdout (stdout is JSON).
+      expect(result.stderr).toMatch(/DRY RUN|dry-run/i);
+    });
+
+    it("dry-run combines with --line-item for multi-line validation (#246)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--line-item",
+        "product=prod-m365-biz-prem-0001,quantity=5",
+        "--line-item",
+        "product=prod-defender-biz-0007,quantity=3",
+        "--dry-run",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.id).toMatch(/^ord-dryrun-/);
+      expect(data.dryRun).toBe(true);
+      expect(data.lineItems).toHaveLength(2);
+    });
+
+    it("--dry-run prompt text says validate (TTY humans see it)", async () => {
+      // Even with --yes the rendered preview banner mentions DRY RUN.
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--product",
+        "prod-m365-biz-prem-0001",
+        "--quantity",
+        "1",
+        "--dry-run",
+        "--yes",
+      ]);
+      // The DRY RUN banner is on stderr (preview/banner), and "no order
+      // placed" is on stdout (post-write summary).
+      expect(result.stderr).toMatch(/DRY RUN/);
     });
   });
 });

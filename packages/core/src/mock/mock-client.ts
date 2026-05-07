@@ -448,12 +448,18 @@ class OrdersResource {
     return order;
   }
 
-  async create(data: CreateOrderInput): Promise<Order> {
+  async create(
+    data: CreateOrderInput,
+    opts?: { isMock?: boolean },
+  ): Promise<Order> {
     await randomDelay();
     // Resolve company name from demo data
     const company = companies.find((c) => c.id === data.companyId);
     const newOrder: Order = {
-      id: `ord-demo-${Date.now()}`,
+      // Dry-run responses use a synthetic prefix so consumers can tell at a
+      // glance the order wasn't persisted. Real demo creates keep the
+      // historical `ord-demo-` prefix.
+      id: opts?.isMock ? `ord-dryrun-${Date.now()}` : `ord-demo-${Date.now()}`,
       companyId: data.companyId,
       companyName: company?.name ?? "Unknown",
       orderedBy: "Demo User",
@@ -465,10 +471,18 @@ class OrdersResource {
         quantity: li.quantity,
         billingTerm: (li.billingTerm ?? "Monthly") as "Monthly" | "Annual",
       })),
+      // Status stays "Processing" even for dry-runs to keep the demo Order
+      // type narrow. The CLI knows it's a dry-run from the request flag and
+      // banners the response accordingly; the synthetic id prefix is the
+      // mock client's signal to anyone introspecting the response.
       status: "Processing",
     };
-    this.loadCreated().push(newOrder);
-    this.saveCreated();
+    // Only persist when this is a real order — dry-runs never hit the
+    // demo-orders.json file.
+    if (!opts?.isMock) {
+      this.loadCreated().push(newOrder);
+      this.saveCreated();
+    }
     return newOrder;
   }
 }
