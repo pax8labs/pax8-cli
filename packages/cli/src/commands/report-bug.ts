@@ -171,13 +171,51 @@ async function readEnvelope(): Promise<BugReportEnvelope | null> {
   }
 }
 
+/**
+ * Help text shown when `pax8 report-bug` is invoked without a captured
+ * last-error envelope. README lists the bare command as a quick-start
+ * example, so first-run users hit this branch — make it actionable rather
+ * than a hard exit (#209). The "report the last error" flow is unchanged
+ * when an envelope IS present.
+ */
+function noContextInstructions(): string {
+  return [
+    "No recent error in this session.",
+    "",
+    "To file a bug manually:",
+    `  ${ISSUE_NEW_URL}`,
+    "",
+    "After a failed command, run `pax8 report-bug` again and the CLI will",
+    "pre-fill a sanitized report (no IDs, names, paths, or credentials).",
+    "",
+    "For more options:",
+    "  pax8 report-bug --help",
+    "",
+  ].join("\n");
+}
+
 export async function runReportBug(opts: ReportBugOptions): Promise<number> {
   const raw = await readEnvelope();
   if (!raw) {
-    process.stderr.write(
-      "No recent error found. Run a command that fails and try again.\n"
-    );
-    return 1;
+    if (opts.json || jsonFlagInArgv()) {
+      // JSON consumers expect a parseable envelope-shaped response. Emit a
+      // minimal "no context" object rather than free-form text so scripts
+      // can branch on it without parsing prose.
+      process.stdout.write(
+        JSON.stringify(
+          {
+            status: "no-context",
+            message: "No recent error in this session.",
+            issueUrl: ISSUE_NEW_URL,
+          },
+          null,
+          2
+        ) + "\n"
+      );
+      return 0;
+    }
+    process.stdout.write(noContextInstructions());
+    return 0;
   }
 
   const env = redactEnvelope(raw);

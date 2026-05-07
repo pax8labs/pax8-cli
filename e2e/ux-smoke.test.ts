@@ -94,11 +94,6 @@ describe("README snippet smoke", () => {
     // execFile (no shell). Skip — these are advanced doc snippets.
     return /(\||\bxargs\b|\$\(|`)/.test(line);
   }
-  function needsPriorContext(line: string): boolean {
-    // Commands that depend on session state we don't simulate.
-    // `report-bug` (without an error to report) just exits 1 (#209).
-    return /^(PAX8_DEMO=1\s+)?pax8\s+report-bug(\s|$)/.test(line);
-  }
 
   // README snippets currently known to fail. Track here so they don't
   // silently regress — this isn't a workaround; it's a punchlist.
@@ -125,8 +120,7 @@ describe("README snippet smoke", () => {
       !isAuthLogin(l) &&
       !isReplOnly(l) &&
       !hasPlaceholder(l) &&
-      !hasShellPipeOrSubst(l) &&
-      !needsPriorContext(l)
+      !hasShellPipeOrSubst(l)
   );
 
   if (runnable.length === 0) {
