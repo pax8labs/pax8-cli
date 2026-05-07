@@ -431,6 +431,16 @@ export const WebhookSchema = z.object({
    * should record it at create time. See issue #241.
    */
   secret: z.string().optional(),
+  /** Human-friendly label for the webhook (Pax8 v2.1+). */
+  displayName: z.string().optional(),
+  /** Email Pax8 notifies when delivery failures exceed `errorThreshold`. */
+  contactEmail: z.string().optional(),
+  /** Consecutive failures before Pax8 notifies `contactEmail`. Server cap is 20. */
+  errorThreshold: z.number().int().optional(),
+  /** Last delivery outcome reported by Pax8 (PENDING | SUCCESS | FAILED | RETRYING). */
+  lastDeliveryStatus: z.string().optional(),
+  /** ISO timestamp of last update (Pax8 v2.1+). */
+  updatedAt: z.string().optional(),
 });
 export type Webhook = z.infer<typeof WebhookSchema>;
 
@@ -446,6 +456,21 @@ export const UpdateWebhookInputSchema = z.object({
   status: WebhookStatusSchema.optional(),
 });
 export type UpdateWebhookInput = z.infer<typeof UpdateWebhookInputSchema>;
+
+/**
+ * Mutable configuration fields for `POST /webhooks/{id}/configuration`.
+ * Mirrors the `UpdateWebhookConfiguration` shape in webhook-manager v2/v2.1.
+ * `authorization` is a sensitive header value — treat it as a secret in any
+ * non-`--json` output.
+ */
+export const UpdateWebhookConfigurationInputSchema = z.object({
+  displayName: z.string().min(1).optional(),
+  url: z.string().url().optional(),
+  authorization: z.string().optional(),
+  contactEmail: z.string().email().optional(),
+  errorThreshold: z.number().int().min(1).max(20).optional(),
+});
+export type UpdateWebhookConfigurationInput = z.infer<typeof UpdateWebhookConfigurationInputSchema>;
 
 // ─── Webhook Log ─────────────────────────────────────────────────────────────
 

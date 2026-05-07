@@ -3,7 +3,11 @@
 
 import { Command } from "commander";
 import { webhooksListCommand } from "./list.js";
+import { webhooksShowCommand } from "./show.js";
 import { webhooksCreateCommand } from "./create.js";
+import { webhooksUpdateCommand } from "./update.js";
+import { webhooksEnableCommand } from "./enable.js";
+import { webhooksDisableCommand } from "./disable.js";
 import { webhooksDeleteCommand } from "./delete.js";
 import { webhooksTestCommand } from "./test.js";
 import { webhooksLogsCommand } from "./logs.js";
@@ -14,7 +18,11 @@ export function registerWebhooksCommands(program: Command): void {
   );
 
   webhooks.addCommand(webhooksListCommand);
+  webhooks.addCommand(webhooksShowCommand);
   webhooks.addCommand(webhooksCreateCommand);
+  webhooks.addCommand(webhooksUpdateCommand);
+  webhooks.addCommand(webhooksEnableCommand);
+  webhooks.addCommand(webhooksDisableCommand);
   webhooks.addCommand(webhooksDeleteCommand);
   webhooks.addCommand(webhooksTestCommand);
   webhooks.addCommand(webhooksLogsCommand);

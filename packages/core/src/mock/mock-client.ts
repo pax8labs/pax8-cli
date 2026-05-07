@@ -597,8 +597,10 @@ class QuotesResource {
 //   list()       → Webhook[]
 //   create(data) → Webhook
 //   get(id)      → Webhook
-//   update(id, data)        → Webhook
-//   updateStatus(id, status)→ Webhook
+//   update(id, data)            → Webhook (legacy PUT shape)
+//   updateStatus(id, status)    → Webhook (legacy PATCH shape)
+//   updateConfiguration(id, c)  → Webhook (POST /webhooks/{id}/configuration)
+//   setStatus(id, active)       → Webhook (POST /webhooks/{id}/status)
 //   delete(id)   → void
 //   test(id)     → unknown (returns a small structured payload here)
 //   getLogs(id)  → WebhookLog[]
@@ -649,6 +651,43 @@ class WebhooksResource {
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
     return { ...wh, status };
+  }
+
+  async updateConfiguration(
+    id: string,
+    data: {
+      displayName?: string;
+      url?: string;
+      authorization?: string;
+      contactEmail?: string;
+      errorThreshold?: number;
+    },
+  ): Promise<Webhook> {
+    await randomDelay();
+    const wh = webhooks.find((w) => w.id === id);
+    if (!wh) throw notFound("Webhook", id);
+    // Return a merged copy without mutating the canonical demo record — keeps
+    // tests order-independent. `authorization` is a write-only secret on the
+    // real API and is not echoed back on read, so we don't include it.
+    const { authorization: _ignored, ...rest } = data;
+    void _ignored;
+    return {
+      ...wh,
+      ...rest,
+      id: wh.id,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  async setStatus(id: string, active: boolean): Promise<Webhook> {
+    await randomDelay();
+    const wh = webhooks.find((w) => w.id === id);
+    if (!wh) throw notFound("Webhook", id);
+    return {
+      ...wh,
+      status: active ? "Active" : "Disabled",
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   async delete(id: string): Promise<void> {
