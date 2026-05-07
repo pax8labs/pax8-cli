@@ -401,7 +401,7 @@ The seven categories, the seven cross-sell rules, the seat-gap thresholds (10 se
 |---|---|---|---|
 | `pax8 webhooks list` | `--ids-only`, `--with-actions` | | |
 | `pax8 webhooks show <id>` | | | View a single webhook subscription [Added in #265] |
-| `pax8 webhooks create` | `--url`, `--events <comma-list>`, `-y` | | |
+| `pax8 webhooks create` | `--url`, `--topics <comma-list>`, `-y` (with `--events` as a deprecated alias) | | |
 | `pax8 webhooks update <id>` | `--display-name`, `--authorization`, `--contact-email`, `--error-threshold`, `-y` | | Configures the four mutable fields via `PUT /webhooks/{id}/configuration` [Added in #265]; redacts `--authorization` in echo |
 | `pax8 webhooks enable <id>` | `-y` | | Sets `active=true` via `PUT /webhooks/{id}/status` [Added in #265] |
 | `pax8 webhooks disable <id>` | `-y` | | Sets `active=false` via `PUT /webhooks/{id}/status` [Added in #265] |
@@ -427,7 +427,7 @@ API `Webhook` fields: `id, accountId, displayName, url, authorization, active, c
 |---|---|---|
 | `active` (boolean) | `status: 'Active'\|'Disabled'` | Boolean ↔ enum mapping |
 | `webhookTopics[]` (objects with filters/config) | `topics[]` (strings) | CLI flattens to topic names |
-| `--events` flag | `topics` (API) | Flag name disagrees with API field name |
+| `--events` flag | `topics` (API) | Renamed to `--topics`; `--events` kept as a deprecated alias [#273] |
 | `createdAt` / `updatedAt` | `createdDate` | Rename + `updatedAt` dropped |
 | `displayName`, `authorization`, `contactEmail`, `errorThreshold`, `integrationId`, `accountId`, `lastDeliveryStatus` | (not exposed) | |
 
@@ -438,14 +438,14 @@ API `Webhook` fields: `id, accountId, displayName, url, authorization, active, c
 
 ### Naming Drift Flags
 
-- `--events` flag vs `topics` in the API and in the CLI's own output schema. Pick one term.
+- `--events` flag vs `topics` in the API and in the CLI's own output schema. Resolved in #273: canonical flag is now `--topics`; `--events` retained as a deprecated alias until v1.0.
 - The CLI calls webhooks "subscriptions" in help text ("Create a webhook subscription") — collides with the Subscriptions domain.
 - API `active: true/false` vs CLI `status: 'Active'/'Disabled'` — same bit, different shape; the new `webhooks enable`/`disable` commands abstract the boolean away.
 - `secret` provenance is now documented in the schema's JSDoc (HMAC-signing secret, returned on POST response only) [Resolved in #254].
 
 ### Questions for Domain Owner
 
-1. Should `--events` be renamed `--topics` for consistency with the API and the CLI's own `Webhook.topics[]` field?
+1. ~~Should `--events` be renamed `--topics` for consistency with the API and the CLI's own `Webhook.topics[]` field?~~ Resolved in #273: yes, with `--events` kept as a deprecated alias.
 2. Should `webhooks` be called something else to avoid clashing with the Subscriptions domain?
 3. Should the CLI add `webhooks topics add/remove/replace` for fine-grained per-topic config, or is the current "set whole list at create time" enough?
 4. Should `webhooks update` also expose `--integration-id`?
@@ -503,7 +503,7 @@ The Pax8 internal **Preliminary Workflows** doc enumerates canonical end-to-end 
 | 1. CRM trigger creates a quote draft | `POST /v2/quotes` | `pax8 quotes create --company X --product Y --quantity N` |
 | 2. Add additional line items to the draft | `POST /v2/quotes/{id}/line-items` | `pax8 quotes line-items add <quote-id> --product Y --quantity N` (#266) |
 | 3. Set status to sent (generates customer-facing link) | `PUT /v2/quotes/{id}` with `status: "sent"` | `pax8 quotes send <quote-id>` (#266) |
-| 4. Subscribe to QUOTE.Accepted webhook events | `POST /webhooks` with `topics: ["QUOTE.Accepted"]` | `pax8 webhooks create --url X --events QUOTE.Accepted`; discover topics via `pax8 webhooks topics list` (#267) |
+| 4. Subscribe to QUOTE.Accepted webhook events | `POST /webhooks` with `topics: ["QUOTE.Accepted"]` | `pax8 webhooks create --url X --topics QUOTE.Accepted`; discover topics via `pax8 webhooks topics list` (#267) |
 | 5. On QUOTE.Accepted, trigger order placement | `POST /orders` | `pax8 orders create --company X --product Y --quantity N` |
 
 **Naming-coordination note:** the workflow assumes the `pax8-submit-order` MCP tool (Linear AI-865) and the CLI's `orders create` will eventually converge on the same vocabulary. Flag-naming coordination between the CLI team and the MCP team is worth doing once, before partners start building automations against both.

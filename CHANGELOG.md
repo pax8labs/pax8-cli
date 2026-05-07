@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - **Display labels** — `report-bug` no-prior-error now exits 0 with a manual-file-a-bug pointer instead of exiting 1 silently; the with-context flow (sanitize, prompt, submit) is unchanged (#209).
 - **`auth status --json`** now emits valid JSON (`{ authenticated, mode, clientIdMasked? }`) and respects the agent-first non-TTY contract; previously it printed human-formatted text regardless of `--json` (#210).
 
+### Deprecated
+
+- **`pax8 webhooks create --events`** renamed to `--topics` to match the API field name (`webhookTopics`) and the CLI's own `Webhook.topics[]` output. `--events` continues to function as a deprecated alias and prints a one-line deprecation notice on stderr; it will be removed in v1.0. Passing both `--topics` and `--events` is rejected with `ERROR_INVALID_INPUT` (#273).
+
 ### Fixed
 
 - **`orders show <id>`** — rendered "Company: undefined" and an empty Line Items section. Now joins `companyId` → company name (matching `subscriptions show`/`invoices show` pattern) and resolves `orderItems[].productId` → product name; adds per-line-item unit price column. Same enrichment in human and `--json` output (#194).
