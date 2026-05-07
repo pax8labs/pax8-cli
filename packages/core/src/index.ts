@@ -1,3 +1,6 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 // Public entrypoint for `@pax8/core`.
 //
 // This file is the single source of truth for what `@pax8/core` exposes to
