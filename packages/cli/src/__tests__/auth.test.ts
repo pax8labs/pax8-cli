@@ -47,16 +47,20 @@ describe("pax8 auth", () => {
   });
 
   describe("auth status", () => {
-    it("shows demo mode status", async () => {
+    // Subprocess stdout is non-TTY, so per the agent-first contract (#210)
+    // `auth status` auto-emits JSON. We assert on the structured shape and
+    // separately verify the human path via the explicit format helpers.
+    it("emits JSON in non-TTY (agent-first default)", async () => {
       const result = await runCliExpectSuccess(["auth", "status"]);
-      expect(result.stdout).toContain("Authenticated");
-      expect(result.stdout).toContain("demo mode");
-      expect(result.stdout).toContain("Demo");
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.authenticated).toBe(true);
+      expect(parsed.mode).toBe("demo");
     });
 
-    it("shows mock data message", async () => {
-      const result = await runCliExpectSuccess(["auth", "status"]);
-      expect(result.stdout).toContain("mock data");
+    it("emits JSON when --json is passed explicitly", async () => {
+      const result = await runCliExpectSuccess(["auth", "status", "--json"]);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed).toEqual({ authenticated: true, mode: "demo" });
     });
   });
 
