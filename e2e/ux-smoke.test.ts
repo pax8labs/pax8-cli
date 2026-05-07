@@ -96,7 +96,7 @@ describe("README snippet smoke", () => {
   }
   function needsPriorContext(line: string): boolean {
     // Commands that depend on session state we don't simulate.
-    // `report-bug` (without an error to report) just exits 1 (#203).
+    // `report-bug` (without an error to report) just exits 1 (#209).
     return /^(PAX8_DEMO=1\s+)?pax8\s+report-bug(\s|$)/.test(line);
   }
 
@@ -107,15 +107,15 @@ describe("README snippet smoke", () => {
   const KNOWN_FAILING = new Map<string, string>([
     [
       'pax8 cost sim --company "Acme Corp" --product "M365 Business Premium" --quantity 50',
-      "#205: README uses M365-shorthand product name; CLI matcher requires Microsoft 365 prefix",
+      "#211: README uses M365-shorthand product name; CLI matcher requires Microsoft 365 prefix",
     ],
     [
       'pax8 cost sim --company "Acme" --product "M365 Business Premium" --from "M365 Business Basic" --quantity 45',
-      "#205: README uses M365-shorthand product name",
+      "#211: README uses M365-shorthand product name",
     ],
     [
       'pax8 cost sim --company "Acme" --product "AvePoint Cloud Backup" --quantity 30 --json',
-      "#205: README product name AvePoint Cloud Backup vs demo full name AvePoint Cloud Backup for Microsoft 365",
+      "#211: README product name AvePoint Cloud Backup vs demo full name AvePoint Cloud Backup for Microsoft 365",
     ],
   ]);
 

@@ -168,10 +168,10 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
       // Under PAX8_DEMO=1 this should report demo mode somewhere in output.
       expectedFragments: [/demo|not authenticated|authenticated/i],
     },
-    // `auth status --json` currently prints human text, not JSON (#204).
+    // `auth status --json` currently prints human text, not JSON (#210).
     // Skip contract until that's fixed; smoke + semantic still cover this.
     jsonContract: {
-      skip: { reason: "auth status --json does not emit JSON (#204)" },
+      skip: { reason: "auth status --json does not emit JSON (#210)" },
     },
   },
   // ── config ────────────────────────────────────────────────────────────────
@@ -288,7 +288,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
     demo: {
       knownBroken: {
-        issue: "#202",
+        issue: "#208",
         reason:
           "show commands return [{...}] (array of one) instead of the single object — JSON-shape inconsistency",
       },
@@ -319,7 +319,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     demo: {
       forbiddenFragments: ["undefined"],
       knownBroken: {
-        issue: "#202",
+        issue: "#208",
         reason: "show JSON returns array-of-1 instead of single object",
       },
     },
@@ -412,7 +412,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     demo: {
       forbiddenFragments: ["undefined"],
       knownBroken: {
-        issue: "#202",
+        issue: "#208",
         reason: "show JSON returns array-of-1 instead of single object",
       },
     },
@@ -495,7 +495,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     demo: {
       forbiddenFragments: ["undefined"],
       knownBroken: {
-        issue: "#202",
+        issue: "#208",
         reason: "show JSON returns array-of-1 instead of single object",
       },
     },
@@ -548,7 +548,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     demo: {
       forbiddenFragments: ["undefined"],
       knownBroken: {
-        issue: "#202",
+        issue: "#208",
         reason: "show JSON returns array-of-1 instead of single object",
       },
     },
@@ -714,7 +714,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     demo: {
       forbiddenFragments: ["undefined"],
       knownBroken: {
-        issue: "#202",
+        issue: "#208",
         reason: "show JSON returns array-of-1 instead of single object",
       },
     },
@@ -805,11 +805,11 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     type: "meta",
     // Bare `report-bug` requires a prior error in the session to report.
     // Run with no context, it exits 1 — arguably should fall back to help
-    // text but that's a separate UX call (see #203). Skip the live run; the
+    // text but that's a separate UX call (see #209). Skip the live run; the
     // help-flag layer still covers --help.
     skipLiveRun: {
       reason:
-        "needs a prior error in session state; bare invocation exits 1 (see #203)",
+        "needs a prior error in session state; bare invocation exits 1 (see #209)",
     },
     demo: {},
     jsonContract: { skip: { reason: "freeform / contextual output" } },
