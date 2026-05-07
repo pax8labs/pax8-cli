@@ -60,13 +60,51 @@ Examples:
 
       process.stdout.write("\n");
       process.stdout.write(chalk.bold(`  Quote ${quote.id}\n\n`));
-      process.stdout.write(`  ${chalk.dim("Company ID:".padEnd(16))}${quote.companyId}\n`);
-      process.stdout.write(`  ${chalk.dim("Status:".padEnd(16))}${quote.status}\n`);
-      process.stdout.write(`  ${chalk.dim("Created:".padEnd(16))}${formatDate(quote.createdDate)}\n`);
-      if (quote.expirationDate) {
-        process.stdout.write(`  ${chalk.dim("Expires:".padEnd(16))}${formatDate(quote.expirationDate)}\n`);
+      const labelWidth = 18;
+      const writeRow = (label: string, value: string) => {
+        process.stdout.write(`  ${chalk.dim((label + ":").padEnd(labelWidth))}${value}\n`);
+      };
+      writeRow("Company ID", quote.companyId);
+      if (quote.referenceCode) {
+        writeRow("Reference", quote.referenceCode);
       }
-      process.stdout.write(`  ${chalk.dim("Total:".padEnd(16))}${chalk.bold(formatCurrency(total))}\n`);
+      writeRow("Status", quote.status);
+      if (quote.intentType) {
+        writeRow("Intent", quote.intentType);
+      }
+      writeRow("Created", formatDate(quote.createdDate));
+      if (quote.expirationDate) {
+        writeRow("Expires", formatDate(quote.expirationDate));
+      }
+      if (quote.publishedOn) {
+        writeRow("Published", formatDate(quote.publishedOn));
+      } else if (quote.published === true) {
+        writeRow("Published", "yes");
+      }
+      if (quote.acceptedBy) {
+        const by = [quote.acceptedBy.name, quote.acceptedBy.email]
+          .filter(Boolean)
+          .join(" · ");
+        const when = quote.acceptedBy.respondedOn ?? quote.respondedOn;
+        const whenStr = when ? formatDate(when) : "";
+        writeRow("Accepted", chalk.green(`✓ ${[whenStr, by].filter(Boolean).join(" by ")}`));
+      } else if (quote.declinedBy) {
+        const by = [quote.declinedBy.name, quote.declinedBy.email]
+          .filter(Boolean)
+          .join(" · ");
+        const when = quote.declinedBy.respondedOn ?? quote.respondedOn;
+        const whenStr = when ? formatDate(when) : "";
+        writeRow("Declined", chalk.red(`✗ ${[whenStr, by].filter(Boolean).join(" by ")}`));
+      } else if (quote.respondedOn) {
+        writeRow("Responded", formatDate(quote.respondedOn));
+      }
+      if (quote.revokedOn) {
+        writeRow("Revoked", formatDate(quote.revokedOn));
+      }
+      if (typeof quote.salesMarginPercentage === "number") {
+        writeRow("Margin", `${quote.salesMarginPercentage.toFixed(1)}%`);
+      }
+      writeRow("Total", chalk.bold(formatCurrency(total)));
       process.stdout.write("\n");
 
       if (lineItems.length === 0) {

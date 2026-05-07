@@ -20,7 +20,10 @@ function quoteTotal(q: Quote): number {
 export const quotesListCommand = new Command("list")
   .description("List sales quotes")
   .option("--company <id|name>", "Filter by company ID or name")
-  .option("--status <status>", "Filter by status (Draft, Sent, Accepted, Declined)")
+  .option(
+    "--status <status>",
+    "Filter by status (draft, sent, accepted, declined, expired, ...)"
+  )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "50")
   .option("--ids-only", "Output only resource IDs, one per line")

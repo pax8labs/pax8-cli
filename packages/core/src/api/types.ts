@@ -369,6 +369,31 @@ export const QuoteLineItemSchema = z.object({
 });
 export type QuoteLineItem = z.infer<typeof QuoteLineItemSchema>;
 
+/**
+ * Mirror of the public quoting API's `RespondedBy` shape — the partner-side
+ * actor who accepted or declined the quote. All fields optional because the
+ * API populates them conditionally depending on the response channel.
+ */
+export const QuoteRespondedBySchema = z.object({
+  name: z.string().optional(),
+  email: z.string().optional(),
+  respondedOn: z.string().optional(),
+});
+export type QuoteRespondedBy = z.infer<typeof QuoteRespondedBySchema>;
+
+/**
+ * Quote response body. The public quoting v2 endpoint returns the workflow
+ * fields (`acceptedBy`, `declinedBy`, `respondedOn`, `revokedOn`,
+ * `publishedOn`, `published`, `referenceCode`, `salesMarginPercentage`,
+ * `intentType`) only after the relevant transition has occurred — they're
+ * all optional here so reads of draft/sent quotes parse cleanly.
+ *
+ * Status is left permissive (`z.string()`) because the API enum is lowercase
+ * (`draft`, `sent`, `accepted`, `declined`, `expired`, `closed`,
+ * `changes_requested`, `pending`, `assigned`) but legacy demo data and the
+ * test suite use the historical titlecase form. Forward-compat with new
+ * statuses is also a goal.
+ */
 export const QuoteSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
@@ -376,6 +401,17 @@ export const QuoteSchema = z.object({
   expirationDate: z.string().optional(),
   status: z.string(),
   lineItems: z.array(QuoteLineItemSchema).optional(),
+
+  // Workflow fields (read-only visibility for the accept/decline lifecycle).
+  acceptedBy: QuoteRespondedBySchema.optional(),
+  declinedBy: QuoteRespondedBySchema.optional(),
+  respondedOn: z.string().optional(),
+  revokedOn: z.string().optional(),
+  publishedOn: z.string().optional(),
+  published: z.boolean().optional(),
+  referenceCode: z.string().optional(),
+  salesMarginPercentage: z.number().optional(),
+  intentType: z.string().optional(),
 });
 export type Quote = z.infer<typeof QuoteSchema>;
 
