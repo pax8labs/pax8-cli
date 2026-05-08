@@ -38,6 +38,31 @@ describe("pax8 doctor", () => {
     expect(result.stdout).toMatch(/✓.*Cache directory writable/);
   });
 
+  // Regression for #220: env-var auth and demo mode are equally valid
+  // credential paths; doctor should not ✗ "Config file" when either covers
+  // it. Previously it always ✗'d on a missing file, scaring CI runners and
+  // users with PAX8_CLIENT_ID/SECRET set but no on-disk config.
+  describe("Config file check (#220)", () => {
+    it("passes with 'demo mode' detail when PAX8_DEMO=1 and no config file", async () => {
+      const result = await runCliExpectSuccess(["doctor"]);
+      // Test isolation (#287) gives this run a fresh PAX8_CONFIG_DIR with
+      // no config.yaml; PAX8_DEMO=1 is the test default. Should pass.
+      expect(result.stdout).toMatch(/✓\s+Config file/);
+      expect(result.stdout).toContain("demo mode");
+    });
+
+    it("passes with 'using env vars' detail when PAX8_CLIENT_ID/SECRET set and no config file", async () => {
+      const result = await runCliExpectSuccess(["doctor"], {
+        // Override the test-default PAX8_DEMO=1 so the env-var branch fires.
+        PAX8_DEMO: "",
+        PAX8_CLIENT_ID: "fake-id-for-test",
+        PAX8_CLIENT_SECRET: "fake-secret-for-test",
+      });
+      expect(result.stdout).toMatch(/✓\s+Config file/);
+      expect(result.stdout).toContain("env vars");
+    });
+  });
+
   it("shows help text", async () => {
     const result = await runCliExpectSuccess(["doctor", "--help"]);
     expect(result.stdout).toContain("diagnostic");

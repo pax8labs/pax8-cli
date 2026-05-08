@@ -434,7 +434,6 @@ These are tracked, prioritized for v0.1.x, and not blockers for v0.1.0. Each lin
 - The per-command e2e matrix exercises every command in subprocess (non-TTY) mode, where the CLI's agent-first contract auto-routes to JSON. Some UX invariants (no UUIDs leaking into table cells, density bounds on tables, drill-in hint visibility) only apply in TTY-render mode and need a node-pty harness — tracked as a follow-up to broaden matrix coverage.
 
 **Polish:**
-- The bare `pax8` welcome screen is static (logo + 4 hardcoded suggested commands); a "what's interesting now" live-data first-load is planned for v0.1.x.
 - No update-notifier — the CLI doesn't tell you when a newer version exists ([#183](https://github.com/pax8labs/pax8-cli/issues/183)).
 - The scheduled API-drift watcher only filters `ERROR_API_VALIDATION` events; widening to `ERROR_API_TIMEOUT` / `ERROR_API_NOT_FOUND` / etc. is tracked separately ([#213](https://github.com/pax8labs/pax8-cli/issues/213)). Also note: the watcher is silent until `POSTHOG_PROJECT_API_KEY` is provisioned in repo secrets, and telemetry is opt-in by default.
 

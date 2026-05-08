@@ -5,11 +5,13 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import * as os from "node:os";
 import { replCmd } from "../lib/confirm.js";
-import { CredentialStore, getDefaultBaseUrl, loadConfig } from "@pax8/core";
+import { CredentialStore, getConfigDir, getDefaultBaseUrl, loadConfig } from "@pax8/core";
 
-const CONFIG_DIR = path.join(os.homedir(), ".pax8");
+// Honor PAX8_CONFIG_DIR (set in CI / tests / non-default installs) instead
+// of hardcoding `~/.pax8`. Same env contract as every other read of the
+// config dir in core.
+const CONFIG_DIR = getConfigDir();
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
 const CACHE_DIR = path.join(CONFIG_DIR, "cache");
 
@@ -50,10 +52,31 @@ async function checkNodeVersion(): Promise<CheckResult> {
 async function checkConfigFile(): Promise<CheckResult> {
   try {
     await fs.access(CONFIG_FILE);
-    return { name: "Config file exists", passed: true, detail: CONFIG_FILE };
+    return { name: "Config file", passed: true, detail: CONFIG_FILE };
   } catch {
+    // The config file is one of *several* ways credentials reach the CLI.
+    // It's only a real problem when nothing else covers them (#220):
+    //   - PAX8_DEMO=1 → no credentials needed at all
+    //   - PAX8_CLIENT_ID + PAX8_CLIENT_SECRET → env-var auth, common in CI
+    //     and service-account setups; no config file required
+    // Marking this ✗ when either of those covers it scares users on a
+    // working system and fails CI runners running on fresh checkouts.
+    if (process.env.PAX8_DEMO === "1") {
+      return {
+        name: "Config file",
+        passed: true,
+        detail: "demo mode — not required",
+      };
+    }
+    if (process.env.PAX8_CLIENT_ID && process.env.PAX8_CLIENT_SECRET) {
+      return {
+        name: "Config file",
+        passed: true,
+        detail: "using env vars — PAX8_CLIENT_ID / PAX8_CLIENT_SECRET",
+      };
+    }
     return {
-      name: "Config file exists",
+      name: "Config file",
       passed: false,
       detail: `Not found. Run: ${replCmd("pax8 config init")}`,
     };
