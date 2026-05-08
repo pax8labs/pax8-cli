@@ -11,13 +11,23 @@ export default defineConfig({
     // every test worker (and every subprocess spawned by `runCli`) into
     // the explicit escape hatch. Production users without this var get
     // the strict default.
+    //
+    // The actual `PAX8_CONFIG_DIR` value is set by
+    // `vitest.test-isolation-setup.ts` (a globalSetup) to a fresh
+    // mkdtemp per run — this prevents a developer's local `~/.pax8/`
+    // (e.g. `demo: true` from a prior `pax8 config set` call) from
+    // leaking into unit tests like `context.test.ts > non-demo path …`.
+    // CI never saw this because runners are fresh; locally it was a
+    // paper-cut.
     env: {
       PAX8_ALLOW_NON_HOME_CONFIG: "1",
     },
-    // Sets NODE_V8_COVERAGE on the parent so child processes spawned by
-    // `runCli()` deposit their v8 profiles into a known directory, which the
-    // custom coverage provider then merges into the final report.
-    globalSetup: ["./vitest.coverage-setup.ts"],
+    // globalSetup order matters when scripts touch process.env: each runs
+    // in declaration order in the parent process, before workers fork.
+    globalSetup: [
+      "./vitest.test-isolation-setup.ts",
+      "./vitest.coverage-setup.ts",
+    ],
     coverage: {
       // Custom provider wraps the standard v8 provider and additionally
       // ingests subprocess coverage profiles. See vitest.coverage-provider.ts.
