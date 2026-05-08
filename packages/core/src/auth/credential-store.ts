@@ -55,6 +55,24 @@ export class CredentialStore {
   }
 
   /**
+   * Fast check for whether any credential source is configured. Does NOT
+   * read or parse the file — just verifies the env vars or that the file
+   * exists. Intended for UX branching on the welcome screen, where we
+   * need a sub-millisecond answer and don't care about content validity.
+   *
+   * Returns false on any error (missing file, permission denied, etc.).
+   */
+  async hasCredentials(): Promise<boolean> {
+    if (this.getFromEnv() !== null) return true;
+    try {
+      await fs.access(CREDENTIALS_FILE, constants.F_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Saves credentials to ~/.pax8/credentials.json with secure permissions.
    * On Unix: chmod 700 on dir, chmod 600 on file.
    * On Windows: restrict ACLs to the current user via icacls.

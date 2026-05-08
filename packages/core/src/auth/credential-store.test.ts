@@ -130,6 +130,47 @@ describe("CredentialStore", () => {
     });
   });
 
+  describe("hasCredentials", () => {
+    it("returns true when env vars are set, without touching the file", async () => {
+      process.env.PAX8_CLIENT_ID = "env-id";
+      process.env.PAX8_CLIENT_SECRET = "env-secret";
+
+      expect(await store.hasCredentials()).toBe(true);
+      expect(fs.access).not.toHaveBeenCalled();
+    });
+
+    it("returns true when only the credentials file exists", async () => {
+      delete process.env.PAX8_CLIENT_ID;
+      delete process.env.PAX8_CLIENT_SECRET;
+      vi.mocked(fs.access).mockResolvedValueOnce(undefined);
+
+      expect(await store.hasCredentials()).toBe(true);
+      expect(fs.access).toHaveBeenCalledWith(CREDENTIALS_FILE, expect.any(Number));
+      // hasCredentials must NOT read or parse the file body.
+      expect(fs.readFile).not.toHaveBeenCalled();
+    });
+
+    it("returns false when neither env vars nor file are present", async () => {
+      delete process.env.PAX8_CLIENT_ID;
+      delete process.env.PAX8_CLIENT_SECRET;
+      vi.mocked(fs.access).mockRejectedValueOnce(
+        Object.assign(new Error("ENOENT"), { code: "ENOENT" })
+      );
+
+      expect(await store.hasCredentials()).toBe(false);
+    });
+
+    it("returns false when only one env var half is set", async () => {
+      process.env.PAX8_CLIENT_ID = "partial";
+      delete process.env.PAX8_CLIENT_SECRET;
+      vi.mocked(fs.access).mockRejectedValueOnce(
+        Object.assign(new Error("ENOENT"), { code: "ENOENT" })
+      );
+
+      expect(await store.hasCredentials()).toBe(false);
+    });
+  });
+
   describe.skipIf(process.platform === "win32")("saveCredentials", () => {
     it("creates config dir, secures it, and writes credentials file on Unix", async () => {
       // #262: saveCredentials now uses safeWriteFileSync for the file
