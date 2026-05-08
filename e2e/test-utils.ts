@@ -13,6 +13,13 @@ const exec = promisify(execFile);
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const CLI_PATH = resolve(__dirname, "../packages/cli/dist/index.js");
 
+// Hard upper bound for any single CLI invocation under runCli(). Bumped from
+// 15s → 30s after #252 / #277 flakes on Windows-22: node cold-start + CLI init
+// + Commander help under parallel test load can exceed 15s on slow runners.
+// 30s is "did the help even start?" territory, not a perf budget — real
+// commands return in well under a second under PAX8_DEMO=1.
+const TIMEOUT_MS = 30000;
+
 // Per-call isolated config dir. Without this, the e2e suite inherits the
 // developer's `~/.pax8/last-error.json` — and tests within the same process
 // also leak state to each other (a command that fails writes last-error.json
@@ -27,6 +34,12 @@ export interface CliResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /**
+   * True when the child process was killed by `execFile`'s timeout (SIGTERM
+   * with `error.killed === true`). Distinguishes a hung-process flake from a
+   * real exit-1 failure — same surface area, very different remediation.
+   */
+  timedOut?: boolean;
 }
 
 export async function runCli(
@@ -42,14 +55,23 @@ export async function runCli(
         PAX8_CONFIG_DIR: makeIsolatedConfigDir(),
         ...env,
       },
-      timeout: 15000,
+      timeout: TIMEOUT_MS,
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (error: any) {
+    // execFile's timeout sends SIGTERM and sets killed=true; on those, the
+    // child has no real exit code (error.code === null), which would
+    // otherwise collapse to exitCode: 1 and be indistinguishable from a real
+    // command failure. Surface it explicitly so callers (and the per-command
+    // help test) can tell the two apart.
+    const timedOut = error.killed === true && error.signal === "SIGTERM";
     return {
       stdout: error.stdout ?? "",
-      stderr: error.stderr ?? "",
-      exitCode: error.code ?? 1,
+      stderr: timedOut
+        ? `${error.stderr ?? ""}\n(runCli timed out after ${TIMEOUT_MS}ms)`.trim()
+        : (error.stderr ?? ""),
+      exitCode: timedOut ? -1 : (error.code ?? 1),
+      timedOut: timedOut || undefined,
     };
   }
 }
