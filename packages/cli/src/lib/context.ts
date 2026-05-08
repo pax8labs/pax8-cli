@@ -198,33 +198,20 @@ export async function buildContext(
 function spawnCacheWarmer(): void {
   const env = { ...process.env, PAX8_CACHE_WARMING: "1" };
 
-  const child = spawn(
-    "pax8",
-    ["companies", "list", "--json", "--size", "200", "--quiet"],
-    { detached: true, stdio: "ignore", env },
-  );
+  spawnCacheWarm(["companies", "list", "--json", "--size", "200", "--quiet"], env, "companies");
+  spawnCacheWarm(["subscriptions", "list", "--json", "--size", "1000", "--quiet"], env, "subscriptions");
+  spawnCacheWarm(["products", "list", "--json", "--size", "500", "--quiet"], env, "products");
+}
+
+/**
+ * Spawn a single detached `pax8 ...` cache-warm child. Errors are best-effort
+ * and only surfaced under `PAX8_DEBUG`. Caller is responsible for passing the
+ * env that already has `PAX8_CACHE_WARMING=1` set so the child doesn't recurse.
+ */
+function spawnCacheWarm(args: string[], env: NodeJS.ProcessEnv, label: string): void {
+  const child = spawn("pax8", args, { detached: true, stdio: "ignore", env });
   child.on("error", (err) => {
-    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (companies) failed: ${err}\n`);
+    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (${label}) failed: ${err}\n`);
   });
   child.unref();
-
-  const child2 = spawn(
-    "pax8",
-    ["subscriptions", "list", "--json", "--size", "1000", "--quiet"],
-    { detached: true, stdio: "ignore", env },
-  );
-  child2.on("error", (err) => {
-    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (subscriptions) failed: ${err}\n`);
-  });
-  child2.unref();
-
-  const child3 = spawn(
-    "pax8",
-    ["products", "list", "--json", "--size", "500", "--quiet"],
-    { detached: true, stdio: "ignore", env },
-  );
-  child3.on("error", (err) => {
-    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (products) failed: ${err}\n`);
-  });
-  child3.unref();
 }
