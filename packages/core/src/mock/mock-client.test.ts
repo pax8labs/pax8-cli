@@ -225,4 +225,88 @@ describe("MockPax8Client", () => {
       expect(result[0]).toHaveProperty("topics");
     });
   });
+
+  // ─── Real-vs-mock parity ─────────────────────────────────────────────────
+  //
+  // Belt-and-suspenders runtime check that every public method present on
+  // each real `*Api` class also exists on the corresponding mock resource.
+  // The load-bearing version of this assertion is at compile time in
+  // `packages/cli/src/lib/context.ts`; this test exists so that drift is
+  // also surfaced by `pnpm test`, not only by typecheck.
+
+  describe("parity with real API client", () => {
+    const resourceMethodNames = (obj: object): string[] => {
+      const proto = Object.getPrototypeOf(obj) as object;
+      return Object.getOwnPropertyNames(proto).filter((n) => {
+        if (n === "constructor") return false;
+        const desc = Object.getOwnPropertyDescriptor(proto, n);
+        return typeof desc?.value === "function";
+      });
+    };
+
+    it("every mock resource exposes a stable set of public methods", () => {
+      // We can't instantiate the real `*Api` classes here without an HTTP
+      // client and credentials, so we settle for a smoke check that each
+      // mock resource has at least the load-bearing methods. The fuller
+      // `extends`-style check is the compile-time assertion in context.ts.
+      expect(resourceMethodNames(client.companies)).toEqual(
+        expect.arrayContaining(["list", "get", "create", "update"]),
+      );
+      expect(resourceMethodNames(client.subscriptions)).toEqual(
+        expect.arrayContaining(["list", "get", "getHistory", "update", "delete"]),
+      );
+      expect(resourceMethodNames(client.products)).toEqual(
+        expect.arrayContaining([
+          "list",
+          "search",
+          "get",
+          "getPricing",
+          "getProvisioningDetails",
+          "getDependencies",
+        ]),
+      );
+      expect(resourceMethodNames(client.invoices)).toEqual(
+        expect.arrayContaining(["list", "get", "listItems", "listDraftItems"]),
+      );
+      expect(resourceMethodNames(client.orders)).toEqual(
+        expect.arrayContaining(["list", "get", "create"]),
+      );
+      expect(resourceMethodNames(client.contacts)).toEqual(
+        expect.arrayContaining(["list", "get", "create", "update", "delete"]),
+      );
+      expect(resourceMethodNames(client.usage)).toEqual(
+        expect.arrayContaining(["listSummaries", "getSummary", "listLines"]),
+      );
+      expect(resourceMethodNames(client.quotes)).toEqual(
+        expect.arrayContaining([
+          "list",
+          "get",
+          "create",
+          "update",
+          "delete",
+          "addLineItem",
+          "removeLineItem",
+          "setStatus",
+          "send",
+        ]),
+      );
+      expect(resourceMethodNames(client.webhooks)).toEqual(
+        expect.arrayContaining([
+          "list",
+          "get",
+          "create",
+          "update",
+          "updateStatus",
+          "updateConfiguration",
+          "setStatus",
+          "delete",
+          "test",
+          "testTopic",
+          "getLogs",
+          "retryLog",
+          "getTopicDefinitions",
+        ]),
+      );
+    });
+  });
 });

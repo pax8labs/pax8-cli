@@ -379,7 +379,7 @@ paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
       };
 
       const writeSpinner = createSpinner("Filing dispute...").start();
-      const done = markWriteInFlight("invoices");
+      const done = markWriteInFlight("invoices", undefined, idempotencyKey);
       let filePath: string;
       try {
         filePath = await writeDraft(draft);

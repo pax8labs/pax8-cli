@@ -20,6 +20,7 @@ import { stopAllActiveSpinners } from "./spinner.js";
 interface InFlightWrite {
   resource: string;
   hint?: string;
+  idempotencyKey?: string;
 }
 
 let currentWrite: InFlightWrite | null = null;
@@ -29,9 +30,14 @@ let currentWrite: InFlightWrite | null = null;
  * function the caller MUST invoke (in a `finally`, ideally) when the write
  * settles — successful, failed, or otherwise.
  *
+ * If the caller has computed an `idempotencyKey` for the request, pass it as
+ * the third argument. The SIGINT handler will surface it in the cancellation
+ * hint so the user can copy-paste a retry command instead of generating a new
+ * key.
+ *
  * Example:
  * ```ts
- * const done = markWriteInFlight("order");
+ * const done = markWriteInFlight("order", undefined, idempotencyKey);
  * try {
  *   await ctx.api.orders.create(...);
  * } finally {
@@ -39,8 +45,12 @@ let currentWrite: InFlightWrite | null = null;
  * }
  * ```
  */
-export function markWriteInFlight(resource: string, hint?: string): () => void {
-  const entry: InFlightWrite = { resource, hint };
+export function markWriteInFlight(
+  resource: string,
+  hint?: string,
+  idempotencyKey?: string,
+): () => void {
+  const entry: InFlightWrite = { resource, hint, idempotencyKey };
   currentWrite = entry;
 
   return () => {
@@ -102,12 +112,16 @@ export function installSigintHandler(): void {
 
     const write = currentWrite;
     if (write) {
-      // TODO: wire up the idempotency key once #91 lands so this hint can
-      // include it directly. For now we just emit `(cancelled)` plus a
-      // resource-aware show hint.
       const showCmd = `pax8 ${write.resource} show ...`;
       const extra = write.hint ? ` ${write.hint}` : "";
-      const msg = `(cancelled) Write was in flight. Run ${showCmd} to confirm state.${extra}\n`;
+      const lines = [
+        `(cancelled) Write was in flight. Run ${showCmd} to confirm state.${extra}`,
+      ];
+      if (write.idempotencyKey) {
+        // Indent so the retry line visibly hangs under the cancelled line.
+        lines.push(`            Retry with: --idempotency-key ${write.idempotencyKey}`);
+      }
+      const msg = lines.join("\n") + "\n";
       try {
         process.stderr.write(chalk.dim(msg));
       } catch {
