@@ -568,7 +568,7 @@ Examples:
       // `OrdersApi.create` shape — see packages/core/src/api/orders.ts), pass
       // `idempotencyKey` through here so the server dedupes natively. Until
       // then, deduplication is purely local via the file cache below.
-      const doneWrite = markWriteInFlight("orders");
+      const doneWrite = markWriteInFlight("orders", undefined, idempotencyKey);
       let order;
       try {
         order = await ctx.api.orders.create(orderInput, { isMock: dryRun });

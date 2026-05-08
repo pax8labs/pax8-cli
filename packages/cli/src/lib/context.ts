@@ -50,6 +50,37 @@ export interface ApiClient {
   webhooks: WebhooksApi;
 }
 
+// Compile-time assertion that `MockPax8Client` (used in demo mode) exposes
+// every public method on the real `ApiClient`. We can't simply write
+// `MockPax8Client extends ApiClient` because the real `*Api` classes carry a
+// private `client` field used internally for HTTP, which TypeScript treats as
+// a brand and refuses to consider compatible across class boundaries. Today's
+// mock and real signatures also drift slightly (e.g. mock `companies.create`
+// accepts `Partial<Company>` rather than `CreateCompanyInput`), and tightening
+// those contracts is out of scope here — but adding or removing a method on
+// either side IS what we want to catch automatically.
+//
+// So we project both sides through `MethodNames` and assert the mock has at
+// least every public function-typed key the real client exposes. If a new
+// method is added to any of the real `*Api` classes and to `ApiClient`, but
+// not to its `*Resource` mirror in `MockPax8Client`, this assertion fails to
+// type-check — turning the eventual runtime `TypeError` under `PAX8_DEMO=1`
+// into a build-time error.
+type MethodNames<T> = {
+  [K in keyof T]: T[K] extends (...args: never[]) => unknown ? K : never;
+}[keyof T];
+type ApiClientMethodNames = {
+  [K in keyof ApiClient]: MethodNames<ApiClient[K]>;
+};
+type MockMethodNames = {
+  [K in keyof ApiClient]: MethodNames<MockPax8Client[K & keyof MockPax8Client]>;
+};
+type _AssertMockSatisfiesReal = ApiClientMethodNames extends MockMethodNames
+  ? true
+  : false;
+const _mockSatisfiesReal: _AssertMockSatisfiesReal = true;
+void _mockSatisfiesReal;
+
 export interface CommandContext {
   api: ApiClient | MockPax8Client;
   outputFormat: "table" | "json" | "csv" | "quiet";

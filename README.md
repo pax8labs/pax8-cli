@@ -48,6 +48,26 @@ pax8 status
 PAX8_DEMO=1 pax8 status
 ```
 
+### Running from source (contributors / unmerged branches)
+
+If you're contributing to the CLI or trying it before it's published:
+
+```bash
+git clone https://github.com/pax8labs/pax8-cli
+cd pax8-cli
+pnpm install
+pnpm build
+
+# Use directly:
+node packages/cli/dist/index.js status
+
+# Or symlink for global use:
+cd packages/cli && npm link
+pax8 status
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full dev workflow.
+
 ## Demo Flow (90 seconds)
 
 ```bash

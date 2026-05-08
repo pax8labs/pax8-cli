@@ -40,7 +40,20 @@ describe("markWriteInFlight", () => {
 
   it("preserves the optional hint", () => {
     markWriteInFlight("orders", "id=abc");
-    expect(_getWriteInFlight()).toEqual({ resource: "orders", hint: "id=abc" });
+    expect(_getWriteInFlight()).toEqual({
+      resource: "orders",
+      hint: "id=abc",
+      idempotencyKey: undefined,
+    });
+  });
+
+  it("preserves the optional idempotency key", () => {
+    markWriteInFlight("orders", undefined, "9f3b2c1e-7d4f-4a8b-9c2d-1e2f3a4b5c6d");
+    expect(_getWriteInFlight()).toEqual({
+      resource: "orders",
+      hint: undefined,
+      idempotencyKey: "9f3b2c1e-7d4f-4a8b-9c2d-1e2f3a4b5c6d",
+    });
   });
 });
 
@@ -127,6 +140,39 @@ describe("installSigintHandler — capture and invoke", () => {
     expect(written).toContain("(cancelled)");
     expect(written).toContain("orders");
     expect(written).toContain("idempotency-key=xyz");
+    expect(exitSpy).toHaveBeenCalledWith(130);
+  });
+
+  it("on first SIGINT with an idempotency key includes a Retry hint", async () => {
+    expect(sigintHandler).not.toBeNull();
+    const fresh = await import("./signals.js");
+    fresh.markWriteInFlight(
+      "orders",
+      undefined,
+      "9f3b2c1e-7d4f-4a8b-9c2d-1e2f3a4b5c6d",
+    );
+
+    sigintHandler!();
+    await settle();
+
+    const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
+    expect(written).toContain("(cancelled)");
+    expect(written).toContain("Retry with: --idempotency-key");
+    expect(written).toContain("9f3b2c1e-7d4f-4a8b-9c2d-1e2f3a4b5c6d");
+    expect(exitSpy).toHaveBeenCalledWith(130);
+  });
+
+  it("on first SIGINT without an idempotency key skips the Retry hint", async () => {
+    expect(sigintHandler).not.toBeNull();
+    const fresh = await import("./signals.js");
+    fresh.markWriteInFlight("orders");
+
+    sigintHandler!();
+    await settle();
+
+    const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
+    expect(written).toContain("(cancelled)");
+    expect(written).not.toContain("Retry with: --idempotency-key");
     expect(exitSpy).toHaveBeenCalledWith(130);
   });
 
