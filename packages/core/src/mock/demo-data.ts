@@ -39,6 +39,12 @@ export interface Company {
   billOnBehalfOfEnabled: boolean;
   selfServiceAllowed: boolean;
   orderApprovalRequired: boolean;
+  /**
+   * Partner-side external ID (e.g. PSA / billing-system ID). Optional because
+   * not every partner populates it. Mirrors the public `Company` schema field
+   * surfaced in #273 (fixes #5).
+   */
+  externalId?: string;
   /** Mirrors the public `Company` schema field name. */
   created: string;
   billingContact?: { firstName: string; lastName: string; email: string };
@@ -55,6 +61,12 @@ export interface Subscription {
   billingStart: string;
   status: "Active" | "Trial" | "PendingManual" | "Cancelled" | "PendingCancel";
   price: number;
+  /**
+   * ISO-4217 currency code. Mirrors the public `Subscription.currencyCode`
+   * field surfaced in #273 (fixes #6). Demo fixtures default to `USD` with at
+   * least one non-USD record so the table-display branch is exercised.
+   */
+  currencyCode?: string;
   billingTerm: "Monthly" | "Annual";
   commitment?: { id: string; term: string; endDate: string };
   commitmentTermEndDate: string | null;
@@ -283,6 +295,9 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: false,
     orderApprovalRequired: false,
+    // Partner-side ID (e.g. PSA / billing-system ID) — exercises the
+    // `externalId` surface introduced in #273 (fixes #5).
+    externalId: "PSA-SUMMIT-1042",
     created: "2023-06-15",
     billingContact: {
       firstName: "Rachel",
@@ -306,6 +321,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: true,
     orderApprovalRequired: true,
+    externalId: "PSA-COASTLINE-2018",
     created: "2024-01-10",
     billingContact: {
       firstName: "Marco",
@@ -329,6 +345,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: false,
     orderApprovalRequired: true,
+    externalId: "PSA-REDWOOD-0517",
     created: "2022-09-01",
     billingContact: {
       firstName: "Karen",
@@ -352,6 +369,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: false,
     selfServiceAllowed: false,
     orderApprovalRequired: false,
+    externalId: "PSA-BRIGHT-3304",
     created: "2025-03-20",
     billingContact: {
       firstName: "Lisa",
@@ -375,6 +393,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: true,
     orderApprovalRequired: false,
+    externalId: "PSA-PINNACLE-7710",
     created: "2024-08-05",
     billingContact: {
       firstName: "David",
@@ -403,6 +422,7 @@ export const companies: Company[] = [
     billOnBehalfOfEnabled: true,
     selfServiceAllowed: true,
     orderApprovalRequired: false,
+    externalId: "PSA-ACME-0001",
     created: "2024-11-15",
     billingContact: {
       firstName: "Wile",
@@ -661,6 +681,7 @@ export const subscriptions: Subscription[] = [
     billingStart: "2025-03-26",
     status: "Active",
     price: 22.0,
+    currencyCode: "USD",
     billingTerm: "Annual",
     commitment: { id: "cterm-0001-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(3) },
     commitmentTermEndDate: daysFromNow(3), // renews in 3 days!
@@ -714,6 +735,9 @@ export const subscriptions: Subscription[] = [
     billingStart: "2025-04-07",
     status: "Active",
     price: 36.0,
+    // Non-USD fixture — exercises the table-display branch added in #273
+    // (fixes #6) which appends the currency code only when it isn't USD.
+    currencyCode: "EUR",
     billingTerm: "Annual",
     commitment: { id: "cterm-0002-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(18) },
     commitmentTermEndDate: daysFromNow(18),

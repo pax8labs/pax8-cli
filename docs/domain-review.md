@@ -77,7 +77,7 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 |---|---|---|
 | `address.stateOrProvince` (query) / `state` (body) | `--state` | API is inconsistent; CLI normalizes to `state` |
 | `address.postalCode` (query) / `zip` (body) | `--zip` | Same — CLI picks the shorter body field |
-| `externalId` | (not exposed) | API surfaces a partner-side external ID; CLI hides it |
+| `externalId` | `externalId` | Surfaced on Company in `pax8 companies show` (table + `--json`) [Resolved in #273] |
 | `updatedDate` | `updatedDate` | Aligned with API in #273 (was `modified`) |
 | `createdDate` (Contact) | (not exposed on Contact) | Only surfaced on Company-ish resources |
 | `contacts[]` (embedded on Company) | (separate `contacts list`) | CLI separates rather than embeds |
@@ -96,7 +96,7 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 
 ### Questions for Domain Owner
 
-1. Is the CLI right to hide `externalId` from list/show, or do partners need it?
+1. ~~Is the CLI right to hide `externalId` from list/show, or do partners need it?~~ [Resolved in #273] — surfaced.
 2. Is `companies update` deliberately address-immutable?
 
 ---
@@ -134,7 +134,7 @@ API `SubscriptionStatus` enum: `Active, Cancelled, PendingManual, PendingAutomat
 | `vendorSubscriptionId` | (not exposed) | |
 | `partnerCost` | (not exposed) | CLI shows `price` but not partner cost |
 | `parentSubscriptionId` | (not exposed) | |
-| `currencyCode` | (not exposed) | Always treated as USD |
+| `currencyCode` | `currencyCode` | Surfaced on Subscription; appended to price in table view only when non-`USD` [Resolved in #273] |
 | `updatedDate` | (not exposed) | CLI shows `createdDate` only |
 | `provisioningDetails` (write-only on API) | (not exposed on subscription) | Surfaces only on order line items |
 

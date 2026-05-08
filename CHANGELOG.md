@@ -6,10 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Added
 
+- **`Company.externalId`** surfaced in `pax8 companies show` (table + `--json`). Partner-side identifier returned by the API, useful for bridging Pax8 ↔ PSA records (#273).
+- **`Subscription.currencyCode`** surfaced in `pax8 subscriptions list/show`. Always present in `--json`; appended to the price column in table view only when the value is non-`USD`, to keep the common case uncluttered (#273).
 - **Per-command e2e UX matrix** (`e2e/per-command.test.ts` + `e2e/command-inventory.ts`): every CLI command runs through a fixed set of layers under `PAX8_DEMO=1` — smoke (exits 0, no stack traces), cross-cutting invariants (no `undefined` / `[object Object]` / debug-token leaks), per-command semantic checks (expected/forbidden output fragments), JSON contract (`--json` parses, required fields per spec, minRows for list shapes), and `--help` (exits 0, mentions command name). The inventory is the single source of truth — adding a new command means adding one entry. Catalogued bugs are marked `knownBroken` with issue links rather than papering over with weakened assertions, so regressions stay visible in CI output (#193 / #207).
 
 ### Changed
 
+- **`Product.vendor`** removed from the schema — it duplicated `vendorName`. Only `vendorName` remains, matching the public API (#273).
 - **`--json` field names aligned with the public Pax8 API** — `InvoiceItem.subtotal` → `subTotal`, `InvoiceItem.unitPrice` → `price`, `Company.modified` → `updatedDate`, `Quote.expirationDate` → `expiresOn`, `Quote.createdDate` → `createdOn`. Breaking for `--json` consumers; acceptable pre-1.0 since partners reading both surfaces no longer have to translate. The `--expiration-date` CLI flag on `pax8 quotes create`/`update` is intentionally unchanged — flag vocabulary and field vocabulary are separate concerns (#273).
 - **Display labels** — `report-bug` no-prior-error now exits 0 with a manual-file-a-bug pointer instead of exiting 1 silently; the with-context flow (sanitize, prompt, submit) is unchanged (#209).
 - **`auth status --json`** now emits valid JSON (`{ authenticated, mode, clientIdMasked? }`) and respects the agent-first non-TTY contract; previously it printed human-formatted text regardless of `--json` (#210).
