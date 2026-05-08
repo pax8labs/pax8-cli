@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ### Deprecated
 
 - **`pax8 webhooks create --events`** renamed to `--topics` to match the API field name (`webhookTopics`) and the CLI's own `Webhook.topics[]` output. `--events` continues to function as a deprecated alias and prints a one-line deprecation notice on stderr; it will be removed in v1.0. Passing both `--topics` and `--events` is rejected with `ERROR_INVALID_INPUT` (#273).
+- **`pax8 status`** renamed to `pax8 dashboard`. The previous name collided semantically with `pax8 auth status` (an auth-credential check) and was generically named for what is actually a portfolio dashboard. `pax8 status` continues to function as a deprecated alias and prints a one-line deprecation notice on stderr (`warning: \`status\` is deprecated; use \`dashboard\`. Will be removed in v1.0.`); it is hidden from `pax8 --help`. Same deprecation pattern as the `--events` → `--topics` rename above; will be removed in v1.0.
 
 ### Fixed
 

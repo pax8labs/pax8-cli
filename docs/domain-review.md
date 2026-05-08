@@ -460,7 +460,7 @@ API `Webhook` fields: `id, accountId, displayName, url, authorization, active, c
 |---|---|---|---|
 | `pax8 report mrr` | (none) | | **Computed** |
 | `pax8 report growth` | `--months <number>` | months=6 | **Computed** |
-| `pax8 status` | (none) | | **Computed — portfolio overview** |
+| `pax8 dashboard` | (none) | | **Computed — portfolio overview** (legacy alias `pax8 status` retained until v1.0) |
 | `pax8 cost sim` | `--company`, `--product`, `--quantity`, `--from`, `--from-quantity`, `--billing-term` | qty=1, billing=Annual | **Computed — what-if simulator** |
 | `pax8 doctor` | (none) | | Diagnostics |
 
@@ -474,13 +474,13 @@ There are no `/report`, `/mrr`, `/growth`, or `/cost` endpoints in the public AP
 |---|---|---|---|---|
 | `report mrr` | All active subscriptions | For each: `monthly = price × quantity`; `annual term = price × quantity ÷ 12`. Group by `companyId`, `productName`, `vendorName`. | `{ totalMrr, byCompany[], byProduct[], byVendor[] }` | API has no MRR endpoint. |
 | `report growth` | All invoices for the partner | Group invoice totals by `YYYY-MM`, take last N months, compute MoM `delta` and `growthPercent`, plus `averageGrowth`. **Note: this is invoiced revenue, not MRR.** | `{ months[], averageGrowth }` | API has no growth/trend endpoint. |
-| `status` | All companies, all subscriptions, all products, all orders, plus the `recommendations list` output and the `subscriptions renewals` output | Computes top customers by MRR, total seats, urgent renewals (≤14d), top recommendations. | Portfolio-level dashboard JSON or formatted table. | Single-call landing page for "how is my business doing." |
+| `dashboard` (alias `status`) | All companies, all subscriptions, all products, all orders, plus the `recommendations list` output and the `subscriptions renewals` output | Computes top customers by MRR, total seats, urgent renewals (≤14d), top recommendations. | Portfolio-level dashboard JSON or formatted table. | Single-call landing page for "how is my business doing." |
 | `cost sim` | Target company + proposed product, optional `--from` (current product), pricing plans for the proposed product | Resolve current subscription via company × product (or via `--from`); look up proposed pricing plan by billing term; pick volume tier (largest `startQuantityRange` ≤ proposed quantity); compute `monthly = subscriptionMrr(unitPrice, quantity, billingTerm)`, `annual = monthly × 12`, deltas, and per-seat delta. Emit notes for tier selection, default-Annual fallback, billing-term swap. | `{ current: {...} \| null, proposed: {unitPrice, quantity, monthly, annual, productName, billingTerm}, delta: {monthly, annual, perSeat}, notes[] }` | What-if pricing without placing the order. |
 
 ### Naming Drift Flags
 
 - `report growth` is computed from invoiced revenue, but the field is named `mrr` and the percent is `growthPercent`. Partners reading "MRR growth" may assume it's recurring revenue trended forward, not invoice totals trended backward. Worth a label change.
-- `status` mixes computed surfaces (renewals, recommendations) into one response. Any contract change in those flows through `status`.
+- `dashboard` mixes computed surfaces (renewals, recommendations) into one response. Any contract change in those flows through `dashboard`. (The legacy `status` name is retained as a deprecated alias until v1.0; it semantically collided with `auth status`.)
 - `cost sim` does not call any documented Pax8 simulation endpoint. The volume-tier rule (largest `startQuantityRange` ≤ qty) is the CLI's interpretation.
 
 ### Questions for Domain Owner
