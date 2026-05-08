@@ -81,8 +81,10 @@ Examples:
         return;
       }
 
-      // Determine if we should fetch coverage data
-      const wantsCoverage = allOpts.coverage || ctx.outputFormat === "json";
+      // Coverage analysis fires only when explicitly requested via --coverage.
+      // JSON output without --coverage returns the basic company shape and
+      // skips the 1000-row subscription fetch + product enrichment.
+      const wantsCoverage = Boolean(allOpts.coverage);
 
       // Build coverage map if requested
       let coverageMap: Map<string, { coverage: string; missingCategories: string[]; estimatedUplift: number; coveredCategories: string[] }> | null = null;

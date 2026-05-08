@@ -16,8 +16,21 @@ interface EnrichableByCompany {
 }
 
 /**
+ * When the set of missing product IDs is at or below this threshold we fetch
+ * each one individually (in parallel) instead of pulling the entire 500-row
+ * catalog. Sized so that `Promise.all` over the batch doesn't risk tripping
+ * the API's per-minute rate limit even on chatty terminals.
+ */
+const PER_ID_FETCH_THRESHOLD = 25;
+
+/**
  * Enrich subscriptions with product names when the API only returns productId.
- * Tries bulk catalog first, then individual lookups for any still missing.
+ *
+ * Strategy: collect the unique missing product IDs first. If the set is small
+ * (<= PER_ID_FETCH_THRESHOLD), fetch each via `products.get(id)` in parallel —
+ * this avoids pulling 500 catalog rows for a portfolio with a handful of
+ * unique products. For larger sets, fall back to the bulk `products.list`
+ * path (with per-id fill-in for anything still unresolved).
  *
  * Accepts typed subscription arrays (e.g. Subscription[]) as well as
  * Record<string, unknown>[] for backward compatibility.
@@ -39,34 +52,47 @@ export async function enrichProductNames(
 
   const nameMap = new Map<string, string>();
 
-  // Step 1: bulk fetch from catalog
-  try {
-    const result = await ctx.api.products.list({ size: 500 });
-    for (const product of result.content) {
-      if (missing.has(product.id)) {
-        nameMap.set(product.id, product.name);
+  if (missing.size <= PER_ID_FETCH_THRESHOLD) {
+    // Narrow path: fetch only the IDs we need, in parallel.
+    await Promise.all(
+      [...missing].map(async (pid) => {
+        try {
+          const product = await ctx.api.products.get(pid);
+          if (product?.name) nameMap.set(pid, product.name);
+        } catch (err) {
+          if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] product lookup failed for ${pid}: ${err}\n`);
+        }
+      })
+    );
+  } else {
+    // Wide path: bulk fetch the catalog, then fill in any stragglers.
+    try {
+      const result = await ctx.api.products.list({ size: 500 });
+      for (const product of result.content) {
+        if (missing.has(product.id)) {
+          nameMap.set(product.id, product.name);
+        }
       }
+    } catch (err) {
+      if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] bulk product fetch failed: ${err}\n`);
     }
-  } catch (err) {
-    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] bulk product fetch failed: ${err}\n`);
-  }
 
-  // Step 2: individual lookups for any still unresolved (batched to avoid rate limits)
-  const stillMissing = [...missing].filter((pid) => !nameMap.has(pid));
-  if (stillMissing.length > 0) {
-    const BATCH_SIZE = 15;
-    for (let i = 0; i < stillMissing.length; i += BATCH_SIZE) {
-      const batch = stillMissing.slice(i, i + BATCH_SIZE);
-      await Promise.all(
-        batch.map(async (pid) => {
-          try {
-            const product = await ctx.api.products.get(pid);
-            if (product?.name) nameMap.set(pid, product.name);
-          } catch (err) {
-            if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] product lookup failed for ${pid}: ${err}\n`);
-          }
-        })
-      );
+    const stillMissing = [...missing].filter((pid) => !nameMap.has(pid));
+    if (stillMissing.length > 0) {
+      const BATCH_SIZE = 15;
+      for (let i = 0; i < stillMissing.length; i += BATCH_SIZE) {
+        const batch = stillMissing.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (pid) => {
+            try {
+              const product = await ctx.api.products.get(pid);
+              if (product?.name) nameMap.set(pid, product.name);
+            } catch (err) {
+              if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] product lookup failed for ${pid}: ${err}\n`);
+            }
+          })
+        );
+      }
     }
   }
 
