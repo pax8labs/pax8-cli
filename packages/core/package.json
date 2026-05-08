@@ -21,7 +21,7 @@
     "dev": "tsup src/index.ts --format esm --dts --watch --sourcemap"
   },
   "dependencies": {
-    "posthog-node": "^5.33.3",
+    "posthog-node": "^5.33.4",
     "yaml": "^2.8.4",
     "zod": "^3.23.0"
   },
