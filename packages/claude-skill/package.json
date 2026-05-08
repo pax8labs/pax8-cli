@@ -5,7 +5,10 @@
   "description": "Claude Code skill for AI-assisted Pax8 operations",
   "type": "module",
   "main": "./src/index.ts",
-  "files": ["src", "skill.md"],
+  "files": [
+    "src",
+    "skill.md"
+  ],
   "scripts": {
     "build": "echo 'no build needed'",
     "typecheck": "tsc --noEmit"
@@ -24,6 +27,13 @@
   },
   "homepage": "https://github.com/pax8labs/pax8-cli#readme",
   "bugs": "https://github.com/pax8labs/pax8-cli/issues",
-  "keywords": ["pax8", "msp", "cli", "cloud-marketplace", "subscriptions", "billing"],
+  "keywords": [
+    "pax8",
+    "msp",
+    "cli",
+    "cloud-marketplace",
+    "subscriptions",
+    "billing"
+  ],
   "license": "Apache-2.0"
 }
