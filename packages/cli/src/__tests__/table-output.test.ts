@@ -97,13 +97,12 @@ describe("table output — TTY-aware rendering", () => {
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.length).toBeGreaterThan(0);
-      // Verify all rows have consistent keys
-      const keys = Object.keys(data[0]);
-      for (const row of data) {
-        for (const key of keys) {
-          expect(row).toHaveProperty(key);
-        }
-      }
+      // No per-row key-presence assertion here. The original assertion took
+      // `Object.keys(data[0])` and required every other row to carry the same
+      // keys, which forced uniform population of optional fields and bit us in
+      // PR #277. Optional-field sparseness is *expected* in real `--json`
+      // output; the table renderer's column inference (now union-of-keys) is
+      // tested directly in `lib/output-extended.test.ts`.
     });
 
     it("CSV output has no ANSI codes", async () => {

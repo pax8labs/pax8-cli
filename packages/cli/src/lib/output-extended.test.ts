@@ -51,10 +51,38 @@ describe("output — extended coverage", () => {
       expect(lines[1]).toBe("1,Acme,Active");
     });
 
+    it("infers columns from the union of keys across all rows", () => {
+      // First row has {a, b}; second has {a, c}. The brittle pre-fix
+      // implementation only saw `a, b` because it read `Object.keys(rows[0])`.
+      // The fix collects keys in first-encounter order: a, b, c.
+      const data = [
+        { a: 1, b: 2 },
+        { a: 3, c: 4 },
+      ];
+      output(data, { format: "csv" });
+
+      const written = stdoutWrite.mock.calls.map((c) => c[0]).join("");
+      const lines = written.trim().split("\n");
+      expect(lines[0]).toBe("a,b,c");
+      // Row 1: a=1, b=2, c=(absent → empty cell)
+      expect(lines[1]).toBe("1,2,");
+      // Row 2: a=3, b=(absent → empty cell), c=4
+      expect(lines[2]).toBe("3,,4");
+    });
+
     it("produces no output when data is empty and no columns", () => {
       output([], { format: "csv" });
 
       // No columns to infer, so nothing should be output
+      expect(stdoutWrite).not.toHaveBeenCalled();
+    });
+
+    it("produces no output when data is empty and no columns (no rows[0] access)", () => {
+      // Regression guard: the brittle implementation indexed `rows[0]` before
+      // the length check, which would crash on an empty array if reordered.
+      // The fix walks all rows; with zero rows, the inferred-column list is
+      // empty and we short-circuit cleanly.
+      expect(() => output([], { format: "csv" })).not.toThrow();
       expect(stdoutWrite).not.toHaveBeenCalled();
     });
   });

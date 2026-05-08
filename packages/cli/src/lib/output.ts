@@ -125,6 +125,32 @@ function formatCSV(data: readonly Record<string, unknown>[], columns: Column[]):
 }
 
 /**
+ * Build a `Column[]` by walking every row and collecting unique keys in
+ * first-encounter order.
+ *
+ * Earlier code inferred columns from `Object.keys(rows[0])`, which assumes
+ * the first row is canonical. With realistic data (some entries populating
+ * optional fields, others not), that meant the column set could flicker
+ * based on sort order. Walking the union closes the gap without imposing
+ * uniformity on the underlying records.
+ *
+ * Returns an empty array when `rows` is empty.
+ */
+function inferColumns(rows: readonly Record<string, unknown>[]): Column[] {
+  const seen = new Set<string>();
+  const orderedKeys: string[] = [];
+  for (const row of rows) {
+    for (const k of Object.keys(row)) {
+      if (!seen.has(k)) {
+        seen.add(k);
+        orderedKeys.push(k);
+      }
+    }
+  }
+  return orderedKeys.map((key) => ({ key, header: key }));
+}
+
+/**
  * Render `data` to stdout in the format selected by `options`.
  *
  * The parameter type is intentionally widened to `readonly object[]` so that
@@ -153,12 +179,12 @@ export function output(data: readonly object[], options: OutputOptions): void {
       // Fallback: show as JSON if no columns defined
       formatJSON(rows);
     } else if (format === "csv") {
-      // Infer columns from first item
-      if (rows.length > 0) {
-        const inferred: Column[] = Object.keys(rows[0]).map((key) => ({
-          key,
-          header: key,
-        }));
+      // Infer columns from the union of keys across all rows, in
+      // first-encounter order. Walking the union (rather than `rows[0]`)
+      // means rows with sparsely populated optional fields don't cause the
+      // column list to flicker based on which row sorts first.
+      const inferred = inferColumns(rows);
+      if (inferred.length > 0) {
         formatCSV(rows, inferred);
       }
     }
