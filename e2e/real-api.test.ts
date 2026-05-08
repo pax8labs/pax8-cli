@@ -133,13 +133,13 @@ describeReal("Real API integration tests", () => {
   );
 
   it(
-    "status --json returns dashboard data",
+    "dashboard --json returns dashboard data",
     async () => {
-      const result = await runRealExpectSuccess(["status", "--json"]);
+      const result = await runRealExpectSuccess(["dashboard", "--json"]);
       const data = JSON.parse(result.stdout);
       expect(data).toBeTruthy();
       expect(typeof data).toBe("object");
-      // Status should have some known keys
+      // Dashboard should have some known keys
       expect(data).toHaveProperty("totalCompanies");
       expect(data).toHaveProperty("activeSubscriptions");
     },

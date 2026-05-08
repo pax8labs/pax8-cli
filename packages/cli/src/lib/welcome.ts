@@ -61,7 +61,7 @@ export async function showWelcomeScreen(): Promise<void> {
   const commandBlock = authed
     ? [
         `  ${chalk.dim("Common commands:")}`,
-        `    ${cmd("status")}${chalk.dim("Portfolio at a glance")}`,
+        `    ${cmd("dashboard")}${chalk.dim("Portfolio at a glance")}`,
         `    ${cmd("subscriptions renewals")}${chalk.dim("What's renewing in 30 days")}`,
         `    ${cmd("recommendations")}${chalk.dim("Upsell opportunities")}`,
         `    ${cmd("invoices audit")}${chalk.dim("Reconcile invoices vs subscriptions")}`,

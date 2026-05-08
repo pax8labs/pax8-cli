@@ -22,7 +22,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 invoices items` — line items for an invoice
 - `pax8 invoices audit` — read-only computation, no writes
 - `pax8 cost sim` — what-if pricing simulation, no writes
-- `pax8 status`, `pax8 status --all|--renewals|--growth`
+- `pax8 dashboard`, `pax8 dashboard --all|--renewals|--growth`
 - `pax8 doctor` — diagnostics only
 - `pax8 webhooks logs <id>` — delivery history (read-only)
 
@@ -67,14 +67,14 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 | `--csv` | User asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
-| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`status`, `report mrr/growth`, `invoices audit`) always include `nextActions` inline. |
+| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `report mrr/growth`, `invoices audit`) always include `nextActions` inline. |
 
 Result size: list commands default to `--size 25`. For portfolio-wide analysis (MRR, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 
 ## Commands
 
 ```
-pax8 status [--all|--customers|--renewals|--growth] --json
+pax8 dashboard [--all|--customers|--renewals|--growth] --json
 pax8 companies list --json
 pax8 companies show <id|name> --json
 pax8 companies more <name>                                  # rich summary, table only
@@ -96,7 +96,7 @@ pax8 doctor                                                  # diagnostics, not 
 
 ## MRR math
 
-The CLI computes MRR for you in `pax8 status`, `pax8 report mrr`, and `pax8 companies more`. Prefer those over hand-rolling it. If you must compute from `subscriptions list`:
+The CLI computes MRR for you in `pax8 dashboard`, `pax8 report mrr`, and `pax8 companies more`. Prefer those over hand-rolling it. If you must compute from `subscriptions list`:
 
 - Monthly billing term → `price × quantity`
 - Annual billing term → `price × quantity ÷ 12`

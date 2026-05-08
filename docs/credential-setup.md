@@ -43,7 +43,7 @@ Then run any command normally:
 
 ```bash
 pax8 auth login    # validates and saves
-pax8 status        # works directly — env vars are checked first
+pax8 dashboard     # works directly — env vars are checked first
 ```
 
 Environment variables take priority over the stored credentials file, so you can use them to temporarily override saved credentials. A copy-pasteable starter for these (and the optional `PAX8_API_BASE` / `PAX8_DEMO` toggles) is in [`.env.example`](../.env.example) at the repo root.
@@ -60,7 +60,7 @@ pax8 doctor   # surfaces the active API base in its output
 ```powershell
 $env:PAX8_CLIENT_ID = "your-client-id"
 $env:PAX8_CLIENT_SECRET = "your-client-secret"
-pax8 status
+pax8 dashboard
 ```
 
 ### Option C: Direct file (advanced)

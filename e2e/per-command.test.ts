@@ -368,7 +368,7 @@ function stripValueArgs(args: string[]): string[] {
     }
     // Skip free-form positionals (likely an ID/name like "Acme Corp")
     // ONLY if we already have a subcommand. Top-level commands like
-    // "status" / "doctor" are positional too but ARE the command.
+    // "dashboard" / "doctor" are positional too but ARE the command.
     if (out.length >= 2) continue; // group + subcommand already captured
     out.push(a);
   }

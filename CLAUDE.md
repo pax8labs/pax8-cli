@@ -8,7 +8,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 
 | User asks about | Run this |
 |---|---|
-| overview / status / how am I doing | `pax8 status --json 2>/dev/null` |
+| overview / status / how am I doing | `pax8 dashboard --json 2>/dev/null` |
 | companies / customers | `pax8 companies list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |

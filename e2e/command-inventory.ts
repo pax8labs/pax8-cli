@@ -820,14 +820,28 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
   },
   // ── root-level ────────────────────────────────────────────────────────────
   {
-    command: ["status"],
+    command: ["dashboard"],
     group: "root",
     type: "diagnostic",
     demo: {
       expectedFragments: [/MRR|customers|renewals/i],
       forbiddenFragments: ["undefined"],
     },
-    jsonContract: { skip: { reason: "status dashboard freeform" } },
+    jsonContract: { skip: { reason: "dashboard freeform" } },
+  },
+  {
+    // Deprecated alias for `dashboard`. Hidden from `pax8 --help` and prints
+    // a one-line stderr deprecation notice on every invocation. Kept here so
+    // the per-command matrix continues to exercise the alias path until v1.0.
+    command: ["status"],
+    label: "status (deprecated alias)",
+    group: "root",
+    type: "diagnostic",
+    demo: {
+      expectedFragments: [/MRR|customers|renewals/i],
+      forbiddenFragments: ["undefined"],
+    },
+    jsonContract: { skip: { reason: "alias for dashboard; same freeform output" } },
   },
   {
     command: ["doctor"],

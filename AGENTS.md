@@ -12,7 +12,7 @@ When asked anything about Pax8 data, your first action should be a shell call. N
 
 | Question | Run this |
 |---|---|
-| overview / status / how am I doing | `pax8 status --json 2>/dev/null` |
+| overview / status / how am I doing | `pax8 dashboard --json 2>/dev/null` |
 | companies / customers | `pax8 companies list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
@@ -57,7 +57,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 invoices items` — line items for an invoice
 - `pax8 invoices audit` — read-only computation, no writes
 - `pax8 cost sim` — what-if pricing simulation, no writes
-- `pax8 status`, `pax8 status --all|--renewals|--growth|--customers`
+- `pax8 dashboard`, `pax8 dashboard --all|--renewals|--growth|--customers`
 - `pax8 doctor` — diagnostics only
 - `pax8 webhooks logs <id>` — delivery history (read-only)
 
@@ -91,7 +91,7 @@ If unsure whether a command counts as a write, default to confirming. Better one
 | `--csv` | When the operator asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
-| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`status`, `report mrr/growth`, `invoices audit`) always include `nextActions` inline. |
+| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `report mrr/growth`, `invoices audit`) always include `nextActions` inline. |
 
 ## Result size
 
@@ -170,6 +170,6 @@ The CLI is self-describing — agents that want to enumerate their own surface s
 - `pax8 --help` — top-level resource and command listing.
 - `pax8 <resource> --help` and `pax8 <resource> <action> --help` — per-command flag and argument detail.
 - `pax8 doctor --json` — environment, auth, API reachability, cache, and telemetry state in a single structured payload. Use it as a one-shot health check, not a per-call probe.
-- `pax8 status --json` — portfolio snapshot (MRR, renewals, recs, trials) with `nextActions` inline.
+- `pax8 dashboard --json` — portfolio snapshot (MRR, renewals, recs, trials) with `nextActions` inline.
 
 A first-class `pax8 agents` command — emitting a machine-readable inventory of every command, flag, error code, and read/write classification — is planned for v0.2.x as part of the canonical-source-of-truth refactor (#164). Until that lands, parse `--help` output or read this file.

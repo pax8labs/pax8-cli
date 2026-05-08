@@ -157,20 +157,12 @@ function renderGrowthSection(
 
 // ── Command ──────────────────────────────────────────────────────────────────
 
-export const statusCommand = new Command("status")
-  .description("Quick snapshot of your Pax8 business")
-  .option("--all", "Show full dashboard with all sections")
-  .option("--customers", "Show top customers by estimated MRR")
-  .option("--renewals", "Show upcoming renewal details")
-  .option("--growth", "Show growth opportunities")
-  .addHelpText("after", `
-Examples:
-  pax8 status
-  pax8 status --all
-  pax8 status --customers
-  pax8 status --renewals --growth
-  pax8 status --json`)
-  .action(async (options, cmd) => {
+// The dashboard handler is extracted so the canonical `dashboard` command and
+// the deprecated `status` alias share the same implementation; the alias is
+// just a thin wrapper that prints a stderr deprecation notice before invoking
+// `runDashboard()`. Will be removed in v1.0 (mirrors the `--events` → `--topics`
+// deprecation in `pax8 webhooks create`).
+async function runDashboard(options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, cmd: Command): Promise<void> {
     const allOpts = cmd.optsWithGlobals();
     const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Loading dashboard...").start();
@@ -500,6 +492,56 @@ Examples:
 
       out.write("\n");
     } catch (error) {
-      await handleCommandError(error, spinner, "Failed to load status");
+      await handleCommandError(error, spinner, "Failed to load dashboard");
     }
-  });
+}
+
+// One-line stderr deprecation notice for the legacy `status` alias. Mirrors
+// the `--events`/`--topics` deprecation pattern (#274). Will be removed in v1.0.
+const STATUS_DEPRECATION_NOTICE =
+  "warning: `status` is deprecated; use `dashboard`. Will be removed in v1.0.\n";
+
+function buildDashboardCommand(name: "dashboard" | "status"): Command {
+  const cmd = new Command(name)
+    .description("Quick snapshot of your Pax8 business")
+    .option("--all", "Show full dashboard with all sections")
+    .option("--customers", "Show top customers by estimated MRR")
+    .option("--renewals", "Show upcoming renewal details")
+    .option("--growth", "Show growth opportunities")
+    .addHelpText(
+      "after",
+      `
+Examples:
+  pax8 ${name}
+  pax8 ${name} --all
+  pax8 ${name} --customers
+  pax8 ${name} --renewals --growth
+  pax8 ${name} --json`,
+    )
+    .action(async (options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, c: Command) => {
+      if (name === "status") {
+        process.stderr.write(STATUS_DEPRECATION_NOTICE);
+      }
+      await runDashboard(options, c);
+    });
+
+  if (name === "status") {
+    // Commander short-circuits `--help` before running .action(), so the
+    // deprecation notice is also emitted as a beforeAll help-text hook so
+    // `pax8 status --help` still surfaces the notice on stderr. The hook
+    // returns "" (no extra help-text content) — its sole purpose is the
+    // side-effect of writing to stderr.
+    cmd.addHelpText("beforeAll", () => {
+      process.stderr.write(STATUS_DEPRECATION_NOTICE);
+      return "";
+    });
+  }
+
+  return cmd;
+}
+
+export const dashboardCommand = buildDashboardCommand("dashboard");
+
+// Deprecated alias. Registered with `{ hidden: true }` in src/index.ts so it
+// does not appear in `pax8 --help`. Removal tracked for v1.0.
+export const statusCommand = buildDashboardCommand("status");

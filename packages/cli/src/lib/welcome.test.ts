@@ -83,7 +83,7 @@ describe("showWelcomeScreen", () => {
     await showWelcomeScreen();
 
     expect(captured).toContain("Common commands:");
-    expect(captured).toContain("status");
+    expect(captured).toContain("dashboard");
     expect(captured).toContain("subscriptions renewals");
     expect(captured).toContain("recommendations");
     expect(captured).toContain("invoices audit");

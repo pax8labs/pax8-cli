@@ -42,16 +42,16 @@ npm install -g @pax8/cli
 pax8 auth login
 
 # See how your business is doing
-pax8 status
+pax8 dashboard
 
 # Or try with demo data (no credentials needed)
-PAX8_DEMO=1 pax8 status
+PAX8_DEMO=1 pax8 dashboard
 ```
 
 ## Demo Flow (90 seconds)
 
 ```bash
-pax8 status                              # estimated MRR, renewals, growth opportunities
+pax8 dashboard                           # estimated MRR, renewals, growth opportunities
 pax8 recommendations list                # Cross-sell and seat gap opportunities
 pax8 recommendations act                 # Multi-select picker → batch order
 pax8 companies list                      # Browse customers (type # to drill in)
@@ -63,10 +63,10 @@ pax8 companies more "Acme Corp"          # Full customer summary
 ### Dashboard
 
 ```bash
-pax8 status                    # Quick snapshot: estimated MRR, renewals, recs, trials
-pax8 status --all              # Full dashboard with top customers and details
-pax8 status --renewals         # Focus on upcoming renewals
-pax8 status --growth           # Focus on growth opportunities
+pax8 dashboard                 # Quick snapshot: estimated MRR, renewals, recs, trials
+pax8 dashboard --all           # Full dashboard with top customers and details
+pax8 dashboard --renewals      # Focus on upcoming renewals
+pax8 dashboard --growth        # Focus on growth opportunities
 ```
 
 ### Companies
@@ -199,7 +199,7 @@ By default, the CLI talks to `https://api.pax8.com/v1`. Partners testing against
 
 ```bash
 export PAX8_API_BASE=https://staging-api.pax8.com/v1/
-pax8 status
+pax8 dashboard
 pax8 doctor   # confirms the active API base in its output
 ```
 
@@ -210,7 +210,7 @@ pax8 doctor   # confirms the active API base in its output
 Try everything without API credentials:
 
 ```bash
-PAX8_DEMO=1 pax8 status
+PAX8_DEMO=1 pax8 dashboard
 PAX8_DEMO=1 pax8 recommendations act
 ```
 
