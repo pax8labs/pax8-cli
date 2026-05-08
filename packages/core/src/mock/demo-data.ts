@@ -1458,6 +1458,7 @@ export const orders: Order[] = [
     status: "Completed",
     lineItems: [
       {
+        id: "oli-summit-001-a",
         productId: "prod-s1-singularity-0010",
         productName: "CrowdStrike MSSP Complete Defend",
         quantity: 85,
@@ -1475,6 +1476,7 @@ export const orders: Order[] = [
     status: "Completed",
     lineItems: [
       {
+        id: "oli-redwood-001-a",
         productId: "prod-acronis-backup-0009",
         productName: "AvePoint Cloud Backup for Microsoft 365",
         quantity: 30,
@@ -1492,12 +1494,14 @@ export const orders: Order[] = [
     status: "Processing",
     lineItems: [
       {
+        id: "oli-pinnacle-001-a",
         productId: "prod-m365-biz-prem-0001",
         productName: "Microsoft 365 Business Premium [New Commerce Experience]",
         quantity: 5,
         billingTerm: "Annual",
       },
       {
+        id: "oli-pinnacle-001-b",
         productId: "prod-defender-biz-0007",
         productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
         quantity: 5,
@@ -1515,12 +1519,14 @@ export const orders: Order[] = [
     status: "Completed",
     lineItems: [
       {
+        id: "oli-coastline-001-a",
         productId: "prod-m365-e3-0003",
         productName: "Microsoft 365 E3 [New Commerce Experience]",
         quantity: 40,
         billingTerm: "Annual",
       },
       {
+        id: "oli-coastline-001-b",
         productId: "prod-exo-plan2-0006",
         productName: "Exchange Online (Plan 2) [New Commerce Experience]",
         quantity: 40,
@@ -1538,6 +1544,7 @@ export const orders: Order[] = [
     status: "Completed",
     lineItems: [
       {
+        id: "oli-bright-001-a",
         productId: "prod-m365-biz-basic-0002",
         productName: "Microsoft 365 Business Basic [New Commerce Experience]",
         quantity: 25,
