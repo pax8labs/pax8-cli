@@ -68,7 +68,7 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
 
   const cliPath = resolveCliPath(process.argv[1]);
 
-  showWelcomeScreen();
+  await showWelcomeScreen();
   process.stdout.write(chalk.dim("  Type a command, or ") + chalk.cyan("help") + chalk.dim(" / ") + chalk.cyan("exit") + "\n\n");
 
   const rl = createInterface({
