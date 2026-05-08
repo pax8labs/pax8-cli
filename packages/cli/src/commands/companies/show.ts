@@ -17,7 +17,16 @@ const subscriptionColumns: Column[] = [
   { key: "quantity", header: "Qty" },
   { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
   { key: "billingTerm", header: "Term" },
-  { key: "price", header: "Price", format: (v) => formatCurrency(Number(v)) },
+  {
+    key: "price",
+    header: "Price",
+    // Append the ISO-4217 currency code only when it isn't USD (#273 fix #6).
+    format: (v, row) => {
+      const code = String((row as { currencyCode?: string } | undefined)?.currencyCode ?? "USD");
+      const price = formatCurrency(Number(v));
+      return code === "USD" ? price : `${price} ${code}`;
+    },
+  },
 ];
 
 export const companiesShowCommand = new Command("show")
@@ -87,6 +96,11 @@ Examples:
       process.stdout.write("\n");
       process.stdout.write(chalk.bold(`  ${company.name}\n\n`));
       process.stdout.write(`  ${chalk.dim("ID:".padEnd(18))}${company.id}\n`);
+      // Partner-side ID — only render the row when present so companies
+      // without an external mapping don't get a noisy "External ID: —".
+      if (company.externalId) {
+        process.stdout.write(`  ${chalk.dim("External ID:".padEnd(18))}${company.externalId}\n`);
+      }
       process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(company.status)}\n`);
       process.stdout.write(`  ${chalk.dim("Phone:".padEnd(18))}${company.phone || chalk.dim("—")}\n`);
       process.stdout.write(`  ${chalk.dim("Website:".padEnd(18))}${company.website || chalk.dim("—")}\n`);

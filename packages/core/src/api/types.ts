@@ -74,6 +74,14 @@ export const CompanySchema = z.object({
   billOnBehalfOfEnabled: z.boolean().optional(),
   selfServiceAllowed: z.boolean().optional(),
   orderApprovalRequired: z.boolean().optional(),
+  /**
+   * Partner-side external identifier — typically a PSA / billing-system ID
+   * the partner uses to map their own records to a Pax8 company. Surfaced in
+   * #273 (fixes #5) so partners using this field to bridge Pax8 ↔ PSA aren't
+   * forced to round-trip through the portal. Lookup/filter by `externalId`
+   * is intentionally not added here — that's a feature, not a fix.
+   */
+  externalId: z.string().optional(),
   created: z.string().optional(),
   updatedDate: z.string().optional(),
 });
@@ -138,8 +146,10 @@ export type UpdateContactInput = z.infer<typeof UpdateContactInputSchema>;
 export const ProductSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
+  // The public Pax8 API exposes vendor identity as `vendorName`. Earlier CLI
+  // versions also carried a duplicate `vendor` field for the same concept;
+  // dropped in #273 (fixes #1) so there's a single canonical name.
   vendorName: z.string().optional(),
-  vendor: z.string().optional(),
   sku: z.string().optional(),
   shortDescription: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
@@ -259,6 +269,31 @@ export const CommitmentSchema = z.object({
 });
 export type Commitment = z.infer<typeof CommitmentSchema>;
 
+/**
+ * Subscription shape returned by `GET /subscriptions{,/{id}}`.
+ *
+ * Note on commitment-term ergonomics (verified in #273, fixes #2):
+ * - The canonical API shape is `commitmentTerm: { id, term, endDate }`. The
+ *   CLI preserves that nested object under the alias `commitment` so consumers
+ *   who want the full shape (id + term name + endDate) can still get it. The
+ *   alias spelling is intentional — every existing demo fixture, mock-client
+ *   payload, and `--json` consumer reads it as `commitment`, and renaming back
+ *   to `commitmentTerm` would be a breaking surface change with no obvious
+ *   payoff.
+ * - For ergonomics, the CLI also flattens `commitmentTerm.endDate` to a
+ *   top-level `commitmentTermEndDate` so renewal-window math (`subscriptions
+ *   renewals`, the `--within` filter, the `Term End` row in `subscriptions
+ *   show`, and the upper-bound calculations in `recommendations`) doesn't
+ *   have to dig into a nested object on every record. `null` is preserved
+ *   distinct from `undefined` because monthly subs return `null` here on the
+ *   wire (no commitment term) and we want consumers to be able to tell the
+ *   two apart.
+ *
+ * Both surfaces are intentional — keep the nested object **and** the
+ * flattened endDate. A future canonical-rename pass (alias → `commitmentTerm`,
+ * dropping the flattened field, or vice versa) would be a breaking change
+ * tracked separately.
+ */
 export const SubscriptionSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
@@ -270,6 +305,14 @@ export const SubscriptionSchema = z.object({
   billingStart: z.string().optional(),
   status: SubscriptionStatusSchema,
   price: z.number().optional(),
+  /**
+   * ISO-4217 currency code (e.g. `USD`, `EUR`). Optional defensively:
+   * pre-#273 demo fixtures didn't carry it. Surfaced in #273 (fixes #6) so
+   * non-USD partners aren't silently treated as USD. The CLI table view only
+   * appends the code next to the price when it isn't `USD`, to avoid
+   * cluttering the common case.
+   */
+  currencyCode: z.string().optional(),
   billingTerm: BillingTermSchema.optional(),
   commitment: CommitmentSchema.optional(),
   commitmentTermEndDate: z.string().nullable().optional(),

@@ -8,7 +8,13 @@ export interface Column {
   key: string;
   header: string;
   width?: number;
-  format?: (value: unknown) => string;
+  /**
+   * Cell formatter. The optional second argument is the full row; pass it
+   * when the cell needs sibling fields (e.g. price + currencyCode where the
+   * currency code is a separate column on the wire but rendered inline with
+   * the price). Most formatters ignore it.
+   */
+  format?: (value: unknown, row?: Record<string, unknown>) => string;
 }
 
 export interface OutputOptions {
@@ -84,7 +90,7 @@ function formatTable(data: readonly Record<string, unknown>[], columns: Column[]
       columns.map((col) => {
         const raw = row[col.key];
         const value = raw === undefined || raw === null ? "" : raw;
-        return col.format ? col.format(value) : String(value);
+        return col.format ? col.format(value, row) : String(value);
       })
     );
   }

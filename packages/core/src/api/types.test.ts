@@ -177,7 +177,6 @@ describe("ProductSchema", () => {
     id: uuid,
     name: "Microsoft 365 Business Premium [New Commerce Experience]",
     vendorName: "Microsoft",
-    vendor: "microsoft",
     sku: "M365-BP",
     shortDescription: "Cloud productivity suite",
     description: "Full Microsoft 365 Business Premium package",

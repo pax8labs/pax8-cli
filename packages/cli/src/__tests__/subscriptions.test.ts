@@ -53,6 +53,23 @@ describe("pax8 subscriptions list", () => {
     expect(result.stdout).toContain("Examples:");
   });
 
+  it("surfaces currencyCode in --json (USD baseline + non-USD fixture)", async () => {
+    // The Coastline E3 fixture is seeded as `currencyCode: "EUR"`; everything
+    // else is either USD or undefined. Exercises the field added in #273
+    // (fixes #6) and confirms the wire passes through `--json` output.
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "list",
+      "--company",
+      "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "--json",
+    ]);
+    const data = JSON.parse(result.stdout);
+    const eurSub = data.find((s: { id: string }) => s.id === "sub-coastline-e3-001");
+    expect(eurSub).toBeDefined();
+    expect(eurSub.currencyCode).toBe("EUR");
+  });
+
   it("--with-actions wraps in { subscriptions, nextActions }", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",

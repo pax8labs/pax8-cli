@@ -33,7 +33,14 @@ const columns: Column[] = [
   {
     key: "price",
     header: "Price",
-    format: (v) => formatCurrency(Number(v)),
+    // Append the ISO-4217 currency code only when it isn't USD. Common case
+    // stays unchanged; non-USD partners get e.g. `$1,234.56 EUR` so the unit
+    // isn't silently misread as dollars. Surfaced in #273 (fixes #6).
+    format: (v, row) => {
+      const code = String((row as { currencyCode?: string } | undefined)?.currencyCode ?? "USD");
+      const price = formatCurrency(Number(v));
+      return code === "USD" ? price : `${price} ${code}`;
+    },
   },
 ];
 

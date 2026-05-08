@@ -76,13 +76,20 @@ Examples:
 
       // Table format: key-value display
       process.stdout.write("\n");
+      // Append the ISO-4217 currency code only when it isn't USD. Common
+      // case stays unchanged; non-USD partners get e.g. `$1,234.56 EUR`.
+      // Surfaced in #273 (fixes #6).
+      const currencyCode = (sub as { currencyCode?: string }).currencyCode ?? "USD";
+      const priceFormatted = currencyCode === "USD"
+        ? formatCurrency(sub.price ?? 0)
+        : `${formatCurrency(sub.price ?? 0)} ${currencyCode}`;
       const fields: [string, string][] = [
         ["ID", sub.id],
         ["Company", sub.companyName ?? sub.companyId],
         ["Product", sub.productName ?? ""],
         ["Quantity", formatQuantity(sub.quantity)],
         ["Status", formatStatus(sub.status)],
-        ["Price", formatCurrency(sub.price ?? 0)],
+        ["Price", priceFormatted],
         ["Billing Term", sub.billingTerm ?? ""],
         ["Start Date", formatDate(sub.startDate)],
         ["Created", formatDate(sub.createdDate)],

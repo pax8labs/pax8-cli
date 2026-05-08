@@ -103,6 +103,20 @@ describe("pax8 companies", () => {
       expect(data.phone).toBeTruthy();
     });
 
+    it("surfaces externalId in --json when present", async () => {
+      // Summit Healthcare carries `externalId: "PSA-SUMMIT-1042"` in the
+      // demo fixture — exercises the field surfaced in #273 (fixes #5).
+      const result = await runCliExpectSuccess([
+        "companies",
+        "show",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("externalId");
+      expect(data.externalId).toBe("PSA-SUMMIT-1042");
+    });
+
     it("includes subscriptions with --subscriptions flag", async () => {
       const result = await runCliExpectSuccess([
         "companies",
