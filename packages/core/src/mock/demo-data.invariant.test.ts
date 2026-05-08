@@ -108,14 +108,7 @@ describe("demo-data — Zod schema invariant", () => {
     expectAllParse(subscriptions, SubscriptionSchema, "subscriptions");
   });
 
-  // SEPARATE DRIFT (not UUID-related): `OrderLineItemSchema.id` is required,
-  // but demo orders' `lineItems` entries omit the per-line `id`. This isn't
-  // an ID-format issue — it's a missing required field. Tracking as a
-  // follow-up (either populate `id` on demo line items, or make line-item
-  // `id` optional like `QuoteLineItemSchema.id` already is, since the API
-  // returns an opaque per-line id that consumers rarely refer to). Out of
-  // scope for the UUID-loosening PR.
-  it.skip("orders parse against OrderSchema", () => {
+  it("orders parse against OrderSchema", () => {
     expectAllParse(orders, OrderSchema, "orders");
   });
 
