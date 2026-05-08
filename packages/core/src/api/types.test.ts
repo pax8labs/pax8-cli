@@ -64,8 +64,11 @@ describe("CompanySchema", () => {
     expect(() => CompanySchema.parse({ name: "Acme Corp" })).toThrow();
   });
 
-  it("rejects invalid uuid", () => {
-    expect(() => CompanySchema.parse({ id: "not-a-uuid", name: "Acme" })).toThrow();
+  it("rejects non-string id", () => {
+    // ID schema is `z.string()` (loosened from `.uuid()` in #289 follow-up so
+    // human-readable demo IDs like `prod-m365-biz-prem-0001` parse cleanly).
+    // Format isn't enforced at the schema layer; the type still must be a string.
+    expect(() => CompanySchema.parse({ id: 12345, name: "Acme" })).toThrow();
   });
 
   it("rejects missing name", () => {
@@ -196,8 +199,10 @@ describe("ProductSchema", () => {
     expect(() => ProductSchema.parse({ id: uuid })).toThrow();
   });
 
-  it("rejects non-uuid id", () => {
-    expect(() => ProductSchema.parse({ id: "abc", name: "Product" })).toThrow();
+  it("rejects non-string id", () => {
+    // ID schema is `z.string()` (loosened from `.uuid()` so human-readable
+    // demo IDs parse cleanly); the type still must be a string.
+    expect(() => ProductSchema.parse({ id: 42, name: "Product" })).toThrow();
   });
 });
 
@@ -784,10 +789,13 @@ describe("PaginatedResponseSchema", () => {
 
   it("rejects invalid items in content", () => {
     const schema = PaginatedResponseSchema(CompanySchema);
+    // CompanySchema.id is `z.string()` (UUID format isn't enforced); the
+    // content item must still satisfy the rest of the shape (e.g. `name`
+    // is required, types must match).
     expect(() =>
       schema.parse({
         page: { size: 10, totalElements: 1, totalPages: 1, number: 0 },
-        content: [{ id: "not-a-uuid", name: "Bad Company" }],
+        content: [{ id: uuid /* missing name */ }],
       }),
     ).toThrow();
   });

@@ -65,7 +65,7 @@ export type Address = z.infer<typeof AddressSchema>;
 // ─── Company ─────────────────────────────────────────────────────────────────
 
 export const CompanySchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   name: z.string(),
   address: AddressSchema.optional(),
   phone: z.string().optional(),
@@ -112,12 +112,12 @@ export type UpdateCompanyInput = z.infer<typeof UpdateCompanyInputSchema>;
 // ─── Contact ─────────────────────────────────────────────────────────────────
 
 export const ContactSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   firstName: z.string(),
   lastName: z.string(),
   email: z.string().email(),
   phone: z.string().optional(),
-  companyId: z.string().uuid(),
+  companyId: z.string(),
   types: z.array(ContactTypeSchema),
 });
 export type Contact = z.infer<typeof ContactSchema>;
@@ -127,7 +127,7 @@ export const CreateContactInputSchema = z.object({
   lastName: z.string().min(1),
   email: z.string().email(),
   phone: z.string().optional(),
-  companyId: z.string().uuid(),
+  companyId: z.string(),
   types: z.array(ContactTypeSchema).min(1),
 });
 export type CreateContactInput = z.infer<typeof CreateContactInputSchema>;
@@ -144,7 +144,7 @@ export type UpdateContactInput = z.infer<typeof UpdateContactInputSchema>;
 // ─── Product ─────────────────────────────────────────────────────────────────
 
 export const ProductSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   name: z.string(),
   // The public Pax8 API exposes vendor identity as `vendorName`. Earlier CLI
   // versions also carried a duplicate `vendor` field for the same concept;
@@ -168,7 +168,7 @@ export const ProductPricingRateSchema = z.object({
 export type ProductPricingRate = z.infer<typeof ProductPricingRateSchema>;
 
 export const ProductPricingPlanSchema = z.object({
-  productId: z.string().uuid(),
+  productId: z.string(),
   productName: z.string().optional(),
   billingTerm: z.string(),
   commitmentTerm: z.string().optional(),
@@ -199,7 +199,7 @@ export const ProvisioningFieldSchema = z.object({
 export type ProvisioningField = z.infer<typeof ProvisioningFieldSchema>;
 
 export const ProvisioningDetailSchema = z.object({
-  productId: z.string().uuid(),
+  productId: z.string(),
   vendorPrerequisites: z.string().optional(),
   fields: z.array(ProvisioningFieldSchema).optional(),
 });
@@ -217,18 +217,18 @@ export const CommitmentTermSchema = z.enum([
 export type CommitmentTerm = z.infer<typeof CommitmentTermSchema>;
 
 export const OrderLineItemInputSchema = z.object({
-  productId: z.string().uuid(),
+  productId: z.string(),
   quantity: z.number().int().min(1),
   billingTerm: BillingTermSchema.optional(),
-  commitmentTermId: z.string().uuid().optional(),
+  commitmentTermId: z.string().optional(),
   provisioningDetails: OrderLineItemProvisioningSchema.optional(),
 });
 export type OrderLineItemInput = z.infer<typeof OrderLineItemInputSchema>;
 
 export const OrderLineItemSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   offerId: z.string().optional(),
-  productId: z.string().uuid(),
+  productId: z.string(),
   /** Denormalized product name (demo data convenience). */
   productName: z.string().optional(),
   /** Optional billing term (demo data convenience). */
@@ -240,8 +240,8 @@ export const OrderLineItemSchema = z.object({
 export type OrderLineItem = z.infer<typeof OrderLineItemSchema>;
 
 export const OrderSchema = z.object({
-  id: z.string().uuid(),
-  companyId: z.string().uuid(),
+  id: z.string(),
+  companyId: z.string(),
   /** Denormalized company name. Returned by the demo client; the real API
    * doesn't include it directly but the CLI populates it after lookup. */
   companyName: z.string().optional(),
@@ -255,7 +255,7 @@ export const OrderSchema = z.object({
 export type Order = z.infer<typeof OrderSchema>;
 
 export const CreateOrderInputSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string(),
   lineItems: z.array(OrderLineItemInputSchema).min(1),
 });
 export type CreateOrderInput = z.infer<typeof CreateOrderInputSchema>;
@@ -263,7 +263,7 @@ export type CreateOrderInput = z.infer<typeof CreateOrderInputSchema>;
 // ─── Subscription ────────────────────────────────────────────────────────────
 
 export const CommitmentSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.string().optional(),
   term: z.string().optional(),
   endDate: z.string().optional(),
 });
@@ -295,9 +295,9 @@ export type Commitment = z.infer<typeof CommitmentSchema>;
  * tracked separately.
  */
 export const SubscriptionSchema = z.object({
-  id: z.string().uuid(),
-  companyId: z.string().uuid(),
-  productId: z.string().uuid(),
+  id: z.string(),
+  companyId: z.string(),
+  productId: z.string(),
   quantity: z.number(),
   startDate: z.string(),
   endDate: z.string().optional(),
@@ -330,7 +330,7 @@ export type UpdateSubscriptionInput = z.infer<typeof UpdateSubscriptionInputSche
 // ─── Subscription History ────────────────────────────────────────────────────
 
 export const SubscriptionHistorySchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   action: z.string(),
   date: z.string(),
   quantity: z.number(),
@@ -341,8 +341,8 @@ export type SubscriptionHistory = z.infer<typeof SubscriptionHistorySchema>;
 // ─── Invoice ─────────────────────────────────────────────────────────────────
 
 export const InvoiceSchema = z.object({
-  id: z.string().uuid(),
-  companyId: z.string().uuid(),
+  id: z.string(),
+  companyId: z.string(),
   invoiceDate: z.string(),
   dueDate: z.string(),
   // Optional defensively: the public OpenAPI Invoice properties block does
@@ -359,10 +359,10 @@ export type Invoice = z.infer<typeof InvoiceSchema>;
 // ─── Invoice Item ────────────────────────────────────────────────────────────
 
 export const InvoiceItemSchema = z.object({
-  id: z.string().uuid(),
-  invoiceId: z.string().uuid(),
-  productId: z.string().uuid(),
-  subscriptionId: z.string().uuid().optional(),
+  id: z.string(),
+  invoiceId: z.string(),
+  productId: z.string(),
+  subscriptionId: z.string().optional(),
   quantity: z.number(),
   // Field names mirror the public Pax8 API: `price` (per-unit) and `subTotal`
   // (line subtotal). Earlier CLI versions exposed these as `unitPrice` and
@@ -370,7 +370,7 @@ export const InvoiceItemSchema = z.object({
   // upstream contract so partners reading both surfaces don't have to translate.
   price: z.number(),
   subTotal: z.number(),
-  companyId: z.string().uuid().optional(),
+  companyId: z.string().optional(),
   productName: z.string().optional(),
   companyName: z.string().optional(),
 });
@@ -379,9 +379,9 @@ export type InvoiceItem = z.infer<typeof InvoiceItemSchema>;
 // ─── Usage Summary ───────────────────────────────────────────────────────────
 
 export const UsageSummarySchema = z.object({
-  id: z.string().uuid(),
-  companyId: z.string().uuid(),
-  productId: z.string().uuid(),
+  id: z.string(),
+  companyId: z.string(),
+  productId: z.string(),
   date: z.string(),
   quantity: z.number(),
   unitPrice: z.number(),
@@ -395,8 +395,8 @@ export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 // ─── Usage Line ──────────────────────────────────────────────────────────────
 
 export const UsageLineSchema = z.object({
-  id: z.string().uuid(),
-  usageSummaryId: z.string().uuid(),
+  id: z.string(),
+  usageSummaryId: z.string(),
   quantity: z.number(),
   unitPrice: z.number(),
   subtotal: z.number(),
@@ -415,7 +415,7 @@ export const QuoteLineItemSchema = z.object({
    * Demo data populates it.
    */
   id: z.string().optional(),
-  productId: z.string().uuid(),
+  productId: z.string(),
   quantity: z.number(),
   billingTerm: BillingTermSchema.optional(),
   unitPrice: z.number().optional(),
@@ -449,8 +449,8 @@ export type QuoteRespondedBy = z.infer<typeof QuoteRespondedBySchema>;
  * statuses is also a goal.
  */
 export const QuoteSchema = z.object({
-  id: z.string().uuid(),
-  companyId: z.string().uuid(),
+  id: z.string(),
+  companyId: z.string(),
   // Field names mirror the public quoting v2 API: `createdOn` and `expiresOn`.
   // Earlier CLI versions exposed these as `createdDate` and `expirationDate`;
   // renamed in #273 (fixes #8) to align `--json` output with the upstream
@@ -477,7 +477,7 @@ export type Quote = z.infer<typeof QuoteSchema>;
 // ─── Webhook ─────────────────────────────────────────────────────────────────
 
 export const WebhookSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   url: z.string().url(),
   topics: z.array(z.string()),
   status: WebhookStatusSchema,
@@ -534,8 +534,8 @@ export type UpdateWebhookConfigurationInput = z.infer<typeof UpdateWebhookConfig
 // ─── Webhook Log ─────────────────────────────────────────────────────────────
 
 export const WebhookLogSchema = z.object({
-  id: z.string().uuid(),
-  webhookId: z.string().uuid(),
+  id: z.string(),
+  webhookId: z.string(),
   topic: z.string(),
   responseCode: z.number(),
   responseBody: z.string().optional(),
@@ -590,9 +590,9 @@ export type PaginatedResponse<T> = {
 // ─── Quote Input Types ──────────────────────────────────────────────────────
 
 export const CreateQuoteInputSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string(),
   lineItems: z.array(z.object({
-    productId: z.string().uuid(),
+    productId: z.string(),
     quantity: z.number().int().positive(),
     billingTerm: BillingTermSchema.optional(),
     provisioningDetails: z.record(z.string(), z.unknown()).optional(),
@@ -602,7 +602,7 @@ export type CreateQuoteInput = z.infer<typeof CreateQuoteInputSchema>;
 
 export const UpdateQuoteInputSchema = z.object({
   lineItems: z.array(z.object({
-    productId: z.string().uuid(),
+    productId: z.string(),
     quantity: z.number().int().positive(),
     billingTerm: BillingTermSchema.optional(),
     provisioningDetails: z.record(z.string(), z.unknown()).optional(),
@@ -619,7 +619,7 @@ export type UpdateQuoteInput = z.infer<typeof UpdateQuoteInputSchema>;
  * `--quantity`, and `--billing-term`.
  */
 export const AddQuoteLineItemInputSchema = z.object({
-  productId: z.string().uuid(),
+  productId: z.string(),
   quantity: z.number().int().positive(),
   billingTerm: BillingTermSchema.optional(),
 });
@@ -648,9 +648,9 @@ export const PageSchema = PageInfoSchema;
 // ─── Product Dependency ─────────────────────────────────────────────────────
 
 export const ProductDependencySchema = z.object({
-  id: z.string().uuid(),
-  productId: z.string().uuid(),
-  dependsOnProductId: z.string().uuid(),
+  id: z.string(),
+  productId: z.string(),
+  dependsOnProductId: z.string(),
   dependencyType: z.string(),
   description: z.string().nullable().optional(),
 });

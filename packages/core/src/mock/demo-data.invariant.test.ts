@@ -15,34 +15,46 @@
  * MUST `safeParse` cleanly. If a collection has no corresponding schema (e.g.
  * internal helper data), it's skipped explicitly with a comment.
  *
- * NOTE — known-incomplete coverage:
- * Only the four collections covered below (`companies`, `webhooks`,
- * `webhookLogs`, `webhookTopicDefinitions`) parse against their public
- * schemas today. The remaining demo collections — `subscriptions`, `products`,
- * `invoices`, `invoiceItems`, `orders`, `contacts`, `usageSummaries`,
- * `usageLines`, `quotes` — fail because every demo seed uses
- * human-readable IDs (e.g. `prod-m365-...`, `sub-summit-...`, `inv-summit-...`)
- * while the schemas declare `id: z.string().uuid()` (and similarly on every
- * cross-reference: `productId`, `companyId`, etc.). The two surfaces were
- * never reconciled because the mock client bypasses Zod on read paths, so
- * the conflict was invisible until this invariant was attempted.
- *
- * Resolving it is a design call (loosen the schemas to `z.string()` on IDs to
- * match the upstream OpenAPI spec, OR migrate demo IDs to UUIDs and keep
- * readable names in the existing `*Name` fields). That's a separate PR; this
- * file ships only what passes today and grows as the conflict is resolved.
+ * History: prior to this PR, only `companies`, `webhooks`, `webhookLogs`, and
+ * `webhookTopicDefinitions` parsed cleanly. The other 9 collections failed
+ * because demo seeds use human-readable IDs (e.g. `prod-m365-...`,
+ * `sub-summit-...`, `inv-summit-...`) while the schemas declared
+ * `id: z.string().uuid()` on every primary and foreign key. The mock client
+ * bypasses Zod on read paths, so the conflict was invisible until this
+ * invariant was attempted. Resolved by loosening the ID schemas to
+ * `z.string()` (the OpenAPI `format: uuid` annotation is upstream metadata
+ * the CLI doesn't depend on; debuggable demo IDs are worth more than
+ * format checks the API client never reaches for).
  */
 
 import { describe, it, expect } from "vitest";
 import type { z } from "zod";
 import {
   CompanySchema,
+  ContactSchema,
+  InvoiceItemSchema,
+  InvoiceSchema,
+  OrderSchema,
+  ProductSchema,
+  QuoteSchema,
+  SubscriptionSchema,
   TopicDefinitionSchema,
+  UsageLineSchema,
+  UsageSummarySchema,
   WebhookLogSchema,
   WebhookSchema,
 } from "../api/types.js";
 import {
   companies,
+  contacts,
+  invoiceItems,
+  invoices,
+  orders,
+  products,
+  quotes,
+  subscriptions,
+  usageLines,
+  usageSummaries,
   webhookLogs,
   webhookTopicDefinitions,
   webhooks,
@@ -82,6 +94,49 @@ function expectAllParse<T>(
 describe("demo-data — Zod schema invariant", () => {
   it("companies parse against CompanySchema", () => {
     expectAllParse(companies, CompanySchema, "companies");
+  });
+
+  it("contacts parse against ContactSchema", () => {
+    expectAllParse(contacts, ContactSchema, "contacts");
+  });
+
+  it("products parse against ProductSchema", () => {
+    expectAllParse(products, ProductSchema, "products");
+  });
+
+  it("subscriptions parse against SubscriptionSchema", () => {
+    expectAllParse(subscriptions, SubscriptionSchema, "subscriptions");
+  });
+
+  // SEPARATE DRIFT (not UUID-related): `OrderLineItemSchema.id` is required,
+  // but demo orders' `lineItems` entries omit the per-line `id`. This isn't
+  // an ID-format issue — it's a missing required field. Tracking as a
+  // follow-up (either populate `id` on demo line items, or make line-item
+  // `id` optional like `QuoteLineItemSchema.id` already is, since the API
+  // returns an opaque per-line id that consumers rarely refer to). Out of
+  // scope for the UUID-loosening PR.
+  it.skip("orders parse against OrderSchema", () => {
+    expectAllParse(orders, OrderSchema, "orders");
+  });
+
+  it("invoices parse against InvoiceSchema", () => {
+    expectAllParse(invoices, InvoiceSchema, "invoices");
+  });
+
+  it("invoiceItems parse against InvoiceItemSchema", () => {
+    expectAllParse(invoiceItems, InvoiceItemSchema, "invoiceItems");
+  });
+
+  it("usageSummaries parse against UsageSummarySchema", () => {
+    expectAllParse(usageSummaries, UsageSummarySchema, "usageSummaries");
+  });
+
+  it("usageLines parse against UsageLineSchema", () => {
+    expectAllParse(usageLines, UsageLineSchema, "usageLines");
+  });
+
+  it("quotes parse against QuoteSchema", () => {
+    expectAllParse(quotes, QuoteSchema, "quotes");
   });
 
   it("webhooks parse against WebhookSchema", () => {
