@@ -234,7 +234,7 @@ async function main(): Promise<void> {
     if (process.stdin.isTTY) {
       await startRepl(createProgram);
     } else {
-      showWelcomeScreen();
+      await showWelcomeScreen();
     }
   } else {
     const program = createProgram();
