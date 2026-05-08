@@ -107,8 +107,8 @@ importers:
   packages/core:
     dependencies:
       posthog-node:
-        specifier: ^5.33.3
-        version: 5.33.3
+        specifier: ^5.33.4
+        version: 5.33.4
       yaml:
         specifier: ^2.8.3
         version: 2.8.4
@@ -491,11 +491,11 @@ packages:
   '@oxc-project/types@0.127.0':
     resolution: {integrity: sha512-aIYXQBo4lCbO4z0R3FHeucQHpF46l2LbMdxRvqvuRuW2OxdnSkcng5B8+K12spgLDj93rtN3+J2Vac/TIO+ciQ==}
 
-  '@posthog/core@1.28.3':
-    resolution: {integrity: sha512-SOy0aphKawZzp8jxfeOpTcXPwi6ii0I2V6tX8YXnM+WbxKKR/R+BXLK0jS6LV8kZtW3H5YxmPAfuIbUP1UnGTw==}
+  '@posthog/core@1.28.4':
+    resolution: {integrity: sha512-wmtUYHYqA3zIAKDKvYWRNWAQsWOIBwxV08e+bWzVy0wQQzpaS/LzzRupXWRMRrLOk+1x3JKFxbqA3n0QGvpqsQ==}
 
-  '@posthog/types@1.372.9':
-    resolution: {integrity: sha512-B7k9S+H9WUKHXxe1HOkQWbpWtMcrBvsodm5stZaLQ3pYxf9TowtwssdzTtX4hHjzSYqgrS1IpNnJX4vs1KgBzA==}
+  '@posthog/types@1.372.10':
+    resolution: {integrity: sha512-KuT3vLu3LSFsNWCwasS4gqjH/ysAyIUcB/aJSmKyNhDd/85hAznHRz1eSSl0sMvtsDTYiQIq0I0ybduVbrpPew==}
 
   '@rolldown/binding-android-arm64@1.0.0-rc.17':
     resolution: {integrity: sha512-s70pVGhw4zqGeFnXWvAzJDlvxhlRollagdCCKRgOsgUOH3N1l0LIxf83AtGzmb5SiVM4Hjl5HyarMRfdfj3DaQ==}
@@ -1533,8 +1533,8 @@ packages:
     resolution: {integrity: sha512-SoSL4+OSEtR99LHFZQiJLkT59C5B1amGO1NzTwj7TT1qCUgUO6hxOvzkOYxD+vMrXBM3XJIKzokoERdqQq/Zmg==}
     engines: {node: ^10 || ^12 || >=14}
 
-  posthog-node@5.33.3:
-    resolution: {integrity: sha512-6BkdRtRKf/y/j6JGXLUDWpruL9Rebpe2EtbSU3EB+yaI9ukTwEGT8XJQDyM8wcsxu1HdOnvAwN7gnOOu5OgY2A==}
+  posthog-node@5.33.4:
+    resolution: {integrity: sha512-kK6nepnkSStbbxWxB2ZFhKxE2nw9tSHLv/3tUKcypwzKfovp8e8icsndBVf9RTHxiXBiF1M3B13tWvjBT2UWBw==}
     engines: {node: ^20.20.0 || >=22.22.0}
     peerDependencies:
       rxjs: ^7.0.0
@@ -2292,11 +2292,11 @@ snapshots:
 
   '@oxc-project/types@0.127.0': {}
 
-  '@posthog/core@1.28.3':
+  '@posthog/core@1.28.4':
     dependencies:
-      '@posthog/types': 1.372.9
+      '@posthog/types': 1.372.10
 
-  '@posthog/types@1.372.9': {}
+  '@posthog/types@1.372.10': {}
 
   '@rolldown/binding-android-arm64@1.0.0-rc.17':
     optional: true
@@ -3228,9 +3228,9 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  posthog-node@5.33.3:
+  posthog-node@5.33.4:
     dependencies:
-      '@posthog/core': 1.28.3
+      '@posthog/core': 1.28.4
 
   prelude-ls@1.2.1: {}
 
