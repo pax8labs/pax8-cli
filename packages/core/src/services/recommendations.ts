@@ -507,7 +507,10 @@ export function getRecommendations(
         companyName,
         type: "seat_gap",
         priority: gap.missingSeats > 20 ? "high" : "medium",
-        title: `${gap.missingSeats} uncovered seats: ${gap.gapProduct} (${gap.gapQuantity}/${gap.baseQuantity})`,
+        // Wording disambiguates from Pax8's canonical "Seat Utilization"
+        // metric, which is single-product assigned-vs-purchased. This
+        // heuristic is cross-product mismatch coverage. See #298.
+        title: `${gap.missingSeats} mismatched seats: ${gap.gapProduct} (${gap.gapQuantity}/${gap.baseQuantity})`,
         reason: `${gap.baseProduct} covers ${gap.baseQuantity} seats but ${gap.gapProduct} only covers ${gap.gapQuantity}. ${gap.missingSeats} seats are unprotected.`,
         suggestedProducts: [gap.gapProduct],
         orderCommand,

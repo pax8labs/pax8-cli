@@ -32,7 +32,7 @@ const report = getUpcomingRenewals(subscriptions, companyNameById, {
   withinDays: 30,
 });
 
-console.log(`${report.items.length} renewals, $${report.totalMrrAtRisk.toFixed(2)} estimated MRR at risk`);
+console.log(`${report.items.length} renewals, $${report.totalMrrRenewing.toFixed(2)} estimated MRR renewing in window`);
 for (const item of report.items.slice(0, 5)) {
   console.log(`  ${item.companyName} — ${item.productName} in ${item.daysUntilRenewal}d`);
 }

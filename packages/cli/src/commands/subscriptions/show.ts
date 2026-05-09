@@ -33,7 +33,12 @@ export const subscriptionsShowCommand = new Command("show")
 Examples:
   pax8 subscriptions show sub-summit-m365bp-001
   pax8 subscriptions show sub-summit-m365bp-001 --history
-  pax8 subscriptions show sub-summit-m365bp-001 --json`
+  pax8 subscriptions show sub-summit-m365bp-001 --json
+
+Note: the \`provisioningStatus\` field reflects the subscription's
+coarse-grained provisioning state as reported by the Pax8 API (e.g.
+Provisioned, Pending, Failed). It does not expose internal task-level
+provisioning detail.`
   )
   .action(async (id, options, cmd) => {
     const allOpts = cmd.optsWithGlobals();

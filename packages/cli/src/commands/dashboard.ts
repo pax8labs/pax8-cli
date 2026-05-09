@@ -124,11 +124,11 @@ function renderRenewalsSection(
   const header = urgent.length > 0
     ? `Renewals  ${chalk.red.bold(`${urgent.length} urgent`)}${upcoming.length > 0 ? chalk.dim(` · ${upcoming.length} upcoming`) : ""}`
     : `Renewals  ${chalk.yellow(`${renewals.items.length} in next 30d`)}`;
-  out.write(chalk.bold(`  ${header}`) + chalk.dim(`  ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk\n\n`));
+  out.write(chalk.bold(`  ${header}`) + chalk.dim(`  ${formatCurrency(renewals.totalMrrRenewing)}/mo renewing\n\n`));
   for (const r of renewals.items.slice(0, 10)) {
     const days = r.daysUntilRenewal;
     const urgencyTag = days <= 7 ? chalk.red.bold(` ${days}d`) : days <= 14 ? chalk.yellow(` ${days}d`) : chalk.dim(` ${days}d`);
-    out.write(`  ${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${r.companyName} — ${r.productName}${urgencyTag} ${chalk.dim(`(${formatCurrency(r.mrrAtRisk)}/mo)`)}\n`);
+    out.write(`  ${days <= 7 ? chalk.red("!") : chalk.yellow("!")} ${r.companyName} — ${r.productName}${urgencyTag} ${chalk.dim(`(${formatCurrency(r.mrrRenewing)}/mo)`)}\n`);
   }
   if (renewals.items.length > 10) {
     out.write(chalk.dim(`\n  … and ${renewals.items.length - 10} more\n`));
@@ -229,7 +229,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         if (renewals.urgentCount > 0) {
           nextActions.push({
             command: "pax8 subscriptions renewals --json",
-            description: `Review ${renewals.urgentCount} urgent renewal${renewals.urgentCount > 1 ? "s" : ""} (${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk)`,
+            description: `Review ${renewals.urgentCount} urgent renewal${renewals.urgentCount > 1 ? "s" : ""} (${formatCurrency(renewals.totalMrrRenewing)}/mo renewing)`,
           });
         } else if (renewals.items.length > 0) {
           nextActions.push({
@@ -275,13 +275,21 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           })),
           renewalsNext30Days: renewals.items.length,
           urgentRenewals: renewals.urgentCount,
-          mrrAtRisk: Number(renewals.totalMrrAtRisk.toFixed(2)),
-          renewals: renewals.items.slice(0, 10).map((r) => ({
-            companyName: r.companyName,
-            productName: r.productName,
-            daysUntilRenewal: r.daysUntilRenewal,
-            mrrAtRisk: Number(r.mrrAtRisk.toFixed(2)),
-          })),
+          // `mrrRenewing` is the canonical name introduced in #298. The
+          // `mrrAtRisk` alias is kept for one minor version cycle so existing
+          // scripts don't break.
+          mrrRenewing: Number(renewals.totalMrrRenewing.toFixed(2)),
+          mrrAtRisk: Number(renewals.totalMrrRenewing.toFixed(2)),
+          renewals: renewals.items.slice(0, 10).map((r) => {
+            const mrr = Number(r.mrrRenewing.toFixed(2));
+            return {
+              companyName: r.companyName,
+              productName: r.productName,
+              daysUntilRenewal: r.daysUntilRenewal,
+              mrrRenewing: mrr,
+              mrrAtRisk: mrr,
+            };
+          }),
           highPriorityRecs: highRecs.length,
           potentialMrrUplift: Number(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0).toFixed(2)),
           activeTrials: trials.length,
@@ -349,9 +357,9 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         const alerts: string[] = [];
 
         if (renewals.urgentCount > 0) {
-          alerts.push(chalk.red(`  ! ${renewals.urgentCount} renewal${renewals.urgentCount > 1 ? "s" : ""} due within 14d`) + chalk.dim(` — ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk`));
+          alerts.push(chalk.red(`  ! ${renewals.urgentCount} renewal${renewals.urgentCount > 1 ? "s" : ""} due within 14d`) + chalk.dim(` — ${formatCurrency(renewals.totalMrrRenewing)}/mo renewing`));
         } else if (renewals.items.length > 0) {
-          alerts.push(chalk.yellow(`  ! ${renewals.items.length} renewal${renewals.items.length > 1 ? "s" : ""} in next 30d`) + chalk.dim(` — ${formatCurrency(renewals.totalMrrAtRisk)}/mo at risk`));
+          alerts.push(chalk.yellow(`  ! ${renewals.items.length} renewal${renewals.items.length > 1 ? "s" : ""} in next 30d`) + chalk.dim(` — ${formatCurrency(renewals.totalMrrRenewing)}/mo renewing`));
         } else if (renewals.skippedNoDate > 0) {
           alerts.push(chalk.dim(`  ℹ ${renewals.skippedNoDate} subscription${renewals.skippedNoDate !== 1 ? "s" : ""} with no renewal date (likely month-to-month)`));
         }

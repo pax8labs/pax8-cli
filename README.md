@@ -19,7 +19,7 @@ The Pax8 API is a CRUD layer — it returns raw subscriptions, invoices, and pro
 
 This CLI computes what the API doesn't:
 
-- **Renewal tracking** — no renewals endpoint exists; the CLI parses commitment dates, calculates estimated MRR at risk, and sorts by urgency
+- **Renewal tracking** — no renewals endpoint exists; the CLI parses commitment dates, calculates the estimated MRR renewing in window (a temporal filter, not a churn-risk prediction — see Metric definitions), and sorts by urgency
 - **Invoice auditing** — cross-references invoice line items against active subscriptions to flag overcharges and undercharges with dollar impact
 - **Upsell recommendations** — analyzes each customer's stack, identifies gaps, estimates MRR uplift, and returns ready-to-execute order commands (note: uplift estimates are computed locally from price × quantity, not partner-billed revenue)
 - **MRR analytics** — aggregation by company/product/vendor with annual-to-monthly amortization
@@ -409,9 +409,9 @@ const subscriptions = new SubscriptionsApi(client);
 const { content } = await subscriptions.list({ size: ALL_SUBS_PAGE_SIZE });
 const report = getUpcomingRenewals(content, 30);
 
-console.log(`${report.items.length} renewals in 30 days, $${report.totalMrrAtRisk}/mo at risk`);
+console.log(`${report.items.length} renewals in 30 days, $${report.totalMrrRenewing}/mo renewing`);
 for (const r of report.items.slice(0, 5)) {
-  console.log(`  ${r.daysUntilRenewal}d  ${r.companyName}  ${r.productName}  $${r.mrrAtRisk}/mo`);
+  console.log(`  ${r.daysUntilRenewal}d  ${r.companyName}  ${r.productName}  $${r.mrrRenewing}/mo`);
 }
 ```
 
@@ -449,6 +449,29 @@ metric taxonomy.
 
 ARR (Annual Recurring Revenue): MRR × 12. The yearly equivalent of MRR,
 used to measure long-term financial health.
+
+### Renewal exposure vs. churn risk (`mrrRenewing`)
+
+`pax8 subscriptions renewals` emits `mrrRenewing` (and `arrRenewing`) on each
+row and a `totalMrrRenewing` / `totalArrRenewing` aggregate. These are
+**temporal filters** — the MRR/ARR attached to subscriptions whose commitment
+ends within the requested window — not churn-risk predictions. Pax8's
+patent-filed Revenue at Risk Predictor is a separate ML-based product that
+scores the probability of churn; the CLI does not expose that signal.
+
+The previous field names (`mrrAtRisk`, `arrAtRisk`, `totalMrrAtRisk`,
+`totalArrAtRisk`) silently conflated with that ML model's name. They are
+retained as deprecated aliases — emitted alongside the new keys with the same
+value — for one minor version cycle so existing scripts don't break, then
+removed.
+
+### Cross-product coverage gaps vs. Seat Utilization
+
+`pax8 recommendations list` surfaces **cross-product seat mismatches** (e.g.
+100 email seats but only 30 backup seats — flagged as `seat_gap`). This is
+distinct from Pax8's canonical "Seat Utilization" metric, which measures
+single-product assigned-vs-purchased seats. The CLI's heuristic is a coverage
+signal across the customer's stack, not a utilization rate within one product.
 
 ## Documentation
 
