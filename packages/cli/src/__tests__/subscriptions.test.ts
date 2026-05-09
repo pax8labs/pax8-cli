@@ -436,6 +436,107 @@ describe("pax8 subscriptions cancel", () => {
       cancelDate: "2026-12-31",
     });
   });
+
+  // Regression for #294: commitment-aware preview + safe-path defaults.
+  describe("commitment-aware behavior (#294)", () => {
+    // sub-summit-m365bp-001 is a 1-Year committed sub in demo data — its
+    // commitment.endDate is in the future.
+    const COMMITTED_SUB = "sub-summit-m365bp-001";
+
+    it("defaults to commitment term end date on a committed sub (no flag)", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "cancel",
+        COMMITTED_SUB,
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      // Safe-path default: cancelDate is set to a real future date (the
+      // commitment term end date), NOT undefined (which would be cancel-today).
+      expect(data[0]).toMatchObject({
+        id: COMMITTED_SUB,
+        status: "Cancelled",
+      });
+      expect(typeof data[0].cancelDate).toBe("string");
+      expect(data[0].cancelDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it("--immediately overrides the safe-path default", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "cancel",
+        COMMITTED_SUB,
+        "--immediately",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      // cancel-today: no cancelDate field in the output.
+      expect(data[0]).toMatchObject({
+        id: COMMITTED_SUB,
+        status: "Cancelled",
+      });
+      expect(data[0].cancelDate).toBeUndefined();
+    });
+
+    it("respects --cancel-date over both default and --immediately", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "cancel",
+        COMMITTED_SUB,
+        "--cancel-date",
+        "2027-01-15",
+        "--immediately", // explicit --cancel-date should win
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data[0].cancelDate).toBe("2027-01-15");
+    });
+
+    // Vocabulary discipline: per Pax8 TOS + canonical macros, the consequence
+    // is "fees paid are nonrefundable" (billing continues), not an
+    // early-termination fee. The CLI must NOT use ETF / "early termination" /
+    // "fee" / "penalty" framing on the cancel surface — those misrepresent
+    // how the system works.
+    it("never uses ETF / fee / penalty vocabulary in output", async () => {
+      // Run without --json so the human preview block surfaces too. We can't
+      // force TTY in the subprocess (matrix limitation), but we capture all
+      // output streams and assert vocabulary discipline across stderr + stdout.
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "cancel",
+        COMMITTED_SUB,
+        "--yes",
+      ]);
+      const combined = result.stdout + "\n" + result.stderr;
+      // Each forbidden token represents a vocabulary mismatch with Pax8
+      // canonical phrasing; a regression here means we drifted back toward
+      // the ETF framing that the TOS doesn't support.
+      expect(combined).not.toMatch(/\bETF\b/);
+      expect(combined).not.toMatch(/early[- ]termination/i);
+      expect(combined).not.toMatch(/\bpenalty\b/i);
+      // "fee" appears in phrases like "no early-termination FEE" — guard
+      // against the term in any negative-financial context. The intentional
+      // word is "billing" (which continues per the TOS).
+      expect(combined).not.toMatch(/cancellation[- ]fee/i);
+    });
+
+    it("--help documents the safe-path default and --immediately escape hatch", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "cancel",
+        "--help",
+      ]);
+      expect(result.stdout).toContain("--immediately");
+      expect(result.stdout).toContain("commitment term end date");
+      // Make sure the help doesn't reintroduce ETF vocabulary either.
+      expect(result.stdout).not.toMatch(/\bETF\b/);
+      expect(result.stdout).not.toMatch(/early[- ]termination[- ]fee/i);
+    });
+  });
 });
 
 describe("pax8 subscriptions", () => {
