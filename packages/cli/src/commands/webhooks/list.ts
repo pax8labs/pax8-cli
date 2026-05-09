@@ -30,8 +30,18 @@ Examples:
 
     try {
       spinner.start();
-      const webhooks = await ctx.api.webhooks.list();
+      const webhooksRaw = await ctx.api.webhooks.list();
       spinner.stop();
+
+      // Tier 0 credential redaction (#300): defensively strip `secret` (HMAC
+      // signing key) from every record. The API list endpoint should never
+      // return it, but trust nothing — redact at the read path so any
+      // current/future API behavior change can't surface it via this CLI.
+      const webhooks = webhooksRaw.map((w) => {
+        const { secret: _redactedSecret, ...rest } = w;
+        void _redactedSecret;
+        return rest;
+      });
 
       if (globalOpts.idsOnly) {
         for (const wh of webhooks) {

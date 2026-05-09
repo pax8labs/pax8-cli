@@ -69,6 +69,19 @@ async function runLogsList(
       }
     }
 
+    // Tier 0 credential redaction (#300): defensively strip any `secret`
+    // field that might appear in a log entry. WebhookLogSchema does not
+    // declare one, but trust nothing — redact at the read path.
+    allLogs = allLogs.map((entry) => {
+      const e = entry as unknown as Record<string, unknown>;
+      if ("secret" in e) {
+        const { secret: _redactedSecret, ...rest } = e;
+        void _redactedSecret;
+        return rest as unknown as (typeof allLogs)[number];
+      }
+      return entry;
+    });
+
     // Newest first
     allLogs.sort(
       (a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime(),

@@ -483,11 +483,15 @@ export const WebhookSchema = z.object({
   status: WebhookStatusSchema,
   createdDate: z.string(),
   /**
-   * HMAC signing secret for verifying delivery payloads. Surfaced by the API
-   * on the create (POST) response so subscribers can capture it once; not
-   * documented in the public webhooks OpenAPI spec and not guaranteed to be
-   * returned on subsequent GET calls. Optional for that reason — consumers
-   * should record it at create time. See issue #241.
+   * HMAC signing secret. Tier 0 (Existential) per Pax8 Data Risk Tiering.
+   * Returned by the API only on POST create (and possibly on rotation);
+   * the CLI redacts/omits this field on read paths (show / list / logs).
+   * Partners who need the secret should save it on creation; if lost,
+   * rotate via the webhook update flow.
+   *
+   * Optional in the schema because the API may include or omit it; the
+   * CLI's read-path commands strip it defensively before any output
+   * (#300). See issue #241 for the original create-time-only contract.
    */
   secret: z.string().optional(),
   /** Human-friendly label for the webhook (Pax8 v2.1+). */

@@ -170,6 +170,21 @@ Note: --events is a deprecated alias for --topics; it still works but will be re
       process.stdout.write(`  ${chalk.dim("Events:".padEnd(10))}${webhook.topics.join(", ")}\n`);
       if (webhook.secret) {
         process.stdout.write(`  ${chalk.dim("Secret:".padEnd(10))}${webhook.secret}\n`);
+        // Tier 0 credential warning (#300). Pattern matches Stripe / GitHub /
+        // Twilio: the secret is shown exactly once, on creation, and never
+        // surfaced again on `webhooks show` / `list` / `logs`. Partners must
+        // capture it now or rotate via `pax8 webhooks update` if lost.
+        process.stdout.write("\n");
+        process.stdout.write(
+          chalk.yellow(
+            "  ⚠ Save this secret now — it will not be shown again.\n",
+          ),
+        );
+        process.stdout.write(
+          chalk.dim(
+            "    Use it to verify HMAC signatures on incoming webhook payloads.\n",
+          ),
+        );
       }
       process.stdout.write("\n");
 
