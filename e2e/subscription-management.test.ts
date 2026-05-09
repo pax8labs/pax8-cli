@@ -55,6 +55,11 @@ describe("E2E: Subscription management — daily workflows", () => {
     if (data.length > 0) {
       expect(data[0]).toHaveProperty("subscriptionId");
       expect(data[0]).toHaveProperty("renewalDate");
+      // Canonical name introduced in #298 — temporal "renewing in window"
+      // rather than "at risk" (which silently conflated with Pax8's
+      // patent-filed Revenue at Risk Predictor ML model).
+      expect(data[0]).toHaveProperty("mrrRenewing");
+      // Deprecated alias retained for one minor version cycle.
       expect(data[0]).toHaveProperty("mrrAtRisk");
       expect(data[0]).toHaveProperty("daysUntilRenewal");
     }

@@ -72,7 +72,29 @@ Examples:
   pax8 recommendations list
   pax8 recommendations list --priority high
   pax8 recommendations list --company "Summit Healthcare"
-  pax8 recommendations list --json`
+  pax8 recommendations list --json
+
+Recommendation types:
+  cross_sell: gaps in a customer's stack where a complementary product
+  category is missing. Aligns with Pax8 Opportunity Explorer's Cross-Sell
+  category. The CLI currently collapses multiple OE opportunity types
+  (Cross-Sell + Net-New + Add-On) into this single label for v0.x; the
+  full taxonomy will be adopted when the first-party recommendations
+  API ships (#62).
+
+  seat_gap: a CLI-invented heuristic that flags cross-product seat
+  mismatches (e.g. 100 email seats but only 30 backup seats). Identifies
+  coverage gaps across a customer's stack — NOT the same as Pax8's
+  canonical Seat Utilization metric, which measures single-product
+  assigned-vs-purchased seats. Also not equivalent to OE's Upsell
+  opportunity type. seat_gap will likely be retired or remapped when
+  OE's first-party API ships.
+
+Estimate semantics:
+  estimatedMrrUplift is an upper-bound estimate (unit price × seat
+  count). It is NOT equivalent to Pax8's PMRR (Potential MRR) metric,
+  which uses ML-based seat estimation. Use it as a directional ceiling,
+  not a forecast.`
   )
   .allowExcessArguments(true)
   .action(async (options, cmd) => {

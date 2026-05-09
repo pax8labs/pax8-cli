@@ -20,19 +20,37 @@ export interface RenewalItem {
   billingTerm: string;
   price: number;
   /**
-   * Monthly Recurring Revenue exposure for this renewal. Per Pax8's canonical
-   * convention (Unified Semantic Layer, Voyager Alliance partner tiering, dwh
-   * fact_transaction_monthly, AMER Recurring Net Bookings methodology):
+   * Monthly Recurring Revenue exposure for this renewal — i.e. the MRR
+   * attached to subscriptions whose commitment ends within the requested
+   * window. Per Pax8's canonical convention (Unified Semantic Layer, Voyager
+   * Alliance partner tiering, dwh fact_transaction_monthly, AMER Recurring
+   * Net Bookings methodology):
    *   - Monthly billing: price × quantity
    *   - Annual billing: (price × quantity) ÷ 12
    * Equivalent to "Partner Gross MRR" in Pax8's internal metric taxonomy.
+   *
+   * Naming note (#298): this is a TEMPORAL filter (subscriptions renewing in
+   * window), NOT a churn-risk prediction. Pax8's patent-filed Revenue at Risk
+   * Predictor is a separate ML-based product. Field renamed to `mrrRenewing`;
+   * `mrrAtRisk` is retained as a deprecated alias for one minor version cycle
+   * and will be removed in a future release.
+   */
+  mrrRenewing: number;
+  /**
+   * @deprecated Use `mrrRenewing`. Retained for one minor version cycle so
+   * existing scripts don't break. See #298.
    */
   mrrAtRisk: number;
   /**
-   * ARR companion field added in #295 — `mrrAtRisk × 12`. ARR is the derived
+   * ARR companion field added in #295 — `mrrRenewing × 12`. ARR is the derived
    * board/investor metric (PFR-86 escalations frame risk as "$12M ARR
    * partner"); operational surfaces still use MRR. Both fields are emitted so
    * partners can pick whichever unit matches their conversation.
+   */
+  arrRenewing: number;
+  /**
+   * @deprecated Use `arrRenewing`. Retained for one minor version cycle so
+   * existing scripts don't break. See #298.
    */
   arrAtRisk: number;
   daysUntilRenewal: number;
@@ -40,8 +58,19 @@ export interface RenewalItem {
 
 export interface RenewalReport {
   items: RenewalItem[];
+  /** Aggregate MRR renewing in window — sum of `mrrRenewing` across items. See #298. */
+  totalMrrRenewing: number;
+  /**
+   * @deprecated Use `totalMrrRenewing`. Retained for one minor version cycle.
+   * See #298.
+   */
   totalMrrAtRisk: number;
-  /** Aggregate ARR at risk — `totalMrrAtRisk × 12`. See #295. */
+  /** Aggregate ARR renewing in window — `totalMrrRenewing × 12`. See #295. */
+  totalArrRenewing: number;
+  /**
+   * @deprecated Use `totalArrRenewing`. Retained for one minor version cycle.
+   * See #298.
+   */
   totalArrAtRisk: number;
   annualCount: number;
   monthlyCount: number;
@@ -57,7 +86,7 @@ function daysBetween(a: Date, b: Date): number {
 }
 
 /** @deprecated Use subscriptionMrr from analytics.ts — this alias exists for clarity in renewal context. */
-const computeMrrAtRisk = subscriptionMrr;
+const computeMrrRenewing = subscriptionMrr;
 
 export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], withinDays: number): RenewalReport {
   const now = new Date();
@@ -81,7 +110,8 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
     const price: number = sub.price ?? 0;
     const quantity: number = sub.quantity ?? 0;
 
-    const mrrAtRisk = computeMrrAtRisk(price, quantity, billingTerm);
+    const mrrRenewing = computeMrrRenewing(price, quantity, billingTerm);
+    const arrRenewing = mrrRenewing * 12;
     items.push({
       subscriptionId: sub.id ?? sub.subscriptionId ?? "",
       companyId: sub.companyId ?? "",
@@ -91,8 +121,12 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
       renewalDate,
       billingTerm,
       price,
-      mrrAtRisk,
-      arrAtRisk: mrrAtRisk * 12,
+      mrrRenewing,
+      // Deprecated alias — same value as `mrrRenewing` for one cycle. See #298.
+      mrrAtRisk: mrrRenewing,
+      arrRenewing,
+      // Deprecated alias — same value as `arrRenewing` for one cycle. See #298.
+      arrAtRisk: arrRenewing,
       daysUntilRenewal,
     });
   }
@@ -100,8 +134,8 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
   // Sort by urgency (soonest first)
   items.sort((a, b) => a.daysUntilRenewal - b.daysUntilRenewal);
 
-  const totalMrrAtRisk = items.reduce((sum, item) => sum + item.mrrAtRisk, 0);
-  const totalArrAtRisk = totalMrrAtRisk * 12;
+  const totalMrrRenewing = items.reduce((sum, item) => sum + item.mrrRenewing, 0);
+  const totalArrRenewing = totalMrrRenewing * 12;
   const annualCount = items.filter(
     (i) => i.billingTerm.toLowerCase().includes("annual") || i.billingTerm.toLowerCase().includes("yearly"),
   ).length;
@@ -110,8 +144,12 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
 
   return {
     items,
-    totalMrrAtRisk,
-    totalArrAtRisk,
+    totalMrrRenewing,
+    // Deprecated alias — same value as `totalMrrRenewing` for one cycle. See #298.
+    totalMrrAtRisk: totalMrrRenewing,
+    totalArrRenewing,
+    // Deprecated alias — same value as `totalArrRenewing` for one cycle. See #298.
+    totalArrAtRisk: totalArrRenewing,
     annualCount,
     monthlyCount,
     urgentCount,

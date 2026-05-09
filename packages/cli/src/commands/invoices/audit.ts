@@ -24,7 +24,12 @@ Examples:
   pax8 invoices audit
   pax8 invoices audit --month 2026-03
   pax8 invoices audit --company "Summit Healthcare"
-  pax8 invoices audit --json`
+  pax8 invoices audit --json
+
+Note: this audit compares the partner's invoiced charges against their
+current active subscriptions (a partner-side reconciliation). It is not
+the same as Pax8's internal vendor reconciliation, which compares
+vendor-billed amounts against Pax8's records (vendor-side).`
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();

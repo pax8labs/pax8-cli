@@ -188,7 +188,7 @@ describe("pax8 subscriptions renewals", () => {
   });
 
   // ─── #295: arrAtRisk companion + canonical MRR/ARR definitions ────────────
-  it("includes arrAtRisk = mrrAtRisk * 12 for every renewal in --json", async () => {
+  it("includes arrRenewing = mrrRenewing * 12 for every renewal in --json", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "renewals",
@@ -200,10 +200,17 @@ describe("pax8 subscriptions renewals", () => {
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBeGreaterThan(0);
     for (const item of data) {
+      // Canonical names (#298).
+      expect(item).toHaveProperty("mrrRenewing");
+      expect(item).toHaveProperty("arrRenewing");
+      // Deprecated aliases — kept for one minor version cycle (#298).
       expect(item).toHaveProperty("mrrAtRisk");
       expect(item).toHaveProperty("arrAtRisk");
       // JSON output rounds to 2dp; allow a tiny rounding delta.
-      expect(item.arrAtRisk).toBeCloseTo(item.mrrAtRisk * 12, 1);
+      expect(item.arrRenewing).toBeCloseTo(item.mrrRenewing * 12, 1);
+      // Aliases mirror canonical values exactly.
+      expect(item.mrrAtRisk).toBe(item.mrrRenewing);
+      expect(item.arrAtRisk).toBe(item.arrRenewing);
     }
   });
 
@@ -217,6 +224,17 @@ describe("pax8 subscriptions renewals", () => {
     expect(result.stdout).toContain("MRR (Monthly Recurring Revenue)");
     expect(result.stdout).toContain("ARR (Annual Recurring Revenue): MRR × 12");
     expect(result.stdout).toContain("Partner Gross MRR");
+  });
+
+  it("renewals --help disambiguates from Pax8 Revenue at Risk Predictor", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "renewals",
+      "--help",
+    ]);
+    expect(result.stdout).toContain("renewal exposure");
+    expect(result.stdout).toContain("not churn risk prediction");
+    expect(result.stdout).toContain("Revenue at Risk Predictor");
   });
 });
 

@@ -56,6 +56,17 @@ Examples:
   pax8 subscriptions renewals --company "Summit Healthcare"
   pax8 subscriptions renewals --json
 
+What this measures:
+  This command surfaces renewal exposure (subscriptions whose commitment
+  ends within the requested window), not churn risk prediction. Pax8's
+  Revenue at Risk Predictor is a separate ML-based product that scores
+  the probability of churn — this CLI metric is a temporal filter, not
+  a predictive score.
+
+  In v0.x output the field is named \`mrrRenewing\` (and \`arrRenewing\`).
+  The previous \`mrrAtRisk\` / \`arrAtRisk\` keys are emitted alongside as
+  deprecated aliases and will be removed in a future minor version.
+
 Metric definitions:
   MRR (Monthly Recurring Revenue): Monthly recurring revenue from active
   subscriptions. For monthly billing terms: price × quantity. For annual
@@ -97,12 +108,20 @@ Metric definitions:
       const report = getUpcomingRenewals(allSubs, withinDays);
 
       if (ctx.outputFormat === "json") {
-        const renewalItems = report.items.map((item) => ({
-          ...item,
-          mrrAtRisk: Number(item.mrrAtRisk.toFixed(2)),
-          arrAtRisk: Number(item.arrAtRisk.toFixed(2)),
-          renewalDate: item.renewalDate.toISOString().split("T")[0],
-        }));
+        const renewalItems = report.items.map((item) => {
+          const mrr = Number(item.mrrRenewing.toFixed(2));
+          const arr = Number(item.arrRenewing.toFixed(2));
+          return {
+            ...item,
+            mrrRenewing: mrr,
+            arrRenewing: arr,
+            // Deprecated aliases — emitted alongside the canonical names for
+            // one minor version cycle so existing scripts don't break. See #298.
+            mrrAtRisk: mrr,
+            arrAtRisk: arr,
+            renewalDate: item.renewalDate.toISOString().split("T")[0],
+          };
+        });
         if (options.withActions) {
           const nextActions = report.items
             .slice(0, 5)
@@ -149,11 +168,13 @@ Metric definitions:
       // Unified Semantic Layer / Voyager Alliance / dwh fact tables), with
       // ARR as a parallel companion. The per-row table stays MRR-only to
       // avoid clutter; ARR lives in the JSON for consumers who want it.
-      // See #295 — PFR-86 escalations frame risk as "ARR at risk", so QBR /
-      // strategic conversations get the right unit too.
+      // See #295 — PFR-86 escalations frame risk as "ARR renewing", so QBR /
+      // strategic conversations get the right unit too. Wording renamed in
+      // #298 from "at risk" → "renewing" to disambiguate from Pax8's
+      // patent-filed Revenue at Risk Predictor (an ML churn-likelihood model).
       process.stdout.write(
         chalk.dim(
-          `\n  ${report.items.length} renewals within ${withinDays} days — ${formatCurrency(report.totalMrrAtRisk)}/mo MRR · ${formatCurrency(report.totalArrAtRisk)}/yr ARR at risk\n`
+          `\n  ${report.items.length} renewals within ${withinDays} days — ${formatCurrency(report.totalMrrRenewing)}/mo MRR · ${formatCurrency(report.totalArrRenewing)}/yr ARR renewing in window\n`
         )
       );
 

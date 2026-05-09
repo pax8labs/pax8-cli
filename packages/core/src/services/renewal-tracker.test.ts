@@ -85,23 +85,28 @@ describe("getUpcomingRenewals", () => {
     expect(report.monthlyCount).toBe(1);
   });
 
-  it("should compute MRR at risk for monthly subscriptions", () => {
+  it("should compute MRR renewing for monthly subscriptions", () => {
     const subs = [
       makeSub({ id: "s1", price: 10, quantity: 5, billingTerm: "Monthly", commitmentTermEndDate: daysFromNow(5) }),
     ];
 
     const report = getUpcomingRenewals(subs, 30);
-    expect(report.items[0].mrrAtRisk).toBe(50); // 10 * 5
+    expect(report.items[0].mrrRenewing).toBe(50); // 10 * 5
+    expect(report.totalMrrRenewing).toBe(50);
+    // Deprecated aliases retained for one cycle (#298).
+    expect(report.items[0].mrrAtRisk).toBe(50);
     expect(report.totalMrrAtRisk).toBe(50);
   });
 
-  it("should compute MRR at risk for annual subscriptions (price*qty / 12)", () => {
+  it("should compute MRR renewing for annual subscriptions (price*qty / 12)", () => {
     const subs = [
       makeSub({ id: "s1", price: 120, quantity: 1, billingTerm: "Annual", commitmentTermEndDate: daysFromNow(5) }),
     ];
 
     const report = getUpcomingRenewals(subs, 30);
-    expect(report.items[0].mrrAtRisk).toBe(10); // 120 * 1 / 12
+    expect(report.items[0].mrrRenewing).toBe(10); // 120 * 1 / 12
+    // Deprecated alias mirrors the canonical value (#298).
+    expect(report.items[0].mrrAtRisk).toBe(10);
   });
 
   it("should count urgent items (within 14 days)", () => {
@@ -166,7 +171,8 @@ describe("getUpcomingRenewals", () => {
   it("should handle empty subscriptions list", () => {
     const report = getUpcomingRenewals([], 30);
     expect(report.items).toHaveLength(0);
-    expect(report.totalMrrAtRisk).toBe(0);
+    expect(report.totalMrrRenewing).toBe(0);
+    expect(report.totalMrrAtRisk).toBe(0); // deprecated alias (#298)
     expect(report.annualCount).toBe(0);
     expect(report.monthlyCount).toBe(0);
     expect(report.urgentCount).toBe(0);
@@ -183,7 +189,8 @@ describe("getUpcomingRenewals", () => {
 
     const report = getUpcomingRenewals(subs, 30);
     expect(report.items).toHaveLength(0);
-    expect(report.totalMrrAtRisk).toBe(0);
+    expect(report.totalMrrRenewing).toBe(0);
+    expect(report.totalMrrAtRisk).toBe(0); // deprecated alias (#298)
   });
 
   it("should not include subscriptions with commitmentTermEndDate in the past", () => {
@@ -229,6 +236,9 @@ describe("getUpcomingRenewals", () => {
 
     const report = getUpcomingRenewals(subs, 30);
     expect(report.items).toHaveLength(1);
+    expect(report.items[0].mrrRenewing).toBe(0);
+    expect(report.totalMrrRenewing).toBe(0);
+    // Deprecated aliases mirror the canonical fields (#298).
     expect(report.items[0].mrrAtRisk).toBe(0);
     expect(report.totalMrrAtRisk).toBe(0);
   });
@@ -238,17 +248,20 @@ describe("getUpcomingRenewals", () => {
   // as "$12M ARR partner" — while MRR stays the canonical operational unit.
   // Pax8 internal convention is `÷ 12` annual amortization for MRR, so ARR =
   // MRR × 12 falls out cleanly.
-  it("should compute arrAtRisk = mrrAtRisk * 12 for monthly subscriptions", () => {
+  it("should compute arrRenewing = mrrRenewing * 12 for monthly subscriptions", () => {
     const subs = [
       makeSub({ id: "s1", price: 10, quantity: 5, billingTerm: "Monthly", commitmentTermEndDate: daysFromNow(5) }),
     ];
 
     const report = getUpcomingRenewals(subs, 30);
+    expect(report.items[0].mrrRenewing).toBe(50);
+    expect(report.items[0].arrRenewing).toBe(600); // 50 * 12
+    // Deprecated aliases mirror the canonical fields (#298).
     expect(report.items[0].mrrAtRisk).toBe(50);
-    expect(report.items[0].arrAtRisk).toBe(600); // 50 * 12
+    expect(report.items[0].arrAtRisk).toBe(600);
   });
 
-  it("should compute arrAtRisk = mrrAtRisk * 12 for annual subscriptions", () => {
+  it("should compute arrRenewing = mrrRenewing * 12 for annual subscriptions", () => {
     // Annual contracts get amortized to MRR via `÷ 12`, then ARR is MRR × 12 —
     // so ARR equals annual contract value (price × qty) in this case.
     const subs = [
@@ -256,22 +269,28 @@ describe("getUpcomingRenewals", () => {
     ];
 
     const report = getUpcomingRenewals(subs, 30);
+    expect(report.items[0].mrrRenewing).toBe(10);
+    expect(report.items[0].arrRenewing).toBe(120);
+    // Deprecated aliases mirror the canonical fields (#298).
     expect(report.items[0].mrrAtRisk).toBe(10);
     expect(report.items[0].arrAtRisk).toBe(120);
   });
 
-  it("should compute totalArrAtRisk = totalMrrAtRisk * 12 across mixed billing terms", () => {
+  it("should compute totalArrRenewing = totalMrrRenewing * 12 across mixed billing terms", () => {
     const subs = [
       makeSub({ id: "s1", price: 10, quantity: 5, billingTerm: "Monthly", commitmentTermEndDate: daysFromNow(5) }), // MRR 50
       makeSub({ id: "s2", price: 120, quantity: 1, billingTerm: "Annual", commitmentTermEndDate: daysFromNow(7) }), // MRR 10
     ];
 
     const report = getUpcomingRenewals(subs, 30);
+    expect(report.totalMrrRenewing).toBe(60);
+    expect(report.totalArrRenewing).toBe(720); // 60 * 12
+    // Deprecated aliases mirror the canonical fields (#298).
     expect(report.totalMrrAtRisk).toBe(60);
-    expect(report.totalArrAtRisk).toBe(720); // 60 * 12
+    expect(report.totalArrAtRisk).toBe(720);
   });
 
-  it("arrAtRisk equals mrrAtRisk * 12 for every item in a real-shaped report", () => {
+  it("arrRenewing equals mrrRenewing * 12 for every item in a real-shaped report", () => {
     const subs = [
       makeSub({ id: "s1", price: 10, quantity: 5, billingTerm: "Monthly", commitmentTermEndDate: daysFromNow(2) }),
       makeSub({ id: "s2", price: 120, quantity: 1, billingTerm: "Annual", commitmentTermEndDate: daysFromNow(7) }),
@@ -280,7 +299,11 @@ describe("getUpcomingRenewals", () => {
 
     const report = getUpcomingRenewals(subs, 30);
     for (const item of report.items) {
+      expect(item.arrRenewing).toBe(item.mrrRenewing * 12);
+      // Deprecated aliases mirror the canonical fields (#298).
       expect(item.arrAtRisk).toBe(item.mrrAtRisk * 12);
+      expect(item.mrrAtRisk).toBe(item.mrrRenewing);
+      expect(item.arrAtRisk).toBe(item.arrRenewing);
     }
   });
 });
