@@ -54,7 +54,17 @@ Examples:
   pax8 subscriptions renewals
   pax8 subscriptions renewals --within 7d
   pax8 subscriptions renewals --company "Summit Healthcare"
-  pax8 subscriptions renewals --json`
+  pax8 subscriptions renewals --json
+
+Metric definitions:
+  MRR (Monthly Recurring Revenue): Monthly recurring revenue from active
+  subscriptions. For monthly billing terms: price × quantity. For annual
+  billing terms: (price × quantity) ÷ 12. Excludes one-time charges and
+  prorated amounts. Equivalent to "Partner Gross MRR" in Pax8's internal
+  metric taxonomy.
+
+  ARR (Annual Recurring Revenue): MRR × 12. The yearly equivalent of MRR,
+  used to measure long-term financial health.`
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
@@ -90,6 +100,7 @@ Examples:
         const renewalItems = report.items.map((item) => ({
           ...item,
           mrrAtRisk: Number(item.mrrAtRisk.toFixed(2)),
+          arrAtRisk: Number(item.arrAtRisk.toFixed(2)),
           renewalDate: item.renewalDate.toISOString().split("T")[0],
         }));
         if (options.withActions) {
@@ -134,9 +145,15 @@ Examples:
 
       output(report.items, { format: "table", columns });
 
+      // Header keeps MRR primary (Pax8's canonical operational unit per the
+      // Unified Semantic Layer / Voyager Alliance / dwh fact tables), with
+      // ARR as a parallel companion. The per-row table stays MRR-only to
+      // avoid clutter; ARR lives in the JSON for consumers who want it.
+      // See #295 — PFR-86 escalations frame risk as "ARR at risk", so QBR /
+      // strategic conversations get the right unit too.
       process.stdout.write(
         chalk.dim(
-          `\n  ${report.items.length} renewals within ${withinDays} days — ${formatCurrency(report.totalMrrAtRisk)} estimated MRR at risk\n`
+          `\n  ${report.items.length} renewals within ${withinDays} days — ${formatCurrency(report.totalMrrAtRisk)}/mo MRR · ${formatCurrency(report.totalArrAtRisk)}/yr ARR at risk\n`
         )
       );
 

@@ -186,6 +186,38 @@ describe("pax8 subscriptions renewals", () => {
     expect(result.stdout).toContain("--within");
     expect(result.stdout).toContain("Examples:");
   });
+
+  // ─── #295: arrAtRisk companion + canonical MRR/ARR definitions ────────────
+  it("includes arrAtRisk = mrrAtRisk * 12 for every renewal in --json", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "renewals",
+      "--within",
+      "365d",
+      "--json",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
+    for (const item of data) {
+      expect(item).toHaveProperty("mrrAtRisk");
+      expect(item).toHaveProperty("arrAtRisk");
+      // JSON output rounds to 2dp; allow a tiny rounding delta.
+      expect(item.arrAtRisk).toBeCloseTo(item.mrrAtRisk * 12, 1);
+    }
+  });
+
+  it("renewals --help shows canonical MRR/ARR definitions", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "renewals",
+      "--help",
+    ]);
+    expect(result.stdout).toContain("Metric definitions:");
+    expect(result.stdout).toContain("MRR (Monthly Recurring Revenue)");
+    expect(result.stdout).toContain("ARR (Annual Recurring Revenue): MRR × 12");
+    expect(result.stdout).toContain("Partner Gross MRR");
+  });
 });
 
 describe("pax8 subscriptions update", () => {

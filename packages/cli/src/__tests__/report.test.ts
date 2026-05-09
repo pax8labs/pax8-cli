@@ -44,6 +44,13 @@ describe("pax8 report", () => {
         expect(action).toHaveProperty("description");
       }
     });
+
+    it("--help shows canonical MRR/ARR definitions (#295)", async () => {
+      const result = await runCliExpectSuccess(["report", "mrr", "--help"]);
+      expect(result.stdout).toContain("Metric definitions:");
+      expect(result.stdout).toContain("MRR (Monthly Recurring Revenue)");
+      expect(result.stdout).toContain("ARR (Annual Recurring Revenue): MRR × 12");
+    });
   });
 
   describe("report growth", () => {
@@ -87,6 +94,13 @@ describe("pax8 report", () => {
         expect(action).toHaveProperty("command");
         expect(action).toHaveProperty("description");
       }
+    });
+
+    it("--help shows canonical MRR/ARR definitions (#295)", async () => {
+      const result = await runCliExpectSuccess(["report", "growth", "--help"]);
+      expect(result.stdout).toContain("Metric definitions:");
+      expect(result.stdout).toContain("MRR (Monthly Recurring Revenue)");
+      expect(result.stdout).toContain("ARR (Annual Recurring Revenue): MRR × 12");
     });
   });
 });

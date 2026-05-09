@@ -18,7 +18,17 @@ Examples:
   pax8 report growth
   pax8 report growth --months 12
   pax8 report growth --json
-  pax8 report growth --csv`)
+  pax8 report growth --csv
+
+Metric definitions:
+  MRR (Monthly Recurring Revenue): Monthly recurring revenue from active
+  subscriptions. For monthly billing terms: price × quantity. For annual
+  billing terms: (price × quantity) ÷ 12. Excludes one-time charges and
+  prorated amounts. Equivalent to "Partner Gross MRR" in Pax8's internal
+  metric taxonomy.
+
+  ARR (Annual Recurring Revenue): MRR × 12. The yearly equivalent of MRR,
+  used to measure long-term financial health.`)
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);

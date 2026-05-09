@@ -437,6 +437,19 @@ These are tracked, prioritized for v0.1.x, and not blockers for v0.1.0. Each lin
 - No update-notifier — the CLI doesn't tell you when a newer version exists ([#183](https://github.com/pax8labs/pax8-cli/issues/183)).
 - The scheduled API-drift watcher only filters `ERROR_API_VALIDATION` events; widening to `ERROR_API_TIMEOUT` / `ERROR_API_NOT_FOUND` / etc. is tracked separately ([#213](https://github.com/pax8labs/pax8-cli/issues/213)). Also note: the watcher is silent until `POSTHOG_PROJECT_API_KEY` is provisioned in repo secrets, and telemetry is opt-in by default.
 
+## Metric definitions
+
+The CLI surfaces MRR and ARR figures across `pax8 subscriptions renewals`, `pax8 report mrr`, and `pax8 report growth`. Definitions mirror Pax8's internal Unified Semantic Layer so partner-facing usage stays aligned with the dwh / Voyager Alliance / AMER Recurring Net Bookings methodology that internal teams rely on.
+
+MRR (Monthly Recurring Revenue): Monthly recurring revenue from active
+subscriptions. For monthly billing terms: price × quantity. For annual
+billing terms: (price × quantity) ÷ 12. Excludes one-time charges and
+prorated amounts. Equivalent to "Partner Gross MRR" in Pax8's internal
+metric taxonomy.
+
+ARR (Annual Recurring Revenue): MRR × 12. The yearly equivalent of MRR,
+used to measure long-term financial health.
+
 ## Documentation
 
 - [Credential Setup Guide](docs/credential-setup.md)
