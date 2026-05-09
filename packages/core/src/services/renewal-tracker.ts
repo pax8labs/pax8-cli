@@ -19,13 +19,30 @@ export interface RenewalItem {
   renewalDate: Date;
   billingTerm: string;
   price: number;
+  /**
+   * Monthly Recurring Revenue exposure for this renewal. Per Pax8's canonical
+   * convention (Unified Semantic Layer, Voyager Alliance partner tiering, dwh
+   * fact_transaction_monthly, AMER Recurring Net Bookings methodology):
+   *   - Monthly billing: price × quantity
+   *   - Annual billing: (price × quantity) ÷ 12
+   * Equivalent to "Partner Gross MRR" in Pax8's internal metric taxonomy.
+   */
   mrrAtRisk: number;
+  /**
+   * ARR companion field added in #295 — `mrrAtRisk × 12`. ARR is the derived
+   * board/investor metric (PFR-86 escalations frame risk as "$12M ARR
+   * partner"); operational surfaces still use MRR. Both fields are emitted so
+   * partners can pick whichever unit matches their conversation.
+   */
+  arrAtRisk: number;
   daysUntilRenewal: number;
 }
 
 export interface RenewalReport {
   items: RenewalItem[];
   totalMrrAtRisk: number;
+  /** Aggregate ARR at risk — `totalMrrAtRisk × 12`. See #295. */
+  totalArrAtRisk: number;
   annualCount: number;
   monthlyCount: number;
   urgentCount: number; // within 14 days
@@ -64,6 +81,7 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
     const price: number = sub.price ?? 0;
     const quantity: number = sub.quantity ?? 0;
 
+    const mrrAtRisk = computeMrrAtRisk(price, quantity, billingTerm);
     items.push({
       subscriptionId: sub.id ?? sub.subscriptionId ?? "",
       companyId: sub.companyId ?? "",
@@ -73,7 +91,8 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
       renewalDate,
       billingTerm,
       price,
-      mrrAtRisk: computeMrrAtRisk(price, quantity, billingTerm),
+      mrrAtRisk,
+      arrAtRisk: mrrAtRisk * 12,
       daysUntilRenewal,
     });
   }
@@ -82,6 +101,7 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
   items.sort((a, b) => a.daysUntilRenewal - b.daysUntilRenewal);
 
   const totalMrrAtRisk = items.reduce((sum, item) => sum + item.mrrAtRisk, 0);
+  const totalArrAtRisk = totalMrrAtRisk * 12;
   const annualCount = items.filter(
     (i) => i.billingTerm.toLowerCase().includes("annual") || i.billingTerm.toLowerCase().includes("yearly"),
   ).length;
@@ -91,6 +111,7 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
   return {
     items,
     totalMrrAtRisk,
+    totalArrAtRisk,
     annualCount,
     monthlyCount,
     urgentCount,

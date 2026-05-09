@@ -232,4 +232,55 @@ describe("getUpcomingRenewals", () => {
     expect(report.items[0].mrrAtRisk).toBe(0);
     expect(report.totalMrrAtRisk).toBe(0);
   });
+
+  // ─── ARR companion field (#295) ────────────────────────────────────────────
+  // ARR is the derived board/investor metric — PFR-86 escalations frame risk
+  // as "$12M ARR partner" — while MRR stays the canonical operational unit.
+  // Pax8 internal convention is `÷ 12` annual amortization for MRR, so ARR =
+  // MRR × 12 falls out cleanly.
+  it("should compute arrAtRisk = mrrAtRisk * 12 for monthly subscriptions", () => {
+    const subs = [
+      makeSub({ id: "s1", price: 10, quantity: 5, billingTerm: "Monthly", commitmentTermEndDate: daysFromNow(5) }),
+    ];
+
+    const report = getUpcomingRenewals(subs, 30);
+    expect(report.items[0].mrrAtRisk).toBe(50);
+    expect(report.items[0].arrAtRisk).toBe(600); // 50 * 12
+  });
+
+  it("should compute arrAtRisk = mrrAtRisk * 12 for annual subscriptions", () => {
+    // Annual contracts get amortized to MRR via `÷ 12`, then ARR is MRR × 12 —
+    // so ARR equals annual contract value (price × qty) in this case.
+    const subs = [
+      makeSub({ id: "s1", price: 120, quantity: 1, billingTerm: "Annual", commitmentTermEndDate: daysFromNow(5) }),
+    ];
+
+    const report = getUpcomingRenewals(subs, 30);
+    expect(report.items[0].mrrAtRisk).toBe(10);
+    expect(report.items[0].arrAtRisk).toBe(120);
+  });
+
+  it("should compute totalArrAtRisk = totalMrrAtRisk * 12 across mixed billing terms", () => {
+    const subs = [
+      makeSub({ id: "s1", price: 10, quantity: 5, billingTerm: "Monthly", commitmentTermEndDate: daysFromNow(5) }), // MRR 50
+      makeSub({ id: "s2", price: 120, quantity: 1, billingTerm: "Annual", commitmentTermEndDate: daysFromNow(7) }), // MRR 10
+    ];
+
+    const report = getUpcomingRenewals(subs, 30);
+    expect(report.totalMrrAtRisk).toBe(60);
+    expect(report.totalArrAtRisk).toBe(720); // 60 * 12
+  });
+
+  it("arrAtRisk equals mrrAtRisk * 12 for every item in a real-shaped report", () => {
+    const subs = [
+      makeSub({ id: "s1", price: 10, quantity: 5, billingTerm: "Monthly", commitmentTermEndDate: daysFromNow(2) }),
+      makeSub({ id: "s2", price: 120, quantity: 1, billingTerm: "Annual", commitmentTermEndDate: daysFromNow(7) }),
+      makeSub({ id: "s3", price: 0, quantity: 10, billingTerm: "Monthly", commitmentTermEndDate: daysFromNow(10) }),
+    ];
+
+    const report = getUpcomingRenewals(subs, 30);
+    for (const item of report.items) {
+      expect(item.arrAtRisk).toBe(item.mrrAtRisk * 12);
+    }
+  });
 });
