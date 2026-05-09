@@ -613,6 +613,18 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
     demo: { forbiddenFragments: ["undefined"] },
     jsonContract: { objectRequiredFields: ["id", "url"] },
+    // Regression-gated invariant for #300: the HMAC signing secret
+    // (Tier 0) MUST NOT appear in `webhooks show` human output. Pattern
+    // matches Stripe / GitHub / Twilio — show once on create, never on
+    // read. If this assertion ever fires, the read-path redaction in
+    // packages/cli/src/commands/webhooks/show.ts has regressed.
+    customAssertions: (out) => {
+      if (/whsec_/.test(out)) {
+        throw new Error(
+          "webhooks show leaked an HMAC secret (whsec_*) — Tier 0 regression (#300)",
+        );
+      }
+    },
   },
   {
     command: ["webhooks", "topics", "list"],

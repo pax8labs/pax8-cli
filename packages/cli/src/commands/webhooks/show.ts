@@ -26,8 +26,16 @@ Examples:
     try {
       const ctx = await buildContext(allOpts);
       spinner.start();
-      const webhook = await ctx.api.webhooks.get(id);
+      const webhookRaw = await ctx.api.webhooks.get(id);
       spinner.stop();
+
+      // Tier 0 credential redaction (#300): strip `secret` (HMAC signing key)
+      // from any read-path output. The API may still return it; we never do.
+      // Partners must save the secret at create time — see `webhooks create`.
+      // Industry-standard pattern: show once on create, never on read
+      // (Stripe, GitHub, Twilio).
+      const { secret: _redactedSecret, ...webhook } = webhookRaw;
+      void _redactedSecret;
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(JSON.stringify(webhook, null, 2) + "\n");

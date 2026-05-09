@@ -76,4 +76,69 @@ describe("pax8 webhooks show", () => {
     expect(result.stdout).toContain("enable");
     expect(result.stdout).toContain("disable");
   });
+
+  // ─── Tier 0 secret redaction (#300) ──────────────────────────────────────
+  //
+  // The webhook `secret` is the HMAC signing key — Tier 0 (Existential) per
+  // Pax8 Data Risk Tiering. Industry-standard pattern (Stripe / GitHub /
+  // Twilio): show once on create, never on read. The CLI strips the field
+  // from every read-path command (show / list / logs) even if the API
+  // returns it.
+  describe("redacts the HMAC `secret` (Tier 0) on read paths", () => {
+    it("`webhooks show <id> --json` does NOT include the secret value", async () => {
+      const result = await runCliExpectSuccess([
+        "webhooks",
+        "show",
+        ACTIVE_WEBHOOK_ID,
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).not.toHaveProperty("secret");
+      expect(result.stdout).not.toMatch(/whsec_/);
+      expect(result.stdout).not.toMatch(/"secret"\s*:/);
+    });
+
+    it("`webhooks show <id>` (human render) does NOT include the secret value", async () => {
+      const result = await runCliExpectSuccess([
+        "webhooks",
+        "show",
+        ACTIVE_WEBHOOK_ID,
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).not.toMatch(/whsec_/);
+      // Human render shouldn't print a "Secret:" label either.
+      expect(combined).not.toMatch(/Secret:/i);
+    });
+
+    it("`webhooks list --json` does NOT include any secret field", async () => {
+      const result = await runCliExpectSuccess(["webhooks", "list", "--json"]);
+      const data = JSON.parse(result.stdout);
+      const items: Array<Record<string, unknown>> = Array.isArray(data)
+        ? data
+        : ((data as { webhooks?: Array<Record<string, unknown>> }).webhooks ?? []);
+      expect(items.length).toBeGreaterThan(0);
+      for (const item of items) {
+        expect(item).not.toHaveProperty("secret");
+      }
+      expect(result.stdout).not.toMatch(/whsec_/);
+    });
+
+    it("`webhooks logs <id> --json` does NOT include any secret field", async () => {
+      const result = await runCliExpectSuccess([
+        "webhooks",
+        "logs",
+        ACTIVE_WEBHOOK_ID,
+        "--json",
+      ]);
+      // Tolerate either a flat array or { logs, nextActions } envelope.
+      const parsed = JSON.parse(result.stdout);
+      const logs: Array<Record<string, unknown>> = Array.isArray(parsed)
+        ? parsed
+        : ((parsed as { logs?: Array<Record<string, unknown>> }).logs ?? []);
+      for (const entry of logs) {
+        expect(entry).not.toHaveProperty("secret");
+      }
+      expect(result.stdout).not.toMatch(/whsec_/);
+    });
+  });
 });
