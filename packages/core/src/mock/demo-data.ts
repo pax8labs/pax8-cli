@@ -1006,6 +1006,28 @@ export const subscriptions: Subscription[] = [
     provisioningStatus: "Provisioned",
     companyName: "Acme Corp",
   },
+
+  // ── Past-commitment fixture (for #293 commitment-aware update tests) ──
+  // Same partner, same product family, but the original 1-Year commitment
+  // has rolled past. Lets the CLI exercise the "past commitment → updates
+  // pass through" branch without manufacturing a date in the test suite.
+  {
+    id: "sub-acme-aad-003",
+    companyId: ACME_ID,
+    productId: "prod-aad-p1-0008",
+    productName: "Microsoft Entra ID P1 [New Commerce Experience]",
+    quantity: 25,
+    startDate: "2024-01-15",
+    createdDate: "2024-01-10",
+    billingStart: "2024-01-15",
+    status: "Active",
+    price: 6.0,
+    billingTerm: "Annual",
+    commitment: { id: "cterm-0006-0001-0001-000000000003", term: "1-Year", endDate: daysFromNow(-30) },
+    commitmentTermEndDate: daysFromNow(-30),
+    provisioningStatus: "Provisioned",
+    companyName: "Acme Corp",
+  },
 ];
 
 // ─── Invoices ────────────────────────────────────────────────────────────────

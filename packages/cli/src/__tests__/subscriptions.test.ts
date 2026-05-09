@@ -209,6 +209,101 @@ describe("pax8 subscriptions update", () => {
     const combined = result.stdout + result.stderr;
     expect(combined).toMatch(/[Nn]o changes/);
   });
+
+  // ─── Commitment-aware pre-flight (#293) ───────────────────────────────────
+  // The Pax8 marketplace API blocks quantity decreases and billing-term
+  // changes during the commitment term. The CLI catches both pre-flight so
+  // the user gets actionable guidance instead of an opaque API rejection.
+  // `sub-summit-m365bp-001` is on a 1-Year commitment that ends 3 days from
+  // now (current quantity 85, billing term Annual) — a stable mid-commitment
+  // fixture. `sub-redwood-acronis-007` and `sub-bright-m365bb-001` are
+  // monthly with no commitment. `sub-acme-aad-003` carries a commitment whose
+  // endDate is in the past (added in #293 specifically for this branch).
+  describe("commitment-aware pre-flight", () => {
+    it("blocks quantity DECREASE on a sub with active commitment", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "update",
+        "sub-summit-m365bp-001",
+        "--quantity",
+        "5",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/Quantity decreases are not permitted/);
+    });
+
+    it("blocks quantity DECREASE before any API call (--json envelope code)", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "update",
+        "sub-summit-m365bp-001",
+        "--quantity",
+        "5",
+        "--yes",
+        "--json",
+      ]);
+      expect(result.stderr).toContain("ERROR_API_VALIDATION");
+    });
+
+    it("blocks BILLING-TERM change on a sub with active commitment", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "update",
+        "sub-summit-m365bp-001",
+        "--billing-term",
+        "Monthly",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/Billing-term changes are not permitted/);
+    });
+
+    it("allows quantity INCREASE on a sub with active commitment", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "update",
+        "sub-summit-m365bp-001",
+        "--quantity",
+        "100",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data[0].quantity).toBe(100);
+    });
+
+    it("allows update on a sub with NO commitment (monthly billing)", async () => {
+      // Monthly sub, no commitment — quantity decrease should pass through.
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "update",
+        "sub-redwood-acronis-007",
+        "--quantity",
+        "10",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data[0].quantity).toBe(10);
+    });
+
+    it("allows update on a sub with PAST commitment endDate", async () => {
+      // Past commitment → treat as post-commitment; updates pass through.
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "update",
+        "sub-acme-aad-003",
+        "--quantity",
+        "5",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data[0].quantity).toBe(5);
+    });
+  });
 });
 
 describe("pax8 subscriptions cancel", () => {
