@@ -216,14 +216,36 @@ export const CommitmentTermSchema = z.enum([
 ]);
 export type CommitmentTerm = z.infer<typeof CommitmentTermSchema>;
 
+/**
+ * Outgoing `POST /orders` line-item shape. `lineItemNumber` is marked required
+ * by the public Pax8 OpenAPI spec (`CreateLineItem.required = ["productId",
+ * "companyId", "lineItemNumber", "quantity", "billingTerm"]`); it's a 1-based
+ * reference number used by `parentLineItemNumber` to express child line items
+ * within the same order. The CLI doesn't expose it as user-facing input —
+ * `OrdersApi.create()` auto-injects sequential numbers (1, 2, 3, ...) from the
+ * array index so callers don't have to think about it. See #331.
+ */
 export const OrderLineItemInputSchema = z.object({
   productId: z.string(),
+  lineItemNumber: z.number().int().min(1),
   quantity: z.number().int().min(1),
   billingTerm: BillingTermSchema.optional(),
   commitmentTermId: z.string().optional(),
   provisioningDetails: OrderLineItemProvisioningSchema.optional(),
 });
 export type OrderLineItemInput = z.infer<typeof OrderLineItemInputSchema>;
+
+/**
+ * Caller-facing line-item shape — same as the wire shape but with
+ * `lineItemNumber` optional. `OrdersApi.create()` accepts this and auto-fills
+ * `lineItemNumber = idx + 1` for any line that doesn't provide one. Use this
+ * type at the CLI and embedded-consumer boundary; the wire-shape (strict)
+ * `OrderLineItemInput` is what gets serialized.
+ */
+export const OrderLineItemCreateInputSchema = OrderLineItemInputSchema.extend({
+  lineItemNumber: z.number().int().min(1).optional(),
+});
+export type OrderLineItemCreateInput = z.infer<typeof OrderLineItemCreateInputSchema>;
 
 export const OrderLineItemSchema = z.object({
   id: z.string(),
@@ -256,7 +278,7 @@ export type Order = z.infer<typeof OrderSchema>;
 
 export const CreateOrderInputSchema = z.object({
   companyId: z.string(),
-  lineItems: z.array(OrderLineItemInputSchema).min(1),
+  lineItems: z.array(OrderLineItemCreateInputSchema).min(1),
 });
 export type CreateOrderInput = z.infer<typeof CreateOrderInputSchema>;
 

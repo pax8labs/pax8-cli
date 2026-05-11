@@ -149,6 +149,13 @@ export interface OrderLineItem {
   id?: string;
   productId: string;
   productName: string;
+  /**
+   * 1-based reference number used by the public Pax8 OpenAPI's
+   * `parentLineItemNumber` field to express child line items within the same
+   * order. Required on the wire; the mock client echoes it back so subprocess
+   * tests can verify it round-tripped (#331).
+   */
+  lineItemNumber?: number;
   quantity: number;
   /** Mirrors the public `BillingTerm` enum for cross-mode compatibility. */
   billingTerm: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";

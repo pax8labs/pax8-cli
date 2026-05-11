@@ -71,6 +71,9 @@ async function placeOrder(rec: Recommendation, ctx: CommandContext): Promise<Pla
         companyId: rec.companyId,
         lineItems: [{
           productId,
+          // `lineItemNumber` is spec-required on every line item (#331). The
+          // recommendation flow always submits a single line, so it's 1.
+          lineItemNumber: 1,
           quantity,
           billingTerm: "Monthly",
           ...(commitmentTermId ? { commitmentTermId } : {}),

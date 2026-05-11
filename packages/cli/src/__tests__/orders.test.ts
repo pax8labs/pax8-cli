@@ -279,6 +279,9 @@ describe("pax8 orders", () => {
       expect(data.companyName).toBe("Acme Corp");
       expect(data.lineItems).toHaveLength(1);
       expect(data.lineItems[0].quantity).toBe(5);
+      // `lineItemNumber` is spec-required (#331) — the mock client echoes
+      // the value sent on the wire, so a 1 here proves the CLI populated it.
+      expect(data.lineItems[0].lineItemNumber).toBe(1);
       // Single-line back-compat: unitPrice is at the top level (pre-#246
       // shape) when there's exactly one line item.
       expect(data).toHaveProperty("unitPrice");
@@ -307,6 +310,50 @@ describe("pax8 orders", () => {
       expect(data.lineItems[0].quantity).toBe(5);
       expect(data.lineItems[1].productId).toBe("prod-defender-biz-0007");
       expect(data.lineItems[1].quantity).toBe(3);
+      // Multi-line: each line gets a sequential 1-based lineItemNumber (#331).
+      expect(data.lineItems.map((li: { lineItemNumber: number }) => li.lineItemNumber))
+        .toEqual([1, 2]);
+    });
+
+    it("populates lineItemNumber=1 on a single-line order (#331)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--product",
+        "prod-m365-biz-prem-0001",
+        "--quantity",
+        "1",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.lineItems).toHaveLength(1);
+      expect(data.lineItems[0].lineItemNumber).toBe(1);
+    });
+
+    it("populates sequential lineItemNumber on multi-line orders (#331)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--line-item",
+        "product=prod-m365-biz-prem-0001,quantity=5",
+        "--line-item",
+        "product=prod-defender-biz-0007,quantity=3",
+        "--line-item",
+        "product=prod-aad-p1-0008,quantity=2",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.lineItems).toHaveLength(3);
+      const numbers = data.lineItems.map(
+        (li: { lineItemNumber: number }) => li.lineItemNumber,
+      );
+      expect(numbers).toEqual([1, 2, 3]);
     });
 
     it("performs a dry-run without persisting the order (#246)", async () => {
