@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Pax8Client, getDefaultBaseUrl, applyApiVersion } from "./client.js";
+import { Pax8Client, getDefaultBaseUrl, applyApiVersion, resolveBaseUrl } from "./client.js";
 import { ApiError, RateLimitError } from "./errors.js";
 import {
   Pax8SecurityError,
@@ -724,5 +724,291 @@ describe("Pax8Client debug error logging (#263)", () => {
     } finally {
       writeSpy.mockRestore();
     }
+  });
+});
+
+// #321 — pure URL-resolution helper. Pins the three-dimensional composition
+// (project-wide default × per-API override × per-call apiVersion) so that
+// future API classes can rely on a stable contract for where their requests
+// will land before any wire mocking is needed.
+describe("resolveBaseUrl (#321)", () => {
+  const DEFAULT = "https://api.pax8.com/v1";
+
+  it("returns the default base URL when no overrides apply", () => {
+    expect(resolveBaseUrl(DEFAULT, undefined, undefined, undefined)).toBe(DEFAULT);
+    expect(resolveBaseUrl(DEFAULT, {}, undefined, undefined)).toBe(DEFAULT);
+  });
+
+  it("returns the per-API override when api key is registered", () => {
+    expect(
+      resolveBaseUrl(
+        DEFAULT,
+        { webhooks: "https://api.pax8.com/api/v2" },
+        "webhooks",
+        undefined,
+      ),
+    ).toBe("https://api.pax8.com/api/v2");
+  });
+
+  it("silently falls back to default when api key is unknown", () => {
+    // Adding a new API class is a pure-addition change: a call passing an
+    // unknown key shouldn't crash, it should just use the default.
+    expect(
+      resolveBaseUrl(
+        DEFAULT,
+        { webhooks: "https://api.pax8.com/api/v2" },
+        "not-registered",
+        undefined,
+      ),
+    ).toBe(DEFAULT);
+  });
+
+  it("silently falls back to default when apiBaseOverrides is undefined", () => {
+    expect(resolveBaseUrl(DEFAULT, undefined, "webhooks", undefined)).toBe(DEFAULT);
+  });
+
+  it("applies apiVersion substitution to the default base when no api override", () => {
+    // The #316 / #307 mechanism still operates on the default base.
+    expect(resolveBaseUrl(DEFAULT, undefined, undefined, "v2")).toBe(
+      "https://api.pax8.com/v2",
+    );
+  });
+
+  it("applies apiVersion substitution to the per-API base, not the default", () => {
+    // The per-API override wins, then apiVersion substitutes its trailing
+    // version segment. Important: if a future API class lives at /v3 by
+    // default and a single call wants /v3.1, that combination must work.
+    expect(
+      resolveBaseUrl(
+        DEFAULT,
+        { future: "https://api.pax8.com/v3" },
+        "future",
+        "v3.1",
+      ),
+    ).toBe("https://api.pax8.com/v3.1");
+  });
+
+  it("apiVersion substitution against a per-API base that lacks a version segment throws loudly", () => {
+    // Symmetric with the default-base case (#307): if the partner overrides
+    // a per-API base to something without /vN suffix and a call still tries
+    // to substitute, fail loudly rather than producing a plausible-looking
+    // wrong URL. The Webhooks base `https://api.pax8.com/api/v2` ends in /v2
+    // so this only fires on misconfiguration.
+    expect(() =>
+      resolveBaseUrl(
+        DEFAULT,
+        { weird: "https://api.pax8.com/api" },
+        "weird",
+        "v2",
+      ),
+    ).toThrow(/must end with a version segment/);
+  });
+
+  it("per-API override does not affect calls that don't pass the api key", () => {
+    // A client configured with overrides for one API still routes everyone
+    // else through the default base — overrides are opt-in per call.
+    expect(
+      resolveBaseUrl(
+        DEFAULT,
+        { webhooks: "https://api.pax8.com/api/v2" },
+        undefined,
+        undefined,
+      ),
+    ).toBe(DEFAULT);
+  });
+
+  it("composes: per-API override + apiVersion substitution", () => {
+    // Future-proofing: if a v2-only API class needs a per-call /v3 override
+    // for an unreleased endpoint, the substitution still applies to the
+    // selected per-API base.
+    expect(
+      resolveBaseUrl(
+        DEFAULT,
+        { webhooks: "https://api.pax8.com/api/v2" },
+        "webhooks",
+        "v3",
+      ),
+    ).toBe("https://api.pax8.com/api/v3");
+  });
+});
+
+// #321 — wire-level integration: per-API base overrides actually change the
+// URL that `fetch` sees, compose correctly with `apiVersion` from #316, and
+// don't disturb the existing QuotesApi-style v1-base + v2-version-override
+// flow. These are the tests that would catch a regression where one
+// dimension silently swallowed another.
+describe("Pax8Client per-API base overrides (#321)", () => {
+  let originalFetch: typeof globalThis.fetch;
+  const originalApiBase = process.env.PAX8_API_BASE;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    mockTokenManager.getToken.mockResolvedValue("test-token");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+    if (originalApiBase === undefined) delete process.env.PAX8_API_BASE;
+    else process.env.PAX8_API_BASE = originalApiBase;
+  });
+
+  it("routes a registered api-key call to its override base", async () => {
+    globalThis.fetch = mockFetchResponse(200, []);
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      apiBaseOverrides: {
+        webhooks: "https://api.pax8.com/api/v2",
+      },
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/webhooks", undefined, { api: "webhooks" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/api/v2/webhooks");
+  });
+
+  it("routes calls without an api key against the default base, even when overrides are configured", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      apiBaseOverrides: {
+        webhooks: "https://api.pax8.com/api/v2",
+      },
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/companies/abc");
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/v1/companies/abc");
+  });
+
+  it("falls back silently to the default base when api key is unknown", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      apiBaseOverrides: { webhooks: "https://api.pax8.com/api/v2" },
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/something", undefined, { api: "not-registered" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/v1/something");
+  });
+
+  it("preserves the existing QuotesApi flow: default base + apiVersion override still routes to /v2", async () => {
+    // Regression guard: #316 must continue to work unchanged. A client with
+    // no apiBaseOverrides and a call passing only `{ apiVersion: "v2" }`
+    // resolves the URL exactly the way QuotesApi has always relied on.
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/quotes/abc", undefined, { apiVersion: "v2" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/v2/quotes/abc");
+  });
+
+  it("composes per-API base + per-call apiVersion: override base wins, version substitutes on top", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      apiBaseOverrides: {
+        future: "https://api.pax8.com/api/v2",
+      },
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/widgets", undefined, { api: "future", apiVersion: "v3" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/api/v3/widgets");
+  });
+
+  it("PAX8_API_BASE overrides only the default; per-API override still applies on top", async () => {
+    // The staging/sandbox testing pattern: partners set PAX8_API_BASE to
+    // point at a non-prod environment. The per-API override (e.g. for
+    // webhooks) is independent — it's defined by the API class author, not
+    // the partner. So when PAX8_API_BASE is set, calls without an api key
+    // see the staging default, and calls with an api key see the registered
+    // override (which is unaffected by the env var).
+    process.env.PAX8_API_BASE = "https://api-staging.pax8.com/v1";
+    globalThis.fetch = mockFetchResponse(200, {});
+
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      apiBaseOverrides: {
+        webhooks: "https://api.pax8.com/api/v2",
+      },
+      cacheTtlMs: 0,
+    });
+
+    // A non-overridden call: hits staging.
+    await client.get("/companies");
+    const [defaultUrl] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(defaultUrl.toString()).toBe("https://api-staging.pax8.com/v1/companies");
+
+    // An overridden call: still hits the registered webhooks base, untouched
+    // by PAX8_API_BASE.
+    await client.get("/webhooks", undefined, { api: "webhooks" });
+    const [webhooksUrl] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1];
+    expect(webhooksUrl.toString()).toBe("https://api.pax8.com/api/v2/webhooks");
+  });
+
+  it("POST/PUT/PATCH/DELETE all route through the per-API base override", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      apiBaseOverrides: { webhooks: "https://api.pax8.com/api/v2" },
+      cacheTtlMs: 0,
+    });
+
+    await client.post("/webhooks", { url: "x" }, { api: "webhooks" });
+    let [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    expect(url.toString()).toBe("https://api.pax8.com/api/v2/webhooks");
+
+    await client.put("/webhooks/123", { url: "y" }, { api: "webhooks" });
+    [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    expect(url.toString()).toBe("https://api.pax8.com/api/v2/webhooks/123");
+
+    await client.patch("/webhooks/123", { url: "z" }, { api: "webhooks" });
+    [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    expect(url.toString()).toBe("https://api.pax8.com/api/v2/webhooks/123");
+
+    // DELETE: use a 204 mock so the response path returns void cleanly.
+    globalThis.fetch = mockFetchResponse(204, undefined);
+    await client.delete("/webhooks/123", undefined, { api: "webhooks" });
+    [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    expect(url.toString()).toBe("https://api.pax8.com/api/v2/webhooks/123");
+  });
+
+  it("strips trailing slashes from per-API override values", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      apiBaseOverrides: {
+        webhooks: "https://api.pax8.com/api/v2///",
+      },
+      cacheTtlMs: 0,
+    });
+
+    await client.get("/webhooks", undefined, { api: "webhooks" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/api/v2/webhooks");
+    expect(url.toString()).not.toContain("///");
   });
 });

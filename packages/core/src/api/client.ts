@@ -15,6 +15,33 @@ export interface Pax8ClientOptions {
   debug?: boolean;
   /** Cache TTL in ms for GET requests. 0 disables caching. Default: 3600000 (1 hour). */
   cacheTtlMs?: number;
+  /**
+   * Per-API base URL overrides (#321). Maps an API-key (e.g. `"webhooks"`) to
+   * a fully-resolved base URL that replaces the project-wide default for
+   * requests that opt in via `RequestOpts.api`.
+   *
+   * Most of the Pax8 partner API lives under a single `/v1` base, but some
+   * surfaces live elsewhere — e.g. the Webhooks API is rooted at
+   * `https://api.pax8.com/api/v2`, a different *prefix* (not just a swapped
+   * version segment) that the per-call `apiVersion` substitution from #307
+   * cannot represent. An API class that needs to talk to a different base
+   * declares its key here and passes `{ api: "<key>" }` on every call; the
+   * client routes the request against the override instead of `baseUrl`.
+   *
+   * Composition rules:
+   * - `PAX8_API_BASE` overrides only the project-wide default (`baseUrl`).
+   *   Per-API overrides apply on top of whichever default is in play, and
+   *   are not affected by `PAX8_API_BASE`. Partners pointing at staging set
+   *   `PAX8_API_BASE` and trust the per-API override to coexist; if they need
+   *   to redirect a per-API override for staging, they can pass a custom
+   *   `apiBaseOverrides` map directly into the client constructor.
+   * - A request with `{ api: "<key>" }` resolves the base from this map; an
+   *   unknown key silently falls back to `baseUrl` (so adding a new API
+   *   class is a pure-addition change — old call sites won't crash).
+   * - The per-call `apiVersion` substitution from #307 then applies on top
+   *   of whichever base URL was selected.
+   */
+  apiBaseOverrides?: Record<string, string>;
 }
 
 /**
@@ -30,6 +57,18 @@ export interface RequestOpts {
    * and inherit the base URL's version segment unchanged. See #307.
    */
   apiVersion?: string;
+  /**
+   * Per-API base URL override key (#321). When set, the client looks up the
+   * fully-resolved base URL in the `apiBaseOverrides` map passed at
+   * construction time and routes this call against it instead of the
+   * project-wide default. The `apiVersion` substitution (if any) is applied
+   * on top of whichever base URL was selected.
+   *
+   * If the key isn't registered in `apiBaseOverrides`, the call silently
+   * falls back to the default `baseUrl` — adding a new API class is a
+   * pure-addition change.
+   */
+  api?: string;
 }
 
 const FALLBACK_BASE_URL = "https://api.pax8.com/v1";
@@ -73,6 +112,35 @@ export function applyApiVersion(baseUrl: string, apiVersion?: string): string {
 }
 
 /**
+ * Pure URL-resolution helper for the per-API base URL mechanism (#321).
+ *
+ * Resolution order:
+ *   1. If `api` is set AND `apiBaseOverrides` has an entry for that key, use
+ *      the override as the base. Otherwise, fall back to `defaultBaseUrl`.
+ *   2. Apply `applyApiVersion(base, apiVersion)` on top — the per-call version
+ *      substitution from #307 operates on whichever base URL was selected.
+ *
+ * An unknown `api` key silently falls back to `defaultBaseUrl` rather than
+ * throwing. Rationale: API classes are added incrementally and registering
+ * the override is the API class author's responsibility; downstream embedders
+ * shouldn't crash if they instantiate `Pax8Client` without all overrides
+ * configured (the default for most APIs is the project-wide base anyway).
+ *
+ * Exported so the resolution rule is unit-testable independent of the
+ * surrounding request plumbing.
+ */
+export function resolveBaseUrl(
+  defaultBaseUrl: string,
+  apiBaseOverrides: Record<string, string> | undefined,
+  api: string | undefined,
+  apiVersion: string | undefined,
+): string {
+  const override = api && apiBaseOverrides ? apiBaseOverrides[api] : undefined;
+  const base = override ?? defaultBaseUrl;
+  return applyApiVersion(base, apiVersion);
+}
+
+/**
  * Resolve the API base URL. Honors `PAX8_API_BASE` so partners can point at
  * a non-prod environment without code changes; falls back to production.
  * Exported so the CLI can surface it in `pax8 doctor`.
@@ -94,6 +162,7 @@ export function getDefaultBaseUrl(): string {
 export class Pax8Client {
   private readonly tokenManager: { getToken(): Promise<string> };
   private readonly baseUrl: string;
+  private readonly apiBaseOverrides: Record<string, string> | undefined;
   private readonly timeout: number;
   private readonly debug: boolean;
   private readonly cache: FileCache | null;
@@ -102,6 +171,18 @@ export class Pax8Client {
   constructor(options: Pax8ClientOptions) {
     this.tokenManager = options.tokenManager;
     this.baseUrl = (options.baseUrl ?? getDefaultBaseUrl()).replace(/\/+$/, "");
+    // Normalize per-API overrides the same way as the default baseUrl so the
+    // composition is symmetric — trailing slashes don't leak through to
+    // `buildUrl`, regardless of which dimension supplied the base.
+    if (options.apiBaseOverrides) {
+      const normalized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(options.apiBaseOverrides)) {
+        normalized[key] = value.replace(/\/+$/, "");
+      }
+      this.apiBaseOverrides = normalized;
+    } else {
+      this.apiBaseOverrides = undefined;
+    }
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
     this.debug = options.debug ?? false;
     this.cacheTtlMs = options.cacheTtlMs ?? 3_600_000; // 1 hour default
@@ -114,7 +195,7 @@ export class Pax8Client {
     opts?: RequestOpts,
   ): Promise<T> {
     if (this.cache) {
-      const cacheKey = this.buildCacheKey(path, params, opts?.apiVersion);
+      const cacheKey = this.buildCacheKey(path, params, opts?.apiVersion, opts?.api);
       const cached = await this.cache.get<T>(cacheKey);
       if (cached !== null) {
         if (this.debug) {
@@ -135,6 +216,7 @@ export class Pax8Client {
     path: string,
     params?: Record<string, string | number | undefined>,
     apiVersion?: string,
+    api?: string,
   ): string {
     const normalized = path.replace(/^\/+/, "");
     const paramStr = params
@@ -144,8 +226,12 @@ export class Pax8Client {
           .map(([k, v]) => `${k}=${v}`)
           .join("&")
       : "";
+    // Per-API base and per-call apiVersion both shift the resolved wire URL,
+    // so cache entries must be partitioned by both — otherwise a `/v1/foo`
+    // response could be served to a `/v2/foo` or `/api/v2/foo` caller (#321).
+    const apiPrefix = api ? `${api}:` : "";
     const versionPrefix = apiVersion ? `${apiVersion}:` : "";
-    return `${versionPrefix}${normalized}${paramStr ? "_" + paramStr : ""}`;
+    return `${apiPrefix}${versionPrefix}${normalized}${paramStr ? "_" + paramStr : ""}`;
   }
 
   async post<T>(path: string, body: unknown, opts?: RequestOpts): Promise<T> {
@@ -205,7 +291,7 @@ export class Pax8Client {
     params?: Record<string, string | number | undefined>,
     opts?: RequestOpts,
   ): Promise<T> {
-    const url = this.buildUrl(path, params, opts?.apiVersion);
+    const url = this.buildUrl(path, params, opts?.apiVersion, opts?.api);
     const token = await this.tokenManager.getToken();
 
     const headers: Record<string, string> = {
@@ -335,8 +421,9 @@ export class Pax8Client {
     path: string,
     params?: Record<string, string | number | undefined>,
     apiVersion?: string,
+    api?: string,
   ): URL {
-    const base = applyApiVersion(this.baseUrl, apiVersion);
+    const base = resolveBaseUrl(this.baseUrl, this.apiBaseOverrides, api, apiVersion);
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     const url = new URL(`${base}${normalizedPath}`);
     if (params) {
