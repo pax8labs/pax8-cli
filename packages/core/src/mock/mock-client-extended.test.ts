@@ -447,13 +447,18 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   describe("webhooks.create()", () => {
-    it("creates a webhook", async () => {
+    it("creates a webhook (#323 spec-shaped body)", async () => {
       const result = await client.webhooks.create({
         url: "https://example.com/hook",
-        topics: ["subscription.created"],
+        displayName: "Subs hook",
+        webhookTopics: [{ topic: "subscription.created", filters: [] }],
       });
       expect(result.status).toBe("Active");
       expect(result.url).toBe("https://example.com/hook");
+      expect(result.displayName).toBe("Subs hook");
+      // The read-side `Webhook` still surfaces a flat `topics: string[]`; the
+      // mock derives it from `webhookTopics[].topic` until the read schema
+      // realignment ships.
       expect(result.topics).toEqual(["subscription.created"]);
     });
   });

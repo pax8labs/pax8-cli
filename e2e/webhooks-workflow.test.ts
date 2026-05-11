@@ -46,6 +46,8 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
       "create",
       "--url",
       "not-a-url",
+      "--display-name",
+      "E2E hook",
       "--topics",
       "subscription.created",
       "--yes",
@@ -59,6 +61,8 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
       "create",
       "--url",
       "https://example.com/e2e-hook",
+      "--display-name",
+      "E2E hook",
       "--topics",
       "subscription.created,invoice.paid",
       "--yes",
@@ -67,6 +71,7 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
     const data = JSON.parse(result.stdout);
     expect(data.url).toBe("https://example.com/e2e-hook");
     expect(data.topics).toEqual(["subscription.created", "invoice.paid"]);
+    expect(data.displayName).toBe("E2E hook");
     expect(data.status).toBe("Active");
     expect(data).toHaveProperty("nextActions");
   });

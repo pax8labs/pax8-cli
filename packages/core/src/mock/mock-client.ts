@@ -710,17 +710,27 @@ class WebhooksResource {
     return wh;
   }
 
-  async create(data: { url: string; topics: string[] }): Promise<Webhook> {
+  async create(data: {
+    url: string;
+    displayName: string;
+    webhookTopics: Array<{ topic: string; filters?: unknown[] }>;
+  }): Promise<Webhook> {
     await randomDelay();
     // Generate a deterministic-ish UUID-shaped id for demo mode.
     const newId = `99999999-aaaa-bbbb-cccc-${String(Date.now()).padStart(12, "0").slice(-12)}`;
+    // `WebhookSchema` (the read shape) still surfaces `topics: string[]` to
+    // CLI consumers, so we flatten the structured `webhookTopics` input back
+    // down to a slug list on the returned record. The structured read-side
+    // (`webhookTopics: Array<{topic, filters}>`) is tracked separately under
+    // #323's "out of scope" read-schema realignment step.
     const newWh: Webhook = {
       id: newId,
       url: data.url,
       status: "Active",
-      topics: data.topics,
+      topics: data.webhookTopics.map((t) => t.topic),
       createdDate: new Date().toISOString().split("T")[0],
       secret: `whsec_demo_${Date.now()}`,
+      displayName: data.displayName,
     };
     return newWh;
   }

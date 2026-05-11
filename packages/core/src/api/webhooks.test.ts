@@ -75,15 +75,34 @@ describe("WebhooksApi", () => {
     expect(result.topics).toContain("subscription.created");
   });
 
-  it("create sends correct body (routed to /api/v2)", async () => {
-    const input = { url: "https://example.com/new", topics: ["order.created"] };
-    const created = { ...sampleWebhook, ...input, id: "c3d4e5f6-a7b8-9012-cdef-123456789012" };
+  it("create sends the spec-shaped body { url, displayName, webhookTopics } (routed to /api/v2, #323)", async () => {
+    // The Pax8 webhooks v2 spec requires `displayName` and uses the
+    // structured `webhookTopics: Array<{ topic, filters }>` shape — not the
+    // pre-#323 `topics: string[]`. WebhooksApi.create must serialize the
+    // input it receives verbatim onto the wire so a spec-strict server
+    // accepts it.
+    const input = {
+      url: "https://example.com/new",
+      displayName: "Order events — prod",
+      webhookTopics: [
+        { topic: "order.created", filters: [] },
+        { topic: "order.completed", filters: [] },
+      ],
+    };
+    const created = {
+      ...sampleWebhook,
+      id: "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      url: input.url,
+      topics: ["order.created", "order.completed"],
+      displayName: input.displayName,
+    };
     (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(created);
 
     const result = await api.create(input);
 
     expect(client.post).toHaveBeenCalledWith("/webhooks", input, WEBHOOKS_OPTS);
     expect(result.url).toBe("https://example.com/new");
+    expect(result.displayName).toBe("Order events — prod");
   });
 
   it("updateConfiguration POSTs to /configuration with the partial body (routed to /api/v2)", async () => {
@@ -284,12 +303,21 @@ describe("WebhooksApi wire-level routing (#322)", () => {
 
     await api.create({
       url: "https://example.com/new",
-      topics: ["order.created"],
+      displayName: "Order events",
+      webhookTopics: [{ topic: "order.created", filters: [] }],
     });
 
     const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url.toString()).toBe("https://api.pax8.com/api/v2/webhooks");
     expect(init.method).toBe("POST");
+    // Pin the wire body shape: confirms #323 reshape is preserved through
+    // serialization, not just at the typed input boundary.
+    const body = JSON.parse(init.body);
+    expect(body).toEqual({
+      url: "https://example.com/new",
+      displayName: "Order events",
+      webhookTopics: [{ topic: "order.created", filters: [] }],
+    });
   });
 
   it("setStatus resolves to https://api.pax8.com/api/v2/webhooks/{id}/status", async () => {
