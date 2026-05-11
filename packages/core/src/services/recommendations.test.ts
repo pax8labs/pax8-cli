@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { getRecommendations } from "./recommendations.js";
+import { findUpsellCohort, getRecommendations } from "./recommendations.js";
 
 function makeSub(overrides: Record<string, unknown> = {}) {
   return {
@@ -146,6 +146,11 @@ describe("getRecommendations", () => {
     );
     expect(zeroSub).toBeDefined();
     expect(zeroSub!.type).toBe("cross_sell");
+    // Per the additive `opportunityType` axis (OE canon: 5 types), a
+    // zero-active-sub company is Net-new — there is no existing stack to
+    // cross-sell into. The legacy `type` stays `cross_sell` for one cycle;
+    // the full migration is deferred to v0.2 (#375).
+    expect(zeroSub!.opportunityType).toBe("Net-new");
     expect(zeroSub!.priority).toBe("high");
     expect(zeroSub!.companyName).toBe("Ghost Co");
     expect(zeroSub!.reason).toContain("no active subscriptions");
@@ -176,5 +181,167 @@ describe("getRecommendations", () => {
     ];
     const report = getRecommendations(subs, undefined, companies);
     expect(report.totalCompanies).toBe(3);
+  });
+
+  it("populates opportunityType on every recommendation per the OE 5-type taxonomy", () => {
+    // Build a portfolio that exercises all three emission paths:
+    //   - cross-sell rule (active subs, missing category)  → "Cross-sell"
+    //   - seat-gap heuristic (same-category seat mismatch) → "Upsell"
+    //   - zero-sub company                                  → "Net-new"
+    const subs = [
+      // Big M365 sub creates the productivity stack — triggers cross-sell rules.
+      makeSub({ companyId: "c1", companyName: "Has Productivity", quantity: 100, price: 22 }),
+      // Smaller same-category sub on the SAME company creates a seat-gap.
+      makeSub({
+        companyId: "c1", companyName: "Has Productivity",
+        productId: "p2", productName: "Microsoft 365 Business Basic [New Commerce Experience]",
+        quantity: 20, price: 6,
+      }),
+    ];
+    const companies = [
+      { id: "c1", name: "Has Productivity" },
+      { id: "c2", name: "Ghost Co" }, // zero-sub
+    ];
+    const report = getRecommendations(subs, undefined, companies);
+
+    // Every rec must carry an opportunityType drawn from the OE 5-type set.
+    const allowed = new Set(["Upsell", "Cross-sell", "Add-on", "Upgrade", "Net-new"]);
+    for (const rec of report.recommendations) {
+      expect(allowed.has(rec.opportunityType)).toBe(true);
+    }
+
+    // Mapping invariants per the doc-comment at the top of recommendations.ts:
+    //   cross_sell + has active subs    → Cross-sell
+    //   cross_sell + zero active subs   → Net-new
+    //   seat_gap                         → Upsell
+    for (const rec of report.recommendations) {
+      if (rec.type === "seat_gap") {
+        expect(rec.opportunityType).toBe("Upsell");
+      } else if (rec.type === "cross_sell" && rec.companyId === "c2") {
+        expect(rec.opportunityType).toBe("Net-new");
+      } else if (rec.type === "cross_sell") {
+        expect(rec.opportunityType).toBe("Cross-sell");
+      }
+    }
+
+    // Sanity: at least one of each path actually fired.
+    expect(report.recommendations.some((r) => r.opportunityType === "Cross-sell")).toBe(true);
+    expect(report.recommendations.some((r) => r.opportunityType === "Net-new")).toBe(true);
+    expect(report.recommendations.some((r) => r.opportunityType === "Upsell")).toBe(true);
+  });
+});
+
+describe("findUpsellCohort", () => {
+  function sub(overrides: Record<string, unknown>) {
+    return {
+      productId: "prod-x",
+      productName: "Microsoft 365 Business Basic [New Commerce Experience]",
+      quantity: 10,
+      price: 6,
+      status: "Active",
+      billingTerm: "Monthly",
+      ...overrides,
+    };
+  }
+
+  it("returns companies on from-product who lack to-product", () => {
+    const subs = [
+      // Wants: on Basic, not on Premium.
+      sub({ companyId: "c1", companyName: "Basic Only", quantity: 25, price: 6 }),
+      // Excluded: already on Premium.
+      sub({ companyId: "c2", companyName: "Already Upgraded", quantity: 50, price: 6 }),
+      sub({
+        companyId: "c2", companyName: "Already Upgraded",
+        productId: "prod-prem", productName: "Microsoft 365 Business Premium [New Commerce Experience]",
+        quantity: 50, price: 22,
+      }),
+      // Excluded: doesn't have the source product at all.
+      sub({
+        companyId: "c3", companyName: "Different Stack",
+        productId: "prod-other", productName: "Datto SaaS Protection",
+        quantity: 10, price: 5,
+      }),
+    ];
+    const report = findUpsellCohort(
+      subs,
+      "Microsoft 365 Business Basic",
+      "Microsoft 365 Business Premium",
+    );
+    expect(report.matches.length).toBe(1);
+    expect(report.matches[0].companyId).toBe("c1");
+    expect(report.matches[0].companyName).toBe("Basic Only");
+    expect(report.matches[0].fromSeats).toBe(25);
+    // 25 seats * $6 = $150/mo
+    expect(report.matches[0].fromMrr).toBe(150);
+    expect(report.matches[0].opportunityType).toBe("Upsell");
+    expect(report.alreadyHaveToProduct).toBe(1);
+    expect(report.totalFromProductCompanies).toBe(2);
+    expect(report.fromProduct).toBe("Microsoft 365 Business Basic");
+    expect(report.toProduct).toBe("Microsoft 365 Business Premium");
+  });
+
+  it("returns empty matches when no company has the from-product (edge: empty cohort)", () => {
+    const subs = [
+      sub({
+        companyId: "c1", companyName: "Only Other",
+        productId: "prod-other", productName: "Datto SaaS Protection",
+      }),
+    ];
+    const report = findUpsellCohort(subs, "Microsoft 365 Business Basic", "Microsoft 365 Business Premium");
+    expect(report.matches).toEqual([]);
+    expect(report.totalFromProductCompanies).toBe(0);
+    expect(report.alreadyHaveToProduct).toBe(0);
+  });
+
+  it("returns empty matches when every from-product company already has to-product (edge: fully upgraded)", () => {
+    const subs = [
+      sub({ companyId: "c1", companyName: "Co A" }),
+      sub({
+        companyId: "c1", companyName: "Co A",
+        productId: "prod-prem", productName: "Microsoft 365 Business Premium [New Commerce Experience]",
+        quantity: 10, price: 22,
+      }),
+      sub({ companyId: "c2", companyName: "Co B" }),
+      sub({
+        companyId: "c2", companyName: "Co B",
+        productId: "prod-prem", productName: "Microsoft 365 Business Premium [New Commerce Experience]",
+        quantity: 10, price: 22,
+      }),
+    ];
+    const report = findUpsellCohort(subs, "Microsoft 365 Business Basic", "Microsoft 365 Business Premium");
+    expect(report.matches).toEqual([]);
+    expect(report.totalFromProductCompanies).toBe(2);
+    expect(report.alreadyHaveToProduct).toBe(2);
+  });
+
+  it("attaches contact details when contacts are provided", () => {
+    const subs = [sub({ companyId: "c1", companyName: "Basic Only", quantity: 10, price: 6 })];
+    const report = findUpsellCohort(
+      subs,
+      "Microsoft 365 Business Basic",
+      "Microsoft 365 Business Premium",
+      {
+        contacts: [
+          { companyId: "c1", firstName: "Pat", lastName: "Lee", email: "pat@basic.example" },
+          { companyId: "c1", firstName: "Sam", lastName: "Lee", email: "sam@basic.example" },
+          // Different company — should not leak into c1's contact list.
+          { companyId: "other", email: "ghost@other.example" },
+        ],
+      },
+    );
+    expect(report.matches.length).toBe(1);
+    expect(report.matches[0].contacts).toEqual([
+      { name: "Pat Lee", email: "pat@basic.example" },
+      { name: "Sam Lee", email: "sam@basic.example" },
+    ]);
+  });
+
+  it("matches by partial product name (token-based)", () => {
+    const subs = [sub({ companyId: "c1", companyName: "Basic Only" })];
+    // Query with a partial name like "Business Basic" should still match
+    // "Microsoft 365 Business Basic [New Commerce Experience]".
+    const report = findUpsellCohort(subs, "Business Basic", "Business Premium");
+    expect(report.matches.length).toBe(1);
+    expect(report.matches[0].companyId).toBe("c1");
   });
 });

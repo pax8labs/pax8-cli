@@ -1,6 +1,38 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * Recommendations engine — STAX / taxonomy divergence notice.
+ *
+ * The CLI's 7-category product taxonomy (`productivity`, `email`, `security`,
+ * `endpoint_protection`, `identity`, `backup`, `cloud_infrastructure`) does
+ * not match Pax8's canonical STAX taxonomy (8 L1 categories: Productivity,
+ * Infrastructure, Continuity, Security, Communications, Network, Operations,
+ * Network & Communications Commissioned). The CLI over-decomposes Security
+ * into 4 categories and omits Communications, Network, and Operations
+ * entirely. This was a deliberate simplification for the local recommendations
+ * engine's security-focused cross-sell heuristic. When OE's first-party
+ * recommendations API ships (ARC-785, `GET /opportunities`), this local
+ * taxonomy sunsets. Pax8's STAX taxonomy is itself being replaced by a new
+ * L1/L2/L3 hierarchical taxonomy (PCM team, Angelo Echtermeijer) — the CLI
+ * should align to whichever taxonomy the OE API uses at sunset time. See:
+ * Product Category (STAX) Layout, Product Taxonomy & Ontology PRD, and the
+ * v0.2 follow-up issue (#375).
+ *
+ * Separately from product categories, the `opportunityType` field on
+ * `Recommendation` carries OE's canonical 5-type opportunity taxonomy
+ * (`Upsell`, `Cross-sell`, `Add-on`, `Upgrade`, `Net-new`). It was added
+ * alongside (not replacing) the legacy `type` field, extending the
+ * disclosure-over-rewrite pattern from #298/#299. Mapping:
+ *   - `type: "cross_sell"` with at least one active sub → "Cross-sell"
+ *   - `type: "cross_sell"` for a zero-sub company        → "Net-new"
+ *   - `type: "seat_gap"`                                  → "Upsell"
+ *     (in-stack expansion of an existing product, closest OE surrogate for
+ *     the CLI's cross-product mismatch heuristic — still not equivalent to
+ *     Pax8's canonical Seat Utilization, which is single-product
+ *     assigned-vs-purchased.)
+ */
+
 import type { Subscription } from "../api/types.js";
 import { subscriptionMrr } from "./analytics.js";
 
@@ -226,10 +258,31 @@ type SubscriptionInput = Omit<Partial<Subscription>, "status" | "billingTerm"> &
   billingTerm?: string;
 };
 
+/**
+ * Pax8 Opportunity Explorer's canonical 5-type opportunity taxonomy.
+ * Source: OX Help Center. Added as an additive axis on every recommendation
+ * alongside the legacy `type` field, per the disclosure-over-rewrite pattern
+ * from #298/#299. The full taxonomy alignment (CLI 7 product categories vs
+ * STAX / PCM canon) is deferred to v0.2 (#375); this axis is the in-tree
+ * portion of that alignment that can ship without waiting on ARC-785.
+ */
+export type OpportunityType =
+  | "Upsell"
+  | "Cross-sell"
+  | "Add-on"
+  | "Upgrade"
+  | "Net-new";
+
 export interface Recommendation {
   companyId: string;
   companyName: string;
   type: "cross_sell" | "seat_gap";
+  /**
+   * Pax8 Opportunity Explorer canonical opportunity type. Additive axis —
+   * does not replace `type`. See the module-level doc comment for the
+   * mapping between `type` and `opportunityType`.
+   */
+  opportunityType: OpportunityType;
   priority: "high" | "medium" | "low";
   title: string;
   reason: string;
@@ -477,6 +530,10 @@ export function getRecommendations(
           companyId,
           companyName,
           type: "cross_sell",
+          // Company has at least one active sub (it matched at least one
+          // `ifHas` category), so the canonical OE motion is Cross-sell —
+          // adding a complementary product category to an existing stack.
+          opportunityType: "Cross-sell",
           priority: effectivePriority,
           title,
           reason: rule.reason,
@@ -506,6 +563,11 @@ export function getRecommendations(
         companyId,
         companyName,
         type: "seat_gap",
+        // Seat-gap is in-stack expansion of an existing product — the closest
+        // OE surrogate is Upsell. Still not equivalent to Pax8's canonical
+        // Seat Utilization (single-product assigned-vs-purchased); see #298
+        // and the module doc.
+        opportunityType: "Upsell",
         priority: gap.missingSeats > 20 ? "high" : "medium",
         // Wording disambiguates from Pax8's canonical "Seat Utilization"
         // metric, which is single-product assigned-vs-purchased. This
@@ -530,7 +592,17 @@ export function getRecommendations(
         recommendations.push({
           companyId: company.id,
           companyName: company.name,
+          // Legacy `type` stays `cross_sell` — this is the closest existing
+          // surrogate in the 2-value union. The full `seat_gap`/`cross_sell`
+          // → OE 5-type migration is deferred to v0.2 (#375). The new
+          // `opportunityType` axis carries the correct value today.
           type: "cross_sell",
+          // Zero active subs → no existing stack to cross-sell into.
+          // Canonical OE motion is Net-new. This corrects the surprise the
+          // triage doc surfaced (see surprise #7 in
+          // `docs/triage/recommendations-conformance.md`): the company was
+          // being labeled Cross-sell when there was nothing to cross from.
+          opportunityType: "Net-new",
           priority: "high",
           title: `No active subscriptions for ${company.name}`,
           reason: "This customer has no active subscriptions. Consider reaching out to discuss their needs.",
@@ -582,5 +654,215 @@ export function getRecommendations(
     companiesWithGaps,
     estimatedTotalMrrUplift,
     unmatchedProducts: [...unmatchedProducts],
+  };
+}
+
+// ─── Upsell Cohort Finder ───────────────────────────────────────────────────
+//
+// Composition over `get_subscriptions` + `get_companies` (+ optional
+// `get_contacts`) that answers a single question:
+//   "Which companies have product A but NOT product B?"
+//
+// Follows the MCP "Proactive Upsell Opportunity Finder" pattern (MCP Guide
+// 3b) — Pax8's canonical composition for the upsell workflow. The MCP server
+// composes this from get_subscriptions / get_companies / get_contacts; we
+// mirror it locally over the same inputs so it works under PAX8_DEMO=1 and
+// over the live API alike.
+//
+// This is intentionally distinct from `getRecommendations()`: the cross-sell
+// engine works on inferred product *categories*, while this finder works on
+// explicit product *identities* the user names on the command line. It is
+// the canonical Pax8 workflow when a partner has a specific upsell motion in
+// mind (e.g. "everyone on M365 Business Basic who doesn't have E3").
+
+export interface UpsellMatch {
+  companyId: string;
+  companyName: string;
+  /** The subscription(s) for the `--from-product` that qualify this company */
+  fromSubscriptions: Array<{
+    subscriptionId: string | undefined;
+    productId: string | undefined;
+    productName: string;
+    quantity: number;
+    price: number;
+    billingTerm: string;
+  }>;
+  /** Total seats currently on the `--from-product` (sum across qualifying subs) */
+  fromSeats: number;
+  /** Current MRR contribution from the `--from-product` subscriptions */
+  fromMrr: number;
+  /**
+   * Contact emails on file for the company, when contacts were supplied.
+   * Empty when no contacts were provided to the finder.
+   */
+  contacts: Array<{ name: string; email: string }>;
+  /**
+   * OE canonical opportunity type — always `"Upsell"` for this finder: the
+   * partner is moving an existing customer up a product tier, not adding a
+   * new category or net-new customer.
+   */
+  opportunityType: "Upsell";
+}
+
+export interface UpsellCohortReport {
+  fromProduct: string;
+  toProduct: string;
+  /** Companies that have `--from-product` and DO NOT have `--to-product`. */
+  matches: UpsellMatch[];
+  /** Total seats across all qualifying companies (sum of `fromSeats`). */
+  totalFromSeats: number;
+  /** Total MRR currently on the from-product across the cohort. */
+  totalFromMrr: number;
+  /**
+   * Companies excluded because they already have `--to-product` (counted but
+   * not listed, to keep the cohort focused on the *actionable* set).
+   */
+  alreadyHaveToProduct: number;
+  /** How many companies match `--from-product` at all (before exclusion). */
+  totalFromProductCompanies: number;
+}
+
+interface MinimalContact {
+  companyId: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+
+/**
+ * Match a free-text product query against a subscription's product name.
+ *
+ * Honors the same case-insensitive substring + whole-word-token semantics the
+ * existing `recommendations` engine uses elsewhere. Callers can pass either an
+ * exact product name (`"Microsoft 365 Business Basic [New Commerce
+ * Experience]"`) or a partial keyword (`"Business Basic"`) — both work.
+ */
+function productNameMatches(subscriptionProductName: string, query: string): boolean {
+  if (!subscriptionProductName || !query) return false;
+  const name = subscriptionProductName.toLowerCase();
+  const q = query.toLowerCase();
+  if (name.includes(q)) return true;
+  // Token-based fallback: every word in the query must appear in the name.
+  const tokens = q.split(/\s+/).filter((t) => t.length > 2);
+  if (tokens.length === 0) return false;
+  return tokens.every((t) => name.includes(t));
+}
+
+/**
+ * Find companies that have `fromProduct` but not `toProduct`.
+ *
+ * Per the MCP "Proactive Upsell Opportunity Finder" pattern (Guide 3b), this
+ * composes over the three inputs a partner already has access to:
+ *   - `subscriptions` — the universe of active subscriptions
+ *   - `companies` — for name resolution + the no-active-sub cohort
+ *   - `contacts` (optional) — for follow-up routing
+ *
+ * Returns the cohort with seats, MRR, and contact details attached. The
+ * caller decides how to render it (table for humans, JSON for agents).
+ */
+export function findUpsellCohort(
+  subscriptions: SubscriptionInput[],
+  fromProduct: string,
+  toProduct: string,
+  options?: {
+    companies?: Array<{ id: string; name: string }>;
+    contacts?: MinimalContact[];
+  },
+): UpsellCohortReport {
+  const companyNames = new Map<string, string>();
+  if (options?.companies) {
+    for (const c of options.companies) companyNames.set(c.id, c.name);
+  }
+
+  // Group active subs by company; track whether each company has fromProduct
+  // and/or toProduct, and record the qualifying `from` subscriptions.
+  const byCompany = new Map<string, {
+    companyName: string;
+    hasFrom: boolean;
+    hasTo: boolean;
+    fromSubs: UpsellMatch["fromSubscriptions"];
+  }>();
+
+  for (const sub of subscriptions) {
+    if (sub.status !== "Active" || !sub.companyId) continue;
+    const productName = sub.productName ?? "";
+    const matchesFrom = productNameMatches(productName, fromProduct);
+    const matchesTo = productNameMatches(productName, toProduct);
+    if (!matchesFrom && !matchesTo) continue;
+
+    const companyName = sub.companyName ?? companyNames.get(sub.companyId) ?? sub.companyId;
+    const entry = byCompany.get(sub.companyId) ?? {
+      companyName,
+      hasFrom: false,
+      hasTo: false,
+      fromSubs: [],
+    };
+    if (matchesFrom) {
+      entry.hasFrom = true;
+      entry.fromSubs.push({
+        subscriptionId: sub.id,
+        productId: sub.productId,
+        productName,
+        quantity: sub.quantity ?? 0,
+        price: sub.price ?? 0,
+        billingTerm: sub.billingTerm ?? "Monthly",
+      });
+    }
+    if (matchesTo) {
+      entry.hasTo = true;
+    }
+    byCompany.set(sub.companyId, entry);
+  }
+
+  // Bucket contacts by company once, for O(n) lookup.
+  const contactsByCompany = new Map<string, Array<{ name: string; email: string }>>();
+  if (options?.contacts) {
+    for (const c of options.contacts) {
+      if (!c.email) continue;
+      const name = [c.firstName, c.lastName].filter(Boolean).join(" ").trim();
+      const list = contactsByCompany.get(c.companyId) ?? [];
+      list.push({ name: name || c.email, email: c.email });
+      contactsByCompany.set(c.companyId, list);
+    }
+  }
+
+  const matches: UpsellMatch[] = [];
+  let alreadyHaveToProduct = 0;
+  let totalFromProductCompanies = 0;
+
+  for (const [companyId, entry] of byCompany) {
+    if (!entry.hasFrom) continue;
+    totalFromProductCompanies++;
+    if (entry.hasTo) {
+      alreadyHaveToProduct++;
+      continue;
+    }
+    const fromSeats = entry.fromSubs.reduce((sum, s) => sum + (s.quantity || 0), 0);
+    const fromMrr = entry.fromSubs.reduce(
+      (sum, s) => sum + subscriptionMrr(s.price, s.quantity, s.billingTerm),
+      0,
+    );
+    matches.push({
+      companyId,
+      companyName: entry.companyName,
+      fromSubscriptions: entry.fromSubs,
+      fromSeats,
+      fromMrr: Number(fromMrr.toFixed(2)),
+      contacts: contactsByCompany.get(companyId) ?? [],
+      opportunityType: "Upsell",
+    });
+  }
+
+  // Sort by MRR descending so the highest-leverage targets float to the top.
+  matches.sort((a, b) => b.fromMrr - a.fromMrr);
+
+  return {
+    fromProduct,
+    toProduct,
+    matches,
+    totalFromSeats: matches.reduce((sum, m) => sum + m.fromSeats, 0),
+    totalFromMrr: Number(matches.reduce((sum, m) => sum + m.fromMrr, 0).toFixed(2)),
+    alreadyHaveToProduct,
+    totalFromProductCompanies,
   };
 }

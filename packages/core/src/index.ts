@@ -227,6 +227,7 @@ export {
   getRecommendations,
   getPortfolioCoverage,
   categorizeProduct,
+  findUpsellCohort,
   ALL_CATEGORIES,
 } from "./services/recommendations.js";
 export type {
@@ -234,6 +235,9 @@ export type {
   RecommendationReport,
   CompanyCoverage,
   ProductCategory,
+  OpportunityType,
+  UpsellMatch,
+  UpsellCohortReport,
 } from "./services/recommendations.js";
 
 export {
