@@ -100,18 +100,47 @@ Notes:
         { key: "subtotal", header: "Subtotal", width: 14, format: (v: unknown) => formatCurrency(Number(v)) },
       ];
 
-      output(summaries, { format: ctx.outputFormat, columns });
+      const emptyReasons: string[] = [];
+      if (options.month) {
+        emptyReasons.push(`No usage summaries recorded for ${options.month}.`);
+      }
+      if (options.subscription) {
+        emptyReasons.push(
+          "The subscription may not be a metered/usage-based product.",
+        );
+      } else if (options.company) {
+        emptyReasons.push(
+          "This company has no metered/usage-based subscriptions, or the period predates any usage.",
+        );
+      } else {
+        emptyReasons.push(
+          "No metered subscriptions are reporting usage right now.",
+        );
+      }
 
-      if (ctx.outputFormat === "table") {
+      output(summaries, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: "No usage summaries found.",
+          reasons: emptyReasons,
+          suggestions: [
+            {
+              command: "pax8 subscriptions list --json",
+              description: "find metered subscriptions to query",
+            },
+          ],
+        },
+      });
+
+      if (ctx.outputFormat === "table" && summaries.length > 0) {
         const total = summaries.reduce((s, u) => s + (u.subtotal ?? 0), 0);
         process.stderr.write(
           chalk.dim(`\n  ${summaries.length} usage summaries · ${formatCurrency(total)} total\n`)
         );
-        if (summaries.length > 0) {
-          const first = summaries[0] as Record<string, unknown>;
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 usage show ${first.id} --lines`))}  ${chalk.dim("view per-resource breakdown")}\n`);
-        }
+        const first = summaries[0] as Record<string, unknown>;
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 usage show ${first.id} --lines`))}  ${chalk.dim("view per-resource breakdown")}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {

@@ -64,9 +64,35 @@ Examples:
         },
       ];
 
-      output(result.content, { format: ctx.outputFormat, columns });
+      const emptyReasons: string[] = [];
+      const filterDesc: string[] = [];
+      if (options.company) filterDesc.push(`company "${options.company}"`);
+      if (options.month) filterDesc.push(`month ${options.month}`);
+      if (options.invoiceId) filterDesc.push(`invoice ${options.invoiceId}`);
+      if (filterDesc.length > 0) {
+        emptyReasons.push(
+          `No invoice items match the filters: ${filterDesc.join(", ")}.`,
+        );
+      } else {
+        emptyReasons.push("No invoiced line items are recorded yet.");
+      }
 
-      if (ctx.outputFormat === "table") {
+      output(result.content, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: "No invoice items found.",
+          reasons: emptyReasons,
+          suggestions: [
+            {
+              command: "pax8 invoices list",
+              description: "browse invoices first",
+            },
+          ],
+        },
+      });
+
+      if (ctx.outputFormat === "table" && result.content.length > 0) {
         process.stderr.write(
           chalk.dim(`\n  ${result.page.totalElements} items\n\n`)
         );

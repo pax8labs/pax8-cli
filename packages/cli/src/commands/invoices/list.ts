@@ -127,9 +127,39 @@ Examples:
         return;
       }
 
-      output(result.content, { format: ctx.outputFormat, columns });
+      const emptyReasons: string[] = [];
+      const filterDesc: string[] = [];
+      if (allOpts.company) filterDesc.push(`company "${allOpts.company}"`);
+      if (allOpts.status) filterDesc.push(`status ${allOpts.status}`);
+      if (allOpts.month) filterDesc.push(`month ${allOpts.month}`);
+      if (filterDesc.length > 0) {
+        emptyReasons.push(
+          `No invoices match the filters: ${filterDesc.join(", ")}.`,
+        );
+      } else {
+        emptyReasons.push("This is a fresh tenant with no historical billing yet.");
+      }
 
-      if (ctx.outputFormat === "table") {
+      output(result.content, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: "No invoices found.",
+          reasons: emptyReasons,
+          suggestions: [
+            {
+              command: "pax8 invoices list --status Unpaid",
+              description: "show only unpaid invoices",
+            },
+            {
+              command: "PAX8_DEMO=1 pax8 invoices list",
+              description: "see what an active tenant looks like",
+            },
+          ],
+        },
+      });
+
+      if (ctx.outputFormat === "table" && result.content.length > 0) {
         process.stderr.write(
           chalk.dim(`\n  ${result.page.totalElements} invoices\n\n`)
         );

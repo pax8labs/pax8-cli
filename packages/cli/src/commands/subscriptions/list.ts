@@ -134,9 +134,38 @@ Examples:
         return;
       }
 
-      output(result.content, { format: ctx.outputFormat, columns });
+      const emptyReasons: string[] = [];
+      const filterDesc: string[] = [];
+      if (allOpts.company) filterDesc.push(`company "${allOpts.company}"`);
+      if (allOpts.status) filterDesc.push(`status ${allOpts.status}`);
+      if (filterDesc.length > 0) {
+        emptyReasons.push(
+          `No subscriptions match the filters: ${filterDesc.join(", ")}.`,
+        );
+      } else {
+        emptyReasons.push("This tenant has no subscriptions yet.");
+      }
 
-      if (ctx.outputFormat === "table") {
+      output(result.content, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: "No subscriptions found.",
+          reasons: emptyReasons,
+          suggestions: [
+            {
+              command: "pax8 products search <name>",
+              description: "find a product to sell",
+            },
+            {
+              command: "pax8 orders create --company <id> --product <id> --quantity <n>",
+              description: "place an order to create a subscription",
+            },
+          ],
+        },
+      });
+
+      if (ctx.outputFormat === "table" && result.content.length > 0) {
         process.stderr.write(
           chalk.dim(`\n  ${result.page.totalElements} subscriptions\n\n`)
         );

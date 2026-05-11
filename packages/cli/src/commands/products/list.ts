@@ -54,9 +54,32 @@ Examples:
         { key: "unitOfMeasure", header: "Category", width: 15 },
       ];
 
-      output(result.content, { format: ctx.outputFormat, columns });
+      const emptyReasons: string[] = [];
+      if (allOpts.vendor) {
+        emptyReasons.push(`No products match --vendor "${allOpts.vendor}".`);
+      }
+      emptyReasons.push("The catalog may not be reachable, or filters are too narrow.");
 
-      if (ctx.outputFormat === "table") {
+      output(result.content, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: "No products found.",
+          reasons: emptyReasons,
+          suggestions: [
+            {
+              command: "pax8 products search <query>",
+              description: "search the catalog by name or SKU",
+            },
+            {
+              command: "pax8 products list",
+              description: "browse without filters",
+            },
+          ],
+        },
+      });
+
+      if (ctx.outputFormat === "table" && result.content.length > 0) {
         process.stderr.write(
           chalk.dim(`\n  ${result.page.totalElements} products\n\n`)
         );

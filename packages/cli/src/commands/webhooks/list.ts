@@ -110,27 +110,36 @@ Examples:
       output(webhooks, {
         format: ctx.outputFormat,
         columns,
+        emptyState: {
+          headline: "No webhooks configured.",
+          reasons: ["No webhook subscriptions exist on this tenant yet."],
+          suggestions: [
+            {
+              command: replCmd(
+                "pax8 webhooks create --url <url> --display-name <name> --topics <topics>",
+              ),
+              description: "create your first subscription",
+            },
+            {
+              command: replCmd("pax8 webhooks topics list"),
+              description: "see available topics",
+            },
+          ],
+        },
       });
 
-      if (ctx.outputFormat === "table") {
+      if (ctx.outputFormat === "table" && webhooks.length > 0) {
         process.stderr.write(
           chalk.dim(`\n  ${webhooks.length} webhook${webhooks.length === 1 ? "" : "s"}\n`),
         );
-        if (webhooks.length === 0) {
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(
-            `    ${chalk.cyan(replCmd("pax8 webhooks create --url <url> --display-name <name> --topics <topics>"))}  ${chalk.dim("create your first subscription")}\n`,
-          );
-        } else {
-          const first = webhooks[0];
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(
-            `    ${chalk.cyan(replCmd(`pax8 webhooks test ${first.id}`))}  ${chalk.dim("send a test delivery")}\n`,
-          );
-          process.stderr.write(
-            `    ${chalk.cyan(replCmd(`pax8 webhooks logs ${first.id}`))}  ${chalk.dim("view delivery history")}\n`,
-          );
-        }
+        const first = webhooks[0];
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        process.stderr.write(
+          `    ${chalk.cyan(replCmd(`pax8 webhooks test ${first.id}`))}  ${chalk.dim("send a test delivery")}\n`,
+        );
+        process.stderr.write(
+          `    ${chalk.cyan(replCmd(`pax8 webhooks logs ${first.id}`))}  ${chalk.dim("view delivery history")}\n`,
+        );
         process.stderr.write("\n");
       }
     } catch (error) {

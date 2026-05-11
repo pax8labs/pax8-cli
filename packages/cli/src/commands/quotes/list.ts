@@ -86,18 +86,41 @@ Examples:
         { key: "_total", header: "Total", width: 12, format: (v) => formatCurrency(Number(v)) },
       ];
 
-      output(enriched, { format: ctx.outputFormat, columns });
+      const emptyReasons: string[] = [];
+      const filterDesc: string[] = [];
+      if (allOpts.company) filterDesc.push(`company "${allOpts.company}"`);
+      if (status) filterDesc.push(`status ${status}`);
+      if (filterDesc.length > 0) {
+        emptyReasons.push(
+          `No quotes match the filters: ${filterDesc.join(", ")}.`,
+        );
+      } else {
+        emptyReasons.push("This tenant has no quotes yet.");
+      }
 
-      if (ctx.outputFormat === "table") {
+      output(enriched, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: "No quotes found.",
+          reasons: emptyReasons,
+          suggestions: [
+            {
+              command: replCmd("pax8 quotes create --company <id|name>"),
+              description: "draft your first quote",
+            },
+          ],
+        },
+      });
+
+      if (ctx.outputFormat === "table" && enriched.length > 0) {
         const total = enriched.reduce((s, q) => s + q._total, 0);
         process.stderr.write(
           chalk.dim(`\n  ${enriched.length} quotes · ${formatCurrency(total)} total\n`)
         );
-        if (enriched.length > 0) {
-          const first = enriched[0];
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes show ${first.id}`))}  ${chalk.dim("view quote details")}\n`);
-        }
+        const first = enriched[0];
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes show ${first.id}`))}  ${chalk.dim("view quote details")}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {
