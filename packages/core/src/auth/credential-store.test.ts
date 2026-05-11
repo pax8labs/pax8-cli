@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CredentialStore } from "./credential-store.js";
 import * as fs from "node:fs/promises";
+import * as childProcess from "node:child_process";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -21,6 +22,27 @@ vi.mock("node:fs", async () => {
     openSync: vi.fn(),
     writeSync: vi.fn(),
     closeSync: vi.fn(),
+  };
+});
+
+// On Windows, the production code shells out to `icacls` via
+// `execFile` (wrapped in `promisify`) for both file/dir ACL hardening
+// and the doctor-style ACL inspection. Mock the unpromisified
+// `execFile` so the Windows-conditional tests below can pin the
+// command shape and feed canned stdout without touching real ACLs.
+//
+// `promisify(execFile)` happens at module load time inside
+// credential-store.ts, so the mock has to be installed via `vi.mock`
+// (which vitest hoists above imports). We swap the named export for
+// a stub whose `(file, args, cb)` shape matches what `promisify`
+// expects — it invokes `cb(null, { stdout, stderr })` to resolve, or
+// `cb(err)` to reject the promisified call.
+vi.mock("node:child_process", async () => {
+  const actual =
+    await vi.importActual<typeof import("node:child_process")>("node:child_process");
+  return {
+    ...actual,
+    execFile: vi.fn(),
   };
 });
 
@@ -42,6 +64,7 @@ describe("CredentialStore", () => {
     vi.mocked(fs.access).mockReset();
     vi.mocked(fs.stat).mockReset();
     vi.mocked(fs.chmod).mockReset();
+    vi.mocked(childProcess.execFile).mockReset();
   });
 
   afterEach(() => {
@@ -221,6 +244,112 @@ describe("CredentialStore", () => {
     });
   });
 
+  // Windows-equivalent coverage for the icacls path (closes #189).
+  // Mirrors the POSIX "creates dir, secures it, writes file" test
+  // above. On Windows the lockdown happens via `icacls` rather than
+  // `chmod`, so we pin the command shape and arg vector for both the
+  // directory pass (run before the write) and the file pass (run
+  // after the write). These tests skip cleanly on Unix runners.
+  describe.skipIf(process.platform !== "win32")("saveCredentials on Windows", () => {
+    it("secures config dir and credentials file via icacls", async () => {
+      const fsSync = await import("node:fs");
+      const openSync = fsSync.openSync as unknown as ReturnType<typeof vi.fn>;
+      const writeSync = fsSync.writeSync as unknown as ReturnType<typeof vi.fn>;
+      const closeSync = fsSync.closeSync as unknown as ReturnType<typeof vi.fn>;
+      openSync.mockReset();
+      writeSync.mockReset();
+      closeSync.mockReset();
+      openSync.mockReturnValue(7);
+      writeSync.mockReturnValue(0);
+
+      vi.mocked(fs.mkdir).mockResolvedValueOnce(undefined);
+
+      // `promisify(execFile)` calls the underlying execFile as
+      // (file, args, cb). Resolve with empty stdout/stderr — the
+      // production code ignores the output on the secure paths.
+      const execFileMock = vi.mocked(childProcess.execFile) as unknown as ReturnType<typeof vi.fn>;
+      execFileMock.mockImplementation(((
+        _file: string,
+        _args: readonly string[],
+        cb: (err: NodeJS.ErrnoException | null, result: { stdout: string; stderr: string }) => void,
+      ) => {
+        cb(null, { stdout: "", stderr: "" });
+      }) as unknown as typeof childProcess.execFile);
+
+      await store.saveCredentials("my-id", "my-secret");
+
+      expect(fs.mkdir).toHaveBeenCalledWith(CONFIG_DIR, { recursive: true });
+      // chmod must NOT be used on Windows — the production code
+      // routes the dir/file lockdown through icacls instead.
+      expect(fs.chmod).not.toHaveBeenCalled();
+
+      const username = os.userInfo().username;
+      // Two icacls invocations: one for the dir (pre-write) and one
+      // for the file (post-write). Order matters: the dir is hardened
+      // first so the in-flight file write inherits the locked-down
+      // parent.
+      expect(execFileMock).toHaveBeenCalledTimes(2);
+      expect(execFileMock).toHaveBeenNthCalledWith(
+        1,
+        "icacls",
+        [CONFIG_DIR, "/inheritance:r", "/grant:r", `${username}:(OI)(CI)(F)`],
+        expect.any(Function),
+      );
+      expect(execFileMock).toHaveBeenNthCalledWith(
+        2,
+        "icacls",
+        [CREDENTIALS_FILE, "/inheritance:r", "/grant:r", `${username}:(F)`],
+        expect.any(Function),
+      );
+
+      // The file write itself still goes through safeWriteFileSync,
+      // so we cross-check that the credentials payload landed at the
+      // expected path with the same 0o600 mode bag as the POSIX path.
+      // (O_NOFOLLOW is 0 on Windows; the safe-write helper still
+      // requests it, but the OS no-ops the bit.)
+      expect(openSync).toHaveBeenCalledTimes(1);
+      const [calledPath, , mode] = openSync.mock.calls[0] as [string, number, number];
+      expect(calledPath).toBe(CREDENTIALS_FILE);
+      expect(mode).toBe(0o600);
+
+      expect(writeSync).toHaveBeenCalledTimes(1);
+      const writtenBuf = writeSync.mock.calls[0][1] as Buffer;
+      expect(writtenBuf.toString("utf-8")).toBe(
+        JSON.stringify({ clientId: "my-id", clientSecret: "my-secret" }, null, 2),
+      );
+    });
+
+    it("does not throw when icacls hardening fails (best-effort)", async () => {
+      // If icacls is missing or errors, the file is still written
+      // and saveCredentials must not throw — the doctor check
+      // surfaces the insecure permissions later. This is the
+      // Windows analogue of "POSIX chmod best-effort", except the
+      // POSIX flow doesn't actually try/catch chmod; on Windows the
+      // production code swallows icacls errors explicitly.
+      const fsSync = await import("node:fs");
+      const openSync = fsSync.openSync as unknown as ReturnType<typeof vi.fn>;
+      const writeSync = fsSync.writeSync as unknown as ReturnType<typeof vi.fn>;
+      openSync.mockReset();
+      writeSync.mockReset();
+      openSync.mockReturnValue(7);
+      writeSync.mockReturnValue(0);
+
+      vi.mocked(fs.mkdir).mockResolvedValueOnce(undefined);
+
+      const execFileMock = vi.mocked(childProcess.execFile) as unknown as ReturnType<typeof vi.fn>;
+      execFileMock.mockImplementation(((
+        _file: string,
+        _args: readonly string[],
+        cb: (err: NodeJS.ErrnoException | null) => void,
+      ) => {
+        cb(Object.assign(new Error("icacls not found"), { code: "ENOENT" }));
+      }) as unknown as typeof childProcess.execFile);
+
+      await expect(store.saveCredentials("my-id", "my-secret")).resolves.toBeUndefined();
+      expect(openSync).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("clearCredentials", () => {
     it("removes the credentials file", async () => {
       vi.mocked(fs.unlink).mockResolvedValueOnce(undefined);
@@ -299,5 +428,135 @@ describe("CredentialStore", () => {
       expect(result.secure).toBe(false);
       expect(result.detail).toContain("Could not stat");
     });
+
+    // Windows-equivalent coverage for the icacls inspection path
+    // (closes #189). The Unix path parses `mode & 0o777`; the Windows
+    // path shells out to `icacls <file>` and scans stdout for
+    // known-insecure principals (BUILTIN\Users, Everyone,
+    // Authenticated Users). Each `it.skipIf(process.platform !==
+    // "win32")` mirror feeds canned icacls stdout to assert the same
+    // secure/insecure invariant the POSIX tests assert via stat mode
+    // bits.
+    it.skipIf(process.platform !== "win32")(
+      "returns secure when icacls shows only the current user on Windows",
+      async () => {
+        vi.mocked(fs.access).mockResolvedValueOnce(undefined);
+        const username = os.userInfo().username;
+        const stdout = `${CREDENTIALS_FILE} ${username}:(F)\n\nSuccessfully processed 1 files; Failed processing 0 files\n`;
+        const execFileMock = vi.mocked(
+          childProcess.execFile,
+        ) as unknown as ReturnType<typeof vi.fn>;
+        execFileMock.mockImplementation(((
+          _file: string,
+          _args: readonly string[],
+          cb: (err: NodeJS.ErrnoException | null, result: { stdout: string; stderr: string }) => void,
+        ) => {
+          cb(null, { stdout, stderr: "" });
+        }) as unknown as typeof childProcess.execFile);
+
+        const result = await store.checkPermissions();
+        expect(result.secure).toBe(true);
+        expect(result.detail).toContain("ACLs");
+        expect(execFileMock).toHaveBeenCalledWith(
+          "icacls",
+          [CREDENTIALS_FILE],
+          expect.any(Function),
+        );
+      },
+    );
+
+    it.skipIf(process.platform !== "win32")(
+      "returns insecure when icacls shows BUILTIN\\Users has access on Windows",
+      async () => {
+        vi.mocked(fs.access).mockResolvedValueOnce(undefined);
+        const username = os.userInfo().username;
+        // Real icacls output for a not-yet-hardened file: inherited
+        // BUILTIN\Users + Authenticated Users entries from the parent
+        // directory.
+        const stdout =
+          `${CREDENTIALS_FILE} BUILTIN\\Users:(I)(RX)\n` +
+          `                    NT AUTHORITY\\Authenticated Users:(I)(M)\n` +
+          `                    ${username}:(F)\n` +
+          `\nSuccessfully processed 1 files; Failed processing 0 files\n`;
+        const execFileMock = vi.mocked(
+          childProcess.execFile,
+        ) as unknown as ReturnType<typeof vi.fn>;
+        execFileMock.mockImplementation(((
+          _file: string,
+          _args: readonly string[],
+          cb: (err: NodeJS.ErrnoException | null, result: { stdout: string; stderr: string }) => void,
+        ) => {
+          cb(null, { stdout, stderr: "" });
+        }) as unknown as typeof childProcess.execFile);
+
+        const result = await store.checkPermissions();
+        expect(result.secure).toBe(false);
+        // The fix-it hint must surface the icacls remediation
+        // command — symmetric to the POSIX "chmod 600 ..." hint.
+        expect(result.detail).toContain("icacls");
+        expect(result.detail).toContain("/inheritance:r");
+      },
+    );
+
+    it.skipIf(process.platform !== "win32")(
+      "returns insecure when icacls shows Everyone has access on Windows",
+      async () => {
+        // Variant of the previous test pinning the "Everyone" branch
+        // of the insecure-principals check, so a future refactor
+        // can't drop one of the three known-bad SIDs without a test
+        // failure.
+        vi.mocked(fs.access).mockResolvedValueOnce(undefined);
+        const username = os.userInfo().username;
+        const stdout =
+          `${CREDENTIALS_FILE} Everyone:(F)\n` +
+          `                    ${username}:(F)\n` +
+          `\nSuccessfully processed 1 files; Failed processing 0 files\n`;
+        const execFileMock = vi.mocked(
+          childProcess.execFile,
+        ) as unknown as ReturnType<typeof vi.fn>;
+        execFileMock.mockImplementation(((
+          _file: string,
+          _args: readonly string[],
+          cb: (err: NodeJS.ErrnoException | null, result: { stdout: string; stderr: string }) => void,
+        ) => {
+          cb(null, { stdout, stderr: "" });
+        }) as unknown as typeof childProcess.execFile);
+
+        const result = await store.checkPermissions();
+        expect(result.secure).toBe(false);
+        expect(result.detail).toContain("icacls");
+      },
+    );
+
+    it.skipIf(process.platform !== "win32")(
+      "falls back to home-dir heuristic when icacls itself fails on Windows",
+      async () => {
+        // POSIX analogue: "returns insecure when stat fails".
+        // The Windows path is intentionally more forgiving — if
+        // icacls isn't on PATH or errors out, the code falls back
+        // to checking whether the file lives under the user's home
+        // directory and reports secure-with-caveat. This test pins
+        // that fallback so a future refactor can't quietly flip the
+        // failure mode to "insecure".
+        vi.mocked(fs.access).mockResolvedValueOnce(undefined);
+        const execFileMock = vi.mocked(
+          childProcess.execFile,
+        ) as unknown as ReturnType<typeof vi.fn>;
+        execFileMock.mockImplementation(((
+          _file: string,
+          _args: readonly string[],
+          cb: (err: NodeJS.ErrnoException | null) => void,
+        ) => {
+          cb(Object.assign(new Error("icacls not found"), { code: "ENOENT" }));
+        }) as unknown as typeof childProcess.execFile);
+
+        const result = await store.checkPermissions();
+        // ~/.pax8/credentials.json is under the user's home dir on
+        // any normal Windows runner, so the fallback returns
+        // secure-with-caveat rather than outright insecure.
+        expect(result.secure).toBe(true);
+        expect(result.detail).toContain("could not verify ACLs");
+      },
+    );
   });
 });
