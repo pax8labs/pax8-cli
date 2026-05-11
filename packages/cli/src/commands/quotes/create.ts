@@ -22,14 +22,19 @@ export const quotesCreateCommand = new Command("create")
   .requiredOption("--product <id|name>", "Product ID or name (required)")
   .option("--quantity <number>", "Quantity", "1")
   .option("--billing-term <term>", "Billing term (Monthly or Annual)", "Monthly")
-  .option("--expiration-date <date>", "Quote expiration date (YYYY-MM-DD)")
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
     `
 Examples:
   pax8 quotes create --company "Summit Healthcare Partners" --product "Microsoft 365 E3" --quantity 10
-  pax8 quotes create --company a1b2c3d4 --product prod-m365-e3-0003 --quantity 5 --billing-term Annual`
+  pax8 quotes create --company a1b2c3d4 --product prod-m365-e3-0003 --quantity 5 --billing-term Annual
+
+Setting an expiration date:
+  The Pax8 v2 quotes API does not accept an expiration date on create
+  (POST /v2/quotes takes only { clientId, quoteRequestId? }). To set
+  or change a quote's expiration, use a follow-up update:
+    pax8 quotes update <id> --expiration-date <YYYY-MM-DD>`,
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
@@ -55,9 +60,6 @@ Examples:
       process.stderr.write(`  ${chalk.dim("Product:".padEnd(18))}${product.name}\n`);
       process.stderr.write(`  ${chalk.dim("Quantity:".padEnd(18))}${formatQuantity(quantity)}\n`);
       process.stderr.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${options.billingTerm}\n`);
-      if (options.expirationDate) {
-        process.stderr.write(`  ${chalk.dim("Expires:".padEnd(18))}${options.expirationDate}\n`);
-      }
       process.stderr.write("\n");
 
       const ok = await confirm("Create this quote?", { default: true });
