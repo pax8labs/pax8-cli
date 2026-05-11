@@ -115,6 +115,7 @@ export {
   PageSchema,
   PaginatedResponseSchema,
   // Enum schemas (also have inferred types below)
+  ContactTypeKindSchema,
   ContactTypeSchema,
   SubscriptionStatusSchema,
   BillingTermSchema,
@@ -167,6 +168,7 @@ export type {
   PaginatedResponse,
   // Enum types
   ContactType,
+  ContactTypeKind,
   SubscriptionStatus,
   BillingTerm,
   InvoiceStatus,

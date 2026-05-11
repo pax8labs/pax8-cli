@@ -12,9 +12,9 @@ import { confirm, replCmd } from "../../lib/confirm.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
-import type { UpdateContactInput, ContactType } from "@pax8/core";
+import type { UpdateContactInput, ContactType, ContactTypeKind } from "@pax8/core";
 
-const VALID_TYPES: ContactType[] = ["Admin", "Billing", "Technical"];
+const VALID_TYPES: ContactTypeKind[] = ["Admin", "Billing", "Technical"];
 
 function parseTypes(input: string): string[] {
   const seen = new Set<string>();
@@ -74,11 +74,21 @@ Notes:
         );
       }
 
-      const data: UpdateContactInput = {};
-      if (options.firstName) data.firstName = options.firstName;
-      if (options.lastName) data.lastName = options.lastName;
-      if (options.email) data.email = options.email;
-      if (options.phone) data.phone = options.phone;
+      // Collect partial overrides from CLI flags. Per #325, the spec uses
+      // PUT (not PATCH) with required `firstName/lastName/email/phone` —
+      // partial bodies 422. We resolve the partial-UX-on-full-PUT mismatch by
+      // fetch-then-merging the current contact below.
+      const overrides: {
+        firstName?: string;
+        lastName?: string;
+        email?: string;
+        phone?: string;
+        types?: ContactType[];
+      } = {};
+      if (options.firstName) overrides.firstName = options.firstName;
+      if (options.lastName) overrides.lastName = options.lastName;
+      if (options.email) overrides.email = options.email;
+      if (options.phone) overrides.phone = options.phone;
       if (options.type !== undefined) {
         const parsed = parseTypes(String(options.type));
         if (parsed.length === 0) {
@@ -90,7 +100,7 @@ Notes:
             ERROR_INVALID_INPUT,
           );
         }
-        const invalid = parsed.filter((t) => !VALID_TYPES.includes(t as ContactType));
+        const invalid = parsed.filter((t) => !VALID_TYPES.includes(t as ContactTypeKind));
         if (invalid.length > 0) {
           throw new CliError(
             `Invalid --type value(s): ${invalid.map((v) => `"${v}"`).join(", ")}`,
@@ -100,10 +110,13 @@ Notes:
             ERROR_INVALID_INPUT,
           );
         }
-        data.types = parsed as ContactType[];
+        const kinds = parsed as ContactTypeKind[];
+        // Inflate kinds to the spec's `{type, primary}` shape. `primary`
+        // defaults to false; per-type `primary` UX is out of scope (#325).
+        overrides.types = kinds.map((kind) => ({ type: kind, primary: false }));
       }
 
-      if (Object.keys(data).length === 0) {
+      if (Object.keys(overrides).length === 0) {
         throw new CliError(
           "No fields to update",
           ["At least one of --first-name, --last-name, --email, --phone, or --type is required"],
@@ -118,12 +131,53 @@ Notes:
       const current = await ctx.api.contacts.get(company.id, id);
       spinner.stop();
 
+      // Fetch-then-merge: the spec's PUT body requires the full `Contact`
+      // shape (`firstName`, `lastName`, `email`, `phone` all required), so we
+      // backfill any unspecified scalars from the freshly fetched record. If
+      // the current record is missing `phone` (legacy data), the spec's
+      // required-fields contract can't be satisfied — we surface a clear
+      // error instead of silently sending an empty string.
+      if (!current.phone && overrides.phone === undefined) {
+        throw new CliError(
+          "Cannot update contact without a phone number",
+          [
+            "The Pax8 public spec marks `phone` as required on PUT contact updates",
+            "and the current record has no phone on file.",
+          ],
+          [
+            `Provide one: ${replCmd("pax8 contacts update")} ${id} --company <id|name> --phone "+1-555-0100" ...`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+      const data: UpdateContactInput = {
+        firstName: overrides.firstName ?? current.firstName,
+        lastName: overrides.lastName ?? current.lastName,
+        email: overrides.email ?? current.email,
+        phone: overrides.phone ?? (current.phone as string),
+        ...(overrides.types !== undefined
+          ? { types: overrides.types }
+          : current.types !== undefined
+            ? { types: current.types }
+            : {}),
+      };
+
       process.stderr.write(chalk.bold("\n  Update Contact:\n\n"));
       process.stderr.write(`  ${chalk.dim("ID:".padEnd(14))}${current.id}\n`);
       process.stderr.write(`  ${chalk.dim("Current:".padEnd(14))}${current.firstName} ${current.lastName} <${current.email}>\n\n`);
-      for (const [k, v] of Object.entries(data)) {
+      // Only show fields the user actually changed (overrides), not the full
+      // merged body — the merge is plumbing, not user-intent.
+      for (const [k, v] of Object.entries(overrides)) {
         const label = k === "types" ? "types" : k;
-        const display = Array.isArray(v) ? v.join(", ") : String(v);
+        let display: string;
+        if (k === "types" && Array.isArray(v)) {
+          display = (v as ContactType[]).map((t) => t.type).join(", ");
+        } else if (Array.isArray(v)) {
+          display = v.join(", ");
+        } else {
+          display = String(v);
+        }
         process.stderr.write(`  ${chalk.dim((label + ":").padEnd(14))}${chalk.green(display)}\n`);
       }
       process.stderr.write("\n");
@@ -159,7 +213,7 @@ Notes:
       if (updated.phone) {
         process.stdout.write(`  ${chalk.dim("Phone:".padEnd(14))}${updated.phone}\n`);
       }
-      process.stdout.write(`  ${chalk.dim("Types:".padEnd(14))}${(updated.types ?? []).join(", ")}\n`);
+      process.stdout.write(`  ${chalk.dim("Types:".padEnd(14))}${(updated.types ?? []).map((t) => t.type).join(", ")}\n`);
       process.stdout.write("\n");
     } catch (error) {
       await handleCommandError(error, undefined, "Failed to update contact");

@@ -67,7 +67,29 @@ Examples:
         { key: "firstName", header: "First", width: 14 },
         { key: "lastName", header: "Last", width: 16 },
         { key: "email", header: "Email", width: 38 },
-        { key: "types", header: "Types", width: 22, format: (v) => Array.isArray(v) ? v.join(", ") : String(v ?? "") },
+        {
+          key: "types",
+          header: "Types",
+          width: 22,
+          // `types` is `Array<{type, primary}>` per the public spec (#325).
+          // Render as a comma-separated list of kind names with a `*` marker
+          // on any entry flagged `primary: true`, so the table view surfaces
+          // the spec's `primary` bit without an extra column. Fall back to
+          // legacy string entries defensively.
+          format: (v) => {
+            if (!Array.isArray(v)) return String(v ?? "");
+            return v
+              .map((entry) => {
+                if (typeof entry === "string") return entry;
+                if (entry && typeof entry === "object" && "type" in entry) {
+                  const e = entry as { type: string; primary?: boolean };
+                  return e.primary ? `${e.type}*` : e.type;
+                }
+                return String(entry);
+              })
+              .join(", ");
+          },
+        },
         { key: "phone", header: "Phone", width: 18 },
       ];
 

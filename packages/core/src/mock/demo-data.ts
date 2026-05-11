@@ -162,6 +162,13 @@ export interface OrderLineItem {
   provisioningDetails?: Record<string, string>;
 }
 
+/**
+ * Demo-fixture shape for one Contact. `types` mirrors the Pax8 public OpenAPI
+ * spec's `ContactType` shape (`{type, primary}`) — pre-#325 it was a flat
+ * `("Admin"|"Billing"|"Technical")[]`, but a spec-strict server 422s on that
+ * legacy shape. The mock client and demo fixtures now ship the spec shape so
+ * round-trip parsing through `ContactSchema` is exact.
+ */
 export interface Contact {
   id: string;
   companyId: string;
@@ -169,7 +176,7 @@ export interface Contact {
   lastName: string;
   email: string;
   phone?: string;
-  types: ("Admin" | "Billing" | "Technical")[];
+  types: { type: "Admin" | "Billing" | "Technical"; primary: boolean }[];
 }
 
 export interface UsageSummary {
@@ -1599,7 +1606,7 @@ export const contacts: Contact[] = [
     lastName: "Thornton",
     email: "rachel.thornton@summithealthcare.example.com",
     phone: "+1-303-555-0111",
-    types: ["Admin"],
+    types: [{ type: "Admin", primary: true }],
   },
   {
     id: "contact-summit-002",
@@ -1608,7 +1615,7 @@ export const contacts: Contact[] = [
     lastName: "Bridger",
     email: "tom.bridger@summithealthcare.example.com",
     phone: "+1-303-555-0112",
-    types: ["Billing"],
+    types: [{ type: "Billing", primary: true }],
   },
   {
     id: "contact-coastline-001",
@@ -1617,7 +1624,7 @@ export const contacts: Contact[] = [
     lastName: "Reyes",
     email: "marco.reyes@coastlinelegal.example.com",
     phone: "+1-305-555-0211",
-    types: ["Admin"],
+    types: [{ type: "Admin", primary: true }],
   },
   {
     id: "contact-coastline-002",
@@ -1626,7 +1633,7 @@ export const contacts: Contact[] = [
     lastName: "Vasquez",
     email: "sarah.vasquez@coastlinelegal.example.com",
     phone: "+1-305-555-0212",
-    types: ["Technical"],
+    types: [{ type: "Technical", primary: true }],
   },
   {
     id: "contact-redwood-001",
@@ -1635,7 +1642,7 @@ export const contacts: Contact[] = [
     lastName: "Olsen",
     email: "karen.olsen@redwoodmfg.example.com",
     phone: "+1-503-555-0311",
-    types: ["Admin"],
+    types: [{ type: "Admin", primary: true }],
   },
   {
     id: "contact-bright-001",
@@ -1644,7 +1651,7 @@ export const contacts: Contact[] = [
     lastName: "Cheng",
     email: "lisa.cheng@brightminds.example.com",
     phone: "+1-512-555-0411",
-    types: ["Admin"],
+    types: [{ type: "Admin", primary: true }],
   },
   {
     id: "contact-bright-002",
@@ -1653,7 +1660,7 @@ export const contacts: Contact[] = [
     lastName: "Ortiz",
     email: "james.ortiz@brightminds.example.com",
     phone: "+1-512-555-0412",
-    types: ["Billing"],
+    types: [{ type: "Billing", primary: true }],
   },
   {
     id: "contact-pinnacle-001",
@@ -1662,7 +1669,7 @@ export const contacts: Contact[] = [
     lastName: "Nakamura",
     email: "david.nakamura@pinnaclefa.example.com",
     phone: "+1-312-555-0511",
-    types: ["Admin"],
+    types: [{ type: "Admin", primary: true }],
   },
   {
     id: "contact-pinnacle-002",
@@ -1671,7 +1678,7 @@ export const contacts: Contact[] = [
     lastName: "Park",
     email: "emily.park@pinnaclefa.example.com",
     phone: "+1-312-555-0512",
-    types: ["Technical"],
+    types: [{ type: "Technical", primary: true }],
   },
 ];
 
