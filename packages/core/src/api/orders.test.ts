@@ -130,6 +130,37 @@ describe("OrdersApi", () => {
     expect(sentPayload.lineItems.map((li) => li.lineItemNumber)).toEqual([100, 2]);
   });
 
+  it("create forwards spec-shaped provisioningDetails on the wire (#332)", async () => {
+    // The public Pax8 OpenAPI's `CreateLineItem.provisioningDetails` is an
+    // array of `{ key, values: string[] }` objects (not a free-form record).
+    // This test pins the wire shape: whatever the caller hands to
+    // `OrdersApi.create()` must reach `client.post` unchanged.
+    const input = {
+      companyId: COMPANY_ID,
+      lineItems: [
+        {
+          productId: "d4e5f6a7-b890-1234-cdef-567890123456",
+          quantity: 5,
+          provisioningDetails: [
+            { key: "domain", values: ["contoso.com"] },
+            { key: "region", values: ["us-east", "us-west"] },
+          ],
+        },
+      ],
+    };
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(sampleOrder);
+
+    await api.create(input);
+
+    const sentPayload = (client.post as ReturnType<typeof vi.fn>).mock.calls[0][1] as {
+      lineItems: Array<{ provisioningDetails?: Array<{ key: string; values: string[] }> }>;
+    };
+    expect(sentPayload.lineItems[0].provisioningDetails).toEqual([
+      { key: "domain", values: ["contoso.com"] },
+      { key: "region", values: ["us-east", "us-west"] },
+    ]);
+  });
+
   it("create wires isMock=true to the dry-run query string", async () => {
     const input = {
       companyId: COMPANY_ID,

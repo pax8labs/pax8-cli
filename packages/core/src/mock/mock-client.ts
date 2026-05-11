@@ -474,6 +474,12 @@ class OrdersResource {
         lineItemNumber: li.lineItemNumber ?? idx + 1,
         quantity: li.quantity,
         billingTerm: (li.billingTerm ?? "Monthly") as "Monthly" | "Annual",
+        // Echo `provisioningDetails` back so callers can verify the
+        // spec-shaped array (`{key, values: string[]}[]`) was sent on
+        // the wire (#332).
+        ...(li.provisioningDetails && li.provisioningDetails.length > 0
+          ? { provisioningDetails: li.provisioningDetails }
+          : {}),
       })),
       // Status stays "Processing" even for dry-runs to keep the demo Order
       // type narrow. The CLI knows it's a dry-run from the request flag and

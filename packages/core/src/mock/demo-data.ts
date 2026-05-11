@@ -159,7 +159,12 @@ export interface OrderLineItem {
   quantity: number;
   /** Mirrors the public `BillingTerm` enum for cross-mode compatibility. */
   billingTerm: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";
-  provisioningDetails?: Record<string, string>;
+  /**
+   * Per-line provisioning detail array. Matches the public Pax8 OpenAPI spec's
+   * `ProvisioningDetail` shape — `{ key, values: string[] }[]`. Reshaped from
+   * `Record<string, string>` in #332 to match the wire contract.
+   */
+  provisioningDetails?: { key: string; values: string[] }[];
 }
 
 export interface Contact {

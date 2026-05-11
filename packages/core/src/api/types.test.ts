@@ -53,6 +53,9 @@ import {
   ProvisioningDetailSchema,
   OrderSchema,
   OrderLineItemSchema,
+  OrderLineItemInputSchema,
+  OrderLineItemProvisioningDetailSchema,
+  OrderLineItemProvisioningSchema,
   CreateOrderInputSchema,
   SubscriptionSchema,
   UpdateSubscriptionInputSchema,
@@ -346,6 +349,126 @@ describe("OrderLineItemSchema", () => {
 
   it("rejects missing productId", () => {
     expect(() => OrderLineItemSchema.parse({ id: uuid, quantity: 5 })).toThrow();
+  });
+
+  // #332 — `provisioningDetails` is `Array<{key, values: string[]}>` per the
+  // public Pax8 OpenAPI spec's `ProvisioningDetail` shape, NOT a free-form
+  // `Record<string, unknown>`. Pin the shape going forward.
+  it("accepts spec-shaped provisioningDetails array (#332)", () => {
+    const valid = {
+      id: uuid,
+      productId: uuid2,
+      quantity: 5,
+      provisioningDetails: [
+        { key: "domain", values: ["contoso.com"] },
+        { key: "region", values: ["us-east", "us-west"] },
+      ],
+    };
+    expect(OrderLineItemSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects record-shaped provisioningDetails (#332 — pre-fix shape)", () => {
+    expect(() =>
+      OrderLineItemSchema.parse({
+        id: uuid,
+        productId: uuid2,
+        quantity: 5,
+        provisioningDetails: { domain: "contoso.com" },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("OrderLineItemInputSchema", () => {
+  const validBase = {
+    productId: uuid2,
+    lineItemNumber: 1,
+    quantity: 5,
+  };
+
+  it("accepts spec-shaped provisioningDetails on the wire input (#332)", () => {
+    const valid = {
+      ...validBase,
+      provisioningDetails: [{ key: "domain", values: ["contoso.com"] }],
+    };
+    expect(OrderLineItemInputSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects record-shaped provisioningDetails on the wire input (#332)", () => {
+    expect(() =>
+      OrderLineItemInputSchema.parse({
+        ...validBase,
+        provisioningDetails: { domain: "contoso.com" },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects non-string `values` entries (#332)", () => {
+    expect(() =>
+      OrderLineItemInputSchema.parse({
+        ...validBase,
+        provisioningDetails: [{ key: "domain", values: [123] }],
+      }),
+    ).toThrow();
+  });
+
+  it("allows omitting provisioningDetails entirely (optional)", () => {
+    expect(OrderLineItemInputSchema.parse(validBase)).toEqual(validBase);
+  });
+});
+
+describe("OrderLineItemProvisioningDetailSchema (#332)", () => {
+  it("requires both key and values", () => {
+    const valid = { key: "domain", values: ["contoso.com"] };
+    expect(OrderLineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("accepts multiple values per key", () => {
+    const valid = { key: "region", values: ["us-east", "us-west", "eu-west"] };
+    expect(OrderLineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("allows an empty values array (spec doesn't require non-empty)", () => {
+    const valid = { key: "feature-flag", values: [] };
+    expect(OrderLineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects missing key", () => {
+    expect(() =>
+      OrderLineItemProvisioningDetailSchema.parse({ values: ["x"] }),
+    ).toThrow();
+  });
+
+  it("rejects missing values array", () => {
+    expect(() =>
+      OrderLineItemProvisioningDetailSchema.parse({ key: "domain" }),
+    ).toThrow();
+  });
+
+  it("rejects non-string values", () => {
+    expect(() =>
+      OrderLineItemProvisioningDetailSchema.parse({ key: "domain", values: [42] }),
+    ).toThrow();
+  });
+});
+
+describe("OrderLineItemProvisioningSchema (#332)", () => {
+  it("is an array of provisioning details", () => {
+    const valid = [
+      { key: "domain", values: ["contoso.com"] },
+      { key: "tier", values: ["premium"] },
+    ];
+    expect(OrderLineItemProvisioningSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("accepts an empty array (no provisioning details required)", () => {
+    expect(OrderLineItemProvisioningSchema.parse([])).toEqual([]);
+  });
+
+  it("rejects a record / object map (the pre-#332 shape)", () => {
+    expect(() =>
+      OrderLineItemProvisioningSchema.parse({ domain: "contoso.com" }),
+    ).toThrow();
   });
 });
 

@@ -16,7 +16,12 @@ import {
   ERROR_INVALID_INPUT,
   ERROR_PRODUCT_NOT_FOUND,
 } from "@pax8/core";
-import type { CreateOrderInput, OrderLineItemCreateInput, BillingTerm } from "@pax8/core";
+import type {
+  CreateOrderInput,
+  OrderLineItemCreateInput,
+  OrderLineItemProvisioningDetail,
+  BillingTerm,
+} from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
@@ -37,6 +42,13 @@ interface RawLineItem {
   billingTerm?: string;
   commitmentTerm?: string;
   commitmentTermId?: string;
+  /**
+   * Per-line provisioning details (#332). Matches the public Pax8 OpenAPI
+   * spec's `ProvisioningDetail` array shape — `{ key, values: string[] }[]`.
+   * Parsed from one or more `provisioning=<key>:<value>[|<value>...]` entries
+   * inside a single `--line-item` spec string.
+   */
+  provisioningDetails?: OrderLineItemProvisioningDetail[];
   /** Original spec string, for error messages. */
   raw: string;
 }
@@ -99,10 +111,65 @@ function parseLineItemSpec(spec: string): RawLineItem {
       case "commitmenttermid":
         out.commitmentTermId = val;
         break;
+      case "provisioning":
+      case "provisioning-detail":
+      case "provisioningdetail": {
+        // Provisioning details ride the public Pax8 OpenAPI's
+        // `ProvisioningDetail[]` shape — `{ key, values: string[] }`. The
+        // spec-string syntax is `provisioning=<key>:<value>[|<value>...]`,
+        // and the option can be repeated within a single --line-item to
+        // accumulate multiple provisioning entries. See #332.
+        //
+        // Example single-value: provisioning=domain:contoso.com
+        // Example multi-value:  provisioning=region:us-east|us-west
+        const colon = val.indexOf(":");
+        if (colon < 0) {
+          throw new CliError(
+            `Invalid provisioning entry in --line-item "${spec}": "${val}"`,
+            [`Provisioning entries must be provisioning=<key>:<value>[|<value>...] (got "${val}")`],
+            [
+              `Example: --line-item product=<id>,quantity=5,provisioning=domain:contoso.com`,
+              `Multiple values per key: provisioning=region:us-east|us-west`,
+              `Multiple keys: ... ,provisioning=domain:contoso.com,provisioning=tier:premium`,
+            ],
+            undefined,
+            ERROR_INVALID_INPUT,
+          );
+        }
+        const provKey = val.slice(0, colon).trim();
+        const provValuesRaw = val.slice(colon + 1).trim();
+        if (!provKey) {
+          throw new CliError(
+            `Invalid provisioning entry in --line-item "${spec}": missing key in "${val}"`,
+            [`Provisioning entries must be provisioning=<key>:<value> with a non-empty key`],
+            [`Example: --line-item product=<id>,quantity=5,provisioning=domain:contoso.com`],
+            undefined,
+            ERROR_INVALID_INPUT,
+          );
+        }
+        const values = provValuesRaw
+          .split("|")
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0);
+        if (values.length === 0) {
+          throw new CliError(
+            `Invalid provisioning entry in --line-item "${spec}": missing values for key "${provKey}"`,
+            [`Provisioning entries must include at least one value (provisioning=<key>:<value>)`],
+            [`Example: --line-item product=<id>,quantity=5,provisioning=${provKey}:somevalue`],
+            undefined,
+            ERROR_INVALID_INPUT,
+          );
+        }
+        out.provisioningDetails = [
+          ...(out.provisioningDetails ?? []),
+          { key: provKey, values },
+        ];
+        break;
+      }
       default:
         throw new CliError(
           `Unknown key in --line-item "${spec}": "${key}"`,
-          [`Supported keys: product, quantity, billing-term, commitment-term, commitment-term-id`],
+          [`Supported keys: product, quantity, billing-term, commitment-term, commitment-term-id, provisioning`],
           [`Example: --line-item product=prod-m365-biz-prem-0001,quantity=5,billing-term=Annual`],
           undefined,
           ERROR_INVALID_INPUT,
@@ -139,6 +206,8 @@ interface ResolvedLine {
   billingTerm: string;
   commitmentTerm?: string;
   commitmentTermId?: string;
+  /** Per-line provisioning details, spec-shaped (#332). */
+  provisioningDetails?: OrderLineItemProvisioningDetail[];
   unitPrice: number | null;
   warnings: string[];
 }
@@ -243,6 +312,7 @@ async function resolveLine(
     billingTerm,
     commitmentTerm,
     commitmentTermId,
+    provisioningDetails: raw.provisioningDetails,
     unitPrice,
     warnings,
   };
@@ -260,7 +330,7 @@ export const ordersCreateCommand = new Command("create")
   .option("--commitment-term-id <uuid>", "Commitment term UUID (from subscription commitment.id)")
   .option(
     "--line-item <spec>",
-    "Add a line item: product=<id|name>,quantity=<n>[,billing-term=<term>][,commitment-term=<term>][,commitment-term-id=<uuid>]. Repeat for multi-line orders.",
+    "Add a line item: product=<id|name>,quantity=<n>[,billing-term=<term>][,commitment-term=<term>][,commitment-term-id=<uuid>][,provisioning=<key>:<value>[|<value>...]]. Repeat for multi-line orders.",
     collectLineItem,
     [] as RawLineItem[],
   )
@@ -387,6 +457,7 @@ Examples:
           billingTerm: l.billingTerm,
           commitmentTerm: l.commitmentTerm,
           commitmentTermId: l.commitmentTermId,
+          provisioningDetails: l.provisioningDetails,
         }))
       : [{
           product: allOpts.product,
@@ -561,6 +632,9 @@ Examples:
         quantity: confirmedQuantities[idx],
         billingTerm: line.billingTerm as BillingTerm,
         ...(line.commitmentTermId ? { commitmentTermId: line.commitmentTermId } : {}),
+        ...(line.provisioningDetails && line.provisioningDetails.length > 0
+          ? { provisioningDetails: line.provisioningDetails }
+          : {}),
       }));
 
       const orderInput: CreateOrderInput = {
