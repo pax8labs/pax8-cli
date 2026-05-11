@@ -21,12 +21,59 @@ const PaginatedQuoteSchema = PaginatedResponseSchema(QuoteSchema);
  * from the shared base URL. The `Pax8Client` accepts a `RequestOpts` argument
  * with `apiVersion` to override the version segment per call — every call in
  * this class passes `V2`. See #307 and `docs/triage/quotes-api-version.md`.
- *
- * Body shapes for the remaining write endpoints are tracked separately under
- * the `quotes-v2-body-shape` label (#312, #313, #314). The `create` body
- * shape (`{ clientId, quoteRequestId? }`) was reconciled in #311.
  */
 const V2: RequestOpts = { apiVersion: "v2" };
+
+/**
+ * The five fields the v2 spec marks required on every `PUT /v2/quotes/{id}`.
+ * Both `update()` and `setStatus()` ride this shape — there is no separate
+ * status-transition endpoint, so a status flip and a date change both PUT
+ * the same all-five-required body. See #313, #314,
+ * `docs/triage/quotes-api-version.md` §9.1.
+ */
+export interface FullUpdateQuotePayload {
+  expiresOn: string;
+  introMessage: string;
+  published: boolean;
+  status: QuoteStatusTransition;
+  termsAndDisclaimers: string;
+}
+
+/**
+ * Project a fetched `Quote` plus a partial override into the full 5-field
+ * body `PUT /v2/quotes/{id}` requires. Shared by `update` and `setStatus`
+ * so both write paths land identical bytes on the wire.
+ *
+ * `expiresOn` is technically optional on the read shape (a draft quote may
+ * not have one yet) but required on the PUT — callers must supply it via
+ * `overrides` when the current quote lacks it; otherwise the API will 4xx.
+ * `status` on the read shape is a permissive string (mixed-case legacy demo
+ * values are tolerated); we lowercase it before serializing to match the
+ * v2 enum.
+ */
+export function buildFullUpdatePayload(
+  current: Quote,
+  overrides: UpdateQuoteInput,
+): FullUpdateQuotePayload {
+  const status =
+    overrides.status
+    ?? (current.status.toLowerCase() as QuoteStatusTransition);
+  // `published` is optional on the read shape; default to `false` for drafts.
+  const published = overrides.published ?? current.published ?? false;
+  // `expiresOn` is optional on the read shape; fall through to the override
+  // (caller may have just supplied it via `--expiration-date`). If neither
+  // exists, send empty string — the real API will reject this with a clear
+  // body-validation error rather than us forging a date.
+  const expiresOn = overrides.expiresOn ?? current.expiresOn ?? "";
+  return {
+    expiresOn,
+    introMessage: overrides.introMessage ?? current.introMessage,
+    published,
+    status,
+    termsAndDisclaimers:
+      overrides.termsAndDisclaimers ?? current.termsAndDisclaimers,
+  };
+}
 
 export class QuotesApi {
   constructor(private client: Pax8Client) {}
@@ -62,8 +109,20 @@ export class QuotesApi {
     return QuoteSchema.parse(raw);
   }
 
-  async update(id: string, data: UpdateQuoteInput): Promise<Quote> {
-    const raw = await this.client.put<unknown>(`/quotes/${id}`, data, V2);
+  /**
+   * Apply a partial set of overrides to a quote.
+   *
+   * The v2 spec requires all five mutable fields (`expiresOn`, `introMessage`,
+   * `published`, `status`, `termsAndDisclaimers`) on every `PUT /v2/quotes/{id}` —
+   * there is no partial PUT. `update()` therefore does a fetch-then-merge:
+   * GET the current quote, project it + overrides into the full body, then
+   * PUT. Callers see a partial-override interface and don't need to think
+   * about the server-side contract. See #313.
+   */
+  async update(id: string, overrides: UpdateQuoteInput): Promise<Quote> {
+    const current = await this.get(id);
+    const body = buildFullUpdatePayload(current, overrides);
+    const raw = await this.client.put<unknown>(`/quotes/${id}`, body, V2);
     return QuoteSchema.parse(raw);
   }
 
@@ -111,13 +170,17 @@ export class QuotesApi {
   /**
    * Transition a quote to a new status.
    *
+   * The v2 spec defines no status-only endpoint — every status change rides
+   * the same `PUT /v2/quotes/{quoteId}` as `update`, and requires the full
+   * 5-field body. `setStatus` therefore also does a fetch-then-merge: GET
+   * the current quote, override `status`, PUT the full body. See #314 and
+   * `docs/triage/quotes-api-version.md` §9.1.
+   *
    * Most commonly used as `setStatus(id, "sent")` — the trigger that publishes
    * the customer-facing quote and (server-side) emits the customer link/email.
-   * Backed by `PUT /v2/quotes/{quoteId}` per the v2 quoting OpenAPI spec.
    */
   async setStatus(id: string, status: QuoteStatusTransition): Promise<Quote> {
-    const raw = await this.client.put<unknown>(`/quotes/${id}`, { status }, V2);
-    return QuoteSchema.parse(raw);
+    return this.update(id, { status });
   }
 
   /** Convenience wrapper: `setStatus(id, "sent")`. */

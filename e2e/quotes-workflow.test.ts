@@ -143,7 +143,10 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(data[0].id).toBe(id);
-    expect(data[0].expiresOn).toBe("2026-12-31");
+    // Per #313: the v2 spec types `expiresOn` as `date-time`, so the CLI
+    // normalizes the user-friendly `YYYY-MM-DD` to ISO 8601 midnight-UTC
+    // before sending. The returned quote reflects the normalized value.
+    expect(data[0].expiresOn).toBe("2026-12-31T00:00:00Z");
   });
 
   it("pax8 quotes update fails when no fields are provided", async () => {

@@ -25,7 +25,11 @@ export { OrdersApi } from "./api/orders.js";
 export { SubscriptionsApi } from "./api/subscriptions.js";
 export { InvoicesApi } from "./api/invoices.js";
 export { UsageApi } from "./api/usage.js";
-export { QuotesApi } from "./api/quotes.js";
+export {
+  QuotesApi,
+  buildFullUpdatePayload,
+  type FullUpdateQuotePayload,
+} from "./api/quotes.js";
 export { WebhooksApi } from "./api/webhooks.js";
 
 // ─── API constants ──────────────────────────────────────────────────────────

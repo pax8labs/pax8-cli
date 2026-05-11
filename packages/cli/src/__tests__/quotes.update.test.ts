@@ -145,5 +145,77 @@ describe("pax8 quotes update", () => {
       // even before they run the command.
       expect(result.stdout).toMatch(/replaces ALL existing line items/);
     });
+
+    it("describes the v2 decompose-into-DELETE-plus-POST line-item replacement (#313)", async () => {
+      const result = await runCliExpectSuccess(["quotes", "update", "--help"]);
+      // Partners should see why the CLI does two wire calls: the v2 PUT
+      // endpoint doesn't accept a lineItems array on top-level update.
+      expect(result.stdout).toMatch(/v2 quote API/);
+      expect(result.stdout).toMatch(/DELETE/);
+    });
+  });
+
+  describe("error paths", () => {
+    it("fails with a clear error when neither --product nor --expiration-date is supplied (#313)", async () => {
+      // The "no fields to update" guard must fire before any write happens.
+      // Without it the CLI would do a fetch-then-PUT-the-same-back loop —
+      // a no-op against the API, but a confusing experience.
+      const { runCliExpectFailure } = await import("./test-utils.js");
+      const result = await runCliExpectFailure([
+        "quotes",
+        "update",
+        "quote-summit-001",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/[Nn]o fields to update/);
+    });
+
+    it("rejects malformed --expiration-date (#313)", async () => {
+      // The v2 API types `expiresOn` as `date-time`; the CLI accepts the
+      // friendlier YYYY-MM-DD and normalizes it. Anything else should fail
+      // early with a flag-named error message.
+      const { runCliExpectFailure } = await import("./test-utils.js");
+      const result = await runCliExpectFailure([
+        "quotes",
+        "update",
+        "quote-summit-001",
+        "--expiration-date",
+        "12/31/2026",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/--expiration-date/);
+    });
+  });
+
+  describe("line-item replacement decomposes into DELETE + POST (#313)", () => {
+    it("end-to-end replaces a single-line quote's line item via the new flow", async () => {
+      // The single-line quote (quote-acme-001) is the easy case: one DELETE
+      // followed by one POST against /v2/quotes/{id}/line-items, with no
+      // partial-failure window worth advertising. Asserts JSON envelope.
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "update",
+        "quote-acme-001",
+        "--product",
+        "prod-aad-p1-0008",
+        "--quantity",
+        "30",
+        "--billing-term",
+        "Monthly",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data[0].id).toBe("quote-acme-001");
+      // The replacement landed: there's a line item, it points at the new
+      // product, and the old one is gone.
+      const items = data[0].lineItems as Array<{ productId: string; quantity: number }>;
+      expect(items.length).toBe(1);
+      expect(items[0].productId).toBe("prod-aad-p1-0008");
+      expect(items[0].quantity).toBe(30);
+    });
   });
 });

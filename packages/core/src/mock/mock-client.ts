@@ -635,6 +635,12 @@ class QuotesResource {
       createdOn: new Date().toISOString().split("T")[0],
       ...(data.expiresOn ? { expiresOn: data.expiresOn } : {}),
       status: "Draft",
+      // Empty defaults for the two free-text fields the v2 read shape marks
+      // required (#313). Real partners populate these via the marketplace UI
+      // before sending; demo mode mirrors the "empty draft" wire shape with
+      // empty strings rather than missing fields so schema parsing succeeds.
+      introMessage: "",
+      termsAndDisclaimers: "",
       lineItems: [],
     };
     // Push into the in-memory fixture so a follow-up `addLineItem` /
@@ -647,11 +653,48 @@ class QuotesResource {
     return newQuote;
   }
 
-  async update(id: string, data: Partial<Quote>): Promise<Quote> {
+  /**
+   * Apply a partial set of overrides to a quote, mirroring the v2
+   * `PUT /v2/quotes/{id}` semantics (#313). The real API requires all five
+   * mutable fields on every PUT; the `QuotesApi.update` wrapper in
+   * `@pax8/core` does the fetch-then-merge before sending. In demo mode the
+   * mock is the wrapper, so we just merge the overrides into the in-memory
+   * fixture. Status transitions ride this same code path (#314): when
+   * `status` is included as an override, we lowercase-to-titlecase map it
+   * exactly like `setStatus` does so the demo `Quote.status` field stays
+   * inside its tight union.
+   */
+  async update(
+    id: string,
+    data: {
+      expiresOn?: string;
+      introMessage?: string;
+      published?: boolean;
+      status?: QuoteStatusTransition;
+      termsAndDisclaimers?: string;
+    },
+  ): Promise<Quote> {
     await randomDelay();
     const quote = quotes.find((q) => q.id === id);
     if (!quote) throw notFound("Quote", id);
-    return { ...quote, ...data, id: quote.id };
+
+    if (typeof data.expiresOn === "string") quote.expiresOn = data.expiresOn;
+    if (typeof data.introMessage === "string") quote.introMessage = data.introMessage;
+    if (typeof data.published === "boolean") quote.published = data.published;
+    if (typeof data.termsAndDisclaimers === "string") {
+      quote.termsAndDisclaimers = data.termsAndDisclaimers;
+    }
+    if (data.status) {
+      const cap = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+      const allowed: Record<string, Quote["status"]> = {
+        Draft: "Draft",
+        Sent: "Sent",
+        Accepted: "Accepted",
+        Declined: "Declined",
+      };
+      quote.status = allowed[cap] ?? quote.status;
+    }
+    return quote;
   }
 
   async delete(id: string): Promise<void> {
@@ -717,26 +760,12 @@ class QuotesResource {
   }
 
   /**
-   * Demo-mode status transitions. The lowercase API enum maps to the
-   * capitalized demo `Quote.status` field one-for-one — most users see
-   * `Sent` after `setStatus(id, "sent")`.
+   * Demo-mode status transitions. Delegates to `update` so the mock surface
+   * mirrors the real `QuotesApi` where status flips ride the same fetch-then-
+   * merge `PUT /v2/quotes/{id}` as every other update (#314).
    */
   async setStatus(id: string, status: QuoteStatusTransition): Promise<Quote> {
-    await randomDelay();
-    const quote = quotes.find((q) => q.id === id);
-    if (!quote) throw notFound("Quote", id);
-    const cap = status.charAt(0).toUpperCase() + status.slice(1);
-    // The demo Quote.status is a tight union; cast through unknown rather
-    // than widen the seed type for every caller.
-    const allowed: Record<string, Quote["status"]> = {
-      Draft: "Draft",
-      Sent: "Sent",
-      Accepted: "Accepted",
-      Declined: "Declined",
-    };
-    const next = allowed[cap] ?? quote.status;
-    quote.status = next;
-    return quote;
+    return this.update(id, { status });
   }
 
   async send(id: string): Promise<Quote> {

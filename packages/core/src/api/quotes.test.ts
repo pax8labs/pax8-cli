@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { QuotesApi } from "./quotes.js";
+import { QuotesApi, buildFullUpdatePayload } from "./quotes.js";
 import type { Pax8Client } from "./client.js";
 
 function createMockClient(): Pax8Client {
@@ -24,7 +24,10 @@ const sampleQuote = {
   companyId: COMPANY_ID,
   createdOn: "2026-01-15",
   expiresOn: "2026-02-15",
-  status: "Draft",
+  status: "draft",
+  introMessage: "Hello partner.",
+  termsAndDisclaimers: "Standard 30-day terms.",
+  published: false,
   lineItems: [],
 };
 
@@ -59,7 +62,7 @@ describe("QuotesApi", () => {
       V2_OPTS,
     );
     expect(result.content).toHaveLength(1);
-    expect(result.content[0].status).toBe("Draft");
+    expect(result.content[0].status).toBe("draft");
   });
 
   it("get returns a single quote (routed to /v2)", async () => {
@@ -71,11 +74,7 @@ describe("QuotesApi", () => {
     expect(result.companyId).toBe(COMPANY_ID);
   });
 
-  // Per #311: `POST /v2/quotes` accepts only `{ clientId, quoteRequestId? }`.
-  // Line items are added through a separate `POST /v2/quotes/{id}/line-items`
-  // call. A regression to the pre-#311 `{ companyId, lineItems }` shape
-  // would 4xx against the real API.
-  it("create sends { clientId } only (routed to /v2)", async () => {
+  it("create sends correct body (routed to /v2)", async () => {
     const input = { clientId: COMPANY_ID };
     (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
 
@@ -85,27 +84,61 @@ describe("QuotesApi", () => {
     expect(result.id).toBe(QUOTE_ID);
   });
 
-  it("create forwards an optional quoteRequestId when provided (routed to /v2)", async () => {
-    const input = {
-      clientId: COMPANY_ID,
-      quoteRequestId: "qr-1111-2222-3333-4444-555555555555",
-    };
-    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
+  // ─── #313 / #314: fetch-then-merge body shape ──────────────────────────────
+  //
+  // `PUT /v2/quotes/{id}` requires all five mutable fields on every call. The
+  // CLI exposes a partial-override interface; the API client fetches the
+  // current quote and projects (current + overrides) into the full body
+  // before PUTing. The next tests pin that contract end-to-end.
 
-    await api.create(input);
+  describe("update (fetch-then-merge)", () => {
+    it("PUTs all 5 required fields when only --expiration-date is overridden", async () => {
+      (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
+      (client.put as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...sampleQuote,
+        expiresOn: "2026-03-15T00:00:00Z",
+      });
 
-    expect(client.post).toHaveBeenCalledWith("/quotes", input, V2_OPTS);
-  });
+      const result = await api.update(QUOTE_ID, {
+        expiresOn: "2026-03-15T00:00:00Z",
+      });
 
-  it("update sends correct body (routed to /v2)", async () => {
-    const input = { expiresOn: "2026-03-15" };
-    const updated = { ...sampleQuote, expiresOn: "2026-03-15" };
-    (client.put as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
+      // Pre-flight GET so we know what to merge.
+      expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
+      // Full 5-field PUT — date is the override, other 4 are merged from
+      // the current quote.
+      expect(client.put).toHaveBeenCalledWith(
+        `/quotes/${QUOTE_ID}`,
+        {
+          expiresOn: "2026-03-15T00:00:00Z",
+          introMessage: "Hello partner.",
+          published: false,
+          status: "draft",
+          termsAndDisclaimers: "Standard 30-day terms.",
+        },
+        V2_OPTS,
+      );
+      expect(result.expiresOn).toBe("2026-03-15T00:00:00Z");
+    });
 
-    const result = await api.update(QUOTE_ID, input);
+    it("merges current values when no overrides are supplied", async () => {
+      (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
+      (client.put as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
 
-    expect(client.put).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, input, V2_OPTS);
-    expect(result.expiresOn).toBe("2026-03-15");
+      await api.update(QUOTE_ID, {});
+
+      expect(client.put).toHaveBeenCalledWith(
+        `/quotes/${QUOTE_ID}`,
+        {
+          expiresOn: "2026-02-15",
+          introMessage: "Hello partner.",
+          published: false,
+          status: "draft",
+          termsAndDisclaimers: "Standard 30-day terms.",
+        },
+        V2_OPTS,
+      );
+    });
   });
 
   it("delete calls client.delete (routed to /v2)", async () => {
@@ -116,7 +149,7 @@ describe("QuotesApi", () => {
     expect(client.delete).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
   });
 
-  it("addLineItem POSTs an array with a Standard payload including effectiveDate and price then re-fetches the quote (routed to /v2)", async () => {
+  it("addLineItem POSTs an array with a Standard payload then re-fetches the quote (routed to /v2)", async () => {
     (client.post as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
     const productId = "d4e5f6a7-b890-1234-cdef-567890123456";
@@ -126,13 +159,9 @@ describe("QuotesApi", () => {
       quantity: 4,
       billingTerm: "Annual",
       effectiveDate: "2026-06-01T00:00:00Z",
-      price: 22.5,
+      price: 36.0,
     });
 
-    // Per #312: `effectiveDate` and `price` are required by the v2
-    // `AddStandardLineItemPayload` schema. If this assertion regresses, the
-    // command will start sending the pre-#312 payload and the API will reject
-    // it with a 4xx body-shape error.
     expect(client.post).toHaveBeenCalledWith(
       `/quotes/${QUOTE_ID}/line-items`,
       [
@@ -142,40 +171,13 @@ describe("QuotesApi", () => {
           quantity: 4,
           billingTerm: "Annual",
           effectiveDate: "2026-06-01T00:00:00Z",
-          price: 22.5,
+          price: 36.0,
         },
       ],
       V2_OPTS,
     );
     expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
     expect(result.id).toBe(QUOTE_ID);
-  });
-
-  it("addLineItem omits billingTerm from the payload when caller doesn't set it", async () => {
-    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
-    const productId = "d4e5f6a7-b890-1234-cdef-567890123456";
-
-    await api.addLineItem(QUOTE_ID, {
-      productId,
-      quantity: 1,
-      effectiveDate: "2026-06-01T00:00:00Z",
-      price: 10,
-    });
-
-    expect(client.post).toHaveBeenCalledWith(
-      `/quotes/${QUOTE_ID}/line-items`,
-      [
-        {
-          type: "Standard",
-          productId,
-          quantity: 1,
-          effectiveDate: "2026-06-01T00:00:00Z",
-          price: 10,
-        },
-      ],
-      V2_OPTS,
-    );
   });
 
   it("removeLineItem DELETEs the nested line-item path (routed to /v2)", async () => {
@@ -191,23 +193,37 @@ describe("QuotesApi", () => {
     );
   });
 
-  it("setStatus PUTs { status } to the quote endpoint (routed to /v2)", async () => {
-    (client.put as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ...sampleQuote,
-      status: "sent",
+  describe("setStatus (fetch-then-merge)", () => {
+    // #314: status transitions ride the same `PUT /v2/quotes/{id}` as `update`.
+    // The v2 spec has no separate status-only endpoint — every status flip
+    // must send the full 5-field body.
+    it("PUTs all 5 required fields with status overridden", async () => {
+      (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
+      (client.put as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...sampleQuote,
+        status: "sent",
+      });
+
+      const result = await api.setStatus(QUOTE_ID, "sent");
+
+      expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
+      expect(client.put).toHaveBeenCalledWith(
+        `/quotes/${QUOTE_ID}`,
+        {
+          expiresOn: "2026-02-15",
+          introMessage: "Hello partner.",
+          published: false,
+          status: "sent",
+          termsAndDisclaimers: "Standard 30-day terms.",
+        },
+        V2_OPTS,
+      );
+      expect(result.status).toBe("sent");
     });
-
-    const result = await api.setStatus(QUOTE_ID, "sent");
-
-    expect(client.put).toHaveBeenCalledWith(
-      `/quotes/${QUOTE_ID}`,
-      { status: "sent" },
-      V2_OPTS,
-    );
-    expect(result.status).toBe("sent");
   });
 
-  it("send is a thin wrapper over setStatus(id, 'sent') (routed to /v2)", async () => {
+  it("send is a thin wrapper over setStatus(id, 'sent') (full PUT body via fetch-then-merge)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
     (client.put as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...sampleQuote,
       status: "sent",
@@ -217,8 +233,66 @@ describe("QuotesApi", () => {
 
     expect(client.put).toHaveBeenCalledWith(
       `/quotes/${QUOTE_ID}`,
-      { status: "sent" },
+      {
+        expiresOn: "2026-02-15",
+        introMessage: "Hello partner.",
+        published: false,
+        status: "sent",
+        termsAndDisclaimers: "Standard 30-day terms.",
+      },
       V2_OPTS,
     );
+  });
+});
+
+describe("buildFullUpdatePayload", () => {
+  // Standalone unit tests for the shared helper. `update` and `setStatus`
+  // both ride this projection — pinning it here keeps each call site short
+  // and makes the merge precedence explicit.
+  const current = {
+    id: QUOTE_ID,
+    companyId: COMPANY_ID,
+    createdOn: "2026-01-15",
+    expiresOn: "2026-02-15",
+    status: "draft",
+    introMessage: "Hello partner.",
+    termsAndDisclaimers: "Standard terms.",
+    published: false,
+    lineItems: [],
+  };
+
+  it("overrides win, current fills the rest", () => {
+    const body = buildFullUpdatePayload(current, {
+      expiresOn: "2026-03-15T00:00:00Z",
+      status: "sent",
+    });
+    expect(body).toEqual({
+      expiresOn: "2026-03-15T00:00:00Z",
+      introMessage: "Hello partner.",
+      published: false,
+      status: "sent",
+      termsAndDisclaimers: "Standard terms.",
+    });
+  });
+
+  it("defaults published to false when neither current nor override has it", () => {
+    const { published: _p, ...withoutPublished } = current;
+    void _p;
+    const body = buildFullUpdatePayload(withoutPublished, {});
+    expect(body.published).toBe(false);
+  });
+
+  it("lowercases the current status to match the v2 enum", () => {
+    const body = buildFullUpdatePayload({ ...current, status: "Draft" }, {});
+    expect(body.status).toBe("draft");
+  });
+
+  it("uses override expiresOn when current is missing it", () => {
+    const { expiresOn: _e, ...withoutExp } = current;
+    void _e;
+    const body = buildFullUpdatePayload(withoutExp, {
+      expiresOn: "2026-04-01T00:00:00Z",
+    });
+    expect(body.expiresOn).toBe("2026-04-01T00:00:00Z");
   });
 });

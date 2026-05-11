@@ -17,6 +17,41 @@ import type { CommandContext } from "./context.js";
  */
 
 /**
+ * Normalize a user-supplied `YYYY-MM-DD` to the ISO 8601 date-time string
+ * the v2 quoting API requires (`YYYY-MM-DDT00:00:00Z`). Validates both the
+ * format and that the date is a real calendar date. The `flagName` is used
+ * verbatim in the error message so callers can advertise the user-facing
+ * flag without us inventing one — `--effective-date` for line-item
+ * effectiveness, `--expiration-date` for the quote `expiresOn`, etc.
+ *
+ * Shared by `quotes line-items add` (#312) and `quotes update` (#313): the
+ * v2 quoting surface uses date-time strings for every date-shaped field,
+ * but the CLI accepts the friendlier YYYY-MM-DD vocabulary on the flag side.
+ */
+export function normalizeIsoDate(raw: string, flagName: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    throw new CliError(
+      `Invalid ${flagName}: "${raw}"`,
+      [`Use the YYYY-MM-DD format (e.g. 2026-06-01)`],
+      undefined,
+      undefined,
+      ERROR_INVALID_INPUT,
+    );
+  }
+  const parsed = new Date(`${raw}T00:00:00Z`);
+  if (isNaN(parsed.getTime())) {
+    throw new CliError(
+      `Invalid ${flagName}: "${raw}"`,
+      ["Use a real calendar date in YYYY-MM-DD form"],
+      undefined,
+      undefined,
+      ERROR_INVALID_INPUT,
+    );
+  }
+  return `${raw}T00:00:00Z`;
+}
+
+/**
  * Normalize a user-supplied `YYYY-MM-DD` (or the default of "today, UTC") to
  * the ISO 8601 date-time string the v2 quoting API requires. The output is
  * always midnight UTC of the chosen day — line-item effective dates are
@@ -27,26 +62,7 @@ export function resolveEffectiveDate(raw: string | undefined): string {
     const now = new Date();
     return `${now.toISOString().slice(0, 10)}T00:00:00Z`;
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    throw new CliError(
-      `Invalid --effective-date: "${raw}"`,
-      ["Use the YYYY-MM-DD format (e.g. 2026-06-01)"],
-      undefined,
-      undefined,
-      ERROR_INVALID_INPUT,
-    );
-  }
-  const parsed = new Date(`${raw}T00:00:00Z`);
-  if (isNaN(parsed.getTime())) {
-    throw new CliError(
-      `Invalid --effective-date: "${raw}"`,
-      ["Use a real calendar date in YYYY-MM-DD form"],
-      undefined,
-      undefined,
-      ERROR_INVALID_INPUT,
-    );
-  }
-  return `${raw}T00:00:00Z`;
+  return normalizeIsoDate(raw, "--effective-date");
 }
 
 const pricingCache = new Map<string, ProductPricingPlan[]>();

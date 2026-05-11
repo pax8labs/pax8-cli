@@ -230,6 +230,22 @@ export interface Quote {
   status: "Draft" | "Sent" | "Accepted" | "Declined";
   lineItems?: QuoteLineItem[];
 
+  /**
+   * Free-text intro/cover-letter message shown above the quote's line items.
+   * Required on the v2 `QuoteResponse` and required again on every
+   * `PUT /v2/quotes/{quoteId}` — fetch-then-merge in `QuotesApi.update` /
+   * `setStatus` reads it back from the demo fixture so the simulated PUT
+   * body matches the real-API contract. Not user-settable via CLI flags
+   * today; see #313, #314.
+   */
+  introMessage: string;
+  /**
+   * Free-text terms-and-disclaimers footer shown beneath the quote's line
+   * items. Same lifecycle as `introMessage` — required on the read shape so
+   * the fetch-then-merge `update` can round-trip it cleanly back to the API.
+   */
+  termsAndDisclaimers: string;
+
   // Workflow fields surfaced by the public quoting v2 API. All optional —
   // they're populated only after the relevant transition has occurred.
   acceptedBy?: QuoteRespondedBy;
@@ -1769,6 +1785,8 @@ export const quotes: Quote[] = [
     published: true,
     publishedOn: "2026-03-10T14:22:00Z",
     salesMarginPercentage: 18.5,
+    introMessage: "Hi Summit team — proposal for your annual M365 renewal cycle.",
+    termsAndDisclaimers: "Prices valid for 30 days. Subscription term auto-renews unless cancelled.",
     lineItems: [
       {
         id: "li-summit-001-a",
@@ -1796,6 +1814,8 @@ export const quotes: Quote[] = [
     status: "Draft",
     intentType: "PARTNER_TO_CLIENT",
     published: false,
+    introMessage: "Draft proposal for BrightPath's security stack rollout.",
+    termsAndDisclaimers: "Final pricing subject to confirmation before send.",
     lineItems: [
       {
         id: "li-bright-001-a",
@@ -1827,6 +1847,8 @@ export const quotes: Quote[] = [
     status: "Draft",
     intentType: "PARTNER_TO_CLIENT",
     published: false,
+    introMessage: "Draft for Acme — single-line scratchpad quote.",
+    termsAndDisclaimers: "Terms TBD pending stakeholder review.",
     lineItems: [
       {
         id: "li-acme-001-a",
@@ -1850,6 +1872,8 @@ export const quotes: Quote[] = [
     publishedOn: "2026-02-20T16:05:00Z",
     salesMarginPercentage: 21.0,
     respondedOn: "2026-02-28T11:42:00Z",
+    introMessage: "Redwood Manufacturing — proposal for the M365 E5 upgrade discussed last quarter.",
+    termsAndDisclaimers: "Net 30 billing. Cancellation per Pax8 standard terms.",
     acceptedBy: {
       name: "Karen Olsen",
       email: "karen.olsen@redwoodmfg.example.com",
@@ -1878,6 +1902,8 @@ export const quotes: Quote[] = [
     publishedOn: "2026-02-12T10:00:00Z",
     salesMarginPercentage: 15.0,
     respondedOn: "2026-02-19T09:18:00Z",
+    introMessage: "Coastline Legal — proposal for the M365 E5 firm-wide rollout.",
+    termsAndDisclaimers: "Quote contingent on partner-level discount approval.",
     declinedBy: {
       name: "Marco Reyes",
       email: "marco.reyes@coastlinelegal.example.com",
