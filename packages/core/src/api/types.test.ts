@@ -1,7 +1,45 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * Schema validation tests + a CI-enforced "forbidden fields" regression
+ * check at the bottom of this file.
+ *
+ * Forbidden-field hygiene
+ * -----------------------
+ * Certain field names are PERMANENTLY EXCLUDED from CLI-facing Zod schemas.
+ * These are fields that either:
+ *
+ *  - Leak Pax8's internal cost basis / margin / billing-engine internals
+ *    (Tier 1 — Revenue/Competitive — per the Marketplace & Platform Data
+ *    Risk Tiering standard at
+ *    https://pax8.atlassian.net/wiki/spaces/PS1/pages/2748907531/Marketplace+Platform+Data+Risk+Tiering),
+ *    OR
+ *  - Were explicitly called out by reviewers as "must never see the light
+ *    of day" (Josh Hollander's inline comment on the CLI domain review:
+ *    "let's also make sure `originalSubscriptionId` never sees the light
+ *    of day. I don't want to double down on that massive mistake.").
+ *
+ * The list below is **policy as code** — if a future PR adds one of these
+ * field names to any exported Zod schema in this file (top-level OR
+ * nested), the test at the bottom fails with a clear message naming the
+ * field and schema. This catches both "schema drift from upstream API
+ * additions" and "well-intentioned but harmful additions" before they
+ * land.
+ *
+ * To add a new field to the forbidden list:
+ *   1. Justify it in writing (which tier, which reviewer, which incident)
+ *   2. Append to FORBIDDEN_FIELDS below with an inline comment
+ *   3. The check is automatic from there.
+ *
+ * See also: docs/pm-review-response-2026-05.md §1 (field-tier audit) and
+ * Pax8 CLI Domain Review at
+ * https://pax8.atlassian.net/wiki/spaces/Foundation/pages/3069607971/Pax8+CLI+Domain+Review+Approval+Process+and+Key+Questions+for+Each+Section
+ */
+
 import { describe, it, expect } from "vitest";
+import { ZodObject } from "zod";
+import * as types from "./types.js";
 import {
   CompanySchema,
   CreateCompanyInputSchema,
@@ -817,5 +855,158 @@ describe("PaginatedResponseSchema", () => {
       ],
     };
     expect(schema.parse(data)).toEqual(data);
+  });
+});
+
+// ─── Forbidden-field hygiene ─────────────────────────────────────────────────
+//
+// See the top-of-file comment for rationale. This test walks every exported
+// Zod schema in this module (top-level + nested through optional / nullable
+// / default / array / union wrappers) and asserts that none of the
+// permanently-excluded field names appear.
+//
+// Adding a new schema to types.ts? You don't need to update anything here —
+// the check picks up new exports automatically.
+//
+// Adding a new forbidden field? Append to FORBIDDEN_FIELDS below with an
+// inline justification comment.
+
+const FORBIDDEN_FIELDS = [
+  // "Let's also make sure `originalSubscriptionId` never sees the light of
+  // day" — Josh Hollander, inline review comment. Surfaced from a prior
+  // platform incident; partners must never see it.
+  "originalSubscriptionId",
+  // Internal subscription hierarchy reference. Reveals how Pax8 structures
+  // subscription relationships internally; out of scope for partner-facing
+  // surfaces. Hidden per the field-tier audit.
+  "parentSubscriptionId",
+  // Cross-vendor subscription mapping. Available on Microsoft via UPS-1751
+  // but the CLI deliberately omits it; Josh Hollander approved the choice
+  // on the domain review page.
+  "vendorSubscriptionId",
+  // Pax8's cost basis from the vendor. Tier 1 (Revenue/Competitive) —
+  // direct margin disclosure.
+  "partnerCost",
+  // Pax8's wholesale rate from the vendor. Tier 1 — same concern as
+  // partnerCost. The partner sees their own buy rate (price /
+  // partnerBuyRate); they must never see what Pax8 pays the vendor.
+  "wholesaleBuyRate",
+  // Invoice-level cost basis. Surfaced by Rovo as one of the fields the
+  // partner-safe invoice summary endpoint deliberately omits to avoid
+  // wholesale cost leakage (per Finance Services PRD).
+  "costTotal",
+  // Internal billing-engine fee surface. Same Finance Services exclusion
+  // rationale as costTotal.
+  "billingFee",
+] as const;
+
+/**
+ * Walk a Zod schema and yield every ZodObject shape encountered, recursing
+ * through common wrappers (optional, nullable, default, array, union,
+ * discriminated union, intersection). Yields `{ path, keys }` so violations
+ * can name the exact location (e.g. `SubscriptionSchema.commitment`).
+ */
+function* walkObjectShapes(
+  schema: unknown,
+  path: string,
+  visited: WeakSet<object>,
+): Generator<{ path: string; keys: string[] }> {
+  if (!schema || typeof schema !== "object") return;
+  if (visited.has(schema)) return;
+  visited.add(schema);
+
+  if (schema instanceof ZodObject) {
+    const shape = schema.shape as Record<string, unknown>;
+    yield { path, keys: Object.keys(shape) };
+    for (const [key, child] of Object.entries(shape)) {
+      yield* walkObjectShapes(child, `${path}.${key}`, visited);
+    }
+    return;
+  }
+
+  // Unwrap common wrappers via `_def`. Zod doesn't expose a uniform
+  // "innerType" accessor; we probe the well-known property names.
+  const def = (
+    schema as {
+      _def?: {
+        innerType?: unknown;
+        type?: unknown;
+        options?: unknown[];
+        left?: unknown;
+        right?: unknown;
+      };
+    }
+  )._def;
+  if (!def) return;
+  if (def.innerType) {
+    yield* walkObjectShapes(def.innerType, path, visited);
+  }
+  if (def.type) {
+    yield* walkObjectShapes(def.type, `${path}[*]`, visited);
+  }
+  if (Array.isArray(def.options)) {
+    for (const opt of def.options) {
+      yield* walkObjectShapes(opt, path, visited);
+    }
+  }
+  if (def.left) yield* walkObjectShapes(def.left, path, visited);
+  if (def.right) yield* walkObjectShapes(def.right, path, visited);
+}
+
+describe("forbidden field hygiene (CI-enforced policy)", () => {
+  it("no exported Zod schema exposes a forbidden field", () => {
+    const violations: string[] = [];
+
+    for (const [exportName, exportValue] of Object.entries(types)) {
+      // Skip non-schema exports: type aliases evaporate at runtime; primitive
+      // values (strings, numbers, enums-as-arrays) aren't schemas.
+      if (!exportValue || typeof exportValue !== "object") continue;
+
+      const visited = new WeakSet<object>();
+      for (const { path, keys } of walkObjectShapes(
+        exportValue,
+        exportName,
+        visited,
+      )) {
+        for (const forbidden of FORBIDDEN_FIELDS) {
+          if (keys.includes(forbidden)) {
+            violations.push(`  "${forbidden}" appears in ${path}`);
+          }
+        }
+      }
+    }
+
+    if (violations.length > 0) {
+      throw new Error(
+        [
+          "Forbidden field(s) found in CLI-facing Zod schemas:",
+          ...violations,
+          "",
+          "These field names are permanently excluded from CLI-facing schemas. See",
+          "the top-of-file comment in types.test.ts for the rationale (Tier 1",
+          "data, reviewer call-outs, prior incidents). If you genuinely need to",
+          "expose one of these, get explicit security review first and update",
+          "FORBIDDEN_FIELDS with a written justification.",
+        ].join("\n"),
+      );
+    }
+  });
+
+  // Sanity check that the test isn't a no-op — confirms the walker reaches
+  // nested object shapes through optional + array wrappers. If this
+  // regresses (e.g. the walker is broken and yields nothing), this fires
+  // before the policy check passes vacuously.
+  it("walker reaches nested ZodObject shapes (sanity check)", () => {
+    const visited = new WeakSet<object>();
+    const shapes = Array.from(
+      walkObjectShapes(types.SubscriptionSchema, "SubscriptionSchema", visited),
+    );
+    const paths = shapes.map((s) => s.path);
+    // SubscriptionSchema has a nested optional `commitment: CommitmentSchema`;
+    // the walker must descend into it through the ZodOptional wrapper.
+    expect(paths).toContain("SubscriptionSchema");
+    expect(paths.some((p) => p.startsWith("SubscriptionSchema.commitment"))).toBe(
+      true,
+    );
   });
 });
