@@ -119,6 +119,63 @@ describe("pax8 recommendations", () => {
       // (JSON returns all recs; filtering only affects table mode)
       expect(allRecs.length).toBe(defaultRecs.length);
     });
+
+    // Issue #195: human render leaked product UUIDs in a "Quick actions"
+    // block AND re-printed every rec a second time as an `orders create
+    // --product <uuid>` snippet (in addition to the table and the
+    // promptNextSteps hint). The fix removes the Quick actions block; the
+    // table + the one-line drill-in hint stay.
+    //
+    // Forcing table mode under a subprocess: stdout in `execFile` isn't a
+    // TTY, so without `PAX8_OUTPUT_FORMAT=table` the CLI auto-falls back to
+    // JSON for machine consumption and the human-render code path is never
+    // exercised.
+    it("does not leak product IDs into human (table) output", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      const combined = result.stdout + result.stderr;
+      // The demo mock uses `prod-*` IDs for products; a real Pax8 deploy
+      // uses RFC-4122 UUIDs. Neither shape should appear in human output.
+      expect(combined).not.toMatch(/--product\s+prod-/);
+      expect(combined).not.toMatch(
+        /--product\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+      );
+    });
+
+    it("renders the rec list exactly once (no Quick actions duplicate block)", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      const combined = result.stdout + result.stderr;
+      // The "Quick actions:" header was the start of the duplicate block.
+      // It must not appear in the new human render.
+      expect(combined).not.toMatch(/Quick actions:/);
+      // The `orders create --product …` snippet was the per-rec second
+      // render that carried the UUID leak; it must not appear in human
+      // output. (JSON output's `orderCommand` field still has it — that
+      // contract is covered by the existing JSON tests above.)
+      expect(combined).not.toMatch(/orders create --product/);
+      // The drill-in hint stays.
+      expect(combined).toMatch(/Walk through all/);
+    });
+
+    it("--json output still carries the full orderCommand with product id (agent contract)", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+      const data = JSON.parse(result.stdout) as Array<{ orderCommand: string | null }>;
+      const withCommand = data.filter((r) => r.orderCommand);
+      expect(withCommand.length).toBeGreaterThan(0);
+      // The JSON `orderCommand` MUST still include `--product <id>` so
+      // agents and downstream tooling can execute it verbatim. Whether the
+      // id is a UUID (real API) or a demo-stub like `prod-xxx-0001` is
+      // env-dependent; what we require is that the `--product <token>`
+      // shape survives.
+      expect(
+        withCommand.every((r) => /--product\s+\S+/.test(r.orderCommand!)),
+      ).toBe(true);
+    });
   });
 
   describe("recommendations act", () => {
