@@ -30,6 +30,10 @@ function isValidUrl(input: string): boolean {
 export const webhooksCreateCommand = new Command("create")
   .description("Create a webhook subscription")
   .requiredOption("--url <url>", "Webhook delivery URL (https recommended)")
+  .requiredOption(
+    "--display-name <name>",
+    'Human-friendly label for the webhook (required by the Pax8 API). Pick something memorable — e.g. "Subscription events — prod"',
+  )
   .option(
     "--topics <comma-separated-topics>",
     'Topics to subscribe to, comma-separated (e.g. "subscription.created,invoice.paid")',
@@ -46,10 +50,11 @@ export const webhooksCreateCommand = new Command("create")
     "after",
     `
 Examples:
-  pax8 webhooks create --url https://example.com/hook --topics subscription.created,subscription.cancelled
-  pax8 webhooks create --url https://example.com/hook --topics invoice.paid --yes
+  pax8 webhooks create --url https://example.com/hook --display-name "Subscription events" --topics subscription.created,subscription.cancelled
+  pax8 webhooks create --url https://example.com/hook --display-name "Invoice events" --topics invoice.paid --yes
 
-Note: --events is a deprecated alias for --topics; it still works but will be removed in v1.0.`,
+Note: --events is a deprecated alias for --topics; it still works but will be removed in v1.0.
+Note: --display-name is required by the Pax8 webhooks API; the server will reject creates that omit it.`,
   )
   .action(async (_options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -58,6 +63,7 @@ Note: --events is a deprecated alias for --topics; it still works but will be re
       const ctx = await buildContext(allOpts);
 
       const url = String(allOpts.url);
+      const displayName = String(allOpts.displayName ?? "").trim();
 
       // Resolve the canonical `--topics` value, accepting `--events` as a
       // deprecated alias. Erroring if both are passed avoids a silent
@@ -104,7 +110,25 @@ Note: --events is a deprecated alias for --topics; it still works but will be re
           `Invalid webhook URL: "${url}"`,
           ["URL must be an http:// or https:// URL"],
           [
-            `Example: ${replCmd("pax8 webhooks create")} --url https://example.com/hook --topics subscription.created`,
+            `Example: ${replCmd("pax8 webhooks create")} --url https://example.com/hook --display-name "Subscription events" --topics subscription.created`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+
+      // `--display-name` is `requiredOption`, so Commander already rejects the
+      // missing case at parse time. Guard against the partner-script footgun
+      // of `--display-name ""` (the spec requires a non-empty string and a
+      // strict server 422s on whitespace-only).
+      if (displayName.length === 0) {
+        throw new CliError(
+          "Missing required option: --display-name",
+          [
+            "--display-name is required by the Pax8 webhooks API; the create call rejects empty values.",
+          ],
+          [
+            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --display-name "Subscription events" --topics subscription.created,invoice.paid`,
           ],
           undefined,
           ERROR_INVALID_INPUT,
@@ -116,15 +140,23 @@ Note: --events is a deprecated alias for --topics; it still works but will be re
           "At least one event topic is required",
           ["--topics must contain one or more comma-separated topic names"],
           [
-            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --topics subscription.created,invoice.paid`,
+            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --display-name "${displayName}" --topics subscription.created,invoice.paid`,
           ],
           undefined,
           ERROR_INVALID_INPUT,
         );
       }
 
+      // Transform the CLI's flat `--topics T1,T2` into the spec's structured
+      // `webhookTopics: [{ topic, filters }]` shape. The CLI doesn't expose
+      // per-topic filter expressions yet (#323 out-of-scope), so each entry
+      // ships with an empty filter array — the server accepts that as
+      // "deliver every event for this topic".
+      const webhookTopics = topics.map((topic) => ({ topic, filters: [] }));
+
       // Show what will be created
       process.stderr.write(chalk.bold("\n  Creating webhook subscription:\n\n"));
+      process.stderr.write(`  ${chalk.dim("Name:".padEnd(10))}${displayName}\n`);
       process.stderr.write(`  ${chalk.dim("URL:".padEnd(10))}${url}\n`);
       process.stderr.write(`  ${chalk.dim("Events:".padEnd(10))}${topics.join(", ")}\n`);
       process.stderr.write("\n");
@@ -139,7 +171,11 @@ Note: --events is a deprecated alias for --topics; it still works but will be re
       const doneCreate = markWriteInFlight("webhooks");
       let webhook;
       try {
-        webhook = await ctx.api.webhooks.create({ url, topics });
+        webhook = await ctx.api.webhooks.create({
+          url,
+          displayName,
+          webhookTopics,
+        });
       } finally {
         doneCreate();
       }

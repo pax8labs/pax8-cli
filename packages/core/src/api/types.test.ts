@@ -706,27 +706,66 @@ describe("WebhookSchema", () => {
   });
 });
 
-describe("CreateWebhookInputSchema", () => {
-  it("validates correct input", () => {
+describe("CreateWebhookInputSchema (#323)", () => {
+  // The Pax8 webhooks v2 spec marks `displayName` required and uses the
+  // structured `webhookTopics: Array<{ topic, filters }>` shape. Tests pin
+  // both the happy path and the two known rejection cases the issue calls
+  // out (missing displayName, wrong topics shape).
+  it("validates a spec-shaped create body", () => {
     const input = {
+      displayName: "Subscription events",
       url: "https://example.com/webhook",
-      topics: ["subscription.created"],
+      webhookTopics: [{ topic: "subscription.created", filters: [] }],
     };
     expect(CreateWebhookInputSchema.parse(input)).toEqual(input);
   });
 
-  it("rejects empty topics", () => {
+  it("defaults filters to [] when omitted on a topic entry", () => {
+    const input = {
+      displayName: "Subscription events",
+      url: "https://example.com/webhook",
+      webhookTopics: [{ topic: "subscription.created" }],
+    };
+    const parsed = CreateWebhookInputSchema.parse(input);
+    expect(parsed.webhookTopics[0].filters).toEqual([]);
+  });
+
+  it("rejects missing displayName (required by spec)", () => {
     expect(() =>
       CreateWebhookInputSchema.parse({
         url: "https://example.com/webhook",
-        topics: [],
+        webhookTopics: [{ topic: "subscription.created", filters: [] }],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects empty webhookTopics", () => {
+    expect(() =>
+      CreateWebhookInputSchema.parse({
+        displayName: "Empty",
+        url: "https://example.com/webhook",
+        webhookTopics: [],
       }),
     ).toThrow();
   });
 
   it("rejects invalid url", () => {
     expect(() =>
-      CreateWebhookInputSchema.parse({ url: "bad", topics: ["sub.created"] }),
+      CreateWebhookInputSchema.parse({
+        displayName: "Bad URL",
+        url: "bad",
+        webhookTopics: [{ topic: "sub.created", filters: [] }],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects the legacy `topics: string[]` shape (regression guard for #323)", () => {
+    expect(() =>
+      CreateWebhookInputSchema.parse({
+        displayName: "Legacy shape",
+        url: "https://example.com/webhook",
+        topics: ["subscription.created"],
+      }),
     ).toThrow();
   });
 });

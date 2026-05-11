@@ -53,7 +53,7 @@ Examples:
           if (sorted.length > 0) {
             nextActions.push({
               command:
-                "pax8 webhooks create --url https://example.com/hook --topics " +
+                'pax8 webhooks create --url https://example.com/hook --display-name "My webhook" --topics ' +
                 sorted[0].topic,
               description: "Create a webhook subscribed to this topic",
             });
@@ -86,7 +86,7 @@ Examples:
         if (sorted.length > 0) {
           process.stderr.write(chalk.dim("\n  Try next:\n"));
           process.stderr.write(
-            `    ${chalk.cyan(replCmd(`pax8 webhooks create --url https://example.com/hook --topics ${sorted[0].topic}`))}  ${chalk.dim("subscribe to a topic")}\n`,
+            `    ${chalk.cyan(replCmd(`pax8 webhooks create --url https://example.com/hook --display-name "My webhook" --topics ${sorted[0].topic}`))}  ${chalk.dim("subscribe to a topic")}\n`,
           );
           process.stderr.write("\n");
         }

@@ -97,6 +97,8 @@ describe("pax8 webhooks create — --topics canonical with --events deprecated a
       "create",
       "--url",
       "https://example.com/topics-hook",
+      "--display-name",
+      "Topics hook",
       "--topics",
       "subscription.created,invoice.paid",
       "--yes",
@@ -115,6 +117,8 @@ describe("pax8 webhooks create — --topics canonical with --events deprecated a
       "create",
       "--url",
       "https://example.com/events-hook",
+      "--display-name",
+      "Events hook",
       "--events",
       "subscription.created",
       "--yes",
@@ -134,6 +138,8 @@ describe("pax8 webhooks create — --topics canonical with --events deprecated a
       "create",
       "--url",
       "https://example.com/dup-hook",
+      "--display-name",
+      "Dup hook",
       "--topics",
       "subscription.created",
       "--events",
@@ -152,5 +158,86 @@ describe("pax8 webhooks create — --topics canonical with --events deprecated a
     expect(result.stdout).toContain("--topics");
     expect(result.stdout).toContain("--events");
     expect(result.stdout.toLowerCase()).toContain("deprecated");
+  });
+});
+
+// #323: webhooks create body-shape mismatch. The CLI must require
+// `--display-name` (the Pax8 webhooks v2 spec marks it required and a
+// strict server 422s without it) and translate the flat `--topics` flag
+// into the structured `webhookTopics: [{ topic, filters }]` wire shape.
+// CLI vocabulary stays as `--topics` so partner scripts keep working.
+describe("pax8 webhooks create — #323 body-shape requirements", () => {
+  it("requires --display-name (Commander rejects when omitted)", async () => {
+    const result = await runCliExpectFailure([
+      "webhooks",
+      "create",
+      "--url",
+      "https://example.com/missing-name",
+      "--topics",
+      "subscription.created",
+      "--yes",
+    ]);
+    // Commander surfaces `error: required option '--display-name <name>' not specified`
+    // on stderr; assert on both the flag name and the canonical phrasing so a
+    // future help-text refactor can't silently drop the requirement.
+    expect(result.stderr.toLowerCase()).toContain("--display-name");
+    expect(result.stderr.toLowerCase()).toContain("required");
+  });
+
+  it("rejects whitespace-only --display-name with a clear ERROR_INVALID_INPUT", async () => {
+    const result = await runCliExpectFailure([
+      "webhooks",
+      "create",
+      "--url",
+      "https://example.com/blank-name",
+      "--display-name",
+      "   ",
+      "--topics",
+      "subscription.created",
+      "--yes",
+      "--json",
+    ]);
+    const start = result.stderr.indexOf("{");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const json = JSON.parse(result.stderr.slice(start));
+    expect(json.code).toBe("ERROR_INVALID_INPUT");
+    expect(JSON.stringify(json)).toContain("--display-name");
+  });
+
+  it("--help advertises --display-name and explains why it's required", async () => {
+    const result = await runCliExpectSuccess([
+      "webhooks",
+      "create",
+      "--help",
+    ]);
+    expect(result.stdout).toContain("--display-name");
+    // The help text justifies the flag in terms the partner can act on:
+    // the API requires it, so we require it. Pin the substring so a future
+    // copy-edit doesn't silently drop the rationale.
+    expect(result.stdout.toLowerCase()).toContain("pax8 api");
+  });
+
+  it("transforms --topics T1,T2 into the structured webhookTopics shape on the returned record", async () => {
+    // Demo mode's mock client receives the new `{ url, displayName,
+    // webhookTopics }` payload and surfaces a normal Webhook back. The
+    // returned record's `topics` field reflects the slugs the user asked
+    // for, confirming the CLI didn't drop them on the way through the
+    // structured wire shape.
+    const result = await runCliExpectSuccess([
+      "webhooks",
+      "create",
+      "--url",
+      "https://example.com/structured-hook",
+      "--display-name",
+      "Structured hook — prod",
+      "--topics",
+      "subscription.created,invoice.paid",
+      "--yes",
+      "--json",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(data.url).toBe("https://example.com/structured-hook");
+    expect(data.displayName).toBe("Structured hook — prod");
+    expect(data.topics).toEqual(["subscription.created", "invoice.paid"]);
   });
 });

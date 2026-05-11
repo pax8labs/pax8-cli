@@ -537,9 +537,40 @@ export const WebhookSchema = z.object({
 });
 export type Webhook = z.infer<typeof WebhookSchema>;
 
+/**
+ * One entry in the `webhookTopics` array on `POST /webhooks` (Pax8 webhooks
+ * API v2 `AddWebhookTopic` schema). The wire shape is structured —
+ * `{ topic, filters }` — not a bare string. `filters` is required on the
+ * server side, but the CLI doesn't expose per-topic filter expressions yet,
+ * so the default-empty `[]` is sent. The `filters` element type is left
+ * loose (`z.unknown()`) on purpose: the spec accepts `UpdateWebhookFilter`
+ * objects ({ action, conditions: [{ field, operator, value }] }) but the
+ * CLI surface for authoring them is a separate feature and the schema
+ * shouldn't reject filters the user assembles by hand against the spec.
+ */
+export const AddWebhookTopicSchema = z.object({
+  topic: z.string().min(1),
+  filters: z.array(z.unknown()).default([]),
+});
+export type AddWebhookTopic = z.infer<typeof AddWebhookTopicSchema>;
+
+/**
+ * Request body for `POST /webhooks` (Pax8 webhooks API v2 `CreateWebhook`
+ * schema). `displayName` is required by the spec — a spec-strict server
+ * 422s without it. `webhookTopics` is the structured replacement for the
+ * pre-#323 `topics: string[]` shape; each entry carries a `topic` slug and
+ * an optional filter array.
+ *
+ * Only the two fields the spec marks required plus the topic subscription
+ * list are modeled here. `authorization`, `active`, `contactEmail`,
+ * `errorThreshold`, and `integrationId` are accepted by the spec on create
+ * but are intentionally not exposed by the CLI yet — they're tracked as
+ * separate flag-surface enhancements in #323's "out of scope" section.
+ */
 export const CreateWebhookInputSchema = z.object({
+  displayName: z.string().min(1),
   url: z.string().url(),
-  topics: z.array(z.string()).min(1),
+  webhookTopics: z.array(AddWebhookTopicSchema).min(1),
 });
 export type CreateWebhookInput = z.infer<typeof CreateWebhookInputSchema>;
 
