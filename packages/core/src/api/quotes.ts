@@ -22,9 +22,9 @@ const PaginatedQuoteSchema = PaginatedResponseSchema(QuoteSchema);
  * with `apiVersion` to override the version segment per call — every call in
  * this class passes `V2`. See #307 and `docs/triage/quotes-api-version.md`.
  *
- * Body shapes for the write endpoints are tracked separately under the
- * `quotes-v2-body-shape` label (#311–#314) and are intentionally not
- * addressed in this layer — this hotfix is wire-path only.
+ * Body shapes for the remaining write endpoints are tracked separately under
+ * the `quotes-v2-body-shape` label (#312, #313, #314). The `create` body
+ * shape (`{ clientId, quoteRequestId? }`) was reconciled in #311.
  */
 const V2: RequestOpts = { apiVersion: "v2" };
 
@@ -49,6 +49,14 @@ export class QuotesApi {
     return QuoteSchema.parse(raw);
   }
 
+  /**
+   * Create an empty quote. Per the v2 spec (`POST /v2/quotes`), the body is
+   * `{ clientId, quoteRequestId? }` and **line items are not accepted on
+   * create** — they must be appended via `addLineItem` after the quote
+   * exists. The CLI's `quotes create` orchestrates that two-call flow when
+   * the user passes `--product`. See #311 and
+   * `docs/triage/quotes-api-version.md` §9.1.
+   */
   async create(data: CreateQuoteInput): Promise<Quote> {
     const raw = await this.client.post<unknown>("/quotes", data, V2);
     return QuoteSchema.parse(raw);

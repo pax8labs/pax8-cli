@@ -71,19 +71,30 @@ describe("QuotesApi", () => {
     expect(result.companyId).toBe(COMPANY_ID);
   });
 
-  it("create sends correct body (routed to /v2)", async () => {
-    const input = {
-      companyId: COMPANY_ID,
-      lineItems: [
-        { productId: "d4e5f6a7-b890-1234-cdef-567890123456", quantity: 10 },
-      ],
-    };
+  // Per #311: `POST /v2/quotes` accepts only `{ clientId, quoteRequestId? }`.
+  // Line items are added through a separate `POST /v2/quotes/{id}/line-items`
+  // call. A regression to the pre-#311 `{ companyId, lineItems }` shape
+  // would 4xx against the real API.
+  it("create sends { clientId } only (routed to /v2)", async () => {
+    const input = { clientId: COMPANY_ID };
     (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
 
     const result = await api.create(input);
 
     expect(client.post).toHaveBeenCalledWith("/quotes", input, V2_OPTS);
     expect(result.id).toBe(QUOTE_ID);
+  });
+
+  it("create forwards an optional quoteRequestId when provided (routed to /v2)", async () => {
+    const input = {
+      clientId: COMPANY_ID,
+      quoteRequestId: "qr-1111-2222-3333-4444-555555555555",
+    };
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
+
+    await api.create(input);
+
+    expect(client.post).toHaveBeenCalledWith("/quotes", input, V2_OPTS);
   });
 
   it("update sends correct body (routed to /v2)", async () => {

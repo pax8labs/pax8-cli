@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import {
+  runCli,
+  runCliExpectSuccess,
+  runCliExpectFailure,
+} from "./test-utils.js";
 
 describe("pax8 quotes create", () => {
   describe("--help", () => {
@@ -33,6 +37,144 @@ describe("pax8 quotes create", () => {
       const result = await runCliExpectSuccess(["quotes", "create", "--help"]);
       expect(result.stdout).toContain("pax8 quotes update");
       expect(result.stdout).toContain("--expiration-date");
+    });
+
+    // Per #311: `--product` is optional on `quotes create`. Without it, the
+    // command produces an empty draft quote (the natural shape for the v2
+    // body `{ clientId, quoteRequestId? }`); with it, the command chains a
+    // line-item POST as a convenience shorthand.
+    it("declares --product as optional (#311)", async () => {
+      const result = await runCliExpectSuccess(["quotes", "create", "--help"]);
+      const optionsSection = result.stdout.split("Examples:")[0] ?? result.stdout;
+      // Required options render as `--company <id|name>` with no surrounding
+      // brackets in commander's help; optional ones are differentiated by
+      // the help footer text describing them. We assert the help text frames
+      // --product as optional / behavior-only-when-supplied.
+      expect(optionsSection).toContain("--product");
+      expect(optionsSection).toMatch(/[Oo]ptional|when set/);
+    });
+
+    it("describes the two-step body shape in the help footer (#311)", async () => {
+      const result = await runCliExpectSuccess(["quotes", "create", "--help"]);
+      expect(result.stdout).toContain("POST /v2/quotes");
+      expect(result.stdout).toContain("clientId");
+      // Both example shapes (empty + shorthand) should be visible.
+      expect(result.stdout).toMatch(/Empty quote|empty draft|Empty/);
+    });
+  });
+
+  describe("empty-quote path (#311)", () => {
+    it("creates an empty draft quote when --product is not supplied", async () => {
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data[0]).toHaveProperty("id");
+      expect(data[0].id).toMatch(/^quote-demo-/);
+      expect(data[0].status).toBe("Draft");
+      // Per the v2 spec, line items are never on the create response — the
+      // mock returns an empty array here.
+      expect(Array.isArray(data[0].lineItems)).toBe(true);
+      expect(data[0].lineItems.length).toBe(0);
+    });
+
+    it("hints at `quotes line-items add` after creating an empty quote", async () => {
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--yes",
+      ]);
+      // The hint is on stderr (non-JSON path).
+      expect(result.stderr).toContain("quotes line-items add");
+    });
+  });
+
+  describe("shorthand --product path (#311)", () => {
+    it("creates the quote then appends a single line item in one command", async () => {
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "5",
+        "--billing-term",
+        "Annual",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data[0]).toHaveProperty("id");
+      expect(data[0].id).toMatch(/^quote-demo-/);
+      // The line-item POST happens after create, so the returned quote
+      // should reflect the appended item.
+      expect(Array.isArray(data[0].lineItems)).toBe(true);
+      expect(data[0].lineItems.length).toBe(1);
+      expect(data[0].lineItems[0].productId).toBe("prod-m365-e3-0003");
+      expect(data[0].lineItems[0].quantity).toBe(5);
+    });
+
+    it("rejects non-positive --quantity when --product is set", async () => {
+      const result = await runCliExpectFailure([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "-1",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/[Ii]nvalid quantity/);
+    });
+  });
+
+  describe("partial-failure recovery hint (#311)", () => {
+    // The shorthand path is two wire calls (POST /v2/quotes, then
+    // POST /v2/quotes/{id}/line-items). If the second succeeds-but-fails
+    // after the first commits, the user has a created quote but no line
+    // item — and no way to know what the new quote ID was. The command
+    // must surface that ID prominently with a recovery hint per #311's
+    // acceptance criteria.
+    it("surfaces the created quote ID and recovery command when line-item add fails", async () => {
+      const result = await runCli(
+        [
+          "quotes",
+          "create",
+          "--company",
+          "Summit Healthcare Partners",
+          "--product",
+          "prod-m365-e3-0003",
+          "--quantity",
+          "5",
+          "--yes",
+        ],
+        { PAX8_DEMO_FAIL_QUOTE_LINE_ITEM_ADD: "1" },
+      );
+      // The command should exit non-zero (line-item add failed) but only
+      // after surfacing the created quote ID and the recovery hint.
+      expect(result.exitCode).not.toBe(0);
+      // The recovery hint mentions the quote was created.
+      expect(result.stderr).toMatch(/[Qq]uote .* was created/);
+      // It surfaces the new quote ID (demo IDs start with `quote-demo-`).
+      expect(result.stderr).toMatch(/quote-demo-\d+/);
+      // It offers a concrete recovery command pointing at `quotes line-items add`.
+      expect(result.stderr).toContain("quotes line-items add");
+      expect(result.stderr).toContain("--product");
+      expect(result.stderr).toContain("--quantity");
     });
   });
 });

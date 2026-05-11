@@ -385,14 +385,16 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   describe("quotes.create()", () => {
-    it("creates a quote", async () => {
+    // Per #311: v2 body is `{ clientId, quoteRequestId? }` only — no line
+    // items on create.
+    it("creates an empty draft quote against the v2 body shape", async () => {
       const result = await client.quotes.create({
-        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        companyName: "Summit Healthcare Partners",
-        total: 1000,
+        clientId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       });
       expect(result.id).toContain("quote-demo-");
       expect(result.status).toBe("Draft");
+      expect(result.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+      expect(result.lineItems).toEqual([]);
     });
   });
 
