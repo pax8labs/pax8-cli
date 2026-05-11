@@ -38,9 +38,14 @@ function summarizeActiveCommitment(
 /**
  * Validate a `YYYY-MM-DD` cancel date. Returns the normalized string on
  * success, throws a `CliError(ERROR_INVALID_INPUT)` with recovery hints on
- * failure. We accept the simple ISO calendar form only — the Pax8 API treats
- * `cancelDate` as a date (not a timestamp), and accepting timestamps would
- * silently drop the time portion.
+ * failure.
+ *
+ * Surface-shape note (#333): we accept the simple ISO calendar form only on
+ * the CLI surface so partner scripts keep working. The Pax8 OpenAPI spec
+ * types the underlying `cancelDate` query parameter as `format: date-time`
+ * (RFC 3339, e.g. `2026-12-31T00:00:00Z`); `SubscriptionsApi.delete()`
+ * normalizes the date-only form to `YYYY-MM-DDT00:00:00Z` before the wire
+ * call, matching the spec without forcing partners to pass timestamps.
  */
 function parseCancelDate(raw: string): string {
   const trimmed = raw.trim();

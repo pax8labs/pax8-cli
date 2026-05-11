@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { SubscriptionsApi } from "./subscriptions.js";
+import { SubscriptionsApi, normalizeCancelDateForWire } from "./subscriptions.js";
 import type { Pax8Client } from "./client.js";
 
 function createMockClient(): Pax8Client {
@@ -104,15 +104,48 @@ describe("SubscriptionsApi", () => {
     expect(client.delete).toHaveBeenCalledWith(`/subscriptions/${SUB_ID}`, undefined);
   });
 
-  it("delete forwards cancelDate as a query parameter", async () => {
+  // #333: spec types `cancelDate` as `format: date-time`. The CLI surface
+  // takes `YYYY-MM-DD` for partner ergonomics; the API client normalizes
+  // it to `YYYY-MM-DDT00:00:00Z` before the wire call so the wire payload
+  // matches the spec.
+  it("delete normalizes YYYY-MM-DD cancelDate to ISO date-time on the wire (#333)", async () => {
     (client.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
     await api.delete(SUB_ID, { cancelDate: "2026-12-31" });
 
     expect(client.delete).toHaveBeenCalledWith(
       `/subscriptions/${SUB_ID}`,
-      { cancelDate: "2026-12-31" },
+      { cancelDate: "2026-12-31T00:00:00Z" },
     );
+  });
+
+  it("delete passes through an already-formatted ISO date-time unchanged (#333)", async () => {
+    (client.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    const iso = "2026-12-31T01:30:00.000-05:00";
+    await api.delete(SUB_ID, { cancelDate: iso });
+
+    expect(client.delete).toHaveBeenCalledWith(
+      `/subscriptions/${SUB_ID}`,
+      { cancelDate: iso },
+    );
+  });
+
+  describe("normalizeCancelDateForWire (#333)", () => {
+    it("promotes YYYY-MM-DD to midnight-UTC date-time", () => {
+      expect(normalizeCancelDateForWire("2026-12-31")).toBe(
+        "2026-12-31T00:00:00Z",
+      );
+    });
+
+    it("passes through full ISO date-time strings unchanged", () => {
+      expect(normalizeCancelDateForWire("2026-12-31T00:00:00Z")).toBe(
+        "2026-12-31T00:00:00Z",
+      );
+      expect(
+        normalizeCancelDateForWire("2026-12-31T01:30:00.000-05:00"),
+      ).toBe("2026-12-31T01:30:00.000-05:00");
+    });
   });
 
   it("throws on invalid response data", async () => {

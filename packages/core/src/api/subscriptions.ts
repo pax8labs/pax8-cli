@@ -45,11 +45,49 @@ export class SubscriptionsApi {
 
   /**
    * Cancel a subscription. By default the cancellation is immediate; pass
-   * `cancelDate` (ISO `YYYY-MM-DD`) to schedule the cancellation for a future
-   * date — the Pax8 API forwards it as the `cancelDate` query parameter.
+   * `cancelDate` to schedule the cancellation for a future date — the Pax8
+   * API forwards it as the `cancelDate` query parameter.
+   *
+   * Wire-format note (#333): the Pax8 OpenAPI spec types `cancelDate` as
+   * `format: date-time` (RFC 3339 / ISO 8601 with a zone offset, e.g.
+   * `2026-12-31T00:00:00Z`). The CLI surface accepts user-friendly
+   * `YYYY-MM-DD`; this method normalizes that shape to `YYYY-MM-DDT00:00:00Z`
+   * before forwarding so the wire payload matches the spec. Full
+   * `date-time` strings (with `T` and offset) are passed through unchanged,
+   * letting callers that already hold an ISO timestamp use it as-is.
+   *
+   * Same defensive-normalization approach #312 used for `effectiveDate` on
+   * `quotes line-items add`.
    */
   async delete(id: string, params?: { cancelDate?: string }): Promise<void> {
-    const query = params?.cancelDate ? { cancelDate: params.cancelDate } : undefined;
+    const query = params?.cancelDate
+      ? { cancelDate: normalizeCancelDateForWire(params.cancelDate) }
+      : undefined;
     await this.client.delete(`/subscriptions/${id}`, query);
   }
+}
+
+/**
+ * Normalize a `cancelDate` value to the RFC 3339 / ISO 8601 `date-time`
+ * shape the Pax8 API spec requires (`format: date-time` on the
+ * `cancelDate` query parameter of `DELETE /subscriptions/{id}`).
+ *
+ * - `YYYY-MM-DD` → `YYYY-MM-DDT00:00:00Z` (midnight UTC of the given day).
+ *   Pinning to UTC midnight avoids day-shift bugs when the caller's local
+ *   zone differs from the API's interpretation.
+ * - Strings already containing `T` are assumed to be full ISO `date-time`
+ *   and are passed through unchanged — callers that already hold a
+ *   timestamp shouldn't have it rewritten.
+ *
+ * Exported for the unit test that pins the wire shape.
+ */
+export function normalizeCancelDateForWire(raw: string): string {
+  // Date-only shape `YYYY-MM-DD` — promote to midnight-UTC date-time.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return `${raw}T00:00:00Z`;
+  }
+  // Anything else is treated as already-formatted ISO date-time and
+  // passed through. Validation of arbitrary input happens at the CLI
+  // boundary (`packages/cli/src/commands/subscriptions/cancel.ts`).
+  return raw;
 }
