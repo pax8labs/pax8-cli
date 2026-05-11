@@ -47,7 +47,13 @@ const columns: Column[] = [
 export const subscriptionsListCommand = new Command("list")
   .description("List subscriptions")
   .option("--company <id|name>", "Filter by company ID or name")
-  .option("--status <status>", "Filter by status (Active, Cancelled, PendingManual, Trial, etc.)")
+  // Help text mirrors the full public OpenAPI enum for `GET /subscriptions`'s
+  // `status` query parameter (#250). Previously the help listed a "...etc."
+  // subset that elided 6 of the 10 documented values.
+  .option(
+    "--status <status>",
+    "Filter by status (Active, Cancelled, PendingManual, PendingAutomated, PendingCancel, WaitingForDetails, Trial, Converted, PendingActivation, Activated)"
+  )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")

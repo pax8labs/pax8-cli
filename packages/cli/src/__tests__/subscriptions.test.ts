@@ -53,6 +53,34 @@ describe("pax8 subscriptions list", () => {
     expect(result.stdout).toContain("Examples:");
   });
 
+  // #250: `--status` help text must enumerate every value documented for
+  // `GET /subscriptions`'s `status` query parameter in the public OpenAPI.
+  // Previously the help listed a "...etc." subset that hid 6 of 10 values.
+  it("--status help advertises every documented API enum value (#250)", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "list",
+      "--help",
+    ]);
+    const DOCUMENTED_STATUSES = [
+      "Active",
+      "Cancelled",
+      "PendingManual",
+      "PendingAutomated",
+      "PendingCancel",
+      "WaitingForDetails",
+      "Trial",
+      "Converted",
+      "PendingActivation",
+      "Activated",
+    ];
+    for (const status of DOCUMENTED_STATUSES) {
+      expect(result.stdout).toContain(status);
+    }
+    // No "etc." escape hatch — the list must be exhaustive.
+    expect(result.stdout).not.toMatch(/--status[^)]*etc\./);
+  });
+
   it("surfaces currencyCode in --json (USD baseline + non-USD fixture)", async () => {
     // The Coastline E3 fixture is seeded as `currencyCode: "EUR"`; everything
     // else is either USD or undefined. Exercises the field added in #273

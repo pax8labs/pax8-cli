@@ -280,6 +280,21 @@ describe("pax8 companies", () => {
       expect(result.stdout).toContain("--size");
     });
 
+    // #250: `--status` help text must mirror the documented enum exactly —
+    // neither inventing values nor omitting documented ones.
+    it("list --status help advertises exactly the documented enum (#250)", async () => {
+      const result = await runCliExpectSuccess(["companies", "list", "--help"]);
+      // Spec: components.schemas.Company.status + GET /companies?status=
+      // accepts: Active, Inactive, Deleted.
+      expect(result.stdout).toContain("Active");
+      expect(result.stdout).toContain("Inactive");
+      expect(result.stdout).toContain("Deleted");
+      // Regression guard: invented values seen elsewhere in the CLI must
+      // not creep into this help text.
+      expect(result.stdout).not.toContain("PendingManual");
+      expect(result.stdout).not.toContain("Cancelled");
+    });
+
     it("shows show help with examples", async () => {
       const result = await runCliExpectSuccess(["companies", "show", "--help"]);
       expect(result.stdout).toContain("Examples:");

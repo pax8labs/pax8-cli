@@ -14,7 +14,13 @@ export const invoicesListCommand = new Command("list")
   .description("List invoices")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
   .option("--company <id|name>", "Filter by company ID or name")
-  .option("--status <status>", "Filter by status (Unpaid, Paid, Void, Carried)")
+  // Help text mirrors the full public OpenAPI enum for `GET /invoices`'s
+  // `status` query parameter (#250). Previously the help listed only 4 of the
+  // 6 documented values (`Nothing Due` and `Credited` were missing).
+  .option(
+    "--status <status>",
+    'Filter by status (Unpaid, Paid, Void, Carried, "Nothing Due", Credited)'
+  )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
