@@ -31,13 +31,14 @@ export interface Company {
    * and tests need to be able to represent companies without an address.
    */
   address?: {
-    street: string;
-    city: string;
+    street?: string;
+    street2?: string;
+    city?: string;
     /** Mirrors the public `Address` schema field name (renamed in #327/#328). */
-    stateOrProvince: string;
+    stateOrProvince?: string;
     /** Mirrors the public `Address` schema field name (renamed in #327/#328). */
-    postalCode: string;
-    country: string;
+    postalCode?: string;
+    country?: string;
   };
   phone: string;
   website: string;
