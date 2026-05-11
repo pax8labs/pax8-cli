@@ -66,6 +66,8 @@ Specific call-outs:
 
 Already-correctly-hidden fields per existing review choices: `partnerCost`, `vendorSubscriptionId`, `parentSubscriptionId`, `updatedDate`. Per Josh Hollander's inline comment, `originalSubscriptionId` should never see the light of day — and it doesn't (was never in the CLI surface).
 
+**The exclusion is now CI-enforced.** `packages/core/src/api/types.test.ts` walks every exported Zod schema (top-level + nested through optional / nullable / default / array / union wrappers) and asserts that none of the permanently-excluded field names — `originalSubscriptionId`, `parentSubscriptionId`, `vendorSubscriptionId`, `partnerCost`, `wholesaleBuyRate`, `costTotal`, `billingFee` — appear. A future PR that introduces one fails the test suite with a clear message naming the field and the schema it appeared in. The forbidden list is policy-as-code with inline justifications per field; adding more requires explicit security review.
+
 ### Aggregation principle
 
 The Tiering doc's [Aggregation Principle](https://pax8.atlassian.net/wiki/spaces/PS1/pages/2748907531/Marketplace+Platform+Data+Risk+Tiering) notes that bulk export of individually-low-tier records can compose a higher-tier dataset. For the CLI, this is enforced server-side: the OAuth2 client-credentials flow scopes access to a single partner, so a partner aggregating their own subscriptions is the inherent design. Bulk-iteration is noted in SECURITY.md (added in #301) for downstream-handling awareness (logs, scripts, monitoring tools).
