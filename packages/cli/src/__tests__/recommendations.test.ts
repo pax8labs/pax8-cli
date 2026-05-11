@@ -176,6 +176,114 @@ describe("pax8 recommendations", () => {
         withCommand.every((r) => /--product\s+\S+/.test(r.orderCommand!)),
       ).toBe(true);
     });
+
+    // Path B (#375 precursor): every recommendation carries the additive
+    // `opportunityType` axis alongside the legacy `type`, using OE's
+    // canonical 5-type taxonomy. The legacy `type` is unchanged.
+    it("--json carries both legacy type and additive opportunityType (OE 5-type taxonomy)", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+      const data = JSON.parse(result.stdout) as Array<{
+        type: string;
+        opportunityType: string;
+      }>;
+      expect(data.length).toBeGreaterThan(0);
+      const allowed = new Set(["Upsell", "Cross-sell", "Add-on", "Upgrade", "Net-new"]);
+      for (const rec of data) {
+        expect(rec).toHaveProperty("type");
+        expect(rec).toHaveProperty("opportunityType");
+        expect(allowed.has(rec.opportunityType)).toBe(true);
+        // Mapping invariants (zero-sub → Net-new is asserted at the engine
+        // level; here we just check that seat_gap is always Upsell and
+        // cross_sell never becomes Add-on/Upgrade in the v0.x stopgap).
+        if (rec.type === "seat_gap") {
+          expect(rec.opportunityType).toBe("Upsell");
+        }
+        if (rec.type === "cross_sell") {
+          expect(["Cross-sell", "Net-new"]).toContain(rec.opportunityType);
+        }
+      }
+    });
+  });
+
+  describe("recommendations upsell", () => {
+    it("returns the upsell cohort as JSON by default", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "upsell",
+        "--from-product", "Microsoft 365 Business Basic",
+        "--to-product", "Microsoft 365 Business Premium",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout) as {
+        fromProduct: string;
+        toProduct: string;
+        matches: Array<{
+          companyName: string;
+          fromSeats: number;
+          fromMrr: number;
+          opportunityType: string;
+          contacts: Array<{ name: string; email: string }>;
+        }>;
+        totalFromMrr: number;
+        totalFromProductCompanies: number;
+        alreadyHaveToProduct: number;
+      };
+      expect(data.fromProduct).toBe("Microsoft 365 Business Basic");
+      expect(data.toProduct).toBe("Microsoft 365 Business Premium");
+      expect(Array.isArray(data.matches)).toBe(true);
+      // Demo data has companies on Basic without Premium → at least one match.
+      expect(data.matches.length).toBeGreaterThan(0);
+      for (const m of data.matches) {
+        expect(m.opportunityType).toBe("Upsell");
+        expect(m.fromSeats).toBeGreaterThan(0);
+        expect(Array.isArray(m.contacts)).toBe(true);
+      }
+    });
+
+    it("returns no matches when no company has the from-product", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "upsell",
+        "--from-product", "ThisProductDoesNotExistInDemoData99999",
+        "--to-product", "Microsoft 365 Business Premium",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout) as {
+        matches: unknown[];
+        totalFromProductCompanies: number;
+      };
+      expect(data.matches).toEqual([]);
+      expect(data.totalFromProductCompanies).toBe(0);
+    });
+
+    it("returns no matches when every from-product company already has to-product", async () => {
+      // Force the edge by passing the same product on both sides — every
+      // company on Premium trivially "already has" Premium, so the
+      // actionable cohort is empty even though the source cohort is not.
+      const result = await runCliExpectSuccess([
+        "recommendations", "upsell",
+        "--from-product", "Microsoft 365 Business Premium",
+        "--to-product", "Microsoft 365 Business Premium",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout) as {
+        matches: unknown[];
+        totalFromProductCompanies: number;
+        alreadyHaveToProduct: number;
+      };
+      expect(data.matches).toEqual([]);
+      expect(data.totalFromProductCompanies).toBeGreaterThan(0);
+      expect(data.alreadyHaveToProduct).toBe(data.totalFromProductCompanies);
+    });
+
+    it("errors when --from-product or --to-product is missing", async () => {
+      const result = await runCliExpectFailure([
+        "recommendations", "upsell",
+        "--from-product", "Microsoft 365 Business Basic",
+        "--json",
+      ]);
+      // Commander emits its own required-option message on stderr.
+      expect(result.stderr).toMatch(/--to-product|required/i);
+      expect(result.exitCode).not.toBe(0);
+    });
   });
 
   describe("recommendations act", () => {

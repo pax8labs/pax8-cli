@@ -75,20 +75,28 @@ Examples:
   pax8 recommendations list --json
 
 Recommendation types:
+  Each recommendation carries TWO classification axes in --json output:
+  the legacy 'type' field (cross_sell | seat_gap) and the additive
+  'opportunityType' field with OE's canonical 5-type taxonomy (Upsell |
+  Cross-sell | Add-on | Upgrade | Net-new). Mapping:
+    type=cross_sell + active subs    → opportunityType=Cross-sell
+    type=cross_sell + zero-sub cust  → opportunityType=Net-new
+    type=seat_gap                    → opportunityType=Upsell
+
   cross_sell: gaps in a customer's stack where a complementary product
-  category is missing. Aligns with Pax8 Opportunity Explorer's Cross-Sell
-  category. The CLI currently collapses multiple OE opportunity types
-  (Cross-Sell + Net-New + Add-On) into this single label for v0.x; the
-  full taxonomy will be adopted when the first-party recommendations
-  API ships (#62).
+  category is missing. Aligns with Pax8 Opportunity Explorer's Cross-sell
+  category for active-sub customers, and Net-new for zero-sub customers
+  (carried on 'opportunityType'). The legacy 'type' field collapses both
+  motions onto 'cross_sell' for v0.x; the full taxonomy migration is
+  deferred to v0.2 (#375) and ARC-785.
 
   seat_gap: a CLI-invented heuristic that flags cross-product seat
   mismatches (e.g. 100 email seats but only 30 backup seats). Identifies
   coverage gaps across a customer's stack — NOT the same as Pax8's
   canonical Seat Utilization metric, which measures single-product
-  assigned-vs-purchased seats. Also not equivalent to OE's Upsell
-  opportunity type. seat_gap will likely be retired or remapped when
-  OE's first-party API ships.
+  assigned-vs-purchased seats. Closest OE surrogate is Upsell (carried
+  on 'opportunityType'); seat_gap will likely be retired or remapped
+  when OE's first-party API ships.
 
 Estimate semantics:
   estimatedMrrUplift is an upper-bound estimate (unit price × seat
