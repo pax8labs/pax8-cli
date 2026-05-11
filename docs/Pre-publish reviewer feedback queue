@@ -23,7 +23,7 @@ Tracking domain-review reviewer comments through resolution. Updated as work lan
 ## Fred Lintz (Orders & Quotes)
 
 - [x] `intentType` writability — resolved via read-only convention: #304 (codebase comment + regression test + README user-scope note)
-- [x] `quotes create` shorthand semantics — resolved via help-text clarification: #305 (also audits `line-items add` flag coverage)
+- [x] `quotes create` shorthand semantics — superseded by #311 (decision preserved in domain review; implementation rolls into v2 rewrite)
 - [ ] `quotes create --expiration-date` silent no-op — #306 (surfaced during the #305 audit; flag is declared and displayed in the confirm prompt but never sent to the API)
 - [ ] v2 surface scope (sections, attachments, access-list, take-ownership) — Q4 in re-review block, open for domain owner
 
