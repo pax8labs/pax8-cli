@@ -32,7 +32,7 @@ export class CompaniesApi {
   }
 
   async update(id: string, data: UpdateCompanyInput): Promise<Company> {
-    const raw = await this.client.put<unknown>(`/companies/${id}`, data);
+    const raw = await this.client.patch<unknown>(`/companies/${id}`, data);
     return CompanySchema.parse(raw);
   }
 }
