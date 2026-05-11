@@ -82,12 +82,18 @@ export class QuotesApi {
    * about (totals, status).
    */
   async addLineItem(quoteId: string, input: AddQuoteLineItemInput): Promise<Quote> {
+    // `effectiveDate` and `price` are required fields on
+    // `AddStandardLineItemPayload` per the v2 quoting spec. See #312 and
+    // `docs/triage/quotes-api-version.md` §9.1 — the CLI command resolves
+    // sensible defaults (today, list price) before constructing this input.
     const payload = [
       {
         type: "Standard",
         productId: input.productId,
         quantity: input.quantity,
         ...(input.billingTerm ? { billingTerm: input.billingTerm } : {}),
+        effectiveDate: input.effectiveDate,
+        price: input.price,
       },
     ];
     await this.client.post<unknown>(`/quotes/${quoteId}/line-items`, payload, V2);

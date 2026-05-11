@@ -297,27 +297,33 @@ describe("MockPax8Client — extended coverage", () => {
 
   // ─── Usage ───────────────────────────────────────────────────────────────
 
-  describe("usage.listSummaries()", () => {
-    it("returns usage summaries", async () => {
-      const result = await client.usage.listSummaries({ size: 100 });
-      expect(result.content.length).toBeGreaterThan(0);
-    });
+  // The Pax8 public spec only exposes usage summaries under
+  // `/subscriptions/{subscriptionId}/usage-summaries` — there is no flat
+  // top-level list — so the mock now mirrors that contract (#337).
+  const REDWOOD_ACRONIS_SUB = "sub-redwood-acronis-007";
 
-    it("filters by companyId", async () => {
-      const result = await client.usage.listSummaries({
-        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        size: 100,
-      });
+  describe("usage.listSummaries()", () => {
+    it("returns usage summaries for a subscription", async () => {
+      const result = await client.usage.listSummaries(REDWOOD_ACRONIS_SUB, { size: 100 });
+      expect(result.content.length).toBeGreaterThan(0);
       for (const u of result.content) {
-        expect(u.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+        expect(u.subscriptionId).toBe(REDWOOD_ACRONIS_SUB);
       }
     });
 
+    it("returns empty content for a subscription with no usage", async () => {
+      const result = await client.usage.listSummaries("sub-with-no-usage", { size: 100 });
+      expect(result.content).toEqual([]);
+    });
+
     it("filters by resourceGroup", async () => {
-      const all = await client.usage.listSummaries({ size: 100 });
+      const all = await client.usage.listSummaries(REDWOOD_ACRONIS_SUB, { size: 100 });
       const group = all.content.find((u) => u.resourceGroup)?.resourceGroup;
       if (!group) return; // no demo data has resourceGroup → skip
-      const result = await client.usage.listSummaries({ resourceGroup: group, size: 100 });
+      const result = await client.usage.listSummaries(REDWOOD_ACRONIS_SUB, {
+        resourceGroup: group,
+        size: 100,
+      });
       for (const u of result.content) {
         expect(u.resourceGroup).toBe(group);
       }
@@ -326,7 +332,7 @@ describe("MockPax8Client — extended coverage", () => {
 
   describe("usage.getSummary()", () => {
     it("returns summary by id", async () => {
-      const all = await client.usage.listSummaries({ size: 100 });
+      const all = await client.usage.listSummaries(REDWOOD_ACRONIS_SUB, { size: 100 });
       const firstId = all.content[0].id;
       const summary = await client.usage.getSummary(firstId);
       expect(summary.id).toBe(firstId);
@@ -339,7 +345,7 @@ describe("MockPax8Client — extended coverage", () => {
 
   describe("usage.listLines()", () => {
     it("returns lines for a given summary id", async () => {
-      const summaries = await client.usage.listSummaries({ size: 100 });
+      const summaries = await client.usage.listSummaries(REDWOOD_ACRONIS_SUB, { size: 100 });
       const summaryId = summaries.content[0].id;
       const result = await client.usage.listLines(summaryId, { size: 100 });
       for (const line of result.content) {
@@ -426,8 +432,8 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   // ─── Webhooks ────────────────────────────────────────────────────────────
-  // Mock surface mirrors the real WebhooksApi (list, get, create, update,
-  // updateStatus, delete, test, getLogs, retryLog).
+  // Mock surface mirrors the real WebhooksApi (list, get, create,
+  // updateConfiguration, setStatus, delete, test, getLogs, retryLog).
 
   describe("webhooks.get()", () => {
     it("returns webhook by id", async () => {
@@ -451,37 +457,6 @@ describe("MockPax8Client — extended coverage", () => {
       expect(result.status).toBe("Active");
       expect(result.url).toBe("https://example.com/hook");
       expect(result.topics).toEqual(["subscription.created"]);
-    });
-  });
-
-  describe("webhooks.update()", () => {
-    it("updates a webhook", async () => {
-      const all = await client.webhooks.list();
-      const firstId = all[0].id;
-      const result = await client.webhooks.update(firstId, { url: "https://new.com/hook" });
-      expect(result.url).toBe("https://new.com/hook");
-      expect(result.id).toBe(firstId);
-    });
-
-    it("throws NotFoundError for unknown webhook", async () => {
-      await expect(
-        client.webhooks.update("nonexistent", { url: "https://x.com" }),
-      ).rejects.toThrow(NotFoundError);
-    });
-  });
-
-  describe("webhooks.updateStatus()", () => {
-    it("updates webhook status", async () => {
-      const all = await client.webhooks.list();
-      const firstId = all[0].id;
-      const result = await client.webhooks.updateStatus(firstId, "Disabled");
-      expect(result.status).toBe("Disabled");
-    });
-
-    it("throws NotFoundError for unknown webhook", async () => {
-      await expect(
-        client.webhooks.updateStatus("nonexistent", "Active"),
-      ).rejects.toThrow(NotFoundError);
     });
   });
 

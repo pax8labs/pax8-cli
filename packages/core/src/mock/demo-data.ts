@@ -171,6 +171,12 @@ export interface UsageSummary {
   companyName: string;
   productId: string;
   productName: string;
+  /**
+   * Subscription the summary rolls up to. Populated in demo data so that
+   * `pax8 usage list --subscription <id>` can mirror the nested wire path
+   * (`GET /v1/subscriptions/{subscriptionId}/usage-summaries`).
+   */
+  subscriptionId?: string;
   date: string;
   quantity: number;
   unitPrice: number;
@@ -1671,6 +1677,7 @@ export const usageSummaries: UsageSummary[] = [
     companyName: "Redwood Manufacturing",
     productId: "prod-acronis-backup-0009",
     productName: "AvePoint Cloud Backup for Microsoft 365",
+    subscriptionId: "sub-redwood-acronis-007",
     date: `${currentMonth}-15`,
     quantity: 850,
     unitPrice: 0.3,
@@ -1683,6 +1690,7 @@ export const usageSummaries: UsageSummary[] = [
     companyName: "Redwood Manufacturing",
     productId: "prod-acronis-backup-0009",
     productName: "AvePoint Cloud Backup for Microsoft 365",
+    subscriptionId: "sub-redwood-acronis-007",
     date: `${lastMonth}-15`,
     quantity: 810,
     unitPrice: 0.3,

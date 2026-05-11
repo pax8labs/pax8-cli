@@ -382,6 +382,14 @@ export const UsageSummarySchema = z.object({
   id: z.string(),
   companyId: z.string(),
   productId: z.string(),
+  /**
+   * Subscription the usage rolls up to. Optional because not every backend
+   * response includes it (the field is denormalized client-side from the
+   * `/subscriptions/{id}/usage-summaries` request context), but populated in
+   * demo data so commands can resolve summary → subscription without a
+   * second lookup.
+   */
+  subscriptionId: z.string().optional(),
   date: z.string(),
   quantity: z.number(),
   unitPrice: z.number(),
@@ -513,13 +521,6 @@ export const CreateWebhookInputSchema = z.object({
 });
 export type CreateWebhookInput = z.infer<typeof CreateWebhookInputSchema>;
 
-export const UpdateWebhookInputSchema = z.object({
-  url: z.string().url().optional(),
-  topics: z.array(z.string()).optional(),
-  status: WebhookStatusSchema.optional(),
-});
-export type UpdateWebhookInput = z.infer<typeof UpdateWebhookInputSchema>;
-
 /**
  * Mutable configuration fields for `POST /webhooks/{id}/configuration`.
  * Mirrors the `UpdateWebhookConfiguration` shape in webhook-manager v2/v2.1.
@@ -628,12 +629,21 @@ export type UpdateQuoteInput = z.infer<typeof UpdateQuoteInputSchema>;
  * line item. The upstream API accepts an array of mixed-type payloads
  * (Standard / Custom / UsageBased); we expose the common Standard shape here
  * because that's what `quotes line-items add` constructs from `--product`,
- * `--quantity`, and `--billing-term`.
+ * `--quantity`, `--billing-term`, `--price`, and `--effective-date`.
+ *
+ * `effectiveDate` and `price` are required by the v2 `AddStandardLineItemPayload`
+ * schema (see #312, `docs/triage/quotes-api-version.md` §9.1). `effectiveDate`
+ * is an ISO 8601 date-time string (e.g. `2026-05-11T00:00:00Z`); `price` is the
+ * per-unit price the partner is quoting to the customer (defaults to the
+ * product's list price / `suggestedRetailPrice` for the chosen `billingTerm`
+ * when the CLI resolves it).
  */
 export const AddQuoteLineItemInputSchema = z.object({
   productId: z.string(),
   quantity: z.number().int().positive(),
   billingTerm: BillingTermSchema.optional(),
+  effectiveDate: z.string(),
+  price: z.number(),
 });
 export type AddQuoteLineItemInput = z.infer<typeof AddQuoteLineItemInputSchema>;
 

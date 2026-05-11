@@ -49,7 +49,7 @@ describe("pax8 quotes line-items", () => {
   });
 
   describe("line-items add", () => {
-    it("adds a line item and prints the new ID + count (auto-confirm with -y)", async () => {
+    it("adds a line item and prints the new ID + count (auto-confirm with -y, default price resolves from product catalog)", async () => {
       const result = await runCliExpectSuccess([
         "quotes",
         "line-items",
@@ -73,6 +73,101 @@ describe("pax8 quotes line-items", () => {
       expect(data[0].lineItemId).toMatch(/^li-/);
       // Started at 1 line item, should now be 2.
       expect(data[0].lineItemCount).toBe(2);
+      // The default-price resolution should produce a non-null unitPrice on
+      // the newly added line. Per #312: with no `--price` flag, the command
+      // looks up the product's list price for the chosen billing term.
+      const newLineId = data[0].lineItemId as string;
+      const newLine = (data[0].quote.lineItems as Array<{ id: string; unitPrice?: number }>).find(
+        (li) => li.id === newLineId,
+      );
+      expect(newLine).toBeDefined();
+      expect(typeof newLine?.unitPrice).toBe("number");
+      expect(newLine!.unitPrice).toBeGreaterThan(0);
+    });
+
+    it("--price overrides the resolved default", async () => {
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "line-items",
+        "add",
+        "quote-redwood-001",
+        "--product",
+        "prod-aad-p1-0008",
+        "--quantity",
+        "2",
+        "--billing-term",
+        "Monthly",
+        "--price",
+        "99.99",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      const newLineId = data[0].lineItemId as string;
+      const newLine = (data[0].quote.lineItems as Array<{ id: string; unitPrice?: number }>).find(
+        (li) => li.id === newLineId,
+      );
+      // Confirms the explicit --price flows through to the mock client and
+      // wins over the default list-price lookup.
+      expect(newLine?.unitPrice).toBe(99.99);
+    });
+
+    it("--effective-date accepts YYYY-MM-DD", async () => {
+      // The mock client doesn't persist effectiveDate in the demo line item
+      // shape, but we exercise the CLI plumbing end-to-end — the command must
+      // parse the flag, validate the format, and exit 0.
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "line-items",
+        "add",
+        "quote-redwood-001",
+        "--product",
+        "prod-aad-p1-0008",
+        "--quantity",
+        "1",
+        "--effective-date",
+        "2026-06-15",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data[0]).toHaveProperty("lineItemId");
+    });
+
+    it("rejects malformed --effective-date", async () => {
+      const result = await runCliExpectFailure([
+        "quotes",
+        "line-items",
+        "add",
+        "quote-redwood-001",
+        "--product",
+        "prod-aad-p1-0008",
+        "--quantity",
+        "1",
+        "--effective-date",
+        "06/15/2026",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/effective-date/i);
+    });
+
+    it("rejects negative --price", async () => {
+      const result = await runCliExpectFailure([
+        "quotes",
+        "line-items",
+        "add",
+        "quote-redwood-001",
+        "--product",
+        "prod-aad-p1-0008",
+        "--quantity",
+        "1",
+        "--price",
+        "-1",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/[Ii]nvalid price/);
     });
 
     it("rejects non-positive quantity", async () => {

@@ -167,6 +167,15 @@ export async function buildContext(
     const client = new Pax8Client({
       tokenManager,
       debug: verbose,
+      // Per-API base URL overrides (#321). The Webhooks API lives at
+      // `https://api.pax8.com/api/v2/webhooks/...` per the public webhooks
+      // OpenAPI spec — a different *prefix* than the project-wide `/v1`
+      // default. `WebhooksApi` opts into this base by passing
+      // `{ api: "webhooks" }` on every call (#322); the entry below is what
+      // routes those calls to the documented endpoint.
+      apiBaseOverrides: {
+        webhooks: "https://api.pax8.com/api/v2",
+      },
     });
 
     api = {
