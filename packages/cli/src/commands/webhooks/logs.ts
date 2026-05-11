@@ -163,12 +163,39 @@ async function runLogsList(
       },
     ];
 
+    const emptyReasons: string[] = [];
+    if (id) {
+      emptyReasons.push(`No delivery history for webhook ${id}.`);
+    } else {
+      emptyReasons.push("No webhook deliveries have been recorded.");
+    }
+    if (options.since) {
+      emptyReasons.push(`The --since ${options.since} window may be too narrow.`);
+    }
+
     output(allLogs, {
       format: ctx.outputFormat,
       columns,
+      emptyState: {
+        headline: "No webhook logs found.",
+        reasons: emptyReasons,
+        suggestions: id
+          ? [
+              {
+                command: replCmd(`pax8 webhooks test ${id}`),
+                description: "send a test delivery to populate logs",
+              },
+            ]
+          : [
+              {
+                command: replCmd("pax8 webhooks list"),
+                description: "list configured webhooks",
+              },
+            ],
+      },
     });
 
-    if (ctx.outputFormat === "table") {
+    if (ctx.outputFormat === "table" && allLogs.length > 0) {
       const failures = allLogs.filter(
         (l) => l.responseCode === 0 || l.responseCode >= 400,
       );

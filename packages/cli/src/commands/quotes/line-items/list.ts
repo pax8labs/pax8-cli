@@ -56,20 +56,33 @@ Examples:
         { key: "subtotal", header: "Subtotal", width: 14, format: (v) => v != null ? formatCurrency(Number(v)) : "—" },
       ];
 
-      output(lineItems, { format: ctx.outputFormat, columns });
+      output(lineItems, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: `No line items on quote ${quote.id}.`,
+          reasons: ["This quote is empty — add line items to make it sendable."],
+          suggestions: [
+            {
+              command: replCmd(
+                `pax8 quotes line-items add ${quote.id} --product <id|name> --quantity <n>`,
+              ),
+              description: "add a line item",
+            },
+          ],
+        },
+      });
 
-      if (ctx.outputFormat === "table") {
+      if (ctx.outputFormat === "table" && lineItems.length > 0) {
         process.stderr.write(
           chalk.dim(`\n  ${lineItems.length} line item${lineItems.length === 1 ? "" : "s"} on quote ${quote.id}\n`),
         );
-        if (lineItems.length > 0) {
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes line-items add ${quote.id} --product <id|name> --quantity <n>`))}  ${chalk.dim("add another line item")}\n`);
-          if (lineItems[0]?.id) {
-            process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes line-items remove ${quote.id} ${lineItems[0].id}`))}  ${chalk.dim("remove a line item")}\n`);
-          }
-          process.stderr.write("\n");
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes line-items add ${quote.id} --product <id|name> --quantity <n>`))}  ${chalk.dim("add another line item")}\n`);
+        if (lineItems[0]?.id) {
+          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes line-items remove ${quote.id} ${lineItems[0].id}`))}  ${chalk.dim("remove a line item")}\n`);
         }
+        process.stderr.write("\n");
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list line items");

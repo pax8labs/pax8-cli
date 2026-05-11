@@ -94,6 +94,24 @@ Use the formatters in `packages/cli/src/lib/formatters.ts` — don't roll your o
 
 If you need a new format, add it to `formatters.ts`. Don't inline.
 
+**Empty lists — render a message, not an empty table.** When a list command would return zero rows, an empty header-and-divider table reads as "something is broken." Pass an `emptyState` to `output()`:
+
+```ts
+output(rows, {
+  format: ctx.outputFormat,
+  columns,
+  emptyState: {
+    headline: "No invoices found.",
+    reasons: ["This may be a fresh tenant with no historical billing yet."],
+    suggestions: [
+      { command: "pax8 invoices list --status Unpaid", description: "show only unpaid" },
+    ],
+  },
+});
+```
+
+`emptyState` only fires in `table` mode with 0 rows. `--json` still emits `[]`, `--csv` still emits a header row, `--ids-only` still emits nothing — those are agent / pipeline contracts. The message itself goes to **stderr** so a `--json | jq` pipeline isn't disrupted if the user's terminal happens to render the human path. Gate any trailing footer (`N <thing>` count, "Try next" block) with `if (rows.length > 0)` so it doesn't print alongside the empty-state message.
+
 ---
 
 ## 4. Spinners — feedback, never noise

@@ -93,17 +93,30 @@ Examples:
         { key: "phone", header: "Phone", width: 18 },
       ];
 
-      output(result.content, { format: ctx.outputFormat, columns });
+      output(result.content, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: `No contacts found at ${company.name}.`,
+          reasons: ["This company has no contacts recorded yet."],
+          suggestions: [
+            {
+              command: replCmd(
+                `pax8 contacts create --company "${company.name}" --email <email> --first-name <name> --last-name <name>`,
+              ),
+              description: "add a contact",
+            },
+          ],
+        },
+      });
 
-      if (ctx.outputFormat === "table") {
+      if (ctx.outputFormat === "table" && result.content.length > 0) {
         process.stderr.write(
           chalk.dim(`\n  ${result.content.length} contacts at ${company.name}\n`)
         );
-        if (result.content.length > 0) {
-          const first = result.content[0];
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts show ${first.id}`))}  ${chalk.dim("view contact details")}\n`);
-        }
+        const first = result.content[0];
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts show ${first.id}`))}  ${chalk.dim("view contact details")}\n`);
         process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts create --company "${company.name}" --email <email> --first-name <name> --last-name <name>`))}  ${chalk.dim("add a contact")}\n`);
         process.stderr.write("\n");
       }

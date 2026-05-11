@@ -75,9 +75,34 @@ Examples:
         return;
       }
 
-      output(result.content, { format: ctx.outputFormat, columns });
+      const emptyReasons: string[] = [];
+      const filterDesc: string[] = [];
+      if (allOpts.company) filterDesc.push(`company "${allOpts.company}"`);
+      if (allOpts.status) filterDesc.push(`status ${allOpts.status}`);
+      if (filterDesc.length > 0) {
+        emptyReasons.push(
+          `No orders match the filters: ${filterDesc.join(", ")}.`,
+        );
+      } else {
+        emptyReasons.push("This tenant hasn't placed any orders yet.");
+      }
 
-      if (ctx.outputFormat === "table") {
+      output(result.content, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: "No orders found.",
+          reasons: emptyReasons,
+          suggestions: [
+            {
+              command: "pax8 orders create --company <id> --product <id> --quantity <n>",
+              description: "place a new order",
+            },
+          ],
+        },
+      });
+
+      if (ctx.outputFormat === "table" && result.content.length > 0) {
         process.stderr.write(
           chalk.dim(`\n  ${result.page.totalElements} orders\n\n`)
         );

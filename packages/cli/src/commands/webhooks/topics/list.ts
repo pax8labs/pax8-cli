@@ -75,21 +75,25 @@ Examples:
       output(sorted, {
         format: ctx.outputFormat,
         columns,
+        emptyState: {
+          headline: "No webhook topics available.",
+          reasons: [
+            "The webhook topics endpoint returned no topic definitions.",
+          ],
+        },
       });
 
-      if (ctx.outputFormat === "table") {
+      if (ctx.outputFormat === "table" && sorted.length > 0) {
         process.stderr.write(
           chalk.dim(
             `\n  ${sorted.length} topic${sorted.length === 1 ? "" : "s"}\n`,
           ),
         );
-        if (sorted.length > 0) {
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(
-            `    ${chalk.cyan(replCmd(`pax8 webhooks create --url https://example.com/hook --display-name "My webhook" --topics ${sorted[0].topic}`))}  ${chalk.dim("subscribe to a topic")}\n`,
-          );
-          process.stderr.write("\n");
-        }
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        process.stderr.write(
+          `    ${chalk.cyan(replCmd(`pax8 webhooks create --url https://example.com/hook --display-name "My webhook" --topics ${sorted[0].topic}`))}  ${chalk.dim("subscribe to a topic")}\n`,
+        );
+        process.stderr.write("\n");
       }
     } catch (error) {
       await handleCommandError(

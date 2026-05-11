@@ -221,9 +221,32 @@ Examples:
         return;
       }
 
-      output(numbered, { format: ctx.outputFormat, columns });
+      const emptyReasons: string[] = [];
+      if (allOpts.status) {
+        emptyReasons.push(`No companies match --status ${allOpts.status}.`);
+      }
+      emptyReasons.push("This may be a fresh tenant with no partners onboarded yet.");
 
-      if (ctx.outputFormat === "table") {
+      output(numbered, {
+        format: ctx.outputFormat,
+        columns,
+        emptyState: {
+          headline: "No companies found.",
+          reasons: emptyReasons,
+          suggestions: [
+            {
+              command: replCmd("pax8 companies create --name <name> ..."),
+              description: "add your first company",
+            },
+            {
+              command: "PAX8_DEMO=1 pax8 companies list",
+              description: "see what an active tenant looks like",
+            },
+          ],
+        },
+      });
+
+      if (ctx.outputFormat === "table" && result.content.length > 0) {
         const currentPage = result.page.number; // 0-based from API
         const totalPages = result.page.totalPages;
         const totalElements = result.page.totalElements;

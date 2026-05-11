@@ -17,9 +17,44 @@ export interface Column {
   format?: (value: unknown, row?: Record<string, unknown>) => string;
 }
 
+/**
+ * A suggestion rendered under the empty-state message as a copy-pasteable
+ * command. The CLI command is shown in cyan; the description in dim text.
+ */
+export interface EmptyStateSuggestion {
+  /** Shell-runnable command, e.g. `pax8 companies create --name "Acme"`. */
+  command: string;
+  /** Short hint describing what the command does. */
+  description: string;
+}
+
+/**
+ * Replaces an empty data table with a clear, helpful message. Rendered to
+ * stderr only when `format === "table"` and `data.length === 0`. JSON / CSV /
+ * quiet / ids-only outputs are unaffected — agents and pipelines still see
+ * the empty-array contract.
+ */
+export interface EmptyState {
+  /** Headline shown in place of the table, e.g. "No companies found." */
+  headline: string;
+  /** Optional bullet list explaining why the list might be empty. */
+  reasons?: string[];
+  /** Optional "Try next:" block with copy-pasteable commands. */
+  suggestions?: EmptyStateSuggestion[];
+}
+
 export interface OutputOptions {
   format: "table" | "json" | "csv" | "quiet";
   columns?: Column[];
+  /**
+   * Replaces the empty-table fallback with a helpful message when the data
+   * array is empty AND `format === "table"`. Other formats ignore this — JSON
+   * still returns `[]`, CSV still returns a header row, quiet still no-ops.
+   *
+   * If omitted, the legacy empty-table behavior is preserved for backward
+   * compatibility (caller hasn't migrated).
+   */
+  emptyState?: EmptyState;
 }
 
 function escapeCSV(value: string): string {
@@ -151,6 +186,34 @@ function inferColumns(rows: readonly Record<string, unknown>[]): Column[] {
 }
 
 /**
+ * Render the supplied `emptyState` to stderr. Used in place of an empty table
+ * — printing a header + divider with no body lines reads as "something is
+ * broken" rather than "you have zero rows." Stderr (not stdout) so pipelines
+ * using `--json | jq` aren't affected by the human-facing hint.
+ */
+function renderEmptyState(state: EmptyState): void {
+  process.stderr.write("\n  " + state.headline + "\n");
+
+  if (state.reasons && state.reasons.length > 0) {
+    process.stderr.write("\n" + chalk.dim("  Possible reasons:\n"));
+    for (const reason of state.reasons) {
+      process.stderr.write(chalk.dim(`    • ${reason}\n`));
+    }
+  }
+
+  if (state.suggestions && state.suggestions.length > 0) {
+    process.stderr.write("\n" + chalk.dim("  Try next:\n"));
+    for (const s of state.suggestions) {
+      process.stderr.write(
+        `    ${chalk.cyan(s.command)}  ${chalk.dim(s.description)}\n`,
+      );
+    }
+  }
+
+  process.stderr.write("\n");
+}
+
+/**
  * Render `data` to stdout in the format selected by `options`.
  *
  * The parameter type is intentionally widened to `readonly object[]` so that
@@ -160,7 +223,7 @@ function inferColumns(rows: readonly Record<string, unknown>[]): Column[] {
  * lookups, which is safe for any plain object.
  */
 export function output(data: readonly object[], options: OutputOptions): void {
-  const { format, columns } = options;
+  const { format, columns, emptyState } = options;
 
   // Treat each row as a generic string-keyed bag for column lookups.
   const rows = data as readonly Record<string, unknown>[];
@@ -171,6 +234,14 @@ export function output(data: readonly object[], options: OutputOptions): void {
 
   if (format === "json") {
     formatJSON(rows);
+    return;
+  }
+
+  // Empty-state replacement applies only to human-facing table output.
+  // JSON returns `[]`, CSV returns a header-only row, quiet stays silent —
+  // those are the stable contracts that pipelines and agents depend on.
+  if (format === "table" && rows.length === 0 && emptyState) {
+    renderEmptyState(emptyState);
     return;
   }
 
