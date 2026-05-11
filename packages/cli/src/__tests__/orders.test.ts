@@ -400,6 +400,101 @@ describe("pax8 orders", () => {
       expect(data.lineItems).toHaveLength(2);
     });
 
+    // #332 — the `--line-item` parser must accept `provisioning=<key>:<value>`
+    // and produce the spec-shaped `Array<{key, values: string[]}>` on the
+    // outgoing payload (not a flat record).
+    it("parses provisioning=<key>:<value> in --line-item into spec-shaped array (#332)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--line-item",
+        "product=prod-m365-biz-prem-0001,quantity=2,provisioning=domain:contoso.com",
+        "--dry-run",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      // Dry-run echoes the submitted payload back through the mock client,
+      // which mirrors the wire shape — so a successful dry-run with this
+      // spec proves the parser produced something the schema accepts.
+      expect(data.dryRun).toBe(true);
+      expect(data.lineItems).toHaveLength(1);
+      // The mock client echoes `provisioningDetails` so we can pin the
+      // exact shape: array of {key, values: string[]} per the public spec.
+      expect(data.lineItems[0].provisioningDetails).toEqual([
+        { key: "domain", values: ["contoso.com"] },
+      ]);
+    });
+
+    it("parses multi-value provisioning entries with pipe separator (#332)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--line-item",
+        "product=prod-m365-biz-prem-0001,quantity=2,provisioning=region:us-east|us-west",
+        "--dry-run",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.dryRun).toBe(true);
+      expect(data.lineItems[0].provisioningDetails).toEqual([
+        { key: "region", values: ["us-east", "us-west"] },
+      ]);
+    });
+
+    it("accepts multiple provisioning entries within one --line-item (#332)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "create",
+        "--company",
+        "Acme Corp",
+        "--line-item",
+        "product=prod-m365-biz-prem-0001,quantity=2,provisioning=domain:contoso.com,provisioning=tier:premium",
+        "--dry-run",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.dryRun).toBe(true);
+      expect(data.lineItems[0].provisioningDetails).toEqual([
+        { key: "domain", values: ["contoso.com"] },
+        { key: "tier", values: ["premium"] },
+      ]);
+    });
+
+    it("errors when provisioning entry is missing the colon separator (#332)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--line-item",
+        "product=prod-m365-biz-prem-0001,quantity=2,provisioning=nocolon",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/provisioning|<key>:<value>/i);
+    });
+
+    it("errors when provisioning entry has empty key (#332)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--line-item",
+        "product=prod-m365-biz-prem-0001,quantity=2,provisioning=:value",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/provisioning|missing key/i);
+    });
+
     it("--dry-run prompt text says validate (TTY humans see it)", async () => {
       // Even with --yes the rendered preview banner mentions DRY RUN.
       const result = await runCliExpectSuccess([

@@ -207,7 +207,35 @@ export type ProvisioningDetail = z.infer<typeof ProvisioningDetailSchema>;
 
 // ─── Order ───────────────────────────────────────────────────────────────────
 
-export const OrderLineItemProvisioningSchema = z.record(z.string(), z.unknown());
+/**
+ * Per-line provisioning detail, matching the public Pax8 OpenAPI spec's
+ * `ProvisioningDetail` schema (partner-endpoints.json):
+ *
+ *   { key: string, values: string[] }
+ *
+ * Prior to #332 this was typed as `Record<string, unknown>` — an object map —
+ * which is **not** what the API accepts on `POST /orders`
+ * (`CreateLineItem.provisioningDetails` is an array). No CLI surface populated
+ * the field at the time of the fix, so no traffic was breaking; the bad shape
+ * was just baked into the input contract waiting for the first caller to
+ * trip on it. Renamed from `ProvisioningDetailSchema` so it doesn't collide
+ * with the products-side `ProvisioningDetailSchema` (which describes a
+ * *product's* provisioning requirements, not an order-line's provisioning
+ * values — same word, different concept).
+ */
+export const OrderLineItemProvisioningDetailSchema = z.object({
+  key: z.string(),
+  values: z.array(z.string()),
+});
+export type OrderLineItemProvisioningDetail = z.infer<typeof OrderLineItemProvisioningDetailSchema>;
+
+/**
+ * Wire shape for `OrderLineItem.provisioningDetails` — an array of
+ * `{ key, values[] }` objects per the spec. See #332.
+ */
+export const OrderLineItemProvisioningSchema = z.array(
+  OrderLineItemProvisioningDetailSchema,
+);
 
 export const CommitmentTermSchema = z.enum([
   "Monthly",
