@@ -199,6 +199,53 @@ describe("buildContext", () => {
     }
   });
 
+  // PAX8_DEMO=false / =0 must force demo OFF even when config has demo:true,
+  // so users can keep `demo: true` in `~/.pax8/config.yaml` as a safety default
+  // and opt out per-invocation. Cache warming is disabled in these tests to
+  // avoid spawning detached child processes.
+  for (const falsyValue of ["false", "0"]) {
+    it(`PAX8_DEMO='${falsyValue}' overrides config 'demo: true'`, async () => {
+      process.env.PAX8_DEMO = falsyValue;
+      process.env.PAX8_CACHE_WARMING = "1";
+
+      const core = await import("@pax8/core");
+      const cfg = {
+        version: "1.0" as const,
+        demo: true,
+        defaults: {
+          output_format: "table" as const,
+          page_size: 50,
+          confirm_destructive: true,
+        },
+        cache: { enabled: true, ttl_hours: 24 },
+        telemetry: { enabled: false },
+      };
+      const loadSpy = vi
+        .spyOn(core, "loadConfig")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial config for tests
+        .mockResolvedValue(cfg as any);
+      const getCredSpy = vi
+        .spyOn(core.CredentialStore.prototype, "getCredentials")
+        .mockResolvedValue({ clientId: "id-x", clientSecret: "secret-y" });
+      try {
+        const ctx = await buildContext({ json: true });
+        expect(ctx.isDemo).toBe(false);
+      } finally {
+        loadSpy.mockRestore();
+        getCredSpy.mockRestore();
+        delete process.env.PAX8_CACHE_WARMING;
+      }
+    });
+  }
+
+  for (const truthyValue of ["1", "true"]) {
+    it(`PAX8_DEMO='${truthyValue}' enables demo mode even without config`, async () => {
+      process.env.PAX8_DEMO = truthyValue;
+      const ctx = await buildContext({ json: true });
+      expect(ctx.isDemo).toBe(true);
+    });
+  }
+
   it("non-demo path constructs a real api client when credentials are present", async () => {
     delete process.env.PAX8_DEMO;
     // Skip the cache warmer so the test doesn't spawn detached child procs.

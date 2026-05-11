@@ -33,11 +33,11 @@ import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
 import {
-  loadConfig,
   getTelemetry,
   getDefaultBaseUrl,
   getConfigDir,
 } from "@pax8/core";
+import { resolveDemoModeAsync } from "./lib/context.js";
 import type { Command as CommandType } from "commander";
 import { startRepl } from "./lib/repl.js";
 import { showWelcomeScreen } from "./lib/welcome.js";
@@ -137,17 +137,11 @@ export function createProgram(): Command {
       process.stderr.write(quip + "\n");
     }
 
-    // Show demo mode banner if active
-    let isDemo = process.env.PAX8_DEMO === "1";
-    if (!isDemo) {
-      try {
-        const config = await loadConfig();
-        isDemo = config.demo === true;
-      } catch {
-        // ignore config load errors
-      }
-    }
-    if (isDemo) {
+    // Show demo mode banner if active. Uses the centralized resolver so
+    // PAX8_DEMO=false / =0 correctly suppresses the banner even when
+    // `config.demo: true` is set (otherwise the banner stays on even
+    // though the command is hitting the real API).
+    if (await resolveDemoModeAsync()) {
       process.stderr.write(chalk.dim("  ✨ Demo mode — showing sample data\n"));
     }
 
@@ -172,7 +166,7 @@ export function createProgram(): Command {
       const startTime = commandStartTimes.get(actionCommand) ?? Date.now();
       const subcommand = getFullCommandName(actionCommand);
       const flags = extractCommandFlags(actionCommand);
-      const isDemo = process.env.PAX8_DEMO === "1" || false;
+      const isDemo = await resolveDemoModeAsync();
 
       // Single canonical event for every command run (#146). Handlers
       // contribute aggregate counters via setTelemetryFields(); they no

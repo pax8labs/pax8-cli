@@ -124,6 +124,44 @@ export function getOutputFormat(
   return configDefault ?? "table";
 }
 
+/**
+ * Centralized resolution of "is this invocation running in demo mode?".
+ *
+ * Precedence: env var (when set to a recognized literal — `1`, `true`,
+ * `0`, `false`) overrides `config.demo` in either direction. Without the
+ * falsy branch a user with `demo: true` in `~/.pax8/config.yaml` can't
+ * temporarily switch to the real API via `PAX8_DEMO=false pax8 ...` —
+ * they'd have to edit config.
+ *
+ * This logic historically lived inline at four sites (context, doctor,
+ * the entry-point banner, the telemetry tag) with subtly different
+ * precedence. Centralizing here is what closes the override bug —
+ * fixing only `buildContext` left the banner and doctor flashing
+ * "Demo mode" even when env said otherwise.
+ *
+ * Accepts an already-loaded config so callers can avoid a duplicate
+ * disk read. `resolveDemoModeAsync()` loads config itself for sites
+ * that don't have one yet.
+ */
+export function resolveDemoMode(config: { demo?: boolean }): boolean {
+  const envDemo = process.env.PAX8_DEMO;
+  if (envDemo === "1" || envDemo === "true") return true;
+  if (envDemo === "0" || envDemo === "false") return false;
+  return config.demo === true;
+}
+
+export async function resolveDemoModeAsync(): Promise<boolean> {
+  const envDemo = process.env.PAX8_DEMO;
+  if (envDemo === "1" || envDemo === "true") return true;
+  if (envDemo === "0" || envDemo === "false") return false;
+  try {
+    const config = await loadConfig();
+    return config.demo === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function buildContext(
   options: GlobalOptions,
 ): Promise<CommandContext> {
@@ -140,9 +178,7 @@ export async function buildContext(
     telemetry: { enabled: false },
   }));
 
-  const isDemo =
-    process.env.PAX8_DEMO === "1" ||
-    ("demo" in config && config.demo === true);
+  const isDemo = resolveDemoMode(config);
   const outputFormat = getOutputFormat(options, config.defaults?.output_format);
 
   let api: ApiClient | MockPax8Client;

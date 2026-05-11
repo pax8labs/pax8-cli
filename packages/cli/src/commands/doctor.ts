@@ -6,7 +6,8 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { replCmd } from "../lib/confirm.js";
-import { CredentialStore, getConfigDir, getDefaultBaseUrl, loadConfig } from "@pax8/core";
+import { CredentialStore, getConfigDir, getDefaultBaseUrl } from "@pax8/core";
+import { resolveDemoModeAsync } from "../lib/context.js";
 
 // Honor PAX8_CONFIG_DIR (set in CI / tests / non-default installs) instead
 // of hardcoding `~/.pax8`. Same env contract as every other read of the
@@ -15,13 +16,7 @@ const CONFIG_DIR = getConfigDir();
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.yaml");
 const CACHE_DIR = path.join(CONFIG_DIR, "cache");
 
-async function isDemoMode(): Promise<boolean> {
-  if (process.env.PAX8_DEMO === "1") return true;
-  try {
-    const config = await loadConfig();
-    return config.demo === true;
-  } catch { return false; }
-}
+const isDemoMode = resolveDemoModeAsync;
 
 interface CheckResult {
   name: string;
