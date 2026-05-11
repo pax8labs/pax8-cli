@@ -43,7 +43,7 @@ describe("ContactsApi", () => {
     api = new ContactsApi(client);
   });
 
-  it("list returns paginated contacts for a company", async () => {
+  it("list hits nested /companies/{companyId}/contacts", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
 
     const result = await api.list(COMPANY_ID, { page: 0, size: 50 });
@@ -56,17 +56,19 @@ describe("ContactsApi", () => {
     expect(result.content[0].firstName).toBe("John");
   });
 
-  it("get returns a single contact", async () => {
+  it("get hits nested /companies/{companyId}/contacts/{contactId}", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleContact);
 
-    const result = await api.get(CONTACT_ID);
+    const result = await api.get(COMPANY_ID, CONTACT_ID);
 
-    expect(client.get).toHaveBeenCalledWith(`/contacts/${CONTACT_ID}`);
+    expect(client.get).toHaveBeenCalledWith(
+      `/companies/${COMPANY_ID}/contacts/${CONTACT_ID}`,
+    );
     expect(result.id).toBe(CONTACT_ID);
     expect(result.email).toBe("john@example.com");
   });
 
-  it("create sends correct body and returns contact", async () => {
+  it("create POSTs to nested /companies/{companyId}/contacts", async () => {
     const input = {
       firstName: "Jane",
       lastName: "Smith",
@@ -77,28 +79,36 @@ describe("ContactsApi", () => {
     const created = { ...sampleContact, ...input, id: "b2c3d4e5-f6a7-8901-bcde-f12345678901" };
     (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(created);
 
-    const result = await api.create(input);
+    const result = await api.create(COMPANY_ID, input);
 
-    expect(client.post).toHaveBeenCalledWith("/contacts", input);
+    expect(client.post).toHaveBeenCalledWith(
+      `/companies/${COMPANY_ID}/contacts`,
+      input,
+    );
     expect(result.firstName).toBe("Jane");
   });
 
-  it("update sends correct body and returns contact", async () => {
+  it("update PUTs to nested /companies/{companyId}/contacts/{contactId}", async () => {
     const input = { firstName: "Updated" };
     const updated = { ...sampleContact, firstName: "Updated" };
     (client.put as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
 
-    const result = await api.update(CONTACT_ID, input);
+    const result = await api.update(COMPANY_ID, CONTACT_ID, input);
 
-    expect(client.put).toHaveBeenCalledWith(`/contacts/${CONTACT_ID}`, input);
+    expect(client.put).toHaveBeenCalledWith(
+      `/companies/${COMPANY_ID}/contacts/${CONTACT_ID}`,
+      input,
+    );
     expect(result.firstName).toBe("Updated");
   });
 
-  it("delete calls client.delete", async () => {
+  it("delete hits nested /companies/{companyId}/contacts/{contactId}", async () => {
     (client.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
-    await api.delete(CONTACT_ID);
+    await api.delete(COMPANY_ID, CONTACT_ID);
 
-    expect(client.delete).toHaveBeenCalledWith(`/contacts/${CONTACT_ID}`);
+    expect(client.delete).toHaveBeenCalledWith(
+      `/companies/${COMPANY_ID}/contacts/${CONTACT_ID}`,
+    );
   });
 });

@@ -3,22 +3,30 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
+import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
-import { handleCommandError } from "../../lib/errors.js";
+import { handleCommandError, CliError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
+import { resolveCompany } from "../../lib/resolve-company.js";
 
 export const contactsShowCommand = new Command("show")
   .description("Show contact details")
   .argument("<id>", "Contact ID")
+  .option("--company <id|name>", "Owning company ID or name (required)")
   .addHelpText(
     "after",
     `
 Examples:
-  pax8 contacts show contact-summit-001
-  pax8 contacts show contact-summit-001 --json
-  pax8 contacts show contact-summit-001 --csv`
+  pax8 contacts show contact-summit-001 --company "Summit Healthcare Partners"
+  pax8 contacts show contact-summit-001 --company a1b2c3d4 --json
+  pax8 contacts show contact-summit-001 --company a1b2c3d4 --csv
+
+Notes:
+  Contacts in the Pax8 public API are addressed only under their owning
+  company (\`GET /v1/companies/{companyId}/contacts/{contactId}\`). The
+  \`--company\` flag is required; there is no flat lookup endpoint.`
   )
   .action(async (id, _options, command) => {
     const globalOpts = command.optsWithGlobals();
@@ -26,8 +34,25 @@ Examples:
     const spinner = createSpinner("Fetching contact...");
 
     try {
+      if (!globalOpts.company) {
+        throw new CliError(
+          "--company is required",
+          [
+            "Contacts in v2 must be addressed under a company. Pass `--company <id|name>`.",
+            "(Previously: `pax8 contacts show <contact-id>`.)",
+          ],
+          [
+            `Pick a company first: ${replCmd("pax8 companies list")}`,
+            `Then: ${replCmd(`pax8 contacts show ${id}`)} --company <id|name>`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+
       spinner.start();
-      const contact = await ctx.api.contacts.get(id);
+      const company = await resolveCompany(ctx, globalOpts.company);
+      const contact = await ctx.api.contacts.get(company.id, id);
       spinner.stop();
 
       if (ctx.outputFormat === "json") {
@@ -63,8 +88,8 @@ Examples:
       process.stdout.write("\n");
 
       process.stderr.write(chalk.dim("  Try next:\n"));
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts update ${contact.id} --email <new-email>`))}  ${chalk.dim("update this contact")}\n`);
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts delete ${contact.id}`))}  ${chalk.dim("delete this contact")}\n`);
+      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts update ${contact.id} --company "${company.name}" --email <new-email>`))}  ${chalk.dim("update this contact")}\n`);
+      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts delete ${contact.id} --company "${company.name}"`))}  ${chalk.dim("delete this contact")}\n`);
       process.stderr.write("\n");
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to show contact");

@@ -53,11 +53,27 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
     ]);
     const id = JSON.parse(list.stdout)[0].id;
 
-    const result = await runCliExpectSuccess(["contacts", "show", id, "--json"]);
+    const result = await runCliExpectSuccess([
+      "contacts",
+      "show",
+      id,
+      "--company",
+      "Summit Healthcare Partners",
+      "--json",
+    ]);
     const data = JSON.parse(result.stdout);
     // `show` returns a single object, not an array (#208)
     expect(Array.isArray(data)).toBe(false);
     expect(data.id).toBe(id);
+  });
+
+  it("pax8 contacts show requires --company (nested wire path, #324)", async () => {
+    const result = await runCliExpectFailure([
+      "contacts",
+      "show",
+      "contact-summit-001",
+    ]);
+    expect(result.stderr).toContain("--company");
   });
 
   it("pax8 contacts show fails for unknown id", async () => {
@@ -65,6 +81,8 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "contacts",
       "show",
       "definitely-not-a-real-contact-id",
+      "--company",
+      "Summit Healthcare Partners",
     ]);
     expect(result.stderr.length).toBeGreaterThan(0);
   });
@@ -155,6 +173,8 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "contacts",
       "update",
       id,
+      "--company",
+      "Summit Healthcare Partners",
       "--email",
       "renamed@example.com",
       "--yes",
@@ -163,6 +183,18 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
     const data = JSON.parse(result.stdout);
     expect(data[0].id).toBe(id);
     expect(data[0].email).toBe("renamed@example.com");
+  });
+
+  it("pax8 contacts update requires --company (nested wire path, #324)", async () => {
+    const result = await runCliExpectFailure([
+      "contacts",
+      "update",
+      "contact-summit-001",
+      "--email",
+      "x@example.com",
+      "--yes",
+    ]);
+    expect(result.stderr).toContain("--company");
   });
 
   it("pax8 contacts update fails when no fields are provided", async () => {
@@ -175,7 +207,14 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
     ]);
     const id = JSON.parse(list.stdout)[0].id;
 
-    const result = await runCliExpectFailure(["contacts", "update", id, "--yes"]);
+    const result = await runCliExpectFailure([
+      "contacts",
+      "update",
+      id,
+      "--company",
+      "Summit Healthcare Partners",
+      "--yes",
+    ]);
     expect(result.stderr.toLowerCase()).toContain("update");
   });
 
@@ -193,11 +232,23 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "contacts",
       "delete",
       id,
+      "--company",
+      "Summit Healthcare Partners",
       "--yes",
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
     expect(data[0].id).toBe(id);
     expect(data[0].status).toBe("Deleted");
+  });
+
+  it("pax8 contacts delete requires --company (nested wire path, #324)", async () => {
+    const result = await runCliExpectFailure([
+      "contacts",
+      "delete",
+      "contact-summit-001",
+      "--yes",
+    ]);
+    expect(result.stderr).toContain("--company");
   });
 });

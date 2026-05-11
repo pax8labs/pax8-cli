@@ -471,7 +471,14 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
         "--company",
         "Summit Healthcare Partners",
       ]);
-      return ["contacts", "show", id];
+      // `contacts show` requires --company per the v2 nested wire path (#324).
+      return [
+        "contacts",
+        "show",
+        id,
+        "--company",
+        "Summit Healthcare Partners",
+      ];
     },
     demo: {
       forbiddenFragments: ["undefined"],
