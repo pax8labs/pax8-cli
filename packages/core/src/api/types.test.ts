@@ -653,6 +653,11 @@ describe("QuoteSchema", () => {
     createdOn: "2024-03-01",
     expiresOn: "2024-04-01",
     status: "Draft",
+    // Required on the v2 `QuoteResponse` and on `PUT /v2/quotes/{id}` —
+    // both fields must round-trip through the read shape so the fetch-then-
+    // merge update path (#313) can preserve them on writes.
+    introMessage: "Sample intro.",
+    termsAndDisclaimers: "Sample terms.",
     lineItems: [
       { productId: uuid, quantity: 10, billingTerm: "Annual", unitPrice: 22.5, subtotal: 225.0 },
     ],
@@ -670,8 +675,26 @@ describe("QuoteSchema", () => {
 
   it("rejects missing status", () => {
     expect(() =>
-      QuoteSchema.parse({ id: uuid, companyId: uuid2, createdOn: "2024-03-01" }),
+      QuoteSchema.parse({
+        id: uuid,
+        companyId: uuid2,
+        createdOn: "2024-03-01",
+        introMessage: "x",
+        termsAndDisclaimers: "y",
+      }),
     ).toThrow();
+  });
+
+  it("rejects missing introMessage / termsAndDisclaimers (v2 required)", () => {
+    // #313: the v2 spec marks these as required on the GET response; the
+    // schema must enforce that so fetch-then-merge in `update` / `setStatus`
+    // never sees an `undefined` for them.
+    const { introMessage: _im, ...withoutIntro } = valid;
+    void _im;
+    expect(() => QuoteSchema.parse(withoutIntro)).toThrow();
+    const { termsAndDisclaimers: _td, ...withoutTerms } = valid;
+    void _td;
+    expect(() => QuoteSchema.parse(withoutTerms)).toThrow();
   });
 });
 

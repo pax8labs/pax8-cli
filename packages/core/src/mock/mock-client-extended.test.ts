@@ -414,16 +414,31 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   describe("quotes.update()", () => {
-    it("updates a quote", async () => {
+    // Per #313: the mock's `update` shape mirrors the v2 partial-override
+    // surface — `{ expiresOn?, introMessage?, published?, status?,
+    // termsAndDisclaimers? }`. Passing one field overrides only that one;
+    // the rest are read from the existing demo fixture.
+    it("updates a quote's expiresOn", async () => {
       const all = await client.quotes.list({ size: 100 });
       const firstId = all.content[0].id;
-      const result = await client.quotes.update(firstId, { total: 2000 } as never);
+      const result = await client.quotes.update(firstId, {
+        expiresOn: "2026-12-31",
+      });
       expect(result.id).toBe(firstId);
+      expect(result.expiresOn).toBe("2026-12-31");
+    });
+
+    it("rides setStatus through update (status transitions PUT the full body)", async () => {
+      const all = await client.quotes.list({ size: 100 });
+      const draft = all.content.find((q) => q.status === "Draft");
+      if (!draft) throw new Error("Expected a Draft demo quote");
+      const result = await client.quotes.update(draft.id, { status: "sent" });
+      expect(result.status).toBe("Sent");
     });
 
     it("throws NotFoundError for unknown quote", async () => {
       await expect(
-        client.quotes.update("nonexistent", {} as never),
+        client.quotes.update("nonexistent", {}),
       ).rejects.toThrow(NotFoundError);
     });
   });

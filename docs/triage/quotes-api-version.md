@@ -152,18 +152,18 @@ Five of the ten quote operations need body-shape work in addition to the wire-pa
 | Operation | CLI sends today | v2 spec accepts | Mismatch class | Status |
 |---|---|---|---|---|
 | `POST /v2/quotes` (create) | `{ clientId, quoteRequestId? }` | `{ clientId }` (required) + `quoteRequestId` (optional). **No `lineItems` on create.** | Field rename (`companyId` → `clientId`) + structural (line items must be added via a separate `POST /v2/quotes/{id}/line-items` after create) | **Resolved in #311.** `CreateQuoteInputSchema` is now `{ clientId, quoteRequestId? }`; the `quotes create` command orchestrates the two-call shorthand when `--product` is passed, and creates an empty draft quote otherwise (closing the shorthand-vs-canonical decision from #305). Partial-failure path surfaces the created quote ID + a recovery hint pointing at `quotes line-items add`. |
-| `PUT /v2/quotes/{id}` (update) | `{ lineItems?, expiresOn? }` | All five required: `{ expiresOn, introMessage, published, status, termsAndDisclaimers }` | Field-only PUT rejected — need fetch-then-merge. For line-item replacement, use `PUT /v2/quotes/{id}/line-items` instead. | Open: #313. |
-| `PUT /v2/quotes/{id}` (setStatus / send) | `{ status }` | Same five required — no separate status-transition endpoint exists in the spec | Same as `update`: fetch-then-merge | Open: #314. |
+| `PUT /v2/quotes/{id}` (update) | `{ lineItems?, expiresOn? }` | All five required: `{ expiresOn, introMessage, published, status, termsAndDisclaimers }` | Field-only PUT rejected — need fetch-then-merge. For line-item replacement, use `PUT /v2/quotes/{id}/line-items` instead. | **Resolved in #313 (bundled with #314).** `QuotesApi.update` now does fetch-then-merge via a shared `buildFullUpdatePayload` helper — every PUT carries the full 5-field body the v2 spec requires. `--expiration-date YYYY-MM-DD` is normalized to ISO 8601 date-time (`normalizeIsoDate`) before sending. Line-item replacement (`--product`) decomposes into per-line `DELETE` + a fresh `POST /v2/quotes/{id}/line-items` rather than going through the top-level PUT; partial-failure between the delete and the add is surfaced with a `quotes line-items add` recovery hint mirroring `quotes create`'s pattern (#311). `UpdateQuoteInputSchema` is now `{ expiresOn?, introMessage?, published?, status?, termsAndDisclaimers? }` (all optional partial overrides); `lineItems` is removed entirely from the update input. |
+| `PUT /v2/quotes/{id}` (setStatus / send) | `{ status }` | Same five required — no separate status-transition endpoint exists in the spec | Same as `update`: fetch-then-merge | **Resolved in #314 (bundled with #313).** `QuotesApi.setStatus` delegates to `update({ status })` so status flips ride the same fetch-then-merge path as every other PUT. `send` remains a thin wrapper over `setStatus(id, "sent")`. |
 | `POST /v2/quotes/{id}/line-items` (addLineItem) | `[{ type: "Standard", productId, quantity, billingTerm?, effectiveDate, price }]` | For Standard: `{ type, productId, quantity, billingTerm, effectiveDate, price }` | Missing required fields | **Resolved in #312.** `effectiveDate` defaults to today (UTC); `price` resolves from the product's list price (`suggestedRetailPrice`) for the chosen billing term. `--effective-date` and `--price` flags expose overrides. |
 
 The five read paths (`list`, `get`, `delete`, `removeLineItem`, `line-items list` via re-fetch) only need the wire-path fix (resolved in #316).
 
 ### 9.2 Response schema gaps
 
-`QuoteSchema` (`packages/core/src/api/types.ts:451-475`) does not model several fields the v2 spec marks as required on `GET /v2/quotes/{quoteId}`:
+`QuoteSchema` (`packages/core/src/api/types.ts`) does not model several fields the v2 spec marks as required on `GET /v2/quotes/{quoteId}`:
 
-- `introMessage` (string)
-- `termsAndDisclaimers` (string)
+- ~~`introMessage` (string)~~ — **modeled as of #313/#314.** Required on the read shape; fetch-then-merge in `update` / `setStatus` round-trips it back to the API.
+- ~~`termsAndDisclaimers` (string)~~ — **modeled as of #313/#314.** Same lifecycle as `introMessage`.
 - `client` (ClientDetails)
 - `partner` (PartnerDetails)
 - `ownedBy` (UserModel)
@@ -171,7 +171,7 @@ The five read paths (`list`, `get`, `delete`, `removeLineItem`, `line-items list
 - `totals` (InvoiceTotals)
 - `createdBy`, `createdByEmail` (strings)
 
-Zod's default non-strict mode strips these silently today, so they don't surface as parse errors. But the body-shape fixes for `update`/`setStatus` need `introMessage` and `termsAndDisclaimers` to round-trip through fetch-then-merge — so at minimum those two fields must be added to the schema as part of the relevant follow-up.
+Zod's default non-strict mode strips the remaining unmodeled fields silently today, so they don't surface as parse errors. The two fields needed for fetch-then-merge are now modeled; the rest stay deferred until a CLI surface needs them.
 
 ### 9.3 What this means for #307
 

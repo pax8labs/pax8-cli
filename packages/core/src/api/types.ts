@@ -491,6 +491,15 @@ export const QuoteSchema = z.object({
   status: z.string(),
   lineItems: z.array(QuoteLineItemSchema).optional(),
 
+  // The two free-text body fields the v2 quoting API marks as required on the
+  // `QuoteResponse` shape AND on the `PUT /v2/quotes/{quoteId}` request body.
+  // The CLI doesn't expose either as a user-settable flag today, but both must
+  // be modeled on the read shape so the fetch-then-merge in `update` /
+  // `setStatus` can round-trip the server-side values back without dropping
+  // them. See #313, #314 and `docs/triage/quotes-api-version.md` §9.1.
+  introMessage: z.string(),
+  termsAndDisclaimers: z.string(),
+
   // Workflow fields (read-only visibility for the accept/decline lifecycle).
   acceptedBy: QuoteRespondedBySchema.optional(),
   declinedBy: QuoteRespondedBySchema.optional(),
@@ -666,14 +675,45 @@ export const CreateQuoteInputSchema = z.object({
 });
 export type CreateQuoteInput = z.infer<typeof CreateQuoteInputSchema>;
 
+/**
+ * Status values accepted on `PUT /v2/quotes/{quoteId}`. The `setStatus` /
+ * `send` helpers on `QuotesApi` (#314) and the new fetch-then-merge `update`
+ * (#313) both ride this enum — every status transition uses the same PUT
+ * endpoint and ships the full 5-field body.
+ */
+export const QuoteStatusTransitionSchema = z.enum([
+  "draft",
+  "assigned",
+  "sent",
+  "closed",
+  "declined",
+  "accepted",
+  "changes_requested",
+  "expired",
+  "pending",
+]);
+export type QuoteStatusTransition = z.infer<typeof QuoteStatusTransitionSchema>;
+
+/**
+ * Partial-override input for `QuotesApi.update(id, overrides)`. Every field
+ * is optional — `update()` itself does a fetch-then-merge under the hood,
+ * filling in whatever the caller doesn't supply from the current server-side
+ * quote so the resulting PUT body satisfies the v2 spec's all-five-required
+ * contract (`expiresOn`, `introMessage`, `published`, `status`,
+ * `termsAndDisclaimers`).
+ *
+ * Note that `lineItems` is **not** part of this shape: `PUT /v2/quotes/{id}`
+ * does not accept a `lineItems` array on the v2 surface. The CLI's
+ * line-item-replacement flow decomposes into per-line `DELETE` + `POST` calls
+ * against `/v2/quotes/{id}/line-items` instead. See #313 and
+ * `docs/triage/quotes-api-version.md` §9.1.
+ */
 export const UpdateQuoteInputSchema = z.object({
-  lineItems: z.array(z.object({
-    productId: z.string(),
-    quantity: z.number().int().positive(),
-    billingTerm: BillingTermSchema.optional(),
-    provisioningDetails: z.record(z.string(), z.unknown()).optional(),
-  })).optional(),
   expiresOn: z.string().optional(),
+  introMessage: z.string().optional(),
+  published: z.boolean().optional(),
+  status: QuoteStatusTransitionSchema.optional(),
+  termsAndDisclaimers: z.string().optional(),
 });
 export type UpdateQuoteInput = z.infer<typeof UpdateQuoteInputSchema>;
 
@@ -699,23 +739,6 @@ export const AddQuoteLineItemInputSchema = z.object({
   price: z.number(),
 });
 export type AddQuoteLineItemInput = z.infer<typeof AddQuoteLineItemInputSchema>;
-
-/**
- * Body for `PUT /v2/quotes/{quoteId}` when transitioning a quote to `sent`.
- * Other transitions (`accepted`, `declined`, etc.) ride a different code path.
- */
-export const QuoteStatusTransitionSchema = z.enum([
-  "draft",
-  "assigned",
-  "sent",
-  "closed",
-  "declined",
-  "accepted",
-  "changes_requested",
-  "expired",
-  "pending",
-]);
-export type QuoteStatusTransition = z.infer<typeof QuoteStatusTransitionSchema>;
 
 // Aliases for backward compatibility
 export const PageSchema = PageInfoSchema;
