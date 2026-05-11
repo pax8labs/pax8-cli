@@ -11,8 +11,44 @@ import { confirmWithChange, replCmd } from "../../lib/confirm.js";
 import { formatQuantity, formatCurrency, formatStatus } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
-import { ApiError, ERROR_API_VALIDATION } from "@pax8/core";
-import type { Subscription } from "@pax8/core";
+import { ApiError, BillingTermSchema, ERROR_API_VALIDATION, ERROR_INVALID_INPUT } from "@pax8/core";
+import type { BillingTerm, Subscription } from "@pax8/core";
+
+/**
+ * Human-readable list of accepted `--billing-term` values, mirroring the
+ * Pax8 API request-body enum at PUT /subscriptions/{id}. See
+ * docs/triage/billing-term-update-enum.md for the spec citation. Kept as a
+ * single source of truth so help text, examples, and the fail-fast check
+ * all read from the same array.
+ */
+const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
+const BILLING_TERM_HELP = BILLING_TERM_VALUES.join(" | ");
+
+/**
+ * Fail-fast Zod validation for `--billing-term` user input. Without this,
+ * a typo like `--billing-term annual` (lowercased) would propagate to the
+ * API and surface as an opaque rejection. We want a clean CLI-side error
+ * pointing at the canonical accepted set instead.
+ *
+ * We deliberately do NOT predict which values a particular vendor will
+ * reject — that's the API's job (see docs/triage/billing-term-update-enum.md
+ * "Philosophy this codifies"). This check only catches values the API's
+ * request-body schema would reject outright.
+ */
+function validateBillingTermInput(raw: string): BillingTerm {
+  const parsed = BillingTermSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  throw new CliError(
+    `Invalid --billing-term "${raw}"`,
+    [`Accepted values per the Pax8 API: ${BILLING_TERM_HELP}`],
+    [
+      `Pick one of: ${BILLING_TERM_HELP}`,
+      "Vendor-specific acceptance varies; the API will reject unsupported combinations with a usable error",
+    ],
+    undefined,
+    ERROR_INVALID_INPUT,
+  );
+}
 
 /**
  * Format an ISO date string for human display (e.g. "2026-05-11").
@@ -56,7 +92,10 @@ export const subscriptionsUpdateCommand = new Command("update")
   .description("Update a subscription")
   .argument("<id>", "Subscription ID")
   .option("--quantity <number>", "New quantity")
-  .option("--billing-term <term>", "New billing term (Monthly or Annual)")
+  .option(
+    "--billing-term <term>",
+    `New billing term (one of: ${BILLING_TERM_HELP}). Mirrors the Pax8 API request-body enum at PUT /subscriptions/{id}. Vendor-specific values may still be rejected by the API; this flag does not predict which.`,
+  )
   .option("-y, --yes", "Skip confirmation prompts")
   .addHelpText(
     "after",
@@ -64,13 +103,30 @@ export const subscriptionsUpdateCommand = new Command("update")
 Examples:
   pax8 subscriptions update sub-summit-m365bp-001 --quantity 50
   pax8 subscriptions update sub-summit-m365bp-001 --billing-term Annual
-  pax8 subscriptions update sub-summit-m365bp-001 --quantity 30 --yes`
+  pax8 subscriptions update sub-summit-m365bp-001 --billing-term 2-Year
+  pax8 subscriptions update sub-summit-m365bp-001 --quantity 30 --yes
+
+Accepted --billing-term values (Pax8 API request-body enum):
+  ${BILLING_TERM_HELP}
+
+Note: mid-commitment billing-term changes are blocked at the CLI layer with
+an actionable recovery message (see \`pax8 subscriptions show <id>\` for
+the commitment context). This pre-flight is independent of which value
+you pass — the API doesn't uniformly enforce commitment-term restrictions
+across vendors, so the CLI provides the guard.`,
   )
   .action(async (id, options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
     const ctx = await buildContext(allOpts);
 
     try {
+      // Fail-fast validation of --billing-term BEFORE any network call.
+      // Typos and case-mismatches (e.g. "annual" lowercased) get a clean
+      // CLI-side error instead of an opaque API rejection.
+      if (options.billingTerm !== undefined) {
+        options.billingTerm = validateBillingTermInput(String(options.billingTerm));
+      }
+
       // First, fetch the current subscription
       const spinner = createSpinner("Fetching subscription...").start();
       const sub = await ctx.api.subscriptions.get(id);
