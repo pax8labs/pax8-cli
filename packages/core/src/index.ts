@@ -92,6 +92,9 @@ export {
   OrderLineItemSchema,
   OrderLineItemInputSchema,
   OrderLineItemCreateInputSchema,
+  LineItemProvisioningSchema,
+  LineItemProvisioningDetailSchema,
+  // Backward-compat aliases (pre-#356) — prefer the domain-neutral names above.
   OrderLineItemProvisioningSchema,
   OrderLineItemProvisioningDetailSchema,
   CreateOrderInputSchema,
@@ -147,6 +150,8 @@ export type {
   OrderLineItem,
   OrderLineItemInput,
   OrderLineItemCreateInput,
+  LineItemProvisioningDetail,
+  // Backward-compat alias (pre-#356) — prefer `LineItemProvisioningDetail`.
   OrderLineItemProvisioningDetail,
   CreateOrderInput,
   Commitment,
