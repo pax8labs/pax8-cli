@@ -33,6 +33,12 @@ const samplePaginatedResponse = {
   content: [sampleQuote],
 };
 
+// Per #307: every QuotesApi call must thread `{ apiVersion: "v2" }` through to
+// the client so the resolved wire URL hits `/v2/quotes/...` instead of the base
+// URL's default `/v1`. Assertions below pin this — a regression here means a
+// quote operation is back on /v1 and will 404 against the real API.
+const V2_OPTS = { apiVersion: "v2" };
+
 describe("QuotesApi", () => {
   let client: Pax8Client;
   let api: QuotesApi;
@@ -42,26 +48,30 @@ describe("QuotesApi", () => {
     api = new QuotesApi(client);
   });
 
-  it("list returns paginated quotes", async () => {
+  it("list returns paginated quotes (routed to /v2)", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
 
     const result = await api.list({ page: 0, size: 50, companyId: COMPANY_ID });
 
-    expect(client.get).toHaveBeenCalledWith("/quotes", { page: 0, size: 50, companyId: COMPANY_ID });
+    expect(client.get).toHaveBeenCalledWith(
+      "/quotes",
+      { page: 0, size: 50, companyId: COMPANY_ID },
+      V2_OPTS,
+    );
     expect(result.content).toHaveLength(1);
     expect(result.content[0].status).toBe("Draft");
   });
 
-  it("get returns a single quote", async () => {
+  it("get returns a single quote (routed to /v2)", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
 
     const result = await api.get(QUOTE_ID);
 
-    expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`);
+    expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
     expect(result.companyId).toBe(COMPANY_ID);
   });
 
-  it("create sends correct body", async () => {
+  it("create sends correct body (routed to /v2)", async () => {
     const input = {
       companyId: COMPANY_ID,
       lineItems: [
@@ -72,30 +82,30 @@ describe("QuotesApi", () => {
 
     const result = await api.create(input);
 
-    expect(client.post).toHaveBeenCalledWith("/quotes", input);
+    expect(client.post).toHaveBeenCalledWith("/quotes", input, V2_OPTS);
     expect(result.id).toBe(QUOTE_ID);
   });
 
-  it("update sends correct body", async () => {
+  it("update sends correct body (routed to /v2)", async () => {
     const input = { expiresOn: "2026-03-15" };
     const updated = { ...sampleQuote, expiresOn: "2026-03-15" };
     (client.put as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
 
     const result = await api.update(QUOTE_ID, input);
 
-    expect(client.put).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, input);
+    expect(client.put).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, input, V2_OPTS);
     expect(result.expiresOn).toBe("2026-03-15");
   });
 
-  it("delete calls client.delete", async () => {
+  it("delete calls client.delete (routed to /v2)", async () => {
     (client.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
     await api.delete(QUOTE_ID);
 
-    expect(client.delete).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`);
+    expect(client.delete).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
   });
 
-  it("addLineItem POSTs an array with a Standard payload then re-fetches the quote", async () => {
+  it("addLineItem POSTs an array with a Standard payload then re-fetches the quote (routed to /v2)", async () => {
     (client.post as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
     const productId = "d4e5f6a7-b890-1234-cdef-567890123456";
@@ -116,12 +126,13 @@ describe("QuotesApi", () => {
           billingTerm: "Annual",
         },
       ],
+      V2_OPTS,
     );
-    expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`);
+    expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
     expect(result.id).toBe(QUOTE_ID);
   });
 
-  it("removeLineItem DELETEs the nested line-item path", async () => {
+  it("removeLineItem DELETEs the nested line-item path (routed to /v2)", async () => {
     (client.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     const lineItemId = "11111111-2222-3333-4444-555555555555";
 
@@ -129,10 +140,12 @@ describe("QuotesApi", () => {
 
     expect(client.delete).toHaveBeenCalledWith(
       `/quotes/${QUOTE_ID}/line-items/${lineItemId}`,
+      undefined,
+      V2_OPTS,
     );
   });
 
-  it("setStatus PUTs { status } to the quote endpoint", async () => {
+  it("setStatus PUTs { status } to the quote endpoint (routed to /v2)", async () => {
     (client.put as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...sampleQuote,
       status: "sent",
@@ -140,13 +153,15 @@ describe("QuotesApi", () => {
 
     const result = await api.setStatus(QUOTE_ID, "sent");
 
-    expect(client.put).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, {
-      status: "sent",
-    });
+    expect(client.put).toHaveBeenCalledWith(
+      `/quotes/${QUOTE_ID}`,
+      { status: "sent" },
+      V2_OPTS,
+    );
     expect(result.status).toBe("sent");
   });
 
-  it("send is a thin wrapper over setStatus(id, 'sent')", async () => {
+  it("send is a thin wrapper over setStatus(id, 'sent') (routed to /v2)", async () => {
     (client.put as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...sampleQuote,
       status: "sent",
@@ -154,8 +169,10 @@ describe("QuotesApi", () => {
 
     await api.send(QUOTE_ID);
 
-    expect(client.put).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, {
-      status: "sent",
-    });
+    expect(client.put).toHaveBeenCalledWith(
+      `/quotes/${QUOTE_ID}`,
+      { status: "sent" },
+      V2_OPTS,
+    );
   });
 });

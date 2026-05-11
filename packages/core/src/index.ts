@@ -16,8 +16,8 @@
 
 // ─── API client + per-resource sub-clients ──────────────────────────────────
 
-export { Pax8Client, getDefaultBaseUrl } from "./api/client.js";
-export type { Pax8ClientOptions } from "./api/client.js";
+export { Pax8Client, getDefaultBaseUrl, applyApiVersion } from "./api/client.js";
+export type { Pax8ClientOptions, RequestOpts } from "./api/client.js";
 export { CompaniesApi } from "./api/companies.js";
 export { ContactsApi } from "./api/contacts.js";
 export { ProductsApi } from "./api/products.js";
