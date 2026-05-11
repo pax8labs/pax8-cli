@@ -354,6 +354,108 @@ describe("pax8 subscriptions update", () => {
       expect(data[0].quantity).toBe(5);
     });
   });
+
+  // ─── --billing-term enum mirrors the Pax8 API request body ──────────────
+  // The CLI used to advertise only "Monthly or Annual" in help text — a
+  // hand-curated subset that didn't match the API. Fred Lintz flagged that
+  // the API actually accepts seven values. The CLI now mirrors the API
+  // request-body enum at PUT /subscriptions/{id}, fail-fasts on values
+  // outside it, and lets vendor-specific rejections come back from the
+  // API (rather than CLI-predicting them).
+  //
+  // Verified enum source: docs/triage/billing-term-update-enum.md
+  describe("--billing-term mirrors API enum", () => {
+    // Every enum value the API accepts must pass the CLI's fail-fast check.
+    // We don't assert end-to-end success (which would require a non-committed
+    // sub for each term shape); only that the validator doesn't reject the
+    // value with "Invalid --billing-term".
+    const API_ENUM_VALUES = [
+      "Monthly",
+      "Annual",
+      "2-Year",
+      "3-Year",
+      "One-Time",
+      "Trial",
+      "Activation",
+    ] as const;
+
+    for (const term of API_ENUM_VALUES) {
+      it(`accepts --billing-term ${term} past CLI validation`, async () => {
+        // Run against a committed sub so the call short-circuits at the
+        // commitment pre-flight (or, for same-term values, falls through to
+        // the API). Either outcome confirms the CLI-side enum check passed.
+        const result = await runCli([
+          "subscriptions",
+          "update",
+          "sub-summit-m365bp-001",
+          "--billing-term",
+          term,
+          "--yes",
+        ]);
+        const combined = result.stdout + result.stderr;
+        expect(combined).not.toMatch(/Invalid --billing-term/);
+      });
+    }
+
+    it("rejects an unknown billing-term with a CLI-side error before any API call", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "update",
+        "sub-summit-m365bp-001",
+        "--billing-term",
+        "Quarterly",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid --billing-term "Quarterly"`);
+      // The error must list the canonical accepted set so the user can
+      // self-correct without reading docs.
+      expect(combined).toContain("Monthly | Annual | 2-Year | 3-Year");
+    });
+
+    it("rejects case-mismatched input (e.g., 'annual' lowercased)", async () => {
+      // This is the practical reason fail-fast validation matters — the API
+      // is case-sensitive and a lowercased typo would otherwise propagate
+      // to an opaque API rejection.
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "update",
+        "sub-summit-m365bp-001",
+        "--billing-term",
+        "annual",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid --billing-term "annual"`);
+    });
+
+    it("emits ERROR_INVALID_INPUT for invalid value under --json", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "update",
+        "sub-summit-m365bp-001",
+        "--billing-term",
+        "Quarterly",
+        "--yes",
+        "--json",
+      ]);
+      expect(result.stderr).toContain("ERROR_INVALID_INPUT");
+    });
+
+    it("--help advertises every API enum value", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "update",
+        "--help",
+      ]);
+      for (const term of API_ENUM_VALUES) {
+        expect(result.stdout).toContain(term);
+      }
+      // Reference to the API-mirroring philosophy is present so future
+      // maintainers don't re-narrow the surface.
+      expect(result.stdout).toMatch(/Pax8 API request-body enum/i);
+    });
+  });
 });
 
 describe("pax8 subscriptions cancel", () => {
