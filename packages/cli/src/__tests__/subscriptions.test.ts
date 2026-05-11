@@ -539,6 +539,28 @@ describe("pax8 subscriptions cancel", () => {
     });
   });
 
+  // #333: the underlying wire payload was changed from date-only to
+  // ISO date-time to match the OpenAPI spec (`format: date-time`). The
+  // partner-facing surface (--cancel-date flag input, --json output
+  // `cancelDate` field) intentionally stays date-only so existing
+  // partner scripts keep working. This test pins that contract.
+  it("--cancel-date 2026-06-01 yields a date-only JSON output (#333)", async () => {
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "cancel",
+      "sub-summit-m365bp-001",
+      "--cancel-date",
+      "2026-06-01",
+      "--yes",
+      "--json",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(data[0].cancelDate).toBe("2026-06-01");
+    // Pin the shape so a future "normalize the JSON output too" change
+    // can't silently break partner scripts that expect YYYY-MM-DD.
+    expect(data[0].cancelDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
   // Regression for #294: commitment-aware preview + safe-path defaults.
   describe("commitment-aware behavior (#294)", () => {
     // sub-summit-m365bp-001 is a 1-Year committed sub in demo data — its
