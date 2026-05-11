@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 companies", () => {
   describe("companies list", () => {
@@ -143,6 +143,124 @@ describe("pax8 companies", () => {
       const data = JSON.parse(result.stdout);
       expect(data.subscriptions).toBeDefined();
       expect(data.subscriptions.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("companies show — address wire field names", () => {
+    it("surfaces stateOrProvince and postalCode (not state/zip) in --json", async () => {
+      // Read-side fix from #328: pre-rename, Zod silently dropped the API's
+      // `stateOrProvince` / `postalCode` because the schema parsed `state` /
+      // `zip`. This test pins the new behavior against the renamed demo data.
+      const result = await runCliExpectSuccess([
+        "companies",
+        "show",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.address).toBeDefined();
+      expect(data.address).toHaveProperty("stateOrProvince", "CO");
+      expect(data.address).toHaveProperty("postalCode", "80246");
+      expect(data.address).not.toHaveProperty("state");
+      expect(data.address).not.toHaveProperty("zip");
+    });
+  });
+
+  describe("companies create — required booleans + address mapping", () => {
+    it("fails with ERROR_INVALID_INPUT when no address flags are supplied", async () => {
+      // #329 fail-fast: spec marks `address` as required on POST /companies.
+      // The handler refuses to construct a degenerate empty `{}` on the wire.
+      const result = await runCliExpectFailure([
+        "companies",
+        "create",
+        "--name",
+        "Addressless Co",
+        "--phone",
+        "+1-555-0100",
+        "--website",
+        "https://addressless.example.com",
+        "--yes",
+        "--json",
+      ]);
+      // Structured error on stderr in --json mode
+      const stderr = result.stderr;
+      expect(stderr).toContain("ERROR_INVALID_INPUT");
+      expect(stderr.toLowerCase()).toContain("address");
+    });
+
+    it("succeeds and reflects the three booleans + city/state when address is supplied", async () => {
+      // Defaults (no --bill-on-behalf-of / --self-service-allowed /
+      // --order-approval-required flags) all resolve to `false`. Demo mock
+      // echoes the body's booleans back so we can assert them on the
+      // returned company.
+      const result = await runCliExpectSuccess([
+        "companies",
+        "create",
+        "--name",
+        "Defaults Co",
+        "--phone",
+        "+1-555-0101",
+        "--website",
+        "https://defaults.example.com",
+        "--city",
+        "Denver",
+        "--state",
+        "CO",
+        "--zip",
+        "80202",
+        "--country",
+        "US",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("name", "Defaults Co");
+      expect(data).toHaveProperty("billOnBehalfOfEnabled", false);
+      expect(data).toHaveProperty("selfServiceAllowed", false);
+      expect(data).toHaveProperty("orderApprovalRequired", false);
+      // The mock client passes the address through verbatim; the wire field
+      // names must be `stateOrProvince` / `postalCode` (not `state` / `zip`).
+      expect(data.address).toHaveProperty("stateOrProvince", "CO");
+      expect(data.address).toHaveProperty("postalCode", "80202");
+      expect(data.address).not.toHaveProperty("state");
+      expect(data.address).not.toHaveProperty("zip");
+    });
+
+    it("--bill-on-behalf-of true / --order-approval-required true override defaults", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "create",
+        "--name",
+        "Override Co",
+        "--phone",
+        "+1-555-0102",
+        "--website",
+        "https://override.example.com",
+        "--city",
+        "Austin",
+        "--state",
+        "TX",
+        "--zip",
+        "78704",
+        "--bill-on-behalf-of",
+        "true",
+        "--order-approval-required",
+        "true",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("billOnBehalfOfEnabled", true);
+      expect(data).toHaveProperty("selfServiceAllowed", false);
+      expect(data).toHaveProperty("orderApprovalRequired", true);
+    });
+
+    it("shows the new boolean flags in --help", async () => {
+      const result = await runCliExpectSuccess(["companies", "create", "--help"]);
+      expect(result.stdout).toContain("--bill-on-behalf-of");
+      expect(result.stdout).toContain("--self-service-allowed");
+      expect(result.stdout).toContain("--order-approval-required");
+      expect(result.stdout).toContain("--street");
     });
   });
 

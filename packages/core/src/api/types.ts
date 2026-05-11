@@ -53,11 +53,29 @@ export type CompanyStatus = z.infer<typeof CompanyStatusSchema>;
 
 // ─── Address ─────────────────────────────────────────────────────────────────
 
+/**
+ * Address shape on the wire. Field names mirror the public Pax8 OpenAPI
+ * `Address` schema (`partner-endpoints.json` → `components.schemas.Address`):
+ * `stateOrProvince` and `postalCode`, NOT `state` / `zip`.
+ *
+ * Pre-#327/#328 the CLI used `state` and `zip` here, which silently
+ * (a) dropped state/postal data on `companies create` (the API didn't
+ * recognize the leaf names) and (b) dropped the corresponding fields on
+ * every read (Zod's default non-strict mode strips unknown keys). The
+ * read- and write-side share this schema, so renaming here fixes both.
+ *
+ * The user-facing CLI flag names (`--state`, `--zip`) are deliberately
+ * unchanged — flag vocabulary and wire vocabulary are intentionally
+ * separate (see `docs/UX_GUIDE.md`, `docs/domain-review.md` §Companies).
+ * The mapping happens at body-construction time in
+ * `packages/cli/src/commands/companies/{create,update}.ts`.
+ */
 export const AddressSchema = z.object({
   street: z.string().optional(),
+  street2: z.string().optional(),
   city: z.string().optional(),
-  state: z.string().optional(),
-  zip: z.string().optional(),
+  stateOrProvince: z.string().optional(),
+  postalCode: z.string().optional(),
   country: z.string().optional(),
 });
 export type Address = z.infer<typeof AddressSchema>;
@@ -87,14 +105,28 @@ export const CompanySchema = z.object({
 });
 export type Company = z.infer<typeof CompanySchema>;
 
+/**
+ * Body for `POST /companies`. The public OpenAPI marks
+ * `["name", "address", "phone", "website", "billOnBehalfOfEnabled",
+ *   "selfServiceAllowed", "orderApprovalRequired"]` as required (see
+ * `partner-endpoints.json` → `components.schemas.Company.required`). The
+ * three boolean flags previously slipped through as `.optional()`, leaving
+ * required-field-violating requests on the wire — fixed in #329.
+ *
+ * `address` is intentionally `.optional()` at the type level so callers that
+ * omit it don't produce a degenerate empty `{ street: "", city: "", ... }`
+ * object on the wire. The CLI's `companies create` handler fail-fasts with
+ * `ERROR_INVALID_INPUT` when no address flag is supplied (matches the spec's
+ * `address` requirement at the UX layer).
+ */
 export const CreateCompanyInputSchema = z.object({
   name: z.string().min(1),
   address: AddressSchema.optional(),
-  phone: z.string().optional(),
-  website: z.string().optional(),
-  billOnBehalfOfEnabled: z.boolean().optional(),
-  selfServiceAllowed: z.boolean().optional(),
-  orderApprovalRequired: z.boolean().optional(),
+  phone: z.string(),
+  website: z.string(),
+  billOnBehalfOfEnabled: z.boolean(),
+  selfServiceAllowed: z.boolean(),
+  orderApprovalRequired: z.boolean(),
 });
 export type CreateCompanyInput = z.infer<typeof CreateCompanyInputSchema>;
 
