@@ -430,8 +430,8 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   // ─── Webhooks ────────────────────────────────────────────────────────────
-  // Mock surface mirrors the real WebhooksApi (list, get, create, update,
-  // updateStatus, delete, test, getLogs, retryLog).
+  // Mock surface mirrors the real WebhooksApi (list, get, create,
+  // updateConfiguration, setStatus, delete, test, getLogs, retryLog).
 
   describe("webhooks.get()", () => {
     it("returns webhook by id", async () => {
@@ -455,37 +455,6 @@ describe("MockPax8Client — extended coverage", () => {
       expect(result.status).toBe("Active");
       expect(result.url).toBe("https://example.com/hook");
       expect(result.topics).toEqual(["subscription.created"]);
-    });
-  });
-
-  describe("webhooks.update()", () => {
-    it("updates a webhook", async () => {
-      const all = await client.webhooks.list();
-      const firstId = all[0].id;
-      const result = await client.webhooks.update(firstId, { url: "https://new.com/hook" });
-      expect(result.url).toBe("https://new.com/hook");
-      expect(result.id).toBe(firstId);
-    });
-
-    it("throws NotFoundError for unknown webhook", async () => {
-      await expect(
-        client.webhooks.update("nonexistent", { url: "https://x.com" }),
-      ).rejects.toThrow(NotFoundError);
-    });
-  });
-
-  describe("webhooks.updateStatus()", () => {
-    it("updates webhook status", async () => {
-      const all = await client.webhooks.list();
-      const firstId = all[0].id;
-      const result = await client.webhooks.updateStatus(firstId, "Disabled");
-      expect(result.status).toBe("Disabled");
-    });
-
-    it("throws NotFoundError for unknown webhook", async () => {
-      await expect(
-        client.webhooks.updateStatus("nonexistent", "Active"),
-      ).rejects.toThrow(NotFoundError);
     });
   });
 

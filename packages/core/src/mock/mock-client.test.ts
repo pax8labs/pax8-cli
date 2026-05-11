@@ -295,8 +295,6 @@ describe("MockPax8Client", () => {
           "list",
           "get",
           "create",
-          "update",
-          "updateStatus",
           "updateConfiguration",
           "setStatus",
           "delete",

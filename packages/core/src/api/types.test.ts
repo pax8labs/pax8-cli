@@ -64,7 +64,6 @@ import {
   QuoteSchema,
   WebhookSchema,
   CreateWebhookInputSchema,
-  UpdateWebhookInputSchema,
   WebhookLogSchema,
   PaginatedResponseSchema,
 } from "./types.js";
@@ -729,18 +728,6 @@ describe("CreateWebhookInputSchema", () => {
     expect(() =>
       CreateWebhookInputSchema.parse({ url: "bad", topics: ["sub.created"] }),
     ).toThrow();
-  });
-});
-
-describe("UpdateWebhookInputSchema", () => {
-  it("validates partial update", () => {
-    expect(UpdateWebhookInputSchema.parse({ status: "Disabled" })).toEqual({
-      status: "Disabled",
-    });
-  });
-
-  it("validates empty update", () => {
-    expect(UpdateWebhookInputSchema.parse({})).toEqual({});
   });
 });
 
