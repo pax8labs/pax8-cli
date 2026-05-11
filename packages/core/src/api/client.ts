@@ -41,8 +41,17 @@ const MAX_RETRIES = 3;
  *
  * The Pax8 partner API splits its surface across version prefixes — most
  * resources at `/v1`, quotes at `/v2`. The `baseUrl` carries the project-wide
- * default (`/v1`); individual API classes can override per call. If `baseUrl`
- * has no trailing `/vN(.M)?` segment, the override is appended.
+ * default (`/v1`); individual API classes can override per call by passing
+ * `RequestOpts.apiVersion`.
+ *
+ * Requires `baseUrl` to end with a `/vN` or `/vN.M` segment when `apiVersion`
+ * is set. If the partner has set `PAX8_API_BASE` to a value without a version
+ * suffix (e.g. `https://api-staging.pax8.com`), substitution would silently
+ * produce a plausible-looking but wrong URL for the quote calls that opt in,
+ * while leaving every non-quote call broken anyway (those expect `/v1/...`
+ * paths that don't exist against the bare host). Better to fail loudly on
+ * the first quote call than to mask a misconfiguration. The error message
+ * tells the partner exactly what to fix.
  *
  * Exported so the substitution rule is unit-testable independent of the
  * surrounding request plumbing.
@@ -53,7 +62,14 @@ export function applyApiVersion(baseUrl: string, apiVersion?: string): string {
   if (versionTail.test(baseUrl)) {
     return baseUrl.replace(versionTail, `/${apiVersion}`);
   }
-  return `${baseUrl}/${apiVersion}`;
+  throw new Error(
+    `Cannot apply apiVersion="${apiVersion}" to base URL "${baseUrl}": ` +
+      `the base URL must end with a version segment such as "/v1" for ` +
+      `per-call version substitution to work. Set PAX8_API_BASE to a value ` +
+      `like "https://api-staging.pax8.com/v1" (the production default is ` +
+      `"https://api.pax8.com/v1"), or unset it to inherit the default. See ` +
+      `https://github.com/pax8labs/pax8-cli/issues/307 for background.`,
+  );
 }
 
 /**

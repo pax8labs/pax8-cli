@@ -303,18 +303,35 @@ describe("applyApiVersion (#307)", () => {
     );
   });
 
-  it("appends the override when the base URL has no trailing version segment", () => {
-    expect(applyApiVersion("https://api.pax8.com", "v2")).toBe(
-      "https://api.pax8.com/v2",
+  it("throws a clear error when the base URL has no trailing version segment", () => {
+    // Misconfigured PAX8_API_BASE with no version suffix — quote calls would
+    // produce a plausible-looking URL while every non-quote call silently
+    // breaks. Loud failure is the right behavior; the error message names
+    // the env var and the expected shape so the partner can self-correct.
+    expect(() => applyApiVersion("https://api-staging.pax8.com", "v2")).toThrow(
+      /must end with a version segment/,
     );
-    expect(applyApiVersion("https://proxy.internal/pax8", "v2")).toBe(
-      "https://proxy.internal/pax8/v2",
+    expect(() => applyApiVersion("https://api-staging.pax8.com", "v2")).toThrow(
+      /PAX8_API_BASE/,
+    );
+    expect(() => applyApiVersion("https://proxy.internal/pax8", "v2")).toThrow(
+      /version segment/,
     );
   });
 
-  it("does not match version-like segments that aren't the trailing path component", () => {
-    expect(applyApiVersion("https://api.pax8.com/v1/inner", "v2")).toBe(
-      "https://api.pax8.com/v1/inner/v2",
+  it("throws when a version-like segment is present but not as the trailing path component", () => {
+    // `/v1/inner` doesn't end in /vN, so substitution can't safely happen
+    // here either. Falls into the same loud-failure branch.
+    expect(() =>
+      applyApiVersion("https://api.pax8.com/v1/inner", "v2"),
+    ).toThrow(/must end with a version segment/);
+  });
+
+  it("returns baseUrl unchanged (no error) when apiVersion is undefined, even if no version segment is present", () => {
+    // The validation only fires when apiVersion is actually set. Non-quote
+    // callers that don't override the version pass through unchanged.
+    expect(applyApiVersion("https://api-staging.pax8.com")).toBe(
+      "https://api-staging.pax8.com",
     );
   });
 });
