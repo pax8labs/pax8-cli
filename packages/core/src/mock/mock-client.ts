@@ -535,13 +535,13 @@ class ContactsResource {
 
 class UsageResource {
   async listSummaries(
-    params?: ListParams & { companyId?: string; resourceGroup?: string }
+    subscriptionId: string,
+    params?: ListParams & { resourceGroup?: string }
   ): Promise<PaginatedResponse<UsageSummary>> {
     await randomDelay();
-    let filtered = usageSummaries;
-    if (params?.companyId) {
-      filtered = filtered.filter((u) => u.companyId === params.companyId);
-    }
+    let filtered = usageSummaries.filter(
+      (u) => u.subscriptionId === subscriptionId,
+    );
     if (params?.resourceGroup) {
       filtered = filtered.filter((u) => u.resourceGroup === params.resourceGroup);
     }

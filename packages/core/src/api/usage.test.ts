@@ -19,6 +19,7 @@ function createMockClient(): Pax8Client {
 const SUMMARY_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 const COMPANY_ID = "b2c3d4e5-f6a7-8901-bcde-f12345678901";
 const PRODUCT_ID = "c3d4e5f6-a7b8-9012-cdef-123456789012";
+const SUBSCRIPTION_ID = "e5f6a7b8-9012-3456-cdef-7890abcdef12";
 
 const sampleSummary = {
   id: SUMMARY_ID,
@@ -60,12 +61,18 @@ describe("UsageApi", () => {
     api = new UsageApi(client);
   });
 
-  it("listSummaries returns paginated usage summaries", async () => {
+  it("listSummaries hits the nested subscription path documented by the spec", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedSummaries);
 
-    const result = await api.listSummaries({ page: 0, size: 50, companyId: COMPANY_ID });
+    const result = await api.listSummaries(SUBSCRIPTION_ID, { page: 0, size: 50 });
 
-    expect(client.get).toHaveBeenCalledWith("/usage-summaries", { page: 0, size: 50, companyId: COMPANY_ID });
+    // Regression guard for #337: the flat `/usage-summaries` list endpoint
+    // does NOT exist in the Pax8 public spec — usage summaries are only
+    // exposed under `/subscriptions/{subscriptionId}/usage-summaries`.
+    expect(client.get).toHaveBeenCalledWith(
+      `/subscriptions/${SUBSCRIPTION_ID}/usage-summaries`,
+      { page: 0, size: 50 },
+    );
     expect(result.content).toHaveLength(1);
     expect(result.content[0].subtotal).toBe(50);
   });
@@ -79,12 +86,17 @@ describe("UsageApi", () => {
     expect(result.quantity).toBe(100);
   });
 
-  it("listLines returns paginated usage lines", async () => {
+  it("listLines hits the /usage-lines leaf (not /lines)", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedLines);
 
     const result = await api.listLines(SUMMARY_ID, { page: 0, size: 50 });
 
-    expect(client.get).toHaveBeenCalledWith(`/usage-summaries/${SUMMARY_ID}/lines`, { page: 0, size: 50 });
+    // Regression guard for #337: the leaf segment is `usage-lines`, not
+    // `lines`. One-character drift on the leaf path caused 404s in #212.
+    expect(client.get).toHaveBeenCalledWith(
+      `/usage-summaries/${SUMMARY_ID}/usage-lines`,
+      { page: 0, size: 50 },
+    );
     expect(result.content).toHaveLength(1);
     expect(result.content[0].description).toBe("VM hours");
   });

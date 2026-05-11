@@ -382,6 +382,14 @@ export const UsageSummarySchema = z.object({
   id: z.string(),
   companyId: z.string(),
   productId: z.string(),
+  /**
+   * Subscription the usage rolls up to. Optional because not every backend
+   * response includes it (the field is denormalized client-side from the
+   * `/subscriptions/{id}/usage-summaries` request context), but populated in
+   * demo data so commands can resolve summary → subscription without a
+   * second lookup.
+   */
+  subscriptionId: z.string().optional(),
   date: z.string(),
   quantity: z.number(),
   unitPrice: z.number(),
