@@ -1,0 +1,66 @@
+name: Integration
+
+# Wire-level integration tests (#308). Runs `pnpm test:integration` against
+# the real Pax8 API using `PAX8_CLIENT_ID` / `PAX8_CLIENT_SECRET` repo
+# secrets. Job is informational — does NOT block PR merges — until the team
+# is ready to make it required. Forks and PRs from forks don't see the
+# secrets and the job will report a clean skip.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration:
+    name: Wire-level smoke tests
+    runs-on: ubuntu-latest
+    # `continue-on-error: true` keeps merges unblocked while the job is
+    # informational. Remove once the team agrees the suite is stable enough
+    # to gate merges on.
+    continue-on-error: true
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Check for credentials
+        id: creds
+        # Fork PRs never see repo secrets — that's the GitHub default. This
+        # step decides whether to run the suite or skip with a clear log
+        # line. The `test:integration` runner ALSO skips internally when
+        # the env vars are absent, so the outer guard is defense-in-depth.
+        env:
+          PAX8_CLIENT_ID: ${{ secrets.PAX8_CLIENT_ID }}
+          PAX8_CLIENT_SECRET: ${{ secrets.PAX8_CLIENT_SECRET }}
+        run: |
+          if [ -n "$PAX8_CLIENT_ID" ] && [ -n "$PAX8_CLIENT_SECRET" ]; then
+            echo "have_creds=true" >> "$GITHUB_OUTPUT"
+            echo "Credentials present — running wire-level integration tests."
+          else
+            echo "have_creds=false" >> "$GITHUB_OUTPUT"
+            echo "PAX8_CLIENT_ID / PAX8_CLIENT_SECRET not configured as repo secrets — skipping. This is expected for fork PRs and forks of this repo."
+          fi
+
+      - name: Run integration tests
+        if: steps.creds.outputs.have_creds == 'true'
+        env:
+          PAX8_CLIENT_ID: ${{ secrets.PAX8_CLIENT_ID }}
+          PAX8_CLIENT_SECRET: ${{ secrets.PAX8_CLIENT_SECRET }}
+          NO_COLOR: "1"
+        run: pnpm test:integration

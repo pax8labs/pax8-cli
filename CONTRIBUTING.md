@@ -50,14 +50,73 @@ packages/
 ## Testing
 
 ```bash
-pnpm test              # Run all tests
+pnpm test              # Run all tests (no credentials required)
 pnpm test:watch        # Watch mode
 pnpm test:coverage     # With coverage report
+pnpm test:integration  # Wire-level smoke tests against the real Pax8 API
 ```
 
 - Unit tests alongside source files (`*.test.ts`)
 - CLI integration tests in `packages/cli/src/__tests__/` (subprocess tests with `PAX8_DEMO=1`)
 - E2E flow tests in `e2e/`
+- Wire-level integration tests in `e2e/integration/` (real API; opt-in)
+
+### Wire-level integration tests (`pnpm test:integration`)
+
+A small, extensible suite that hits the real Pax8 API and asserts every
+call resolves to the URL documented by the relevant OpenAPI spec. Added in
+[#308](https://github.com/pax8labs/pax8-cli/issues/308) to close the gap
+that allowed the [#307](https://github.com/pax8labs/pax8-cli/issues/307)
+quotes `v1`/`v2` regression to ship — no test in the repo exercised a real
+wire URL.
+
+**Running locally with credentials:**
+
+```bash
+export PAX8_CLIENT_ID=...
+export PAX8_CLIENT_SECRET=...
+pnpm build              # the suite runs the built CLI, so build first
+pnpm test:integration
+```
+
+**Without credentials** the suite skips cleanly (exit 0) with a clear stderr
+message. The default `pnpm test` never depends on credentials — forks and
+local-only contributors are never blocked.
+
+**Adding a smoke test for a new resource:**
+
+1. Pick a read-only command for the resource (`list` is usually the right
+   shape). Writes against the real API are out of scope for this suite.
+2. Check `https://devx.pax8.com/openapi` for the spec that documents the
+   resource and note the version prefix (`/v1`, `/v2`, `/api/v2`, …).
+3. Add a file at `e2e/integration/<resource>.integration.test.ts`:
+
+   ```ts
+   import { it, expect } from "vitest";
+   import {
+     describeIntegration,
+     runCliVerbose,
+     expectExitZero,
+     expectWireUrl,
+   } from "./harness.js";
+
+   describeIntegration("widgets (v1)", () => {
+     it("widgets list hits /v1/widgets", async () => {
+       const result = await runCliVerbose(["widgets", "list", "--json"]);
+       expectExitZero(result);
+       expectWireUrl(result, {
+         method: "GET",
+         pathContains: "/v1/widgets",
+         version: "v1",
+       });
+     });
+   });
+   ```
+
+`describeIntegration` skips automatically when credentials are absent.
+`runCliVerbose` runs the built CLI with `--verbose` so `Pax8Client` emits
+the resolved URL on stderr; `expectWireUrl` parses that line and asserts
+the version segment. See `e2e/integration/harness.ts` for the full contract.
 
 ## Pull Requests
 

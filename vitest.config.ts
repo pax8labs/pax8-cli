@@ -5,6 +5,13 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["packages/*/src/**/*.test.ts", "e2e/**/*.test.ts"],
+    // #308: wire-level integration tests under `e2e/integration/` hit the
+    // real Pax8 API and require credentials. They live behind their own
+    // runner (`pnpm test:integration` → `vitest.integration.config.ts`).
+    // Keeping them out of the default `pnpm test` is a hard contract: it
+    // means forks, credential-less CI, and local dev never break because
+    // of missing secrets.
+    exclude: ["**/node_modules/**", "e2e/integration/**"],
     // #262: tests routinely point PAX8_CONFIG_DIR at `os.tmpdir()` (which
     // resolves outside `os.homedir()` on macOS / Linux) for isolation. The
     // new validateConfigDir() guard would reject those by default, so opt
