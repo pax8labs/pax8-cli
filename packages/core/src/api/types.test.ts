@@ -80,7 +80,7 @@ describe("CompanySchema", () => {
   const valid = {
     id: uuid,
     name: "Acme Corp",
-    address: { street: "123 Main St", city: "Denver", state: "CO", zip: "80202", country: "US" },
+    address: { street: "123 Main St", city: "Denver", stateOrProvince: "CO", postalCode: "80202", country: "US" },
     phone: "555-1234",
     website: "https://acme.com",
     status: "Active",
@@ -121,17 +121,76 @@ describe("CompanySchema", () => {
 });
 
 describe("CreateCompanyInputSchema", () => {
+  // The spec marks `name`, `address`, `phone`, `website`, and the three
+  // billing booleans as required (#329). Optional `.optional()` slipped
+  // through pre-#327/#329, so these tests pin the contract.
+  const validInput = {
+    name: "New Corp",
+    phone: "555-9999",
+    website: "https://newcorp.example.com",
+    address: {
+      street: "1 Main",
+      city: "Denver",
+      stateOrProvince: "CO",
+      postalCode: "80202",
+      country: "US",
+    },
+    billOnBehalfOfEnabled: false,
+    selfServiceAllowed: false,
+    orderApprovalRequired: false,
+  };
+
   it("validates a correct input", () => {
-    const input = { name: "New Corp", phone: "555-9999" };
-    expect(CreateCompanyInputSchema.parse(input)).toEqual(input);
+    expect(CreateCompanyInputSchema.parse(validInput)).toEqual(validInput);
   });
 
   it("rejects empty name", () => {
-    expect(() => CreateCompanyInputSchema.parse({ name: "" })).toThrow();
+    expect(() => CreateCompanyInputSchema.parse({ ...validInput, name: "" })).toThrow();
   });
 
   it("rejects missing name", () => {
-    expect(() => CreateCompanyInputSchema.parse({})).toThrow();
+    const { name: _name, ...rest } = validInput;
+    void _name;
+    expect(() => CreateCompanyInputSchema.parse(rest)).toThrow();
+  });
+
+  it("rejects missing phone", () => {
+    const { phone: _phone, ...rest } = validInput;
+    void _phone;
+    expect(() => CreateCompanyInputSchema.parse(rest)).toThrow();
+  });
+
+  it("rejects missing website", () => {
+    const { website: _website, ...rest } = validInput;
+    void _website;
+    expect(() => CreateCompanyInputSchema.parse(rest)).toThrow();
+  });
+
+  it("rejects missing billOnBehalfOfEnabled", () => {
+    const { billOnBehalfOfEnabled: _b, ...rest } = validInput;
+    void _b;
+    expect(() => CreateCompanyInputSchema.parse(rest)).toThrow();
+  });
+
+  it("rejects missing selfServiceAllowed", () => {
+    const { selfServiceAllowed: _s, ...rest } = validInput;
+    void _s;
+    expect(() => CreateCompanyInputSchema.parse(rest)).toThrow();
+  });
+
+  it("rejects missing orderApprovalRequired", () => {
+    const { orderApprovalRequired: _o, ...rest } = validInput;
+    void _o;
+    expect(() => CreateCompanyInputSchema.parse(rest)).toThrow();
+  });
+
+  it("accepts an absent address (handler-layer validation per #329)", () => {
+    // Address is `.optional()` at the type layer so the no-address branch
+    // doesn't produce a degenerate empty object on the wire. The CLI's
+    // `companies create` handler fail-fasts before this is reached.
+    const { address: _addr, ...rest } = validInput;
+    void _addr;
+    expect(() => CreateCompanyInputSchema.parse(rest)).not.toThrow();
   });
 });
 

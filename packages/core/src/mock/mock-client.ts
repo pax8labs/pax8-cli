@@ -128,22 +128,21 @@ class CompaniesResource {
 
   async create(data: Partial<Company>): Promise<Company> {
     await randomDelay();
+    // Mirror the spec's required-field contract: when no address is supplied
+    // the mock leaves `address` undefined rather than fabricating an empty
+    // object. The real `companies create` UX fail-fasts before reaching the
+    // wire (see #329), but tests that call the mock directly with a partial
+    // body should see the same shape they'd send.
     const newCompany: Company = {
       id: `demo-new-${Date.now()}`,
       name: data.name ?? "New Company",
-      address: data.address ?? {
-        street: "",
-        city: "",
-        state: "",
-        zip: "",
-        country: "US",
-      },
+      address: data.address,
       phone: data.phone ?? "",
       website: data.website ?? "",
       status: "Active",
-      billOnBehalfOfEnabled: false,
-      selfServiceAllowed: false,
-      orderApprovalRequired: false,
+      billOnBehalfOfEnabled: data.billOnBehalfOfEnabled ?? false,
+      selfServiceAllowed: data.selfServiceAllowed ?? false,
+      orderApprovalRequired: data.orderApprovalRequired ?? false,
       created: new Date().toISOString().split("T")[0],
     };
     return newCompany;

@@ -59,7 +59,7 @@ Full audit, including the retrospective on why the initial wire-path investigati
 |---|---|---|---|
 | `pax8 companies list` | `--status`, `--page`, `--size`, `--ids-only`, `--coverage`, `--with-actions` | size=25 | `--coverage` adds portfolio coverage analysis (computed) |
 | `pax8 companies show <id\|name>` | accepts name as alternative to UUID | | |
-| `pax8 companies create` | `--name`, `--phone`, `--website`, `--city`, `--state`, `--zip`, `--country`, `-y` | country=US | |
+| `pax8 companies create` | `--name`, `--phone`, `--website`, `--street`, `--city`, `--state`, `--zip`, `--country`, `--bill-on-behalf-of`, `--self-service-allowed`, `--order-approval-required`, `-y` | country=US; booleans all default to `false` | Address required (fail-fast); three billing booleans added in #329 |
 | `pax8 companies update <id\|name>` | `--name`, `--phone`, `--website`, `-y` | | No address/billing-flag updates exposed |
 | `pax8 companies more` | (interactive paging helper) | | CLI-only |
 | `pax8 contacts list` | `--company <id\|name>` (required), `--page`, `--size`, `--ids-only` | size=50 | |
@@ -68,7 +68,7 @@ Full audit, including the retrospective on why the initial wire-path investigati
 | `pax8 contacts update <id>` | `--company <id\|name>` (required), `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | | `--type` accepts a comma-separated list post-#255; `--company` required post-#324 |
 | `pax8 contacts delete <id>` | `--company <id\|name>` (required), `-y` | | `--company` required post-#324 |
 
-CLI output schemas (Zod) — `Company`: `id, name, address{street,city,state,zip,country}, phone, website, status, billOnBehalfOfEnabled, selfServiceAllowed, orderApprovalRequired, created, modified`. `Contact`: `id, firstName, lastName, email, phone, companyId, types[]`.
+CLI output schemas (Zod) — `Company`: `id, name, address{street,street2,city,stateOrProvince,postalCode,country}, phone, website, status, billOnBehalfOfEnabled, selfServiceAllowed, orderApprovalRequired, externalId, created, updatedDate`. `Contact`: `id, firstName, lastName, email, phone, companyId, types[]`.
 
 ### Public API Surface
 
@@ -80,8 +80,8 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 
 | API Term | CLI Term | Notes |
 |---|---|---|
-| `address.stateOrProvince` (query) / `state` (body) | `--state` | API is inconsistent; CLI normalizes to `state` |
-| `address.postalCode` (query) / `zip` (body) | `--zip` | Same — CLI picks the shorter body field |
+| `address.stateOrProvince` | `--state` | Wire field is `stateOrProvince`; CLI keeps the shorter `--state` flag for UX continuity [Wire rename in #327/#328] |
+| `address.postalCode` | `--zip` | Wire field is `postalCode`; CLI keeps the shorter `--zip` flag for UX continuity [Wire rename in #327/#328] |
 | `externalId` | `externalId` | Surfaced on Company in `pax8 companies show` (table + `--json`) [Resolved in #273] |
 | `updatedDate` | `updatedDate` | Aligned with API in #273 (was `modified`) |
 | `createdDate` (Contact) | (not exposed on Contact) | Only surfaced on Company-ish resources |

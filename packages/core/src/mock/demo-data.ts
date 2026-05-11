@@ -24,14 +24,21 @@ function monthsAgo(months: number): string {
 export interface Company {
   id: string;
   name: string;
-  address: {
-    street: string;
-    city: string;
-    /** Mirrors the public `Address` schema field name. */
-    state: string;
-    /** Mirrors the public `Address` schema field name. */
-    zip: string;
-    country: string;
+  /**
+   * Address is optional on the type even though the spec marks it required on
+   * `POST /companies`. The `companies create` handler fail-fasts before
+   * reaching the wire when no address is supplied (#329), but mock fixtures
+   * and tests need to be able to represent companies without an address.
+   */
+  address?: {
+    street?: string;
+    street2?: string;
+    city?: string;
+    /** Mirrors the public `Address` schema field name (renamed in #327/#328). */
+    stateOrProvince?: string;
+    /** Mirrors the public `Address` schema field name (renamed in #327/#328). */
+    postalCode?: string;
+    country?: string;
   };
   phone: string;
   website: string;
@@ -303,8 +310,8 @@ export const companies: Company[] = [
     address: {
       street: "4500 Cherry Creek Dr S",
       city: "Denver",
-      state: "CO",
-      zip: "80246",
+      stateOrProvince: "CO",
+      postalCode: "80246",
       country: "US",
     },
     phone: "+1-303-555-0101",
@@ -329,8 +336,8 @@ export const companies: Company[] = [
     address: {
       street: "1200 Brickell Ave, Suite 1800",
       city: "Miami",
-      state: "FL",
-      zip: "33131",
+      stateOrProvince: "FL",
+      postalCode: "33131",
       country: "US",
     },
     phone: "+1-305-555-0202",
@@ -353,8 +360,8 @@ export const companies: Company[] = [
     address: {
       street: "8900 NW Industrial Way",
       city: "Portland",
-      state: "OR",
-      zip: "97210",
+      stateOrProvince: "OR",
+      postalCode: "97210",
       country: "US",
     },
     phone: "+1-503-555-0303",
@@ -377,8 +384,8 @@ export const companies: Company[] = [
     address: {
       street: "2100 S Lamar Blvd",
       city: "Austin",
-      state: "TX",
-      zip: "78704",
+      stateOrProvince: "TX",
+      postalCode: "78704",
       country: "US",
     },
     phone: "+1-512-555-0404",
@@ -401,8 +408,8 @@ export const companies: Company[] = [
     address: {
       street: "233 S Wacker Dr, Suite 4200",
       city: "Chicago",
-      state: "IL",
-      zip: "60606",
+      stateOrProvince: "IL",
+      postalCode: "60606",
       country: "US",
     },
     phone: "+1-312-555-0505",
@@ -430,8 +437,8 @@ export const companies: Company[] = [
     address: {
       street: "1 Acme Plaza, Suite 100",
       city: "Springfield",
-      state: "MA",
-      zip: "01103",
+      stateOrProvince: "MA",
+      postalCode: "01103",
       country: "US",
     },
     phone: "+1-413-555-0606",

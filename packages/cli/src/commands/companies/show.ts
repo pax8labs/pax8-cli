@@ -106,7 +106,10 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Website:".padEnd(18))}${company.website || chalk.dim("—")}\n`);
       if (company.address) {
         const addr = company.address;
-        const parts = [addr.city, addr.state, addr.zip, addr.country].filter(Boolean);
+        // Wire field names are `stateOrProvince` / `postalCode` (renamed in
+        // #327/#328 to match the public spec). Pre-rename this branch read
+        // `addr.state` / `addr.zip`, which were silently dropped by Zod.
+        const parts = [addr.city, addr.stateOrProvince, addr.postalCode, addr.country].filter(Boolean);
         process.stdout.write(`  ${chalk.dim("Address:".padEnd(18))}${addr.street || ""}\n`);
         if (parts.length > 0) {
           process.stdout.write(`  ${"".padEnd(18)}${parts.join(", ")}\n`);
