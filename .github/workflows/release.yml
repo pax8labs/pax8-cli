@@ -33,10 +33,21 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Create release PR or publish
+      # Publish gate (see #370): we intentionally do NOT pass a `publish:`
+      # command here, so this action only opens/updates the "chore: release"
+      # PR and never invokes `npm publish`. Versions have been auto-bumped
+      # past anything we've shipped (CHANGELOG headings for 0.2.0/0.3.0 exist
+      # but the registry has nothing), and we want a deliberate human signal
+      # before the first real publish.
+      #
+      # When the team is ready to ship the first release, restore the
+      # `publish: pnpm changeset publish` input below and merge — the next
+      # push to main will publish whatever the open "chore: release" PR has
+      # already version-bumped to.
+      - name: Create release PR (publish gated — see #370)
         uses: changesets/action@v1
         with:
-          publish: pnpm changeset publish
+          # publish: pnpm changeset publish  # gated — enable when ready to ship
           version: pnpm changeset version
           commit: "chore: release"
           title: "chore: release"
