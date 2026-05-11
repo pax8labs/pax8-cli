@@ -93,7 +93,7 @@ async function resolveListPrice(
   // Term match: case-insensitive exact, with the Annual/Yearly alias the
   // rest of the codebase honors (see `cost-simulator.findPlan`).
   const want = billingTerm.toLowerCase();
-  let plan =
+  const plan =
     pricing.find((p) => p.billingTerm.toLowerCase() === want)
     ?? (want.includes("annual") || want.includes("yearly")
       ? pricing.find(
