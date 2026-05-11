@@ -72,14 +72,15 @@ describe("CompaniesApi", () => {
     expect(result.name).toBe("New Corp");
   });
 
-  it("update sends correct body and returns company", async () => {
+  it("update sends correct body and returns company via PATCH", async () => {
     const input = { name: "Updated Corp" };
     const updated = { ...sampleCompany, name: "Updated Corp" };
-    (client.put as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
+    (client.patch as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
 
     const result = await api.update(COMPANY_ID, input);
 
-    expect(client.put).toHaveBeenCalledWith(`/companies/${COMPANY_ID}`, input);
+    expect(client.patch).toHaveBeenCalledWith(`/companies/${COMPANY_ID}`, input);
+    expect(client.put).not.toHaveBeenCalled();
     expect(result.name).toBe("Updated Corp");
   });
 
