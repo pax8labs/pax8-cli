@@ -13,6 +13,10 @@ import { resolveProduct } from "../../lib/resolve-product.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import { formatQuantity } from "../../lib/formatters.js";
+import {
+  resolveEffectiveDate,
+  resolveListPrice,
+} from "../../lib/quote-line-item-defaults.js";
 import { ERROR_INVALID_INPUT } from "@pax8/core";
 import type {
   CreateQuoteInput,
@@ -113,10 +117,34 @@ Setting an expiration date:
       // prominently with a recovery hint so the user can retry the add
       // manually instead of losing the quote.
       if (product && quantity !== undefined) {
+        const billingTerm = options.billingTerm as BillingTerm;
+        // The v2 line-items POST requires `effectiveDate` and `price` per
+        // #312. The shorthand uses sensible defaults: today (UTC) and the
+        // product's `suggestedRetailPrice` for the chosen billing term.
+        // Partners needing custom pricing or a different effective date can
+        // create the empty quote and use `pax8 quotes line-items add` with
+        // the explicit `--price` / `--effective-date` flags.
+        const effectiveDate = resolveEffectiveDate(undefined);
+        const price = await resolveListPrice(ctx, product.id, billingTerm);
+        if (price === undefined) {
+          throw new CliError(
+            `No list price available for ${product.name} (${billingTerm})`,
+            [
+              "The shorthand needs a default price to populate the line item.",
+              `Try: pax8 quotes create --company "${options.company}" (creates empty quote),`,
+              `then: pax8 quotes line-items add <quote-id> --product "${options.product}" --quantity ${quantity} --price <number>`,
+            ],
+            undefined,
+            undefined,
+            ERROR_INVALID_INPUT,
+          );
+        }
         const lineInput: AddQuoteLineItemInput = {
           productId: product.id,
           quantity,
-          billingTerm: options.billingTerm as BillingTerm,
+          billingTerm,
+          effectiveDate,
+          price,
         };
         const lineSpin = createSpinner("Adding line item...").start();
         const doneLine = markWriteInFlight("quotes");
