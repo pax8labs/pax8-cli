@@ -622,13 +622,16 @@ class QuotesResource {
     await randomDelay();
     const quote = quotes.find((q) => q.id === quoteId);
     if (!quote) throw notFound("Quote", quoteId);
-    // Try to fetch a unit price from the demo product so the new line shows
-    // sensible totals in tables. Pricing lookups silently fall through —
-    // a missing price just means the line shows "—" in the UI.
+    // Prefer the explicit `input.price` (required since #312 to mirror the
+    // v2 `AddStandardLineItemPayload` schema). Fall back to the demo
+    // product's plan price only if the caller bypassed the CLI layer and
+    // somehow handed us an input without a price. Pricing lookups silently
+    // fall through — a missing price just means the line shows "—" in the UI.
     const product = products.find((p) => p.id === input.productId);
     const term = input.billingTerm ?? "Monthly";
     const plan = product?.pricing.find((p) => p.billingTerm === term);
-    const unitPrice = plan?.partnerBuyPrice;
+    const unitPrice =
+      typeof input.price === "number" ? input.price : plan?.partnerBuyPrice;
     const newId = `li-demo-${Date.now()}`;
     const newLine = {
       id: newId,

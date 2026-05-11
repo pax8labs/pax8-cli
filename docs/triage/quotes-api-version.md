@@ -154,7 +154,7 @@ Five of the ten quote operations need body-shape work in addition to the wire-pa
 | `POST /v2/quotes` (create) | `{ companyId, lineItems[] }` | `{ clientId }` (required) + `quoteRequestId` (optional). **No `lineItems` on create.** | Field rename (`companyId` → `clientId`) + structural (line items must be added via a separate `POST /v2/quotes/{id}/line-items` after create) |
 | `PUT /v2/quotes/{id}` (update) | `{ lineItems?, expiresOn? }` | All five required: `{ expiresOn, introMessage, published, status, termsAndDisclaimers }` | Field-only PUT rejected — need fetch-then-merge. For line-item replacement, use `PUT /v2/quotes/{id}/line-items` instead. |
 | `PUT /v2/quotes/{id}` (setStatus / send) | `{ status }` | Same five required — no separate status-transition endpoint exists in the spec | Same as `update`: fetch-then-merge |
-| `POST /v2/quotes/{id}/line-items` (addLineItem) | `[{ type: "Standard", productId, quantity, billingTerm? }]` | For Standard: `{ type, productId, quantity, billingTerm, effectiveDate, price }` — **`effectiveDate` and `price` are required and currently missing** | Missing required fields |
+| `POST /v2/quotes/{id}/line-items` (addLineItem) | ~~`[{ type: "Standard", productId, quantity, billingTerm? }]`~~ → `[{ type: "Standard", productId, quantity, billingTerm?, effectiveDate, price }]` | For Standard: `{ type, productId, quantity, billingTerm, effectiveDate, price }` | **Resolved (#312).** `effectiveDate` defaults to today (UTC); `price` resolves from the product's list price (`suggestedRetailPrice`) for the chosen billing term. `--effective-date` and `--price` flags expose overrides. |
 
 The five read paths (`list`, `get`, `delete`, `removeLineItem`, `line-items list` via re-fetch) only need the wire-path fix.
 

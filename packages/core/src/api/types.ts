@@ -620,12 +620,21 @@ export type UpdateQuoteInput = z.infer<typeof UpdateQuoteInputSchema>;
  * line item. The upstream API accepts an array of mixed-type payloads
  * (Standard / Custom / UsageBased); we expose the common Standard shape here
  * because that's what `quotes line-items add` constructs from `--product`,
- * `--quantity`, and `--billing-term`.
+ * `--quantity`, `--billing-term`, `--price`, and `--effective-date`.
+ *
+ * `effectiveDate` and `price` are required by the v2 `AddStandardLineItemPayload`
+ * schema (see #312, `docs/triage/quotes-api-version.md` §9.1). `effectiveDate`
+ * is an ISO 8601 date-time string (e.g. `2026-05-11T00:00:00Z`); `price` is the
+ * per-unit price the partner is quoting to the customer (defaults to the
+ * product's list price / `suggestedRetailPrice` for the chosen `billingTerm`
+ * when the CLI resolves it).
  */
 export const AddQuoteLineItemInputSchema = z.object({
   productId: z.string(),
   quantity: z.number().int().positive(),
   billingTerm: BillingTermSchema.optional(),
+  effectiveDate: z.string(),
+  price: z.number(),
 });
 export type AddQuoteLineItemInput = z.infer<typeof AddQuoteLineItemInputSchema>;
 

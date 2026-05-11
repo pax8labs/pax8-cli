@@ -105,7 +105,7 @@ describe("QuotesApi", () => {
     expect(client.delete).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
   });
 
-  it("addLineItem POSTs an array with a Standard payload then re-fetches the quote (routed to /v2)", async () => {
+  it("addLineItem POSTs an array with a Standard payload including effectiveDate and price then re-fetches the quote (routed to /v2)", async () => {
     (client.post as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
     const productId = "d4e5f6a7-b890-1234-cdef-567890123456";
@@ -114,8 +114,14 @@ describe("QuotesApi", () => {
       productId,
       quantity: 4,
       billingTerm: "Annual",
+      effectiveDate: "2026-06-01T00:00:00Z",
+      price: 22.5,
     });
 
+    // Per #312: `effectiveDate` and `price` are required by the v2
+    // `AddStandardLineItemPayload` schema. If this assertion regresses, the
+    // command will start sending the pre-#312 payload and the API will reject
+    // it with a 4xx body-shape error.
     expect(client.post).toHaveBeenCalledWith(
       `/quotes/${QUOTE_ID}/line-items`,
       [
@@ -124,12 +130,41 @@ describe("QuotesApi", () => {
           productId,
           quantity: 4,
           billingTerm: "Annual",
+          effectiveDate: "2026-06-01T00:00:00Z",
+          price: 22.5,
         },
       ],
       V2_OPTS,
     );
     expect(client.get).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`, undefined, V2_OPTS);
     expect(result.id).toBe(QUOTE_ID);
+  });
+
+  it("addLineItem omits billingTerm from the payload when caller doesn't set it", async () => {
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
+    const productId = "d4e5f6a7-b890-1234-cdef-567890123456";
+
+    await api.addLineItem(QUOTE_ID, {
+      productId,
+      quantity: 1,
+      effectiveDate: "2026-06-01T00:00:00Z",
+      price: 10,
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      `/quotes/${QUOTE_ID}/line-items`,
+      [
+        {
+          type: "Standard",
+          productId,
+          quantity: 1,
+          effectiveDate: "2026-06-01T00:00:00Z",
+          price: 10,
+        },
+      ],
+      V2_OPTS,
+    );
   });
 
   it("removeLineItem DELETEs the nested line-item path (routed to /v2)", async () => {
