@@ -9,7 +9,7 @@ import { CliError, handleCommandError, timeoutRecoverySteps } from "../../lib/er
 import { buildContext } from "../../lib/context.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { output, type Column } from "../../lib/output.js";
-import { formatStatus, formatDate } from "../../lib/formatters.js";
+import { formatDate } from "../../lib/formatters.js";
 import { enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 
 const columns: Column[] = [
@@ -17,22 +17,25 @@ const columns: Column[] = [
   { key: "companyName", header: "Company" },
   { key: "orderedBy", header: "Ordered By" },
   { key: "createdDate", header: "Date", format: (v) => formatDate(String(v)) },
-  { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
   { key: "lineItems", header: "Items", format: (v) => String(Array.isArray(v) ? v.length : 0) },
 ];
 
 export const ordersListCommand = new Command("list")
   .description("List orders")
   .option("--company <id|name>", "Filter by company ID or name")
-  // Honesty note (#250): the public Pax8 OpenAPI does NOT document a `status`
-  // field on `Order` nor a `status` query parameter on `GET /orders`. The
-  // values below are observed in real API responses (and mirrored by the demo
-  // fixtures) but are NOT part of the published contract — they may change
-  // without notice. The flag is kept so partner scripts that already use it
-  // don't break; see docs/triage/api-version-audit/orders-status-enum.md.
+  // Verified 2026-05-11 against the real API (docs/triage/orders-status-server-behavior.md):
+  // the public Pax8 OpenAPI does NOT document a `status` field on `Order` or
+  // a `status` query parameter on `GET /orders`, AND the server silently
+  // ignores `?status=` — every value (including bogus ones like `NotAStatus`)
+  // returns the full unfiltered set. The flag is kept so partner scripts that
+  // already depend on it don't break, but it is a no-op until the Pax8 Orders
+  // team surfaces a real status field (tracked in #369). The default table
+  // output previously rendered a `Status` column that always showed `—` for
+  // prod data; it has been dropped here. JSON output continues to include
+  // `status` when the demo client emits it, for backwards compatibility.
   .option(
     "--status <status>",
-    "Filter by status (observed: Completed, Processing, Failed, PendingManual; not in public OpenAPI)"
+    "No-op: server ignores filter; field not in public OpenAPI (see #369)"
   )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")

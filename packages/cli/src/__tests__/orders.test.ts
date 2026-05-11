@@ -157,17 +157,16 @@ describe("pax8 orders", () => {
       expect(result.stdout).toContain("--page");
     });
 
-    // #250: the public Pax8 OpenAPI does not declare `Order.status` nor a
-    // `status` query parameter on `GET /orders`. The help text must NOT
-    // present the observed values as if they were a documented contract.
-    it("--status help honestly flags that the field is not in the public OpenAPI (#250)", async () => {
+    // Help text must disclose two facts about --status now:
+    //   (a) the field isn't in the public OpenAPI (#250 contract)
+    //   (b) the server silently ignores the filter — verified 2026-05-11
+    //       against the real API; see docs/triage/orders-status-server-behavior.md.
+    // The flag itself is retained so existing partner scripts keep working.
+    it("--status help honestly flags that the field is not in the public OpenAPI and the server ignores it", async () => {
       const result = await runCliExpectSuccess(["orders", "list", "--help"]);
-      // The flag itself remains so existing partner scripts keep working.
       expect(result.stdout).toContain("--status");
-      // The help text MUST disclose that the field is not in the spec.
-      // Match either phrasing variant to keep the assertion flexible
-      // without losing the contract.
-      expect(result.stdout).toMatch(/not in public OpenAPI|observed|undocumented/i);
+      expect(result.stdout).toMatch(/not\s+in\s+public\s+OpenAPI|observed|undocumented/i);
+      expect(result.stdout).toMatch(/no-op|ignores|silently dropped/i);
       // Bare-list framing (pre-#250) must not regress.
       expect(result.stdout).not.toMatch(
         /Filter by status \(Completed, Processing, Failed, PendingManual\)/
