@@ -56,7 +56,12 @@ import {
   OrderLineItemInputSchema,
   OrderLineItemProvisioningDetailSchema,
   OrderLineItemProvisioningSchema,
+  LineItemProvisioningDetailSchema,
+  LineItemProvisioningSchema,
   CreateOrderInputSchema,
+  CreateQuoteInputSchema,
+  UpdateQuoteInputSchema,
+  AddQuoteLineItemInputSchema,
   SubscriptionSchema,
   UpdateSubscriptionInputSchema,
   SubscriptionHistorySchema,
@@ -526,57 +531,161 @@ describe("OrderLineItemInputSchema", () => {
   });
 });
 
-describe("OrderLineItemProvisioningDetailSchema (#332)", () => {
+describe("LineItemProvisioningDetailSchema (#332 / renamed #356)", () => {
   it("requires both key and values", () => {
     const valid = { key: "domain", values: ["contoso.com"] };
-    expect(OrderLineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
+    expect(LineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
   });
 
   it("accepts multiple values per key", () => {
     const valid = { key: "region", values: ["us-east", "us-west", "eu-west"] };
-    expect(OrderLineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
+    expect(LineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
   });
 
   it("allows an empty values array (spec doesn't require non-empty)", () => {
     const valid = { key: "feature-flag", values: [] };
-    expect(OrderLineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
+    expect(LineItemProvisioningDetailSchema.parse(valid)).toEqual(valid);
   });
 
   it("rejects missing key", () => {
     expect(() =>
-      OrderLineItemProvisioningDetailSchema.parse({ values: ["x"] }),
+      LineItemProvisioningDetailSchema.parse({ values: ["x"] }),
     ).toThrow();
   });
 
   it("rejects missing values array", () => {
     expect(() =>
-      OrderLineItemProvisioningDetailSchema.parse({ key: "domain" }),
+      LineItemProvisioningDetailSchema.parse({ key: "domain" }),
     ).toThrow();
   });
 
   it("rejects non-string values", () => {
     expect(() =>
-      OrderLineItemProvisioningDetailSchema.parse({ key: "domain", values: [42] }),
+      LineItemProvisioningDetailSchema.parse({ key: "domain", values: [42] }),
     ).toThrow();
+  });
+
+  // Pre-#356 export name must keep resolving to the same schema so embedders
+  // that imported `OrderLineItemProvisioningDetailSchema` from `@pax8/core`
+  // continue to work after the rename.
+  it("is exported under the pre-#356 alias `OrderLineItemProvisioningDetailSchema`", () => {
+    expect(OrderLineItemProvisioningDetailSchema).toBe(
+      LineItemProvisioningDetailSchema,
+    );
   });
 });
 
-describe("OrderLineItemProvisioningSchema (#332)", () => {
+describe("LineItemProvisioningSchema (#332 / renamed #356)", () => {
   it("is an array of provisioning details", () => {
     const valid = [
       { key: "domain", values: ["contoso.com"] },
       { key: "tier", values: ["premium"] },
     ];
-    expect(OrderLineItemProvisioningSchema.parse(valid)).toEqual(valid);
+    expect(LineItemProvisioningSchema.parse(valid)).toEqual(valid);
   });
 
   it("accepts an empty array (no provisioning details required)", () => {
-    expect(OrderLineItemProvisioningSchema.parse([])).toEqual([]);
+    expect(LineItemProvisioningSchema.parse([])).toEqual([]);
   });
 
   it("rejects a record / object map (the pre-#332 shape)", () => {
     expect(() =>
-      OrderLineItemProvisioningSchema.parse({ domain: "contoso.com" }),
+      LineItemProvisioningSchema.parse({ domain: "contoso.com" }),
+    ).toThrow();
+  });
+
+  // Pre-#356 export name must keep resolving to the same schema so embedders
+  // that imported `OrderLineItemProvisioningSchema` from `@pax8/core` continue
+  // to work after the rename.
+  it("is exported under the pre-#356 alias `OrderLineItemProvisioningSchema`", () => {
+    expect(OrderLineItemProvisioningSchema).toBe(LineItemProvisioningSchema);
+  });
+});
+
+// ─── Quotes line-item provisioningDetails (#356) ────────────────────────────
+//
+// Background: #332 reshaped `OrderLineItemInputSchema.provisioningDetails`
+// from the wrong `Record<string, unknown>` shape to the spec-correct
+// `Array<{key, values: string[]}>` shape for orders. The agent who fixed it
+// flagged the same record/array mismatch on the quotes-side `lineItems[]`
+// path as an adjacent finding (PR #351 body, "Scope-honoring callouts").
+// #356 is the follow-up.
+//
+// State of the world at the time of #356:
+//
+// - `CreateQuoteInputSchema` and `UpdateQuoteInputSchema` no longer carry a
+//   `lineItems` field at all. #354 restructured both to match the v2
+//   `POST /v2/quotes` (`{ clientId, quoteRequestId? }`) and
+//   `PUT /v2/quotes/{id}` (the 5-field full-update body) wire shapes; line
+//   items live on the separate `POST /v2/quotes/{id}/line-items` endpoint
+//   via `AddQuoteLineItemInputSchema`. So the original defect described in
+//   #356 — the `Record<string, unknown>` typing of
+//   `CreateQuoteInputSchema.lineItems[].provisioningDetails` — no longer
+//   exists as a shape, because the carrier field itself is gone.
+//
+// - `AddQuoteLineItemInputSchema` (the v2 line-item POST body) intentionally
+//   does NOT expose `provisioningDetails` today. The CLI's
+//   `quotes line-items add` doesn't surface a `--provisioning` flag, and #356
+//   is explicit about not adding one in this PR. When that flag lands the
+//   field can be added here using `LineItemProvisioningSchema.optional()` —
+//   same shape as the orders side — and the rename done by #356 means that
+//   single import already reads as domain-neutral.
+//
+// The tests below pin both invariants so a future PR can't quietly slip the
+// pre-fix record shape back in via the wrong carrier.
+describe("Quotes line-item input schemas (#356)", () => {
+  it("CreateQuoteInputSchema does not accept a `lineItems` field (post-#354 v2 POST body)", () => {
+    const valid = { clientId: uuid };
+    expect(CreateQuoteInputSchema.parse(valid)).toEqual(valid);
+    // zod is permissive by default — `lineItems` is just stripped, not
+    // rejected. Pin that it doesn't survive parsing, so a future caller
+    // can't accidentally rely on it making it through to the wire.
+    const parsed = CreateQuoteInputSchema.parse({
+      clientId: uuid,
+      lineItems: [
+        { productId: uuid2, quantity: 1, provisioningDetails: [{ key: "k", values: ["v"] }] },
+      ],
+    } as unknown as { clientId: string });
+    expect(parsed).not.toHaveProperty("lineItems");
+  });
+
+  it("UpdateQuoteInputSchema does not accept a `lineItems` field (post-#354 v2 PUT body)", () => {
+    const valid = { status: "sent" as const };
+    expect(UpdateQuoteInputSchema.parse(valid)).toEqual(valid);
+    const parsed = UpdateQuoteInputSchema.parse({
+      status: "sent",
+      lineItems: [
+        { productId: uuid2, quantity: 1, provisioningDetails: [{ key: "k", values: ["v"] }] },
+      ],
+    } as unknown as { status: "sent" });
+    expect(parsed).not.toHaveProperty("lineItems");
+  });
+
+  // The current `AddQuoteLineItemInputSchema` (#312) intentionally omits
+  // `provisioningDetails`. If a future PR adds it, this test will start
+  // failing — at which point the new field MUST be wired to
+  // `LineItemProvisioningSchema.optional()` so the spec-shape parity with
+  // orders is preserved from day one. Update the test to mirror the orders
+  // assertions in that PR.
+  it("AddQuoteLineItemInputSchema does not yet surface `provisioningDetails` (canary for the future flag)", () => {
+    const validBase = {
+      productId: uuid2,
+      quantity: 1,
+      effectiveDate: "2026-05-11T00:00:00Z",
+      price: 9.99,
+    };
+    const parsed = AddQuoteLineItemInputSchema.parse({
+      ...validBase,
+      provisioningDetails: [{ key: "domain", values: ["contoso.com"] }],
+    } as unknown as typeof validBase);
+    expect(parsed).not.toHaveProperty("provisioningDetails");
+
+    // If/when `provisioningDetails` lands on this schema, the record shape
+    // (the pre-#332 bug) must never be accepted. Pre-pin the regression
+    // guard using `LineItemProvisioningSchema` directly so the contract is
+    // documented even though the carrier field doesn't exist yet.
+    expect(() =>
+      LineItemProvisioningSchema.parse({ domain: "contoso.com" }),
     ).toThrow();
   });
 });

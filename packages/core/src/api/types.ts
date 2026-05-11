@@ -285,11 +285,12 @@ export const ProvisioningDetailSchema = z.object({
 });
 export type ProvisioningDetail = z.infer<typeof ProvisioningDetailSchema>;
 
-// ─── Order ───────────────────────────────────────────────────────────────────
+// ─── Line-item provisioning (shared by Orders + Quotes) ─────────────────────
 
 /**
  * Per-line provisioning detail, matching the public Pax8 OpenAPI spec's
- * `ProvisioningDetail` schema (partner-endpoints.json):
+ * `ProvisioningDetail` schema (partner-endpoints.json + quoting-endpoints.json
+ * both share this shape):
  *
  *   { key: string, values: string[] }
  *
@@ -302,20 +303,43 @@ export type ProvisioningDetail = z.infer<typeof ProvisioningDetailSchema>;
  * with the products-side `ProvisioningDetailSchema` (which describes a
  * *product's* provisioning requirements, not an order-line's provisioning
  * values — same word, different concept).
+ *
+ * Initially introduced as `OrderLineItemProvisioningDetailSchema` in #332;
+ * renamed to drop the `Order` prefix in #356 because the quotes line-item
+ * path (`POST /v2/quotes/{id}/line-items`) carries the same `ProvisioningDetail`
+ * shape per the public quoting OpenAPI spec
+ * (`AddStandardLineItemPayload.provisioningDetails`). The old export names
+ * remain as aliases at the bottom of this section for embedders that imported
+ * them under the original symbol.
  */
-export const OrderLineItemProvisioningDetailSchema = z.object({
+export const LineItemProvisioningDetailSchema = z.object({
   key: z.string(),
   values: z.array(z.string()),
 });
-export type OrderLineItemProvisioningDetail = z.infer<typeof OrderLineItemProvisioningDetailSchema>;
+export type LineItemProvisioningDetail = z.infer<typeof LineItemProvisioningDetailSchema>;
 
 /**
- * Wire shape for `OrderLineItem.provisioningDetails` — an array of
- * `{ key, values[] }` objects per the spec. See #332.
+ * Wire shape for a line item's `provisioningDetails` — an array of
+ * `{ key, values[] }` objects per the spec. Used by both orders
+ * (`OrderLineItem` / `OrderLineItemInput`) and quotes (the v2
+ * `AddStandardLineItemPayload`). See #332 (orders) and #356 (rename + quotes
+ * surface).
  */
-export const OrderLineItemProvisioningSchema = z.array(
-  OrderLineItemProvisioningDetailSchema,
+export const LineItemProvisioningSchema = z.array(
+  LineItemProvisioningDetailSchema,
 );
+
+/**
+ * Backward-compatibility aliases for the pre-#356 names. Embedders that
+ * imported `OrderLineItemProvisioningDetailSchema` /
+ * `OrderLineItemProvisioningSchema` / `OrderLineItemProvisioningDetail` from
+ * `@pax8/core` continue to work unchanged. Prefer the domain-neutral names
+ * (`LineItemProvisioning*`) in new code — the schemas are shared by orders
+ * and quotes.
+ */
+export const OrderLineItemProvisioningDetailSchema = LineItemProvisioningDetailSchema;
+export const OrderLineItemProvisioningSchema = LineItemProvisioningSchema;
+export type OrderLineItemProvisioningDetail = LineItemProvisioningDetail;
 
 export const CommitmentTermSchema = z.enum([
   "Monthly",
@@ -339,7 +363,7 @@ export const OrderLineItemInputSchema = z.object({
   quantity: z.number().int().min(1),
   billingTerm: BillingTermSchema.optional(),
   commitmentTermId: z.string().optional(),
-  provisioningDetails: OrderLineItemProvisioningSchema.optional(),
+  provisioningDetails: LineItemProvisioningSchema.optional(),
 });
 export type OrderLineItemInput = z.infer<typeof OrderLineItemInputSchema>;
 
@@ -365,7 +389,7 @@ export const OrderLineItemSchema = z.object({
   billingTerm: BillingTermSchema.optional(),
   lineItemNumber: z.number().int().optional(),
   quantity: z.number(),
-  provisioningDetails: OrderLineItemProvisioningSchema.optional(),
+  provisioningDetails: LineItemProvisioningSchema.optional(),
 });
 export type OrderLineItem = z.infer<typeof OrderLineItemSchema>;
 
