@@ -465,9 +465,13 @@ class OrdersResource {
       orderedBy: "Demo User",
       orderedByEmail: "demo@example.com",
       createdDate: new Date().toISOString().split("T")[0],
-      lineItems: data.lineItems.map((li) => ({
+      // Echo `lineItemNumber` back so callers can verify it was sent. Falls
+      // back to 1-based array position when callers don't supply one — same
+      // behavior `OrdersApi.create()` enforces on the real wire path (#331).
+      lineItems: data.lineItems.map((li, idx) => ({
         productId: li.productId,
         productName: products.find((p) => p.id === li.productId)?.name ?? "Unknown",
+        lineItemNumber: li.lineItemNumber ?? idx + 1,
         quantity: li.quantity,
         billingTerm: (li.billingTerm ?? "Monthly") as "Monthly" | "Annual",
       })),

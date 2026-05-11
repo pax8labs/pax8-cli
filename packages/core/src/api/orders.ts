@@ -37,13 +37,29 @@ export class OrdersApi {
    * Pax8 API to validate (dry-run) the order without committing it. The
    * response shape is the same as a real create — partners can preview
    * what the order would look like before placing it for real.
+   *
+   * Auto-injects `lineItemNumber` on every line item that doesn't provide
+   * one: the spec's `CreateLineItem` schema marks `lineItemNumber` as
+   * required (used by `parentLineItemNumber` to express child line items),
+   * but the CLI doesn't expose it as user-facing input. We assign 1-based
+   * sequential numbers (1, 2, 3, ...) matching array position. Callers that
+   * do supply `lineItemNumber` explicitly (e.g. for parent/child line-item
+   * orderings the CLI doesn't construct today) have their values preserved.
+   * See issue #331.
    */
   async create(
     data: CreateOrderInput,
     opts?: { isMock?: boolean },
   ): Promise<Order> {
     const path = opts?.isMock ? "/orders?isMock=true" : "/orders";
-    const raw = await this.client.post<unknown>(path, data);
+    const payload = {
+      ...data,
+      lineItems: data.lineItems.map((li, idx) => ({
+        ...li,
+        lineItemNumber: li.lineItemNumber ?? idx + 1,
+      })),
+    };
+    const raw = await this.client.post<unknown>(path, payload);
     return OrderSchema.parse(raw);
   }
 }

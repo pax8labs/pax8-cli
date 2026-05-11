@@ -227,6 +227,9 @@ describe("MockPax8Client — extended coverage", () => {
       expect(result.status).toBe("Processing");
       expect(result.lineItems).toHaveLength(1);
       expect(result.lineItems[0].quantity).toBe(5);
+      // Mock client echoes the auto-injected `lineItemNumber` so consumers
+      // can observe the field is being sent on the wire (#331).
+      expect(result.lineItems[0].lineItemNumber).toBe(1);
     });
   });
 

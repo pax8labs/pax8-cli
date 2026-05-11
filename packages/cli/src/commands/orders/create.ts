@@ -16,7 +16,7 @@ import {
   ERROR_INVALID_INPUT,
   ERROR_PRODUCT_NOT_FOUND,
 } from "@pax8/core";
-import type { CreateOrderInput, OrderLineItemInput, BillingTerm } from "@pax8/core";
+import type { CreateOrderInput, OrderLineItemCreateInput, BillingTerm } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
@@ -551,8 +551,13 @@ Examples:
       const spinner = createSpinner(dryRun ? "Validating order..." : "Creating order...").start();
 
       // ── Build API input ──
-      const lineItems: OrderLineItemInput[] = resolvedLines.map((line, idx) => ({
+      // `lineItemNumber` is required by the spec's `CreateLineItem` shape
+      // (used by `parentLineItemNumber` for child line items within the
+      // same order). The CLI doesn't expose it as user-facing input — it's
+      // a 1-based sequential index matching array position. See #331.
+      const lineItems: OrderLineItemCreateInput[] = resolvedLines.map((line, idx) => ({
         productId: line.productId,
+        lineItemNumber: idx + 1,
         quantity: confirmedQuantities[idx],
         billingTerm: line.billingTerm as BillingTerm,
         ...(line.commitmentTermId ? { commitmentTermId: line.commitmentTermId } : {}),
