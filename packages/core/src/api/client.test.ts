@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Pax8Client, getDefaultBaseUrl, applyApiVersion, resolveBaseUrl } from "./client.js";
+import {
+  Pax8Client,
+  getDefaultBaseUrl,
+  getDefaultTimeout,
+  applyApiVersion,
+  isApiTimeoutError,
+  resolveBaseUrl,
+} from "./client.js";
 import { ApiError, RateLimitError } from "./errors.js";
 import {
   Pax8SecurityError,
@@ -1010,5 +1017,225 @@ describe("Pax8Client per-API base overrides (#321)", () => {
     const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url.toString()).toBe("https://api.pax8.com/api/v2/webhooks");
     expect(url.toString()).not.toContain("///");
+  });
+});
+
+// #199 — `PAX8_TIMEOUT_MS` lets partners extend the 30s default for slow
+// upstream endpoints (e.g. `/orders` on large portfolios). The env var is
+// resolved via `getDefaultTimeout()` and wired into the client constructor;
+// these tests pin the resolution rule and the wire-level effect.
+describe("getDefaultTimeout (#199)", () => {
+  const original = process.env.PAX8_TIMEOUT_MS;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.PAX8_TIMEOUT_MS;
+    else process.env.PAX8_TIMEOUT_MS = original;
+  });
+
+  it("returns the 30s default when PAX8_TIMEOUT_MS is unset", () => {
+    delete process.env.PAX8_TIMEOUT_MS;
+    expect(getDefaultTimeout()).toBe(30_000);
+  });
+
+  it("returns the 30s default when PAX8_TIMEOUT_MS is empty string", () => {
+    process.env.PAX8_TIMEOUT_MS = "";
+    expect(getDefaultTimeout()).toBe(30_000);
+  });
+
+  it("honors PAX8_TIMEOUT_MS when set to a positive integer", () => {
+    process.env.PAX8_TIMEOUT_MS = "60000";
+    expect(getDefaultTimeout()).toBe(60_000);
+  });
+
+  it("clamps PAX8_TIMEOUT_MS to MAX_TIMEOUT_MS (300000)", () => {
+    // 10 minutes input → clamped to 5 minutes. We don't reject — a typo
+    // shouldn't turn every request into ERROR_INVALID_INPUT.
+    process.env.PAX8_TIMEOUT_MS = "600000";
+    expect(getDefaultTimeout()).toBe(300_000);
+  });
+
+  it("falls back to default on non-numeric input", () => {
+    process.env.PAX8_TIMEOUT_MS = "not-a-number";
+    expect(getDefaultTimeout()).toBe(30_000);
+  });
+
+  it("falls back to default on zero or negative input", () => {
+    process.env.PAX8_TIMEOUT_MS = "0";
+    expect(getDefaultTimeout()).toBe(30_000);
+    process.env.PAX8_TIMEOUT_MS = "-1000";
+    expect(getDefaultTimeout()).toBe(30_000);
+  });
+
+  it("re-reads env on every call (lazy lookup, not cached)", () => {
+    delete process.env.PAX8_TIMEOUT_MS;
+    expect(getDefaultTimeout()).toBe(30_000);
+    process.env.PAX8_TIMEOUT_MS = "45000";
+    expect(getDefaultTimeout()).toBe(45_000);
+    process.env.PAX8_TIMEOUT_MS = "120000";
+    expect(getDefaultTimeout()).toBe(120_000);
+    delete process.env.PAX8_TIMEOUT_MS;
+    expect(getDefaultTimeout()).toBe(30_000);
+  });
+
+  it("floors fractional input to an integer", () => {
+    process.env.PAX8_TIMEOUT_MS = "60500.7";
+    expect(getDefaultTimeout()).toBe(60_500);
+  });
+});
+
+describe("Pax8Client honors PAX8_TIMEOUT_MS (#199)", () => {
+  let originalFetch: typeof globalThis.fetch;
+  const originalTimeout = process.env.PAX8_TIMEOUT_MS;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    mockTokenManager.getToken.mockResolvedValue("test-token");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+    if (originalTimeout === undefined) delete process.env.PAX8_TIMEOUT_MS;
+    else process.env.PAX8_TIMEOUT_MS = originalTimeout;
+  });
+
+  it("uses PAX8_TIMEOUT_MS for the abort deadline when no explicit timeout option is passed", async () => {
+    // Drive the env-var path through the same abort-mock pattern as the
+    // existing "throws ApiError on timeout" case. The message echoes the
+    // configured timeout, which is the wire-level evidence that the env var
+    // was honored (we can't read the private `this.timeout` directly).
+    process.env.PAX8_TIMEOUT_MS = "73";
+
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      return new Promise((_, reject) => {
+        const err = new DOMException("The operation was aborted", "AbortError");
+        setTimeout(() => reject(err), 10);
+      });
+    });
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      cacheTtlMs: 0,
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/orders");
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).message).toContain("timed out after 73ms");
+    expect(isApiTimeoutError(thrown)).toBe(true);
+  }, 15_000);
+
+  it("explicit `timeout` option overrides PAX8_TIMEOUT_MS", async () => {
+    process.env.PAX8_TIMEOUT_MS = "99999";
+
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      return new Promise((_, reject) => {
+        const err = new DOMException("The operation was aborted", "AbortError");
+        setTimeout(() => reject(err), 10);
+      });
+    });
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      timeout: 47,
+      cacheTtlMs: 0,
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/orders");
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(ApiError);
+    // The 47ms constructor arg wins over the env var.
+    expect((thrown as ApiError).message).toContain("timed out after 47ms");
+    expect((thrown as ApiError).message).not.toContain("99999");
+  }, 15_000);
+
+  it("falls back to 30000ms when PAX8_TIMEOUT_MS is malformed", async () => {
+    process.env.PAX8_TIMEOUT_MS = "garbage";
+
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      return new Promise((_, reject) => {
+        const err = new DOMException("The operation was aborted", "AbortError");
+        setTimeout(() => reject(err), 10);
+      });
+    });
+    // Use a small explicit timeout so the test doesn't actually wait for the
+    // 30s default. The point is that the env var was *ignored* — the
+    // explicit option still wins.
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      timeout: 25,
+      cacheTtlMs: 0,
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/orders");
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).message).toContain("timed out after 25ms");
+  }, 15_000);
+});
+
+// #199 — `isApiTimeoutError` is the canonical predicate the CLI's error
+// layer (and any embedder) uses to route a client-side timeout to
+// `ERROR_API_TIMEOUT`. Pin the shape so a future refactor that changes
+// the thrown error's message can't silently break the classification.
+describe("isApiTimeoutError (#199)", () => {
+  it("returns true for an ApiError thrown by the client-side abort path", () => {
+    expect(
+      isApiTimeoutError(
+        new ApiError("Request timed out after 30000ms", 0, "/orders", "GET"),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns true regardless of the millisecond count", () => {
+    expect(
+      isApiTimeoutError(
+        new ApiError("Request timed out after 5000ms", 0, "/orders", "GET"),
+      ),
+    ).toBe(true);
+    expect(
+      isApiTimeoutError(
+        new ApiError("Request timed out after 300000ms", 0, "/x", "GET"),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false for an ApiError with a non-zero status code", () => {
+    // 408 has its own happy path in the error mapper — we don't conflate it
+    // with the abort path even though both end up at ERROR_API_TIMEOUT.
+    expect(isApiTimeoutError(new ApiError("Request Timeout", 408, "/x", "GET")))
+      .toBe(false);
+    expect(isApiTimeoutError(new ApiError("Server error", 500, "/x", "GET")))
+      .toBe(false);
+  });
+
+  it("returns false for an ApiError with status 0 but a different message (network errors)", () => {
+    // The other status-0 path in client.ts is `Network error: ...` from a
+    // non-Abort rejection (DNS, refused, etc.). Don't classify as a timeout.
+    expect(
+      isApiTimeoutError(
+        new ApiError("Network error: ECONNREFUSED", 0, "/x", "GET"),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false for non-ApiError inputs", () => {
+    expect(isApiTimeoutError(new Error("timed out"))).toBe(false);
+    expect(isApiTimeoutError("timed out")).toBe(false);
+    expect(isApiTimeoutError(undefined)).toBe(false);
+    expect(isApiTimeoutError(null)).toBe(false);
   });
 });

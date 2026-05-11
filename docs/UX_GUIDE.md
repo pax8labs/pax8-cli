@@ -156,8 +156,11 @@ Conventions:
 - **Always provide recovery steps.** A user hitting an error should know what to try next.
 - Wrap suggested commands with `chalk.cyan(replCmd("pax8 ..."))`. `replCmd` strips the `pax8 ` prefix when running inside the REPL.
 - 401/403 and 404 are handled centrally — don't re-handle them per-command.
+- Timeouts (`ERROR_API_TIMEOUT`) are handled centrally — `handleCommandError` surfaces the generic `PAX8_TIMEOUT_MS` env-var hint and `pax8 doctor` advice. If your command has a *domain-specific* workaround (e.g. `orders list` recommending `--size` / `--company` against the slow `/orders` endpoint, #199), catch the timeout, build a `CliError` via `timeoutRecoverySteps([yourHint])`, and re-throw — `timeoutRecoverySteps` concatenates the generic floor so the env-var escape hatch is always offered.
 - Stack traces are never shown. If you need debugging detail, put it in `causes`.
 - Exit code is always `1` on error, `0` on success. Don't use other codes.
+
+**Per-request timeout.** Default `30000ms`. Partners on slow connections — or hitting a Pax8 endpoint that's known to be slow on their tenant — can override via `PAX8_TIMEOUT_MS=<ms>` (capped at `300000`). The env var is wired through `getDefaultTimeout()` in `@pax8/core` and applies to every API call; there is no per-command flag.
 
 ---
 

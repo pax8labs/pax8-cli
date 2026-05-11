@@ -93,6 +93,7 @@ Adding a new command? Lives at `packages/cli/src/commands/<resource>/<action>.ts
 
 - `PAX8_CLIENT_ID`, `PAX8_CLIENT_SECRET` — credentials (file fallback: `~/.pax8/credentials.json`)
 - `PAX8_API_BASE` — override API + token base URL (e.g. staging); honored by both `@pax8/core` and the OAuth client
+- `PAX8_TIMEOUT_MS` — per-request HTTP timeout in milliseconds (default `30000`, max `300000`); extend for slow endpoints like `/orders` on large portfolios (#199)
 - `PAX8_DEMO=1` — run against `MockPax8Client` with synthetic data
 - `PAX8_YES=1` — auto-confirm write prompts
 - `PAX8_QUIET=1` — disable spinners

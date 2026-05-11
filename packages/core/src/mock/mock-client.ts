@@ -35,7 +35,7 @@ import {
   type WebhookLog,
   type WebhookTopicDefinition,
 } from "./demo-data.js";
-import { NotFoundError } from "../api/errors.js";
+import { ApiError, NotFoundError } from "../api/errors.js";
 import type {
   CreateOrderInput,
   ProductPricing as ProductPricingPlans,
@@ -428,6 +428,22 @@ class OrdersResource {
     params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Order>> {
     await randomDelay();
+    // Test-only fault injection for the `pax8 orders list` timeout-hint UX
+    // (#199). When this env var is set the demo mock raises the same shape
+    // of error the real `Pax8Client` AbortController path throws: an
+    // `ApiError` with `statusCode === 0` and a "Request timed out after Nms"
+    // message. Scoped to demo mode only; the real API client never reads
+    // this var. We can't `import { ApiError }` here (circular import risk),
+    // so the equivalent shape is built by hand below and the CLI's
+    // `isApiTimeoutError` predicate sees it as a timeout.
+    if (process.env.PAX8_DEMO_FAIL_ORDERS_LIST_TIMEOUT) {
+      throw new ApiError(
+        "Request timed out after 30000ms",
+        0,
+        "/orders",
+        "GET",
+      );
+    }
     let filtered = [...orders, ...this.loadCreated()];
     if (params?.companyId) {
       filtered = filtered.filter((o) => o.companyId === params.companyId);

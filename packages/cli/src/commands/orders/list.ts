@@ -3,8 +3,9 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
+import { ApiError, isApiTimeoutError, ERROR_API_TIMEOUT } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
-import { handleCommandError } from "../../lib/errors.js";
+import { CliError, handleCommandError, timeoutRecoverySteps } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { output, type Column } from "../../lib/output.js";
@@ -83,6 +84,37 @@ Examples:
         );
       }
     } catch (error) {
+      // #199: the `/orders` endpoint is known to be slow against tenants with
+      // large historical order counts. When the 30s default fires, the generic
+      // "Request timed out" message tells the partner nothing useful — surface
+      // the concrete knobs they can turn (smaller page size, per-company
+      // filter, env-var-driven timeout extension) instead of just the
+      // millisecond count.
+      if (isApiTimeoutError(error)) {
+        const ordersSpecific = [
+          "The /orders endpoint can be slow on large portfolios. Try a smaller page size:",
+          `    ${chalk.cyan("pax8 orders list --size 10")}`,
+          "Or narrow the scope to one customer:",
+          `    ${chalk.cyan('pax8 orders list --company "<name>"')}`,
+        ];
+        // `isApiTimeoutError` guarantees the throw is an `ApiError`; cast
+        // through it for the `.message` access. We avoid making the
+        // predicate a TypeScript `error is ApiError` form because it would
+        // narrow other callers (e.g. `codeForApiError(error: ApiError)`) to
+        // `never` in their else-branches.
+        const message = (error as ApiError).message;
+        await handleCommandError(
+          new CliError(
+            message,
+            undefined,
+            timeoutRecoverySteps(ordersSpecific),
+            undefined,
+            ERROR_API_TIMEOUT,
+          ),
+          spinner,
+          "Failed to list orders",
+        );
+      }
       await handleCommandError(error, spinner, "Failed to list orders");
     }
   });
