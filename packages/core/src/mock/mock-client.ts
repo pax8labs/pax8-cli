@@ -686,8 +686,6 @@ class QuotesResource {
 //   list()       → Webhook[]
 //   create(data) → Webhook
 //   get(id)      → Webhook
-//   update(id, data)            → Webhook (legacy PUT shape)
-//   updateStatus(id, status)    → Webhook (legacy PATCH shape)
 //   updateConfiguration(id, c)  → Webhook (POST /webhooks/{id}/configuration)
 //   setStatus(id, active)       → Webhook (POST /webhooks/{id}/status)
 //   delete(id)   → void
@@ -722,26 +720,6 @@ class WebhooksResource {
       secret: `whsec_demo_${Date.now()}`,
     };
     return newWh;
-  }
-
-  async update(
-    id: string,
-    data: { url?: string; topics?: string[]; status?: "Active" | "Disabled" }
-  ): Promise<Webhook> {
-    await randomDelay();
-    const wh = webhooks.find((w) => w.id === id);
-    if (!wh) throw notFound("Webhook", id);
-    return { ...wh, ...data, id: wh.id };
-  }
-
-  async updateStatus(
-    id: string,
-    status: "Active" | "Disabled"
-  ): Promise<Webhook> {
-    await randomDelay();
-    const wh = webhooks.find((w) => w.id === id);
-    if (!wh) throw notFound("Webhook", id);
-    return { ...wh, status };
   }
 
   async updateConfiguration(

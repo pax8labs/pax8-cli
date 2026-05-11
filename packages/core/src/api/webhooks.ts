@@ -1,7 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Pax8Client } from "./client.js";
+import type { Pax8Client, RequestOpts } from "./client.js";
 import { z } from "zod";
 import {
   WebhookSchema,
@@ -11,35 +11,41 @@ import {
   type WebhookLog,
   type TopicDefinition,
   type CreateWebhookInput,
-  type UpdateWebhookInput,
   type UpdateWebhookConfigurationInput,
 } from "./types.js";
+
+/**
+ * Per-call routing options for `WebhooksApi`. Webhooks live at
+ * `https://api.pax8.com/api/v2/webhooks/...` per the public webhooks OpenAPI
+ * spec — a different *prefix* than the project-wide `/v1` default, not just a
+ * swapped version segment. The `Pax8Client` accepts a `RequestOpts` argument
+ * with `api` to opt into a per-API base URL override (#321); the call site
+ * that constructs the client (e.g. `packages/cli/src/lib/context.ts`)
+ * registers `webhooks → https://api.pax8.com/api/v2` in `apiBaseOverrides`.
+ * Every method here passes `WEBHOOKS` so the resolved wire URL lands on the
+ * documented endpoint. See #322.
+ *
+ * Body shapes for the write endpoints are tracked separately under #323 and
+ * are intentionally not addressed in this layer — this hotfix is wire-path
+ * only.
+ */
+const WEBHOOKS: RequestOpts = { api: "webhooks" };
 
 export class WebhooksApi {
   constructor(private client: Pax8Client) {}
 
   async list(): Promise<Webhook[]> {
-    const raw = await this.client.get<unknown>("/webhooks");
+    const raw = await this.client.get<unknown>("/webhooks", undefined, WEBHOOKS);
     return z.array(WebhookSchema).parse(raw);
   }
 
   async create(data: CreateWebhookInput): Promise<Webhook> {
-    const raw = await this.client.post<unknown>("/webhooks", data);
+    const raw = await this.client.post<unknown>("/webhooks", data, WEBHOOKS);
     return WebhookSchema.parse(raw);
   }
 
   async get(id: string): Promise<Webhook> {
-    const raw = await this.client.get<unknown>(`/webhooks/${id}`);
-    return WebhookSchema.parse(raw);
-  }
-
-  async update(id: string, data: UpdateWebhookInput): Promise<Webhook> {
-    const raw = await this.client.put<unknown>(`/webhooks/${id}`, data);
-    return WebhookSchema.parse(raw);
-  }
-
-  async updateStatus(id: string, status: string): Promise<Webhook> {
-    const raw = await this.client.patch<unknown>(`/webhooks/${id}`, { status });
+    const raw = await this.client.get<unknown>(`/webhooks/${id}`, undefined, WEBHOOKS);
     return WebhookSchema.parse(raw);
   }
 
@@ -55,6 +61,7 @@ export class WebhooksApi {
     const raw = await this.client.post<unknown>(
       `/webhooks/${id}/configuration`,
       data,
+      WEBHOOKS,
     );
     return WebhookSchema.parse(raw);
   }
@@ -65,16 +72,20 @@ export class WebhooksApi {
    * The wire body is `{ active: boolean }`; the response is the full webhook.
    */
   async setStatus(id: string, active: boolean): Promise<Webhook> {
-    const raw = await this.client.post<unknown>(`/webhooks/${id}/status`, { active });
+    const raw = await this.client.post<unknown>(
+      `/webhooks/${id}/status`,
+      { active },
+      WEBHOOKS,
+    );
     return WebhookSchema.parse(raw);
   }
 
   async delete(id: string): Promise<void> {
-    await this.client.delete(`/webhooks/${id}`);
+    await this.client.delete(`/webhooks/${id}`, undefined, WEBHOOKS);
   }
 
   async test(id: string): Promise<unknown> {
-    return this.client.post<unknown>(`/webhooks/${id}/test`, {});
+    return this.client.post<unknown>(`/webhooks/${id}/test`, {}, WEBHOOKS);
   }
 
   /**
@@ -88,16 +99,25 @@ export class WebhooksApi {
     return this.client.post<unknown>(
       `/webhooks/${id}/topics/${encodeURIComponent(topic)}/test`,
       {},
+      WEBHOOKS,
     );
   }
 
   async getLogs(id: string): Promise<WebhookLog[]> {
-    const raw = await this.client.get<unknown>(`/webhooks/${id}/logs`);
+    const raw = await this.client.get<unknown>(
+      `/webhooks/${id}/logs`,
+      undefined,
+      WEBHOOKS,
+    );
     return z.array(WebhookLogSchema).parse(raw);
   }
 
   async retryLog(id: string, logId: string): Promise<unknown> {
-    return this.client.post<unknown>(`/webhooks/${id}/logs/${logId}/retry`, {});
+    return this.client.post<unknown>(
+      `/webhooks/${id}/logs/${logId}/retry`,
+      {},
+      WEBHOOKS,
+    );
   }
 
   /**
@@ -113,6 +133,7 @@ export class WebhooksApi {
     const raw = await this.client.get<unknown>(
       "/webhooks/topic-definitions",
       { size: 200 },
+      WEBHOOKS,
     );
     // Defensive: real API returns a paged envelope, but tolerate a flat
     // array shape too (some staging deployments) so the CLI doesn't break

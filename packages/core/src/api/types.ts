@@ -513,13 +513,6 @@ export const CreateWebhookInputSchema = z.object({
 });
 export type CreateWebhookInput = z.infer<typeof CreateWebhookInputSchema>;
 
-export const UpdateWebhookInputSchema = z.object({
-  url: z.string().url().optional(),
-  topics: z.array(z.string()).optional(),
-  status: WebhookStatusSchema.optional(),
-});
-export type UpdateWebhookInput = z.infer<typeof UpdateWebhookInputSchema>;
-
 /**
  * Mutable configuration fields for `POST /webhooks/{id}/configuration`.
  * Mirrors the `UpdateWebhookConfiguration` shape in webhook-manager v2/v2.1.
