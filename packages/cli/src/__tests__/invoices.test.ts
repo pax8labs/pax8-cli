@@ -165,5 +165,31 @@ describe("pax8 invoices", () => {
       expect(result.stdout).toContain("items");
       expect(result.stdout).toContain("audit");
     });
+
+    // #250: `--status` help text must enumerate every value documented for
+    // `GET /invoices`'s `status` query parameter. Previously the help listed
+    // only 4 of the 6 documented values (`Nothing Due` and `Credited` were
+    // missing).
+    it("list --status help advertises every documented API enum value (#250)", async () => {
+      const result = await runCliExpectSuccess([
+        "invoices",
+        "list",
+        "--help",
+      ]);
+      // Commander wraps long option descriptions across lines on narrow
+      // terminals, so collapse whitespace before matching multi-word values.
+      const flat = result.stdout.replace(/\s+/g, " ");
+      const DOCUMENTED_STATUSES = [
+        "Unpaid",
+        "Paid",
+        "Void",
+        "Carried",
+        "Nothing Due",
+        "Credited",
+      ];
+      for (const status of DOCUMENTED_STATUSES) {
+        expect(flat).toContain(status);
+      }
+    });
   });
 });

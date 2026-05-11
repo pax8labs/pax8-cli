@@ -23,7 +23,16 @@ const columns: Column[] = [
 export const ordersListCommand = new Command("list")
   .description("List orders")
   .option("--company <id|name>", "Filter by company ID or name")
-  .option("--status <status>", "Filter by status (Completed, Processing, Failed, PendingManual)")
+  // Honesty note (#250): the public Pax8 OpenAPI does NOT document a `status`
+  // field on `Order` nor a `status` query parameter on `GET /orders`. The
+  // values below are observed in real API responses (and mirrored by the demo
+  // fixtures) but are NOT part of the published contract — they may change
+  // without notice. The flag is kept so partner scripts that already use it
+  // don't break; see docs/triage/api-version-audit/orders-status-enum.md.
+  .option(
+    "--status <status>",
+    "Filter by status (observed: Completed, Processing, Failed, PendingManual; not in public OpenAPI)"
+  )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
