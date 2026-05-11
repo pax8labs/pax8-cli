@@ -520,6 +520,10 @@ class ContactsResource {
 
   async create(companyId: string, data: Partial<Contact>): Promise<Contact> {
     await randomDelay();
+    // Per the public spec (#325), the wire shape of `types` is an array of
+    // `{type, primary}` objects, not bare enum strings. The mock falls back
+    // to a single primary Admin entry when callers omit `types` so demo
+    // round-trips still produce a parse-clean Contact.
     const newContact: Contact = {
       id: `contact-demo-${Date.now()}`,
       companyId,
@@ -527,7 +531,10 @@ class ContactsResource {
       lastName: data.lastName ?? "",
       email: data.email ?? "",
       ...(data.phone ? { phone: data.phone } : {}),
-      types: data.types && data.types.length > 0 ? data.types : ["Admin"],
+      types:
+        data.types && data.types.length > 0
+          ? data.types
+          : [{ type: "Admin", primary: true }],
     };
     return newContact;
   }

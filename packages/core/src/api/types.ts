@@ -5,7 +5,34 @@ import { z } from "zod";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export const ContactTypeSchema = z.enum(["Admin", "Billing", "Technical"]);
+/**
+ * Underlying enum value for the kind of contact role. The Pax8 public OpenAPI
+ * spec defines this as the `type` property on a `ContactType` object (the wire
+ * shape — see `ContactTypeSchema` below). Exposed separately so CLI flag
+ * vocabulary (`--type Admin,Billing,Technical`) can keep validating against
+ * the bare enum even though the wire body carries `{type, primary}` objects.
+ *
+ * Reshape landed in #325 alongside the body-shape fix; pre-#325 this whole
+ * concept was a flat enum.
+ */
+export const ContactTypeKindSchema = z.enum(["Admin", "Billing", "Technical"]);
+export type ContactTypeKind = z.infer<typeof ContactTypeKindSchema>;
+
+/**
+ * Wire shape for one entry in a Contact's `types` array, per
+ * `components.schemas.ContactType` in the Pax8 public OpenAPI spec:
+ * `{ type: "Admin"|"Billing"|"Technical", primary: boolean }`.
+ *
+ * Pre-#325 the CLI sent `types: string[]` (the kind enum directly), which a
+ * spec-strict server would 422. The CLI flag surface still accepts comma-
+ * separated kind names (`--type Admin,Billing`) and inflates each entry to
+ * `{type, primary: false}` at handler time; per-type `primary` UX is tracked
+ * separately and intentionally out of scope here.
+ */
+export const ContactTypeSchema = z.object({
+  type: ContactTypeKindSchema,
+  primary: z.boolean().default(false),
+});
 export type ContactType = z.infer<typeof ContactTypeSchema>;
 
 export const SubscriptionStatusSchema = z.enum([
@@ -149,26 +176,47 @@ export const ContactSchema = z.object({
   lastName: z.string(),
   email: z.string().email(),
   phone: z.string().optional(),
+  // `companyId` is set client-side from the URL path (the spec's nested
+  // resource carries it there, not in the body) but every consumer in the
+  // codebase still expects to read it back. The mock client populates it and
+  // demo fixtures carry it; on real-API parses, the field is filled by the
+  // handler that knows the company context.
   companyId: z.string(),
   types: z.array(ContactTypeSchema),
 });
 export type Contact = z.infer<typeof ContactSchema>;
 
+/**
+ * Body for `POST /v1/companies/{companyId}/contacts` per the public OpenAPI
+ * spec's `Contact` request schema. The four scalars are required by the spec;
+ * `companyId` is intentionally absent — it's already on the URL path. Pre-#325
+ * the body carried `companyId` (a body field the spec does not declare) and
+ * left `phone` optional (the spec marks it required).
+ */
 export const CreateContactInputSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email(),
-  phone: z.string().optional(),
-  companyId: z.string(),
+  phone: z.string().min(1),
   types: z.array(ContactTypeSchema).min(1),
 });
 export type CreateContactInput = z.infer<typeof CreateContactInputSchema>;
 
+/**
+ * Body for `PUT /v1/companies/{companyId}/contacts/{contactId}`. The spec
+ * uses **PUT, not PATCH**, and the same `Contact` request schema as create —
+ * so a spec-strict server expects a full replacement document with the four
+ * required scalars (`firstName`, `lastName`, `email`, `phone`). The CLI
+ * handler enforces partial UX by fetch-then-merging the current contact
+ * before constructing this body (#325). `types` is optional here because the
+ * handler also merges that field — but if present, it must be the spec-
+ * shaped array of `{type, primary}` objects.
+ */
 export const UpdateContactInputSchema = z.object({
-  firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
-  email: z.string().email().optional(),
-  phone: z.string().optional(),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  email: z.string().email(),
+  phone: z.string().min(1),
   types: z.array(ContactTypeSchema).optional(),
 });
 export type UpdateContactInput = z.infer<typeof UpdateContactInputSchema>;

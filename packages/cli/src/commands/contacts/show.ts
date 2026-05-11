@@ -68,7 +68,26 @@ Notes:
           { key: "email", header: "Email" },
           { key: "phone", header: "Phone" },
           { key: "companyId", header: "Company ID" },
-          { key: "types", header: "Types", format: (v: unknown) => Array.isArray(v) ? v.join("|") : String(v ?? "") },
+          {
+            key: "types",
+            header: "Types",
+            // `types` is `Array<{type, primary}>` per the spec (#325). Flatten
+            // to `Kind:primary` pairs so a CSV consumer doesn't lose the
+            // `primary` bit. Defensive on the legacy string shape.
+            format: (v: unknown) =>
+              Array.isArray(v)
+                ? v
+                    .map((entry) => {
+                      if (typeof entry === "string") return entry;
+                      if (entry && typeof entry === "object" && "type" in entry) {
+                        const e = entry as { type: string; primary?: boolean };
+                        return `${e.type}:${e.primary ? "true" : "false"}`;
+                      }
+                      return String(entry);
+                    })
+                    .join("|")
+                : String(v ?? ""),
+          },
         ];
         output([contact], { format: "csv", columns });
         return;
@@ -83,7 +102,15 @@ Notes:
       if (contact.phone) {
         process.stdout.write(`  ${chalk.dim("Phone:".padEnd(14))}${contact.phone}\n`);
       }
-      process.stdout.write(`  ${chalk.dim("Types:".padEnd(14))}${(contact.types ?? []).join(", ") || "—"}\n`);
+      // `contact.types` is `Array<{type, primary}>` per the public spec
+      // (#325). Render as kind names with a `*` after any entry marked
+      // primary, to surface the spec's `primary` bit in the human view.
+      {
+        const typesDisplay = (contact.types ?? [])
+          .map((t) => (t.primary ? `${t.type}*` : t.type))
+          .join(", ");
+        process.stdout.write(`  ${chalk.dim("Types:".padEnd(14))}${typesDisplay || "—"}\n`);
+      }
       process.stdout.write(`  ${chalk.dim("Company ID:".padEnd(14))}${contact.companyId}\n`);
       process.stdout.write("\n");
 

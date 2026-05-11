@@ -208,6 +208,9 @@ describe("UpdateCompanyInputSchema", () => {
 // ─── Contact ─────────────────────────────────────────────────────────────────
 
 describe("ContactSchema", () => {
+  // Spec shape (#325): `types` is `Array<{type, primary}>` per
+  // `components.schemas.ContactType` in the Pax8 public OpenAPI spec, not a
+  // flat array of kind enum strings.
   const valid = {
     id: uuid,
     firstName: "Jane",
@@ -215,7 +218,10 @@ describe("ContactSchema", () => {
     email: "jane@acme.com",
     phone: "555-1111",
     companyId: uuid2,
-    types: ["Admin", "Billing"],
+    types: [
+      { type: "Admin", primary: true },
+      { type: "Billing", primary: false },
+    ],
   };
 
   it("validates a correct payload", () => {
@@ -226,8 +232,14 @@ describe("ContactSchema", () => {
     expect(() => ContactSchema.parse({ ...valid, email: "not-an-email" })).toThrow();
   });
 
-  it("rejects invalid contact type", () => {
-    expect(() => ContactSchema.parse({ ...valid, types: ["Manager"] })).toThrow();
+  it("rejects invalid contact type kind", () => {
+    expect(() =>
+      ContactSchema.parse({ ...valid, types: [{ type: "Manager", primary: false }] }),
+    ).toThrow();
+  });
+
+  it("rejects bare-string entries in types (legacy shape, pre-#325)", () => {
+    expect(() => ContactSchema.parse({ ...valid, types: ["Admin"] })).toThrow();
   });
 
   it("rejects missing required fields", () => {
@@ -236,15 +248,38 @@ describe("ContactSchema", () => {
 });
 
 describe("CreateContactInputSchema", () => {
-  it("validates correct input", () => {
+  it("validates correct input (no companyId in body; types as objects; phone required)", () => {
     const input = {
       firstName: "Jane",
       lastName: "Doe",
       email: "jane@acme.com",
-      companyId: uuid,
-      types: ["Admin"],
+      phone: "555-1111",
+      types: [{ type: "Admin" as const, primary: false }],
     };
     expect(CreateContactInputSchema.parse(input)).toEqual(input);
+  });
+
+  it("rejects missing phone (spec marks it required, #325)", () => {
+    expect(() =>
+      CreateContactInputSchema.parse({
+        firstName: "Jane",
+        lastName: "Doe",
+        email: "jane@acme.com",
+        types: [{ type: "Admin" as const, primary: false }],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects bare-string entries in types (legacy shape, pre-#325)", () => {
+    expect(() =>
+      CreateContactInputSchema.parse({
+        firstName: "Jane",
+        lastName: "Doe",
+        email: "jane@acme.com",
+        phone: "555-1111",
+        types: ["Admin"],
+      }),
+    ).toThrow();
   });
 
   it("rejects empty types array", () => {
@@ -253,7 +288,7 @@ describe("CreateContactInputSchema", () => {
         firstName: "Jane",
         lastName: "Doe",
         email: "jane@acme.com",
-        companyId: uuid,
+        phone: "555-1111",
         types: [],
       }),
     ).toThrow();
@@ -261,14 +296,29 @@ describe("CreateContactInputSchema", () => {
 });
 
 describe("UpdateContactInputSchema", () => {
-  it("validates partial update", () => {
-    expect(UpdateContactInputSchema.parse({ email: "new@acme.com" })).toEqual({
+  it("requires the full Contact-shaped body (#325 — spec uses PUT, not PATCH)", () => {
+    const full = {
+      firstName: "Jane",
+      lastName: "Doe",
       email: "new@acme.com",
-    });
+      phone: "555-1111",
+    };
+    expect(UpdateContactInputSchema.parse(full)).toEqual(full);
   });
 
-  it("rejects invalid email in update", () => {
-    expect(() => UpdateContactInputSchema.parse({ email: "bad" })).toThrow();
+  it("rejects partial bodies — fetch-then-merge happens in the handler", () => {
+    expect(() => UpdateContactInputSchema.parse({ email: "new@acme.com" })).toThrow();
+  });
+
+  it("rejects invalid email", () => {
+    expect(() =>
+      UpdateContactInputSchema.parse({
+        firstName: "Jane",
+        lastName: "Doe",
+        email: "bad",
+        phone: "555-1111",
+      }),
+    ).toThrow();
   });
 });
 

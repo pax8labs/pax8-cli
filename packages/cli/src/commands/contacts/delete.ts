@@ -61,7 +61,15 @@ Notes:
         process.stderr.write(`  ${chalk.bold("ID")}        ${contact.id}\n`);
         process.stderr.write(`  ${chalk.bold("Name")}      ${contact.firstName} ${contact.lastName}\n`);
         process.stderr.write(`  ${chalk.bold("Email")}     ${contact.email}\n`);
-        process.stderr.write(`  ${chalk.bold("Types")}     ${(contact.types ?? []).join(", ") || "—"}\n`);
+        // `contact.types` is `Array<{type, primary}>` per the public spec
+        // (#325). Show kind names with a `*` marker on primary entries.
+        process.stderr.write(
+          `  ${chalk.bold("Types")}     ${
+            (contact.types ?? [])
+              .map((t) => (t.primary ? `${t.type}*` : t.type))
+              .join(", ") || "—"
+          }\n`,
+        );
         process.stderr.write("\n");
       }
 

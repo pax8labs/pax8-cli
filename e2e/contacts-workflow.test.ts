@@ -127,6 +127,8 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "New",
       "--last-name",
       "Contact",
+      "--phone",
+      "555-0123",
       "--type",
       "Technical",
       "--yes",
@@ -137,7 +139,8 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
     expect(data[0].firstName).toBe("New");
     expect(data[0].lastName).toBe("Contact");
     expect(data[0].email).toBe("newcontact@example.com");
-    expect(data[0].types).toEqual(["Technical"]);
+    // Wire shape per the public spec (#325): array of `{type, primary}` objects.
+    expect(data[0].types).toEqual([{ type: "Technical", primary: false }]);
   });
 
   it("pax8 contacts create rejects an invalid --type", async () => {
@@ -152,6 +155,8 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "X",
       "--last-name",
       "Y",
+      "--phone",
+      "555-0100",
       "--type",
       "Bogus",
       "--yes",

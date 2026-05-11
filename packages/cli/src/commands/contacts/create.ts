@@ -12,9 +12,9 @@ import { confirm, replCmd } from "../../lib/confirm.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
-import type { CreateContactInput, ContactType } from "@pax8/core";
+import type { CreateContactInput, ContactTypeKind } from "@pax8/core";
 
-const VALID_TYPES: ContactType[] = ["Admin", "Billing", "Technical"];
+const VALID_TYPES: ContactTypeKind[] = ["Admin", "Billing", "Technical"];
 
 function parseTypes(input: string): string[] {
   const seen = new Set<string>();
@@ -35,7 +35,7 @@ export const contactsCreateCommand = new Command("create")
   .requiredOption("--email <email>", "Contact email (required)")
   .requiredOption("--first-name <name>", "First name (required)")
   .requiredOption("--last-name <name>", "Last name (required)")
-  .option("--phone <phone>", "Phone number")
+  .requiredOption("--phone <phone>", "Phone number (required)")
   .option("--type <types>", "Comma-separated contact types: Admin, Billing, Technical", "Admin")
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
@@ -66,7 +66,7 @@ Notes:
           ERROR_INVALID_INPUT,
         );
       }
-      const invalid = parsed.filter((t) => !VALID_TYPES.includes(t as ContactType));
+      const invalid = parsed.filter((t) => !VALID_TYPES.includes(t as ContactTypeKind));
       if (invalid.length > 0) {
         throw new CliError(
           `Invalid --type value(s): ${invalid.map((v) => `"${v}"`).join(", ")}`,
@@ -76,7 +76,12 @@ Notes:
           ERROR_INVALID_INPUT,
         );
       }
-      const types = parsed as ContactType[];
+      // The wire shape (#325) is `Array<{type, primary}>`. The CLI flag still
+      // takes a flat comma-separated kind list; we inflate each entry with
+      // `primary: false` here. Per-type `primary` UX is tracked separately
+      // (see issue #325 "Out of scope").
+      const kinds = parsed as ContactTypeKind[];
+      const types = kinds.map((kind) => ({ type: kind, primary: false }));
 
       const company = await resolveCompany(ctx, options.company);
 
@@ -84,10 +89,8 @@ Notes:
       process.stderr.write(chalk.bold("\n  New Contact:\n\n"));
       process.stderr.write(`  ${chalk.dim("Name:".padEnd(14))}${options.firstName} ${options.lastName}\n`);
       process.stderr.write(`  ${chalk.dim("Email:".padEnd(14))}${options.email}\n`);
-      if (options.phone) {
-        process.stderr.write(`  ${chalk.dim("Phone:".padEnd(14))}${options.phone}\n`);
-      }
-      process.stderr.write(`  ${chalk.dim("Types:".padEnd(14))}${types.join(", ")}\n`);
+      process.stderr.write(`  ${chalk.dim("Phone:".padEnd(14))}${options.phone}\n`);
+      process.stderr.write(`  ${chalk.dim("Types:".padEnd(14))}${kinds.join(", ")}\n`);
       process.stderr.write(`  ${chalk.dim("Company:".padEnd(14))}${company.name}\n\n`);
 
       const ok = await confirm("Create this contact?", { default: true });
@@ -96,13 +99,16 @@ Notes:
         return;
       }
 
+      // Body intentionally does NOT include `companyId` — the spec carries it
+      // in the URL path (`POST /v1/companies/{companyId}/contacts`). Pre-#325
+      // the CLI sent it in the body, which a spec-strict server would either
+      // ignore or 422 on.
       const input: CreateContactInput = {
         firstName: options.firstName,
         lastName: options.lastName,
         email: options.email,
-        companyId: company.id,
+        phone: options.phone,
         types,
-        ...(options.phone ? { phone: options.phone } : {}),
       };
 
       const spinner = createSpinner("Creating contact...").start();
@@ -127,7 +133,7 @@ Notes:
       process.stdout.write(`  ${chalk.dim("Contact ID:".padEnd(14))}${contact.id}\n`);
       process.stdout.write(`  ${chalk.dim("Name:".padEnd(14))}${contact.firstName} ${contact.lastName}\n`);
       process.stdout.write(`  ${chalk.dim("Email:".padEnd(14))}${contact.email}\n`);
-      process.stdout.write(`  ${chalk.dim("Types:".padEnd(14))}${(contact.types ?? []).join(", ")}\n`);
+      process.stdout.write(`  ${chalk.dim("Types:".padEnd(14))}${(contact.types ?? []).map((t) => t.type).join(", ")}\n`);
       process.stdout.write("\n");
 
       process.stderr.write(chalk.dim("  Try next:\n"));

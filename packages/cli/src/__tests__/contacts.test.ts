@@ -74,6 +74,8 @@ describe("pax8 contacts", () => {
           "Single",
           "--last-name",
           "Type",
+          "--phone",
+          "555-0100",
           "--json",
           "--yes",
         ],
@@ -81,7 +83,9 @@ describe("pax8 contacts", () => {
       );
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(true);
-      expect(data[0].types).toEqual(["Admin"]);
+      // Spec wire shape (#325): `types` is `Array<{type, primary}>`. The CLI
+      // flag `--type` carries kind names; we inflate with `primary: false`.
+      expect(data[0].types).toEqual([{ type: "Admin", primary: false }]);
       expect(data[0].companyId).toBe(SUMMIT_ID);
     });
 
@@ -98,6 +102,8 @@ describe("pax8 contacts", () => {
           "Multi",
           "--last-name",
           "Type",
+          "--phone",
+          "555-0100",
           "--type",
           "Admin,Billing",
           "--json",
@@ -107,7 +113,10 @@ describe("pax8 contacts", () => {
       );
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(true);
-      expect(data[0].types).toEqual(["Admin", "Billing"]);
+      expect(data[0].types).toEqual([
+        { type: "Admin", primary: false },
+        { type: "Billing", primary: false },
+      ]);
     });
 
     it("trims whitespace and dedupes types", async () => {
@@ -123,6 +132,8 @@ describe("pax8 contacts", () => {
           "Trim",
           "--last-name",
           "Dedup",
+          "--phone",
+          "555-0100",
           "--type",
           " Admin , Billing , Admin ",
           "--json",
@@ -131,7 +142,10 @@ describe("pax8 contacts", () => {
         { PAX8_YES: "1" },
       );
       const data = JSON.parse(result.stdout);
-      expect(data[0].types).toEqual(["Admin", "Billing"]);
+      expect(data[0].types).toEqual([
+        { type: "Admin", primary: false },
+        { type: "Billing", primary: false },
+      ]);
     });
 
     it("rejects invalid type values", async () => {
@@ -147,6 +161,8 @@ describe("pax8 contacts", () => {
           "Bad",
           "--last-name",
           "Type",
+          "--phone",
+          "555-0100",
           "--type",
           "Admin,Bogus",
           "--yes",
@@ -156,6 +172,27 @@ describe("pax8 contacts", () => {
       const combined = result.stdout + result.stderr;
       expect(combined).toMatch(/Invalid --type/);
       expect(combined).toContain("Bogus");
+    });
+
+    it("requires --phone (spec marks it required, #325)", async () => {
+      const result = await runCliExpectFailure(
+        [
+          "contacts",
+          "create",
+          "--company",
+          SUMMIT_ID,
+          "--email",
+          "nophone@example.com",
+          "--first-name",
+          "No",
+          "--last-name",
+          "Phone",
+          "--yes",
+        ],
+        { PAX8_YES: "1" },
+      );
+      const combined = result.stdout + result.stderr;
+      expect(combined.toLowerCase()).toContain("phone");
     });
 
     it("shows the new --type help text", async () => {
@@ -203,7 +240,40 @@ describe("pax8 contacts", () => {
       );
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(true);
-      expect(data[0].types).toEqual(["Admin", "Technical"]);
+      // Spec wire shape (#325): `Array<{type, primary}>`. CLI `--type` flag
+      // carries kind names only; primary defaults to false.
+      expect(data[0].types).toEqual([
+        { type: "Admin", primary: false },
+        { type: "Technical", primary: false },
+      ]);
+    });
+
+    it("fetch-then-merges: a partial --email update preserves the other scalars", async () => {
+      // Pre-#325 the CLI sent a partial PUT body that omitted required spec
+      // fields (firstName, lastName, phone). After the fix, the handler
+      // fetches the current contact and merges the partial overrides, so the
+      // returned record still carries the unspecified fields verbatim.
+      const result = await runCliExpectSuccess(
+        [
+          "contacts",
+          "update",
+          "contact-summit-001",
+          "--company",
+          SUMMIT_ID,
+          "--email",
+          "rachel.renamed@example.com",
+          "--json",
+          "--yes",
+        ],
+        { PAX8_YES: "1" },
+      );
+      const data = JSON.parse(result.stdout);
+      expect(data[0].id).toBe("contact-summit-001");
+      expect(data[0].email).toBe("rachel.renamed@example.com");
+      // From demo-data.ts — the unchanged fields must round-trip.
+      expect(data[0].firstName).toBe("Rachel");
+      expect(data[0].lastName).toBe("Thornton");
+      expect(data[0].phone).toBe("+1-303-555-0111");
     });
 
     it("rejects an empty --type value", async () => {

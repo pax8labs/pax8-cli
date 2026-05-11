@@ -261,10 +261,24 @@ describe("MockPax8Client — extended coverage", () => {
         firstName: "Jane",
         lastName: "Doe",
         email: "jane@example.com",
+        phone: "555-0100",
+        types: [{ type: "Admin", primary: false }],
       });
       expect(result.id).toContain("contact-demo-");
       expect(result.firstName).toBe("Jane");
       expect(result.companyId).toBe(SUMMIT_COMPANY_ID);
+      // Spec wire shape (#325): array of `{type, primary}` objects.
+      expect(result.types).toEqual([{ type: "Admin", primary: false }]);
+    });
+
+    it("defaults types to a primary Admin entry when omitted", async () => {
+      const result = await client.contacts.create(SUMMIT_COMPANY_ID, {
+        firstName: "NoTypes",
+        lastName: "Provided",
+        email: "no.types@example.com",
+        phone: "555-0101",
+      });
+      expect(result.types).toEqual([{ type: "Admin", primary: true }]);
     });
   });
 
