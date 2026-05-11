@@ -12,6 +12,7 @@ import {
   ERROR_API_TIMEOUT,
   ERROR_NOT_FOUND,
   ERROR_INTERNAL,
+  isApiTimeoutError,
   type Pax8ErrorCode,
 } from "@pax8/core";
 import { CliError } from "./errors.js";
@@ -30,6 +31,9 @@ export function classifyError(error: unknown): Pax8ErrorCode {
   if (error instanceof RateLimitError) return ERROR_RATE_LIMITED;
   if (error instanceof ValidationError) return ERROR_API_VALIDATION;
   if (error instanceof ApiError) {
+    // #199: client-side AbortController timeout also classifies as
+    // ERROR_API_TIMEOUT (status === 0 with "timed out" in the message).
+    if (isApiTimeoutError(error)) return ERROR_API_TIMEOUT;
     if (error.statusCode === 408) return ERROR_API_TIMEOUT;
     if (error.statusCode === 401 || error.statusCode === 403) {
       return ERROR_AUTH_EXPIRED;

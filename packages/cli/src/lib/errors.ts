@@ -20,6 +20,7 @@ import {
   Pax8SecurityError,
   getConfigDir,
   getTelemetry,
+  isApiTimeoutError,
   safeWriteFileSync,
   type Pax8ErrorCode,
 } from "@pax8/core";
@@ -115,8 +116,33 @@ function isJsonOutputRequested(): boolean {
 /**
  * Map an ApiError to a stable error code based on status + message hints.
  */
+/**
+ * Generic recovery steps for an `ERROR_API_TIMEOUT`. Commands that know their
+ * timeout has a domain-specific workaround (e.g. `orders list` with `--size`
+ * and `--company` filters) prepend their hint and then concatenate these as
+ * the floor — so the env-var escape hatch is always offered.
+ *
+ * Cap at 5 minutes is documented in `client.ts` (`MAX_TIMEOUT_MS`); we omit
+ * it from the user-facing copy to keep the hint short — the env var is the
+ * load-bearing detail.
+ */
+export function timeoutRecoverySteps(extra?: string[]): string[] {
+  const generic = [
+    "Retry the command — transient slowness on the Pax8 API is common.",
+    "Extend the per-request timeout with PAX8_TIMEOUT_MS=60000 (or higher; capped at 300000).",
+    "Run pax8 doctor to check connectivity to the Pax8 API.",
+  ];
+  return extra ? [...extra, ...generic] : generic;
+}
+
 function codeForApiError(error: ApiError): Pax8ErrorCode {
   const status = error.statusCode;
+  // #199: the AbortController path in `Pax8Client.request` throws an `ApiError`
+  // with `statusCode === 0` and a "Request timed out after Nms" message.
+  // Treat that as the same agent-observable error class as a 408 — partners
+  // and agents should see one canonical `ERROR_API_TIMEOUT` regardless of
+  // whether the timeout originated at the client side or upstream.
+  if (isApiTimeoutError(error)) return ERROR_API_TIMEOUT;
   if (status === 401 || status === 403) return ERROR_AUTH_EXPIRED;
   if (status === 408) return ERROR_API_TIMEOUT;
   if (status === 429) return ERROR_RATE_LIMITED;
@@ -314,7 +340,12 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
     };
     const detail = extractErrorDetail(error.responseBody);
     if (detail) env.causes = [detail];
-    if (error.statusCode === 401 || error.statusCode === 403) {
+    if (env.code === ERROR_API_TIMEOUT) {
+      // #199: the generic timeout-recovery hint. Per-command paths (e.g.
+      // `orders list`) wrap their catch with a more specific CliError before
+      // reaching here; this is the floor every other timeout falls back to.
+      env.recoverySteps = timeoutRecoverySteps();
+    } else if (error.statusCode === 401 || error.statusCode === 403) {
       env.recoverySteps = [
         "Your credentials may have expired. Run pax8 auth login to re-authenticate.",
       ];
@@ -419,7 +450,18 @@ export async function handleCommandError(
     process.stderr.write(
       chalk.red.bold(`\n  ✗ ${prefix}  ${error.message}\n\n`)
     );
-    if (error.statusCode === 401 || error.statusCode === 403) {
+    if (isApiTimeoutError(error)) {
+      // #199: surface the same recovery steps the JSON envelope carries.
+      // Use the generic floor here; per-command paths upgrade this by
+      // catching the timeout themselves and re-throwing a `CliError`
+      // (which renders through the branch above with their richer hint).
+      for (const step of timeoutRecoverySteps()) {
+        process.stderr.write(
+          chalk.yellow(`    → ${step}\n`)
+        );
+      }
+      process.stderr.write("\n");
+    } else if (error.statusCode === 401 || error.statusCode === 403) {
       process.stderr.write(
         chalk.yellow(`    → Your credentials may have expired. Run ${chalk.cyan(replCmd("pax8 auth login"))} to re-authenticate.\n\n`)
       );

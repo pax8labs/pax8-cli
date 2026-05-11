@@ -73,6 +73,15 @@ export interface RequestOpts {
 
 const FALLBACK_BASE_URL = "https://api.pax8.com/v1";
 const DEFAULT_TIMEOUT = 30_000;
+/**
+ * Upper bound on `PAX8_TIMEOUT_MS` — 5 minutes (#199). Higher values almost
+ * certainly mean the partner is papering over an upstream regression rather
+ * than tolerating legitimate slowness; capping forces them to escalate
+ * instead of silently waiting forever for a request that will never return.
+ * Values above the cap are clamped (not rejected) so a typo doesn't turn
+ * every request into an `ERROR_INVALID_INPUT`.
+ */
+const MAX_TIMEOUT_MS = 300_000;
 const MAX_RETRIES = 3;
 
 /**
@@ -159,6 +168,49 @@ export function getDefaultBaseUrl(): string {
   return validateBaseUrl(fromEnv);
 }
 
+/**
+ * Resolve the per-request HTTP timeout. Honors `PAX8_TIMEOUT_MS` so partners
+ * with slow connections — or against tenants where a particular Pax8 endpoint
+ * is known to take a long time (e.g. `/orders` against large portfolios, see
+ * #199) — can extend the 30s default without code changes.
+ *
+ * Validation:
+ * - Non-numeric or non-positive values are ignored (fall back to default).
+ *   A noisy throw here would mask whatever the user was actually trying to
+ *   do; a silent fall-back is friendlier and the value is easy to verify
+ *   via `pax8 doctor`.
+ * - Values above `MAX_TIMEOUT_MS` are clamped, not rejected.
+ *
+ * Re-read on every call (no caching) so test harnesses that mutate the env
+ * between client constructions see the new value. The pattern mirrors
+ * `getDefaultBaseUrl` for consistency.
+ */
+export function getDefaultTimeout(): number {
+  const fromEnv = process.env.PAX8_TIMEOUT_MS;
+  if (!fromEnv) return DEFAULT_TIMEOUT;
+  const parsed = Number(fromEnv);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_TIMEOUT;
+  return Math.min(Math.floor(parsed), MAX_TIMEOUT_MS);
+}
+
+/**
+ * Detect whether an unknown error originated from a per-request abort fired
+ * by `AbortController` after `this.timeout` ms elapsed. The thrown shape is
+ * `ApiError(status=0, message="Request timed out after Nms")` — `statusCode`
+ * 0 is what the client uses to mean "we never got a wire response" — so we
+ * key on both the type/code and the message prefix to avoid mis-classifying
+ * a genuine "everything was zero" downstream error.
+ *
+ * Exported so the CLI's error layer (and any embedder) can map this to the
+ * `ERROR_API_TIMEOUT` code and surface an actionable hint without having to
+ * rebuild the predicate.
+ */
+export function isApiTimeoutError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.statusCode !== 0) return false;
+  return /timed out/i.test(error.message);
+}
+
 export class Pax8Client {
   private readonly tokenManager: { getToken(): Promise<string> };
   private readonly baseUrl: string;
@@ -183,7 +235,15 @@ export class Pax8Client {
     } else {
       this.apiBaseOverrides = undefined;
     }
-    this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    // Resolution order for the per-request HTTP timeout:
+    //   1. explicit `options.timeout` (test harnesses, embedders that already
+    //      know what they want)
+    //   2. `PAX8_TIMEOUT_MS` env var (partners extending the default; #199)
+    //   3. `DEFAULT_TIMEOUT` (30s)
+    // The env var is the on-ramp documented in `CLAUDE.md` / `docs/UX_GUIDE.md`;
+    // the constructor argument exists for tests and downstream embedders that
+    // want to bypass the env entirely.
+    this.timeout = options.timeout ?? getDefaultTimeout();
     this.debug = options.debug ?? false;
     this.cacheTtlMs = options.cacheTtlMs ?? 3_600_000; // 1 hour default
     this.cache = this.cacheTtlMs > 0 ? new FileCache() : null;

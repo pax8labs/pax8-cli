@@ -57,6 +57,47 @@ describe("pax8 orders", () => {
       const result = await runCliExpectSuccess(["orders", "list"]);
       expect(result.stderr).toContain("orders");
     });
+
+    // #199 — the `/orders` endpoint is slow on large portfolios; the 30s
+    // default timeout fires there in real-world use. Before this fix the
+    // user saw only "Request timed out after 30000ms" with no hint of what
+    // to do. The injection env var lets the mock client raise the same
+    // shape of `ApiError` the real client throws on AbortController abort.
+    it("surfaces an actionable hint on timeout (#199)", async () => {
+      const result = await runCliExpectFailure(["orders", "list"], {
+        PAX8_DEMO_FAIL_ORDERS_LIST_TIMEOUT: "1",
+      });
+      // The original timeout message is preserved so partners and agents
+      // still know *what* failed.
+      expect(result.stderr).toContain("timed out");
+      // Orders-specific hint: smaller page size + per-company filter.
+      expect(result.stderr).toContain("--size");
+      expect(result.stderr).toContain("--company");
+      // Generic env-var escape hatch is always present.
+      expect(result.stderr).toContain("PAX8_TIMEOUT_MS");
+    });
+
+    it("emits ERROR_API_TIMEOUT in --json error envelope on timeout (#199)", async () => {
+      const result = await runCliExpectFailure(
+        ["orders", "list", "--json"],
+        { PAX8_DEMO_FAIL_ORDERS_LIST_TIMEOUT: "1" },
+      );
+      // The structured envelope lives on stderr (stdout is the data
+      // channel). The "✨ Demo mode" banner and any spinner frames also go
+      // to stderr, so isolate the JSON object before parsing. Brace-balance
+      // pass — handleCommandError pretty-prints with 2-space indent.
+      const start = result.stderr.indexOf("{");
+      const end = result.stderr.lastIndexOf("}");
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      const envelope = JSON.parse(result.stderr.slice(start, end + 1));
+      expect(envelope.code).toBe("ERROR_API_TIMEOUT");
+      expect(envelope.recoverySteps).toBeDefined();
+      const joined = envelope.recoverySteps.join(" ");
+      expect(joined).toMatch(/--size/);
+      expect(joined).toMatch(/--company/);
+      expect(joined).toMatch(/PAX8_TIMEOUT_MS/);
+    });
   });
 
   describe("orders show", () => {
