@@ -1,7 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-export { Pax8Client, type Pax8ClientOptions } from "./client.js";
+export { Pax8Client, applyApiVersion, type Pax8ClientOptions, type RequestOpts } from "./client.js";
 export { CompaniesApi } from "./companies.js";
 export { ContactsApi } from "./contacts.js";
 export { ProductsApi } from "./products.js";

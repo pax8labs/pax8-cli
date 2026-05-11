@@ -17,9 +17,60 @@ export interface Pax8ClientOptions {
   cacheTtlMs?: number;
 }
 
+/**
+ * Per-call request options. Threaded through every public method on
+ * `Pax8Client` to override defaults for a single request. All fields optional.
+ */
+export interface RequestOpts {
+  /**
+   * Override the version segment of the base URL for this call (e.g. `"v2"`).
+   * Quotes are the only Pax8 partner surface that lives at `/v2`; everything
+   * else uses `/v1` from the default base URL. `QuotesApi` passes
+   * `{ apiVersion: "v2" }` on every call; other API classes leave it unset
+   * and inherit the base URL's version segment unchanged. See #307.
+   */
+  apiVersion?: string;
+}
+
 const FALLBACK_BASE_URL = "https://api.pax8.com/v1";
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_RETRIES = 3;
+
+/**
+ * Substitute the trailing version segment of a base URL.
+ *
+ * The Pax8 partner API splits its surface across version prefixes — most
+ * resources at `/v1`, quotes at `/v2`. The `baseUrl` carries the project-wide
+ * default (`/v1`); individual API classes can override per call by passing
+ * `RequestOpts.apiVersion`.
+ *
+ * Requires `baseUrl` to end with a `/vN` or `/vN.M` segment when `apiVersion`
+ * is set. If the partner has set `PAX8_API_BASE` to a value without a version
+ * suffix (e.g. `https://api-staging.pax8.com`), substitution would silently
+ * produce a plausible-looking but wrong URL for the quote calls that opt in,
+ * while leaving every non-quote call broken anyway (those expect `/v1/...`
+ * paths that don't exist against the bare host). Better to fail loudly on
+ * the first quote call than to mask a misconfiguration. The error message
+ * tells the partner exactly what to fix.
+ *
+ * Exported so the substitution rule is unit-testable independent of the
+ * surrounding request plumbing.
+ */
+export function applyApiVersion(baseUrl: string, apiVersion?: string): string {
+  if (!apiVersion) return baseUrl;
+  const versionTail = /\/v\d+(?:\.\d+)?$/;
+  if (versionTail.test(baseUrl)) {
+    return baseUrl.replace(versionTail, `/${apiVersion}`);
+  }
+  throw new Error(
+    `Cannot apply apiVersion="${apiVersion}" to base URL "${baseUrl}": ` +
+      `the base URL must end with a version segment such as "/v1" for ` +
+      `per-call version substitution to work. Set PAX8_API_BASE to a value ` +
+      `like "https://api-staging.pax8.com/v1" (the production default is ` +
+      `"https://api.pax8.com/v1"), or unset it to inherit the default. See ` +
+      `https://github.com/pax8labs/pax8-cli/issues/307 for background.`,
+  );
+}
 
 /**
  * Resolve the API base URL. Honors `PAX8_API_BASE` so partners can point at
@@ -57,9 +108,13 @@ export class Pax8Client {
     this.cache = this.cacheTtlMs > 0 ? new FileCache() : null;
   }
 
-  async get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+  async get<T>(
+    path: string,
+    params?: Record<string, string | number | undefined>,
+    opts?: RequestOpts,
+  ): Promise<T> {
     if (this.cache) {
-      const cacheKey = this.buildCacheKey(path, params);
+      const cacheKey = this.buildCacheKey(path, params, opts?.apiVersion);
       const cached = await this.cache.get<T>(cacheKey);
       if (cached !== null) {
         if (this.debug) {
@@ -67,16 +122,20 @@ export class Pax8Client {
         }
         return cached;
       }
-      const result = await this.request<T>("GET", path, undefined, params);
+      const result = await this.request<T>("GET", path, undefined, params, opts);
       await this.cache.set(cacheKey, result, this.cacheTtlMs).catch((err) => {
         if (this.debug) process.stderr.write(`[pax8] cache write failed for ${path}: ${err}\n`);
       });
       return result;
     }
-    return this.request<T>("GET", path, undefined, params);
+    return this.request<T>("GET", path, undefined, params, opts);
   }
 
-  private buildCacheKey(path: string, params?: Record<string, string | number | undefined>): string {
+  private buildCacheKey(
+    path: string,
+    params?: Record<string, string | number | undefined>,
+    apiVersion?: string,
+  ): string {
     const normalized = path.replace(/^\/+/, "");
     const paramStr = params
       ? Object.entries(params)
@@ -85,29 +144,35 @@ export class Pax8Client {
           .map(([k, v]) => `${k}=${v}`)
           .join("&")
       : "";
-    return `${normalized}${paramStr ? "_" + paramStr : ""}`;
+    const versionPrefix = apiVersion ? `${apiVersion}:` : "";
+    return `${versionPrefix}${normalized}${paramStr ? "_" + paramStr : ""}`;
   }
 
-  async post<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>("POST", path, body);
+  async post<T>(path: string, body: unknown, opts?: RequestOpts): Promise<T> {
+    return this.request<T>("POST", path, body, undefined, opts);
   }
 
-  async put<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>("PUT", path, body);
+  async put<T>(path: string, body: unknown, opts?: RequestOpts): Promise<T> {
+    return this.request<T>("PUT", path, body, undefined, opts);
   }
 
-  async patch<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>("PATCH", path, body);
+  async patch<T>(path: string, body: unknown, opts?: RequestOpts): Promise<T> {
+    return this.request<T>("PATCH", path, body, undefined, opts);
   }
 
-  async delete(path: string, params?: Record<string, string | number | undefined>): Promise<void> {
-    await this.request<void>("DELETE", path, undefined, params);
+  async delete(
+    path: string,
+    params?: Record<string, string | number | undefined>,
+    opts?: RequestOpts,
+  ): Promise<void> {
+    await this.request<void>("DELETE", path, undefined, params, opts);
   }
 
   async *getPaginated<T>(
     path: string,
     params?: Record<string, string | number | undefined>,
     schema?: ZodType,
+    opts?: RequestOpts,
   ): AsyncIterableIterator<T[]> {
     let page = 0;
     let totalPages = 1;
@@ -117,6 +182,7 @@ export class Pax8Client {
       const response = await this.get<{ page: { number: number; totalPages: number }; content: T[] }>(
         path,
         mergedParams as Record<string, string | number | undefined>,
+        opts,
       );
 
       const pageInfo = PageSchema.parse(response.page);
@@ -137,8 +203,9 @@ export class Pax8Client {
     path: string,
     body?: unknown,
     params?: Record<string, string | number | undefined>,
+    opts?: RequestOpts,
   ): Promise<T> {
-    const url = this.buildUrl(path, params);
+    const url = this.buildUrl(path, params, opts?.apiVersion);
     const token = await this.tokenManager.getToken();
 
     const headers: Record<string, string> = {
@@ -264,9 +331,14 @@ export class Pax8Client {
     }
   }
 
-  private buildUrl(path: string, params?: Record<string, string | number | undefined>): URL {
+  private buildUrl(
+    path: string,
+    params?: Record<string, string | number | undefined>,
+    apiVersion?: string,
+  ): URL {
+    const base = applyApiVersion(this.baseUrl, apiVersion);
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const url = new URL(`${this.baseUrl}${normalizedPath}`);
+    const url = new URL(`${base}${normalizedPath}`);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined) {

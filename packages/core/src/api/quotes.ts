@@ -1,7 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Pax8Client } from "./client.js";
+import type { Pax8Client, RequestOpts } from "./client.js";
 import {
   QuoteSchema,
   PaginatedResponseSchema,
@@ -15,6 +15,19 @@ import {
 
 const PaginatedQuoteSchema = PaginatedResponseSchema(QuoteSchema);
 
+/**
+ * Per-call routing options for `QuotesApi`. Quotes are the only Pax8 partner
+ * surface that lives at `/v2`; every other resource uses the default `/v1`
+ * from the shared base URL. The `Pax8Client` accepts a `RequestOpts` argument
+ * with `apiVersion` to override the version segment per call — every call in
+ * this class passes `V2`. See #307 and `docs/triage/quotes-api-version.md`.
+ *
+ * Body shapes for the write endpoints are tracked separately under the
+ * `quotes-v2-body-shape` label (#311–#314) and are intentionally not
+ * addressed in this layer — this hotfix is wire-path only.
+ */
+const V2: RequestOpts = { apiVersion: "v2" };
+
 export class QuotesApi {
   constructor(private client: Pax8Client) {}
 
@@ -23,27 +36,31 @@ export class QuotesApi {
     size?: number;
     companyId?: string;
   }): Promise<PaginatedResponse<Quote>> {
-    const raw = await this.client.get<unknown>("/quotes", params as Record<string, string | number | undefined>);
+    const raw = await this.client.get<unknown>(
+      "/quotes",
+      params as Record<string, string | number | undefined>,
+      V2,
+    );
     return PaginatedQuoteSchema.parse(raw);
   }
 
   async get(id: string): Promise<Quote> {
-    const raw = await this.client.get<unknown>(`/quotes/${id}`);
+    const raw = await this.client.get<unknown>(`/quotes/${id}`, undefined, V2);
     return QuoteSchema.parse(raw);
   }
 
   async create(data: CreateQuoteInput): Promise<Quote> {
-    const raw = await this.client.post<unknown>("/quotes", data);
+    const raw = await this.client.post<unknown>("/quotes", data, V2);
     return QuoteSchema.parse(raw);
   }
 
   async update(id: string, data: UpdateQuoteInput): Promise<Quote> {
-    const raw = await this.client.put<unknown>(`/quotes/${id}`, data);
+    const raw = await this.client.put<unknown>(`/quotes/${id}`, data, V2);
     return QuoteSchema.parse(raw);
   }
 
   async delete(id: string): Promise<void> {
-    await this.client.delete(`/quotes/${id}`);
+    await this.client.delete(`/quotes/${id}`, undefined, V2);
   }
 
   /**
@@ -65,7 +82,7 @@ export class QuotesApi {
         ...(input.billingTerm ? { billingTerm: input.billingTerm } : {}),
       },
     ];
-    await this.client.post<unknown>(`/quotes/${quoteId}/line-items`, payload);
+    await this.client.post<unknown>(`/quotes/${quoteId}/line-items`, payload, V2);
     return this.get(quoteId);
   }
 
@@ -74,7 +91,7 @@ export class QuotesApi {
    * `DELETE /v2/quotes/{quoteId}/line-items/{lineItemId}` returns 204.
    */
   async removeLineItem(quoteId: string, lineItemId: string): Promise<void> {
-    await this.client.delete(`/quotes/${quoteId}/line-items/${lineItemId}`);
+    await this.client.delete(`/quotes/${quoteId}/line-items/${lineItemId}`, undefined, V2);
   }
 
   /**
@@ -85,7 +102,7 @@ export class QuotesApi {
    * Backed by `PUT /v2/quotes/{quoteId}` per the v2 quoting OpenAPI spec.
    */
   async setStatus(id: string, status: QuoteStatusTransition): Promise<Quote> {
-    const raw = await this.client.put<unknown>(`/quotes/${id}`, { status });
+    const raw = await this.client.put<unknown>(`/quotes/${id}`, { status }, V2);
     return QuoteSchema.parse(raw);
   }
 

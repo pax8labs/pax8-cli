@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Pax8Client, getDefaultBaseUrl } from "./client.js";
+import { Pax8Client, getDefaultBaseUrl, applyApiVersion } from "./client.js";
 import { ApiError, RateLimitError } from "./errors.js";
 import {
   Pax8SecurityError,
@@ -264,6 +264,153 @@ describe("Pax8Client", () => {
     const output = stderrSpy.mock.calls.map((c) => c[0]).join("");
     expect(output).toContain("GET");
     expect(output).toContain("/test");
+  });
+});
+
+// #307 — Quotes are the only Pax8 partner surface that lives at /v2; the
+// `applyApiVersion` helper substitutes the version segment of the base URL
+// for callers that opt in via `RequestOpts.apiVersion`. These tests pin the
+// substitution rule independent of the surrounding request plumbing.
+describe("applyApiVersion (#307)", () => {
+  it("returns the baseUrl unchanged when apiVersion is undefined", () => {
+    expect(applyApiVersion("https://api.pax8.com/v1")).toBe("https://api.pax8.com/v1");
+    expect(applyApiVersion("https://api.pax8.com/v1", undefined)).toBe(
+      "https://api.pax8.com/v1",
+    );
+  });
+
+  it("substitutes a trailing /vN segment with the override", () => {
+    expect(applyApiVersion("https://api.pax8.com/v1", "v2")).toBe(
+      "https://api.pax8.com/v2",
+    );
+  });
+
+  it("substitutes for staging hosts", () => {
+    expect(applyApiVersion("https://api-staging.pax8.com/v1", "v2")).toBe(
+      "https://api-staging.pax8.com/v2",
+    );
+  });
+
+  it("substitutes for arbitrary version numbers including dotted minor versions", () => {
+    expect(applyApiVersion("https://api.pax8.com/v3", "v2")).toBe(
+      "https://api.pax8.com/v2",
+    );
+    expect(applyApiVersion("https://api.pax8.com/v2.1", "v2")).toBe(
+      "https://api.pax8.com/v2",
+    );
+    expect(applyApiVersion("https://api.pax8.com/v1", "v2.5")).toBe(
+      "https://api.pax8.com/v2.5",
+    );
+  });
+
+  it("throws a clear error when the base URL has no trailing version segment", () => {
+    // Misconfigured PAX8_API_BASE with no version suffix — quote calls would
+    // produce a plausible-looking URL while every non-quote call silently
+    // breaks. Loud failure is the right behavior; the error message names
+    // the env var and the expected shape so the partner can self-correct.
+    expect(() => applyApiVersion("https://api-staging.pax8.com", "v2")).toThrow(
+      /must end with a version segment/,
+    );
+    expect(() => applyApiVersion("https://api-staging.pax8.com", "v2")).toThrow(
+      /PAX8_API_BASE/,
+    );
+    expect(() => applyApiVersion("https://proxy.internal/pax8", "v2")).toThrow(
+      /version segment/,
+    );
+  });
+
+  it("throws when a version-like segment is present but not as the trailing path component", () => {
+    // `/v1/inner` doesn't end in /vN, so substitution can't safely happen
+    // here either. Falls into the same loud-failure branch.
+    expect(() =>
+      applyApiVersion("https://api.pax8.com/v1/inner", "v2"),
+    ).toThrow(/must end with a version segment/);
+  });
+
+  it("returns baseUrl unchanged (no error) when apiVersion is undefined, even if no version segment is present", () => {
+    // The validation only fires when apiVersion is actually set. Non-quote
+    // callers that don't override the version pass through unchanged.
+    expect(applyApiVersion("https://api-staging.pax8.com")).toBe(
+      "https://api-staging.pax8.com",
+    );
+  });
+});
+
+// #307 — wire-level verification that callers opting into a non-default
+// `apiVersion` actually hit the substituted URL. This is the test that would
+// have caught the original bug (quote calls hitting /v1/quotes instead of
+// /v2/quotes) if it had existed before #266 shipped.
+describe("Pax8Client apiVersion override (#307)", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    mockTokenManager.getToken.mockResolvedValue("test-token");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("GET routes to the overridden version when apiVersion is passed", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = createClient();
+
+    await client.get("/quotes/abc", undefined, { apiVersion: "v2" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/v2/quotes/abc");
+  });
+
+  it("POST routes to the overridden version when apiVersion is passed", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = createClient();
+
+    await client.post("/quotes", { clientId: "x" }, { apiVersion: "v2" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/v2/quotes");
+  });
+
+  it("PUT routes to the overridden version when apiVersion is passed", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = createClient();
+
+    await client.put("/quotes/abc", { status: "sent" }, { apiVersion: "v2" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/v2/quotes/abc");
+  });
+
+  it("DELETE routes to the overridden version when apiVersion is passed", async () => {
+    globalThis.fetch = mockFetchResponse(204, undefined);
+    const client = createClient();
+
+    await client.delete("/quotes/abc/line-items/xyz", undefined, { apiVersion: "v2" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/v2/quotes/abc/line-items/xyz");
+  });
+
+  it("leaves the base URL unchanged when no apiVersion is passed", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = createClient();
+
+    await client.get("/companies/abc");
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api.pax8.com/v1/companies/abc");
+  });
+
+  it("substitutes against a staging base URL set via PAX8_API_BASE-style override", async () => {
+    globalThis.fetch = mockFetchResponse(200, {});
+    const client = createClient({ baseUrl: "https://api-staging.pax8.com/v1" });
+
+    await client.get("/quotes", undefined, { apiVersion: "v2" });
+
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url.toString()).toBe("https://api-staging.pax8.com/v2/quotes");
   });
 });
 
