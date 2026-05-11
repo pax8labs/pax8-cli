@@ -18,7 +18,7 @@ Tracking domain-review reviewer comments through resolution. Updated as work lan
 ## Fred Lintz (Subscriptions)
 
 - [x] `--billing-term` enum scope — shipped in #336 (mirrors the API request-body enum; CLI accepts full set)
-- [ ] `provisioningDetails` on update — verification in flight: <!-- #??? --> (triage doc at `docs/triage/subscriptions-update-provisioning-details.md`). **Adjacent finding from #332**: orders `provisioningDetails` shape was wrong (record vs array); fixed in #351. Subscriptions schema does not currently expose `provisioningDetails` — verify whether the API returns it on subscription reads, and if so whether the CLI should surface it.
+- [ ] `provisioningDetails` on update — issue filed: #363 (write-side gap confirmed). Spec exposes `provisioningDetails` on `Subscription` with `writeOnly: true`, accepted by PUT `/subscriptions/{id}` via the `allOf: [Subscription, anyOf(...)]` requestBody; not returned on GETs. CLI's `UpdateSubscriptionInputSchema` doesn't model it and `subscriptions update` has no `--provisioning` flag. Same fix pattern as #351 (reuse the orders-side `OrderLineItemProvisioningSchema`, or the post-#359 neutral `LineItemProvisioningSchema` once renamed in source). Read-side `SubscriptionSchema` left alone — `writeOnly` means the API never returns the field on reads.
 
 ## Fred Lintz (Orders & Quotes)
 
