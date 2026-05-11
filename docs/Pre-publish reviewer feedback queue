@@ -4,7 +4,7 @@ Tracking domain-review reviewer comments through resolution. Updated as work lan
 
 **Owner:** Josh Dulberger
 **Status:** Publish held pending resolution of all unchecked items below.
-**Last updated:** [date]
+**Last updated:** 2026-05-11
 
 ## Tanner Horsey (Subscriptions & Renewals)
 
@@ -22,8 +22,9 @@ Tracking domain-review reviewer comments through resolution. Updated as work lan
 
 ## Fred Lintz (Orders & Quotes)
 
-- [x] `intentType` writability — resolved via read-only convention: <!-- #??? --> (codebase comment + regression test + README user-scope note)
-- [x] `quotes create` shorthand semantics — resolved via help-text clarification: <!-- #??? --> (also audits `line-items add` flag coverage)
+- [x] `intentType` writability — resolved via read-only convention: #304 (codebase comment + regression test + README user-scope note)
+- [x] `quotes create` shorthand semantics — resolved via help-text clarification: #305 (also audits `line-items add` flag coverage)
+- [ ] `quotes create --expiration-date` silent no-op — #306 (surfaced during the #305 audit; flag is declared and displayed in the confirm prompt but never sent to the API)
 - [ ] v2 surface scope (sections, attachments, access-list, take-ownership) — Q4 in re-review block, open for domain owner
 
 ## Franco Aurieme (Companies & Contacts)
@@ -35,7 +36,7 @@ Tracking domain-review reviewer comments through resolution. Updated as work lan
 ## Josh Hollander
 
 - [x] `originalSubscriptionId` exclusion — CI guard issue: <!-- #??? --> (permanently-excluded fields enforced via test)
-- [ ] `clients` rename — issue filed: <!-- #??? --> (rename command group with `companies` as deprecated alias; defer JSON field renames until Pax8 ships `/clients` endpoints)
+- [ ] `clients` rename — issue filed: #317 (rename command group with `companies` as deprecated alias; defer JSON field renames until Pax8 ships `/clients` endpoints)
 - [ ] Hollander re-reviews both items
 
 ## Audit findings (surfaced during reviewer-triggered investigation, not direct reviewer comments)
