@@ -235,6 +235,12 @@ export class Pax8Client {
         try {
           if (this.debug) {
             process.stderr.write(`[pax8] ${method} ${path}\n`);
+            // #308: emit the resolved absolute URL so wire-level integration
+            // tests can assert which API version each call actually hits. The
+            // relative `path` above is preserved as the human-readable summary;
+            // the `url=` line is the machine-parseable form. Query strings are
+            // safe here (no bearer tokens are ever placed in URL params).
+            process.stderr.write(`[pax8] ${method} url=${url.toString()}\n`);
           }
 
           const response = await fetch(url.toString(), init);
