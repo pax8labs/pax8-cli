@@ -4,7 +4,7 @@ Tracking domain-review reviewer comments through resolution. Updated as work lan
 
 **Owner:** Josh Dulberger
 **Status:** Publish held pending resolution of all unchecked items below.
-**Last updated:** 2026-05-11
+**Last updated:** 2026-05-11 (post body-shape batch — 20+ PRs merged today)
 
 ## Tanner Horsey (Subscriptions & Renewals)
 
@@ -17,25 +17,26 @@ Tracking domain-review reviewer comments through resolution. Updated as work lan
 
 ## Fred Lintz (Subscriptions)
 
-- [ ] `--billing-term` enum scope — issue filed: <!-- #??? --> (mirror API request-body enum; widen CLI to match)
-- [ ] `provisioningDetails` on update — verification in flight: <!-- #??? --> (triage doc at `docs/triage/subscriptions-update-provisioning-details.md`)
+- [x] `--billing-term` enum scope — shipped in #336 (mirrors the API request-body enum; CLI accepts full set)
+- [ ] `provisioningDetails` on update — verification in flight: <!-- #??? --> (triage doc at `docs/triage/subscriptions-update-provisioning-details.md`). **Adjacent finding from #332**: orders `provisioningDetails` shape was wrong (record vs array); fixed in #351. Subscriptions schema does not currently expose `provisioningDetails` — verify whether the API returns it on subscription reads, and if so whether the CLI should surface it.
 
 ## Fred Lintz (Orders & Quotes)
 
 - [x] `intentType` writability — resolved via read-only convention: #304 (codebase comment + regression test + README user-scope note)
-- [x] `quotes create` shorthand semantics — superseded by #311 (decision preserved in domain review; implementation rolls into v2 rewrite)
-- [ ] `quotes create --expiration-date` silent no-op — #306 (surfaced during the #305 audit; flag is declared and displayed in the confirm prompt but never sent to the API)
+- [x] `quotes create` shorthand semantics — superseded by #311 → #345 (decision preserved in domain review; v2 rewrite landed)
+- [x] `quotes create --expiration-date` silent no-op — shipped in #339 (flag removed; help text directs to `quotes update --expiration-date`)
 - [ ] v2 surface scope (sections, attachments, access-list, take-ownership) — Q4 in re-review block, open for domain owner
 
 ## Franco Aurieme (Companies & Contacts)
 
-- [ ] `companies create` atomic endpoint — issue filed: <!-- #??? --> (calls legacy two-step path; should call PAM-997 atomic endpoint with required contact fields)
+- [ ] `companies create` atomic endpoint — issue filed: #330 (calls legacy two-step path; should call PAM-997 atomic endpoint with required contact fields). Substantial new-feature scope; design conversation needed before dispatching.
+- [x] Companies-side body-shape adjacent fixes shipped during the parallel-audit cycle (independent of the atomic-endpoint adoption): #346 (PATCH instead of PUT on update), #352 (address field renames `state`→`stateOrProvince`, `zip`→`postalCode` + the three required billing booleans on create + drop empty-address-on-the-wire). Contacts-side: #350 (nested wire path), #353 (body shape — drop `companyId` from body, fetch-then-merge on update, `types` reshaped to spec object form).
 - [ ] Sync with Franco + Vinton Lee scheduled
 - [ ] Franco re-marks section ✅
 
 ## Josh Hollander
 
-- [x] `originalSubscriptionId` exclusion — CI guard issue: <!-- #??? --> (permanently-excluded fields enforced via test)
+- [x] `originalSubscriptionId` exclusion — CI guard shipped in #315 (recursive Zod-schema walker rejects forbidden field names across every exported schema)
 - [ ] `clients` rename — issue filed: #317 (rename command group with `companies` as deprecated alias; defer JSON field renames until Pax8 ships `/clients` endpoints)
 - [ ] Hollander re-reviews both items
 
@@ -46,26 +47,41 @@ Tracking domain-review reviewer comments through resolution. Updated as work lan
 Caught by Claude Code audit triggered by Fred's `quotes create` shorthand question. Pre-existing bug: CLI was hitting `/v1/quotes/...` while the API lives at `/v2/quotes/...`. Audit also surfaced body-shape mismatches on five write operations.
 
 - [x] Wire-path hotfix — #316 (closes #307)
-- [ ] Integration test pattern (sandbox-backed, broader than quotes-only) — #308
-- [ ] `quotes create` body-shape fix — #311 (gated on #308)
-- [ ] `quotes line-items add` body-shape fix — #312 (gated on #308)
-- [ ] `quotes update` fetch-then-merge — #313 (gated on #308)
-- [ ] `quotes send` / `setStatus` fetch-then-merge — #314 (gated on #308)
+- [x] Integration test pattern (sandbox-backed, broader than quotes-only) — shipped in #341 (closes #308); harness at `e2e/integration/` with opt-in CI job; companies (v1) + quotes (v2) seed tests
+- [x] Per-API base URL mechanism (infra unblock that #322 et al. depend on) — shipped in #340 (closes #321)
+- [x] `quotes create` body-shape fix — shipped in #345 (closes #311); rewrites create with `clientId` rename + two-call orchestration
+- [x] `quotes line-items add` body-shape fix — shipped in #342 (closes #312); adds required `effectiveDate` + `price` with sensible defaults
+- [x] `quotes update` fetch-then-merge — shipped in #354 (closes #313); reads current quote, sends full 5-field PUT body. Note: line-item replacement now decomposes into delete+add per the spec (`PUT /v2/quotes/{id}/line-items` is update-in-place, not replace)
+- [x] `quotes send` / `setStatus` fetch-then-merge — shipped in #354 (closes #314); same mechanism as `update`
 
 ### Parallel audit across other write-heavy domains
 
-In flight. Auditing `subscriptions update/cancel`, `orders create`, `companies create/update`, `contacts create/update/delete`, `webhooks create/update/enable/disable/delete/logs retry`, `invoices dispute` for the same class of bug. Output: per-domain triage docs at `docs/triage/api-version-audit/`.
+- [x] Audit complete — triage docs at `docs/triage/api-version-audit/` published in #319 (covers webhooks, contacts, companies, orders, subscriptions, invoices). Caught the same bug class as the quotes audit across every write-heavy domain.
+- [x] Findings triaged into per-issue follow-ups: 13 issues filed (#317, #321–#333)
+- [x] Wire-path / nested-path fixes shipped:
+  - `webhooks` `/v1` → `/api/v2` — #344 (closes #322)
+  - `contacts` flat → nested under `/companies/{id}/contacts/*` — #350 (closes #324)
+  - `usage` flat → nested `/subscriptions/{id}/usage-summaries`; leaf `/lines` → `/usage-lines` — #343 (closes #337, transitively #212)
+- [x] Body-shape / payload fixes shipped:
+  - `webhooks create` — `displayName` + `webhookTopics` structured array — #349 (closes #323)
+  - `contacts create/update` — drop `companyId` from body, `types` to spec object form, fetch-then-merge on update — #353 (closes #325)
+  - `companies update` — PUT → PATCH — #346 (closes #326)
+  - `companies create/read` address — `state`/`zip` → `stateOrProvince`/`postalCode` + three required billing booleans + drop empty-address — #352 (closes #327, #328, #329)
+  - `orders create` — required `lineItemNumber` per line — #348 (closes #331)
+  - `orders` — `provisioningDetails` shape (record → array of `{key, values[]}`) — #351 (closes #332)
+  - `subscriptions cancel` — date-only → ISO 8601 date-time normalization — #347 (closes #333)
+- [ ] `companies create` atomic endpoint adoption (PAM-997) — #330 still open. Substantial new-feature scope (replaces the legacy two-step path); design conversation pending.
+- [ ] `clients` rename — #317 still open. Coordinated with Hollander.
 
-- [ ] Audit complete
-- [ ] Findings triaged into per-issue follow-ups (if any)
+**Aggregate scoreboard:** 13 audit-surfaced issues filed → 11 shipped, 2 open (#317 design + #330 new feature). Plus the 6 quotes-side body-shape items (#311–#314, #312, #306) all shipped.
+
+**Adjacent follow-up surfaced during the batch:** `CreateQuoteInputSchema` / `UpdateQuoteInputSchema` carry the same `Record<string,unknown>` provisioningDetails shape mismatch on the quotes-side line items (flagged by the #332 agent). Small follow-up to file when domain review settles — same fix pattern as #351 applied to the quotes line-item path.
 
 ## Doc updates pending
 
-Held until #316 merges and parallel audit returns, so updates land once with full context rather than piecemeal.
-
-- [ ] Orders & Quotes section — partial-status framing, Open from review entry for audit findings
-- [ ] Companies & Contacts section — Franco's atomic endpoint, Hollander's `clients` rename
-- [ ] Subscriptions & Renewals section — Tanner re-review framing
+- [x] Orders & Quotes section in `docs/domain-review.md` — refreshed post-batch (Summary of Concerns item (4) + Orders & Quotes section + Workflow section + Methodology / Recent changes)
+- [ ] Companies & Contacts section in `docs/domain-review.md` — needs refresh: address field renames, three new boolean flags on create, contacts nested wire path, contacts breaking `--company` requirement on per-contact ops, contacts body reshape
+- [ ] Subscriptions & Renewals section in `docs/domain-review.md` — Tanner re-review framing; also reflect #336 (`--billing-term` widened), #347 (cancelDate ISO normalization), #315 (originalSubscriptionId guard now CI-enforced)
 - [ ] Strategy brief — one-line publish-hold note
 
 ## Consolidated reviewer replies pending

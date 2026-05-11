@@ -40,12 +40,7 @@ Five themes were flagged for domain-owner attention. After the 2026-05-07 merges
 
 **(3) `commitmentTermEndDate` and `renewalDate` renames — UNCHANGED.** The CLI still normalizes `subscription.commitmentTerm.endDate` into a top-level `commitmentTermEndDate` and renames it `renewalDate` in the renewals view. Still needs a domain-owner call on canonical vocabulary.
 
-**(4) Quotes v1-shaped over v2 endpoint — PARTIALLY ADDRESSED.** Schema and surface work in #261, #264, and #266 surfaced accept/decline workflow fields, lowercased the status help text, added a destructive-update confirmation, and built out `line-items list/add/remove` plus `send`. A subsequent audit caught a deeper bug: every quote command was resolving to `https://api.pax8.com/v1/quotes/...`, but the public API hosts quotes only at `/v2/quotes/...`. #316 fixes the wire path via a per-call `apiVersion` override on `Pax8Client`. Status post-#316:
-
-- **Five read commands** (`list`, `show`, `delete`, `line-items list`, `line-items remove`) work end-to-end against real v2.
-- **Five write commands** (`create`, `update`, `send`, `setStatus`, `line-items add`) hit the right URL but fail with 4xx body-shape errors — request bodies don't match the v2 spec (different field names, required fields the CLI doesn't send). Tracked under #311 (`create`: `clientId` rename + two-call orchestration), #312 (`line-items add`: missing `effectiveDate`/`price`), #313 (`update`: fetch-then-merge against the 5-field PUT body), #314 (`send`/`setStatus`: same fetch-then-merge). All four labeled `quotes-v2-body-shape` and gated on #308 (sandbox integration test pattern). They will land before publish.
-
-Full audit, including the retrospective on why the initial wire-path investigation missed the body-shape problems, lives at `docs/triage/quotes-api-version.md`. Surface-level deferrals (out of scope for the body-shape work): attachments, sections, access-list, take-ownership/claim, library-level `/v2/quote-attachments`, and `/v2/quote-preferences`.
+**(4) Quotes v1-shaped over v2 endpoint — RESOLVED.** Wire path on `/v2` (#316), the per-API base URL infra that unblocks future v2-only resources (#321 / #340), the sandbox integration test pattern that prevents this bug class from recurring (#308 / #341), and every body-shape fix on the write side: `create` `clientId` rename + two-call orchestration (#311 / #345), `line-items add` required `effectiveDate`/`price` (#312 / #342), `update` and `send`/`setStatus` 5-field PUT with fetch-then-merge (#313 / #314 / #354), plus the `--expiration-date` silent no-op removal (#306 / #339). Full audit in `docs/triage/quotes-api-version.md`. Surface-level deferrals (out of scope, still): attachments, sections, access-list, take-ownership/claim, library-level `/v2/quote-attachments`, `/v2/quote-preferences`. **Quote writes now work end-to-end against the real v2 API.**
 
 **(5) Webhook v1 fine-grained sub-routes — PARTIALLY ADDRESSED.** #265 adds `webhooks show/update/enable/disable`. #267 adds `webhooks logs retry`, `webhooks topics list`, and `webhooks test --topic <topic>` (with topic validation against `/webhooks/topic-definitions`). `webhooks logs` is now a subcommand group (`logs list` + `logs retry`) with the bare `logs [id]` form preserved as the default action for backward-compat. Still deferred: `topics add/remove/replace`, per-topic configuration (filter expressions on a single topic), and per-topic-config CRUD.
 
@@ -64,11 +59,11 @@ Full audit, including the retrospective on why the initial wire-path investigati
 | `pax8 companies more` | (interactive paging helper) | | CLI-only |
 | `pax8 contacts list` | `--company <id\|name>` (required), `--page`, `--size`, `--ids-only` | size=50 | |
 | `pax8 contacts show <id>` | `--company <id\|name>` (required) | | `--company` required post-#324 — the Pax8 public API only addresses contacts under `/companies/{companyId}/contacts/{contactId}` |
-| `pax8 contacts create` | `--company <id\|name>` (required), `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | type=Admin | `--type` accepts a comma-separated list (`Admin,Billing`) post-#255 |
+| `pax8 contacts create` | `--company <id\|name>` (required), `--first-name`, `--last-name`, `--email`, `--phone` (required post-#325), `--type <list>`, `-y` | type=Admin | `--type` accepts a comma-separated list (`Admin,Billing`); `--phone` now required because the v2 spec contract mandates a non-empty phone (#325/#353) |
 | `pax8 contacts update <id>` | `--company <id\|name>` (required), `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | | `--type` accepts a comma-separated list post-#255; `--company` required post-#324 |
 | `pax8 contacts delete <id>` | `--company <id\|name>` (required), `-y` | | `--company` required post-#324 |
 
-CLI output schemas (Zod) — `Company`: `id, name, address{street,street2,city,stateOrProvince,postalCode,country}, phone, website, status, billOnBehalfOfEnabled, selfServiceAllowed, orderApprovalRequired, externalId, created, updatedDate`. `Contact`: `id, firstName, lastName, email, phone, companyId, types[]`.
+CLI output schemas (Zod) — `Company`: `id, name, address{street,street2,city,stateOrProvince,postalCode,country}, phone, website, status, billOnBehalfOfEnabled, selfServiceAllowed, orderApprovalRequired, externalId, created, updatedDate`. `Contact`: `id, firstName, lastName, email, phone, types[{type, primary}]` [contact `types` reshaped to spec object form in #325/#353; `companyId` no longer carried on the body since the nested URL identifies it].
 
 ### Public API Surface
 
@@ -86,7 +81,11 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 | `updatedDate` | `updatedDate` | Aligned with API in #273 (was `modified`) |
 | `createdDate` (Contact) | (not exposed on Contact) | Only surfaced on Company-ish resources |
 | `contacts[]` (embedded on Company) | (separate `contacts list`) | CLI separates rather than embeds |
-| `types[]` (array of `Admin\|Billing\|Technical`) | `--type <comma-list>` | CLI accepts multiple types as a comma-separated string [Resolved in #255] |
+| `types[]` (spec shape: `Array<{type: ContactType, primary: boolean}>`) | `--type <comma-list>` | CLI accepts multiple types as a comma-separated string [Surface flag resolved in #255; wire shape aligned with spec in #325/#353 — was bare string array, now object array. Primary defaults to `false` on create] |
+| `Partial PUT` on `contacts update` | Fetch-then-merge | v2 spec requires full body on PUT; CLI now reads the current contact and merges overrides before sending [Resolved in #325/#353] |
+| `companies update` PUT vs PATCH | PATCH | v2 spec documents only PATCH; CLI switched from PUT [Resolved in #326/#346] |
+| `companies create` required fields | `--bill-on-behalf-of`, `--self-service-allowed`, `--order-approval-required` (default `false`) | The three booleans are required by the spec but not user-facing concerns for partners in most cases; defaults preserve the previous UX [Resolved in #329/#352] |
+| Contacts wire path (`/contacts/{id}` vs `/companies/{cid}/contacts/{id}`) | Nested per spec | Flat path doesn't exist in the API; CLI commands now thread `--company` through all per-contact operations [Resolved in #324/#350] |
 
 ### Coverage
 
@@ -98,6 +97,7 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 - `--type` accepts one value; API accepts an array. [Resolved in #255 — comma-separated list now accepted on both create and update.]
 - `companies update` cannot change address or the three boolean billing flags. Confirm whether this is an intentional safety choice or an oversight.
 - CLI `Company.modified` vs API `updatedDate` — pick one and align. [Resolved in #273 — renamed to `updatedDate`.]
+- Per-contact operations (`show`, `update`, `delete`) now require `--company` — breaking change. The flat `/contacts/{id}` path doesn't exist in the v2 spec, so the CLI cannot address a contact without its company. [Resolved in #324/#350; migration message included in each command's error path.]
 
 ### Questions for Domain Owner
 
@@ -114,8 +114,8 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 |---|---|---|---|
 | `pax8 subscriptions list` | `--company`, `--status`, `--page`, `--size`, `--ids-only`, `--with-actions` | size=25 | |
 | `pax8 subscriptions show <id>` | `--history` | | |
-| `pax8 subscriptions update <id>` | `--quantity`, `--billing-term`, `-y` | | |
-| `pax8 subscriptions cancel <id>` | `--cancel-date <YYYY-MM-DD>`, `-y` | | `--cancel-date` for scheduled cancellation [Added in #256] |
+| `pax8 subscriptions update <id>` | `--quantity`, `--billing-term`, `-y` | | `--billing-term` now accepts the full API enum (`Monthly, Annual, 2-Year, 3-Year, One-Time, Trial, Activation`) per #336 — was previously limited to `Monthly`/`Annual` |
+| `pax8 subscriptions cancel <id>` | `--cancel-date <YYYY-MM-DD>`, `-y` | | `--cancel-date` for scheduled cancellation [Added in #256]; wire payload now ISO-normalizes to `YYYY-MM-DDT00:00:00Z` per spec [#333/#347] |
 | `pax8 subscriptions renewals` | `--within <period>`, `--company`, `--with-actions` | within=30d | **Computed — see below** |
 
 CLI `Subscription`: `id, companyId, productId, quantity, startDate, endDate, createdDate, billingStart, status, price, billingTerm, commitment{id,term,endDate}, commitmentTermEndDate, companyName, productName`.
@@ -164,7 +164,7 @@ API `SubscriptionStatus` enum: `Active, Cancelled, PendingManual, PendingAutomat
 
 1. Is "renewal date" the right name for `commitmentTerm.endDate`, or should the CLI just call it `commitmentTermEndDate` everywhere?
 2. The CLI's MRR-at-risk calculation is `price × quantity ÷ 12 (if annual)` — is that the formula your team uses, and is it OK to make this part of a public contract?
-3. Should `--billing-term` on update accept the full enum (`Monthly, Annual, 2-Year, 3-Year, One-Time, Trial, Activation`) or only `Monthly`/`Annual` as today?
+3. ~~Should `--billing-term` on update accept the full enum (`Monthly, Annual, 2-Year, 3-Year, One-Time, Trial, Activation`) or only `Monthly`/`Annual` as today?~~ [Resolved in #336 — full enum now accepted on `subscriptions update`.]
 
 ---
 
@@ -237,9 +237,9 @@ API `InvoiceItem` fields (32 total — selected): `id, productId, productName, s
 |---|---|---|---|
 | `pax8 orders list` | `--company`, `--status`, `--page`, `--size`, `--ids-only` | size=25 | Status enum is CLI-defined |
 | `pax8 orders show <id>` | | | |
-| `pax8 orders create` | `--company`, `--product`, `--quantity`, `--billing-term`, `--commitment-term`, `--commitment-term-id`, `--line-item <spec>` (repeatable), `--dry-run`, `-y`, `--idempotency-key` | qty=1, billing=Monthly | Multi-line via repeated `--line-item product=…,quantity=…[,billing-term=…][,commitment-term=…][,commitment-term-id=…]`; `--dry-run` maps to API `isMock=true` [Added in #259] |
+| `pax8 orders create` | `--company`, `--product`, `--quantity`, `--billing-term`, `--commitment-term`, `--commitment-term-id`, `--line-item <spec>` (repeatable), `--dry-run`, `-y`, `--idempotency-key` | qty=1, billing=Monthly | Multi-line via repeated `--line-item product=…,quantity=…[,billing-term=…][,commitment-term=…][,commitment-term-id=…][,provisioning=key:value\|value...]`; `--dry-run` maps to API `isMock=true` [Added in #259]; required `lineItemNumber` auto-injected per line [#331/#348]; `provisioning=...` parses into the spec-required `Array<{key, values[]}>` shape [#332/#351] |
 
-CLI `Order`: `id, companyId, companyName, orderedBy, orderedByEmail, status, createdDate, lineItems[{id, offerId, productId, productName, billingTerm, lineItemNumber, quantity, provisioningDetails}]`.
+CLI `Order`: `id, companyId, companyName, orderedBy, orderedByEmail, status, createdDate, lineItems[{id, offerId, productId, productName, billingTerm, lineItemNumber, quantity, provisioningDetails: Array<{key, values[]}>}]` [`provisioningDetails` reshaped from record to array of `{key, values[]}` in #351 to match the spec].
 
 ### Public API Surface — Orders
 
@@ -259,9 +259,9 @@ CLI `Order`: `id, companyId, companyName, orderedBy, orderedByEmail, status, cre
 | `pax8 quotes line-items remove <quote-id> <line-item-id>` | `-y` | | Removes a single line item [Added in #266] |
 | `pax8 quotes send <quote-id>` | `-y` | | Sets quote status to `sent` (generates customer-facing link) via `PUT /v2/quotes/{id}` [Added in #266] |
 
-CLI `Quote`: `id, companyId, createdOn, expiresOn, status, lineItems[{id, productId, quantity, billingTerm, unitPrice, subtotal}], acceptedBy?, declinedBy?, respondedOn?, revokedOn?, publishedOn?, published?, referenceCode?, salesMarginPercentage?, intentType?` [accept/decline workflow fields added in #261; line-item `id` surfaced for use with `line-items remove`; top-level dates aligned with API in #273].
+CLI `Quote`: `id, companyId, createdOn, expiresOn, status, introMessage, termsAndDisclaimers, lineItems[{id, productId, quantity, billingTerm, unitPrice, subtotal}], acceptedBy?, declinedBy?, respondedOn?, revokedOn?, publishedOn?, published?, referenceCode?, salesMarginPercentage?, intentType?` [accept/decline workflow fields in #261; line-item `id` for `line-items remove`; top-level dates in #273; `introMessage`/`termsAndDisclaimers` in #354 to support fetch-then-merge on update/send].
 
-**Status (post-#316).** The quote commands now resolve to `https://api.pax8.com/v2/quotes/...` after #316 fixed an inherited `/v1` wire path. The five read commands (`list`, `show`, `delete`, `line-items list`, `line-items remove`) work end-to-end. The five write commands (`create`, `update`, `send`, `setStatus`, `line-items add`) hit the right URL but fail with 4xx body-shape errors — request bodies need updating to match the v2 spec. Body-shape fixes are tracked under #311 (`create`), #312 (`line-items add`), #313 (`update`), #314 (`send`/`setStatus`), all labeled `quotes-v2-body-shape` and gated on #308 (sandbox integration test pattern). All four will land before publish. Audit in `docs/triage/quotes-api-version.md`.
+**Status (post body-shape batch).** All ten quote commands now work end-to-end against the real v2 API. Wire path on `/v2` (#316/#340/#341); write bodies match the v2 spec: `create` is `{ clientId, quoteRequestId? }` with two-call orchestration when `--product` is passed (#345); `line-items add` carries required `effectiveDate` + `price` with sensible defaults (#342); `update` and `send`/`setStatus` fetch-then-merge against the 5-field PUT body (#354); `--expiration-date` no-op flag removed (#339). Line-item replacement on `quotes update --product` decomposes into delete-then-add per the spec (`PUT /v2/quotes/{id}/line-items` is update-in-place, not replace). Full audit + retrospective at `docs/triage/quotes-api-version.md`.
 
 ### Public API Surface — Quotes (v2)
 
@@ -408,7 +408,7 @@ The seven categories, the seven cross-sell rules, the seat-gap thresholds (10 se
 |---|---|---|---|
 | `pax8 webhooks list` | `--ids-only`, `--with-actions` | | |
 | `pax8 webhooks show <id>` | | | View a single webhook subscription [Added in #265] |
-| `pax8 webhooks create` | `--url`, `--topics <comma-list>`, `-y` (with `--events` as a deprecated alias) | | |
+| `pax8 webhooks create` | `--url`, `--display-name` (required post-#323), `--topics <comma-list>`, `-y` (with `--events` as a deprecated alias) | | `--display-name` is required by the v2 spec (#323/#349); wire body uses `webhookTopics: Array<{topic, filters[]}>` (CLI flattens `--topics T1,T2` into the structured shape); calls now route to `https://api.pax8.com/api/v2/webhooks/...` per spec [#322/#344] |
 | `pax8 webhooks update <id>` | `--display-name`, `--authorization`, `--contact-email`, `--error-threshold`, `-y` | | Configures the four mutable fields via `PUT /webhooks/{id}/configuration` [Added in #265]; redacts `--authorization` in echo |
 | `pax8 webhooks enable <id>` | `-y` | | Sets `active=true` via `PUT /webhooks/{id}/status` [Added in #265] |
 | `pax8 webhooks disable <id>` | `-y` | | Sets `active=false` via `PUT /webhooks/{id}/status` [Added in #265] |
@@ -422,9 +422,9 @@ The seven categories, the seven cross-sell rules, the seat-gap thresholds (10 se
 CLI `Webhook`: `id, url, topics[], status ('Active' \| 'Disabled'), createdDate, secret` [`secret` is the real HMAC-signing secret returned on `POST /webhooks` (visible only on create-response, per JSDoc clarified in #254)].
 CLI `WebhookLog`: `id, webhookId, topic, responseCode, responseBody, sentAt`.
 
-### Public API Surface (Webhooks v1)
+### Public API Surface (Webhooks)
 
-12 endpoints. CRUD on `/webhooks` and `/webhooks/{id}`. Three sub-resources for fine-grained updates the CLI doesn't expose: `/configuration` (authorization, contactEmail, errorThreshold), `/status` (enable/disable), `/topics` (add, replace, remove, per-topic config, per-topic `test`). A topic-definitions catalog at `/webhooks/topic-definitions`. Logs at `/webhooks/{id}/logs` with a per-log `retry` action.
+Base: `https://api.pax8.com/api/v2` (not `/v1` — a peculiarity that motivated the per-API base URL infra in #321/#340). 12 endpoints. CRUD on `/webhooks` and `/webhooks/{id}`. Three sub-resources for fine-grained updates: `/configuration` (authorization, contactEmail, errorThreshold), `/status` (enable/disable), `/topics` (add, replace, remove, per-topic config, per-topic `test`). A topic-definitions catalog at `/webhooks/topic-definitions`. Logs at `/webhooks/{id}/logs` with a per-log `retry` action.
 
 API `Webhook` fields: `id, accountId, displayName, url, authorization, active, contactEmail, errorThreshold, integrationId, webhookTopics[], lastDeliveryStatus, createdAt, updatedAt`.
 
@@ -513,7 +513,7 @@ The Pax8 internal **Preliminary Workflows** doc enumerates canonical end-to-end 
 | 4. Subscribe to QUOTE.Accepted webhook events | `POST /webhooks` with `topics: ["QUOTE.Accepted"]` | `pax8 webhooks create --url X --topics QUOTE.Accepted`; discover topics via `pax8 webhooks topics list` (#267) |
 | 5. On QUOTE.Accepted, trigger order placement | `POST /orders` | `pax8 orders create --company X --product Y --quantity N` |
 
-**Implementation status (post-#316).** Steps 1–3 all hit the v2 API after #316; previously they resolved to a non-existent `/v1/quotes` path. Write bodies still need updating to match the v2 spec — tracked under #311 (step 1: `clientId` rename + two-call orchestration since v2 `POST /quotes` doesn't accept inline `lineItems`), #312 (step 2: missing required `effectiveDate`/`price` on the Standard line-item payload), #313 (step 3 + line-item replacement: fetch-then-merge against the 5-field PUT body), #314 (step 3 status transition: same fetch-then-merge mechanic). All four are gated on #308 (sandbox integration test pattern) and will land before publish. The workflow ends-to-end story stands; the writes that compose it are in-flight.
+**Implementation status (post body-shape batch).** All five steps now work end-to-end against the real v2 API. Step 1 (#345, `clientId` body + optional two-call orchestration when `--product` is passed). Step 2 (#342, required `effectiveDate` + `price` with product-pricing defaults). Step 3 (#354, fetch-then-merge against the 5-field PUT body). Step 4 was already working (webhook subscription was on its own path; #344 routed the writes to `/api/v2/webhooks` and #349 fixed the create body shape). Step 5 (`orders create`) also benefited from the same audit cycle: #348 (required `lineItemNumber` per line) and #351 (`provisioningDetails` shape fix). The Automated Quoting and Sales Cycle is now a real end-to-end flow against the documented spec.
 
 **Naming-coordination note:** the workflow assumes the `pax8-submit-order` MCP tool (Linear AI-865) and the CLI's `orders create` will eventually converge on the same vocabulary. Flag-naming coordination between the CLI team and the MCP team is worth doing once, before partners start building automations against both.
 
@@ -567,4 +567,10 @@ Note: "the CLI consumes endpoint X" is **not** evidence here — this doc review
 
 11 PRs landed on 2026-05-07 closing or partially-closing issues #239–#246. The squash commits are #252–#269. This refresh re-states resolved concerns as `[Resolved in #NUM]` annotations rather than deleting them — so reviewers can still trace the history of each drift item. PR set, in merge order: #252, #254, #255, #256, #259, #260, #261, #264, #265, #266, #267.
 
-**2026-05-11 follow-up.** Reviewer-triggered audit of the Orders & Quotes section (Fred Lintz) surfaced a v1-vs-v2 wire-path bug: every quote command was resolving to `https://api.pax8.com/v1/quotes/...`, but the API hosts quotes only at `/v2/quotes/...`. #316 landed a per-call `apiVersion` override on `Pax8Client` and routes every `QuotesApi` method to `/v2`. Read commands now work end-to-end against real v2; write commands hit the right URL but fail with 4xx body-shape errors, tracked under #311–#314 (label `quotes-v2-body-shape`) and gated on #308 (sandbox integration test pattern). Full audit including audit-quality retrospective in `docs/triage/quotes-api-version.md`. Adjacent reviewer items from the same cycle: #304 (`intentType` writability, resolved via read-only convention), #305 (`quotes create` shorthand semantics, resolved via help-text clarification + audit), #306 (`quotes create --expiration-date` silent no-op, surfaced during the #305 audit).
+**2026-05-11 batch.** Reviewer-triggered audit of the Orders & Quotes section (Fred Lintz) surfaced a v1-vs-v2 wire-path bug in quotes (#316). That investigation generalized into a parallel audit across every write-heavy domain (#319's `docs/triage/api-version-audit/` set), which surfaced 13 sibling issues (#317, #321–#333) plus four quotes-side body-shape follow-ups (#311–#314).
+
+By end of day, the entire wave had shipped: infra unblock (#321 / #340), sandbox integration test pattern as the safety net (#308 / #341), quotes wire path + body shapes for all five write commands (#316 / #339 / #342 / #345 / #354), webhooks wire path + create body (#322 / #323 / #344 / #349), contacts nested paths + body shapes (#324 / #325 / #350 / #353), companies update PATCH + address renames + required booleans (#326 / #327 / #328 / #329 / #346 / #352), orders required `lineItemNumber` + `provisioningDetails` shape (#331 / #332 / #348 / #351), subscriptions cancelDate ISO-normalization (#333 / #347), usage nested paths (#337 / #343, transitively closes #212), and the `originalSubscriptionId` CI-enforced exclusion (#315). Adjacent reviewer items also landed: #304 (`intentType` read-only), #306/#339 (`quotes create --expiration-date` no-op removed), #336 (`--billing-term` enum widened on subscriptions update).
+
+Still open from this cycle: #317 (`clients` rename, coordinated with Hollander), #330 (companies atomic endpoint adoption — PAM-997, substantial new-feature scope). All other audit-surfaced issues are resolved.
+
+The audit-quality retrospective at `docs/triage/quotes-api-version.md` §10 (URL audit vs. body audit are separate verification tracks; code comments are hypotheses, not evidence; response-shape alignment is not full alignment) generalized cleanly across the parallel-audit work — every body-shape issue followed the same investigative shape.
