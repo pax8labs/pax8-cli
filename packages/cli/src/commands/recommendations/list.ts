@@ -243,18 +243,22 @@ Estimate semantics:
         process.stderr.write(chalk.cyan(`\n  📈 A few conversations could add ${formatCurrency(totalUplift * 12)}/yr to your book.\n`));
       }
 
-      // Show actionable commands — copy-paste ready (cap at 5)
-      const quickActionCount = Math.min(displayRecs.length, 5);
-      process.stderr.write(chalk.dim("\n  Quick actions:\n\n"));
-      for (let i = 0; i < quickActionCount; i++) {
-        const rec = displayRecs[i];
-        const product = rec.suggestedProducts?.[0] ?? "product";
-        const seats = rec.targetSeats ?? "?";
-        const uplift = rec.estimatedMrrUplift ? chalk.green(` +${formatCurrency(rec.estimatedMrrUplift)}/mo`) : "";
-        process.stderr.write(`  ${chalk.cyan.bold(`${i + 1}.`)} ${product} for ${rec.companyName} (${seats} seats)${uplift}\n`);
-        if (rec.orderCommand) {
-          process.stderr.write(chalk.dim(`     ${replCmd(rec.orderCommand)}\n\n`));
-        }
+      // One-line "top N capture $X/mo" summary — replaces the old
+      // multi-paragraph "Quick actions" block (issue #195). The block
+      // re-printed every rec a second time AND leaked raw product UUIDs in
+      // the `orders create --product <uuid>` snippets. The table above is
+      // the menu; the `#` column + the `promptNextSteps` hint below already
+      // give the user everything they need to drill in.
+      const topN = Math.min(displayRecs.length, 5);
+      const topUplift = displayRecs
+        .slice(0, topN)
+        .reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
+      if (topUplift > 0 && recs.length > topN) {
+        process.stderr.write(
+          chalk.dim(`\n  Top ${topN} alone capture `) +
+            chalk.green(`${formatCurrency(topUplift)}/mo`) +
+            chalk.dim(".\n")
+        );
       }
 
       if (hiddenCount > 0) {

@@ -108,6 +108,15 @@ export function getOutputFormat(
   if (options.json) return "json";
   if (options.csv) return "csv";
 
+  // Escape hatch for subprocess tests that need to exercise the table-mode
+  // render path (the human render only fires when stdout is a TTY, so without
+  // this override the non-JSON branches are unreachable from a piped
+  // subprocess). Accepted values: "table" | "json" | "csv" | "quiet".
+  const forced = process.env.PAX8_OUTPUT_FORMAT;
+  if (forced === "table" || forced === "json" || forced === "csv" || forced === "quiet") {
+    return forced;
+  }
+
   // Non-TTY (piped) output always defaults to JSON for machine consumption
   if (!process.stdout.isTTY) return "json";
 
