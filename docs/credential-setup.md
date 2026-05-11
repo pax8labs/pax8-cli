@@ -6,7 +6,7 @@ This guide walks you through getting API credentials from Pax8 and configuring t
 
 - A Pax8 partner account
 - API access enabled on your account (contact your Pax8 account manager if unsure)
-- Node.js 18+ and the CLI installed (`npm install -g @pax8/cli`)
+- Node.js 20+ and the CLI installed — `npm install -g @pax8/cli` once v0.1.0 ships, or build from source per the [README Quick Start](../README.md#running-from-source) until then
 
 ## Step 1: Get your API credentials
 

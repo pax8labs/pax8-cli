@@ -6,6 +6,8 @@ An open-source CLI for managing Pax8 cloud marketplace operations. Built for MSP
 
 This is an early-stage open-source experiment. We're using engagement signals (installs, issues, command usage) to learn which capabilities are worth investing in further. Feedback, issues, and PRs are welcome.
 
+> **Pre-release.** `@pax8/cli` is not yet published to npm — `npm install -g @pax8/cli` will work once v0.1.0 ships. Until then, install from source: see [Quick Start → Running from source](#running-from-source).
+
 ## Highlights
 
 - **Answers the API doesn't** — renewals, invoice audit, upsell recommendations, MRR analytics computed locally from raw Pax8 data
@@ -32,10 +34,35 @@ Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see t
 
 ## Quick Start
 
-Tested on macOS, Linux, and Windows under PowerShell.
+Tested on macOS, Linux, and Windows under PowerShell. Requires Node.js 20+ and [pnpm](https://pnpm.io/installation) 9+.
+
+### Running from source
+
+Until `@pax8/cli` is published to npm, install from source — copy-pasteable, under 5 minutes on a fresh checkout:
 
 ```bash
-# Install
+git clone https://github.com/pax8labs/pax8-cli
+cd pax8-cli
+pnpm install
+pnpm build
+
+# Try it without credentials (demo data, no API calls)
+PAX8_DEMO=1 node packages/cli/dist/index.js dashboard
+
+# Or expose `pax8` globally from your checkout so every example in this
+# README works as-is (the REPL and cache-warmer also need `pax8` on PATH)
+cd packages/cli && npm link
+PAX8_DEMO=1 pax8 dashboard
+```
+
+For watch mode, tests, and the rest of the contributor workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### From npm (coming soon)
+
+Once v0.1.0 ships, the documented path will be:
+
+```bash
+# Install (not yet published — tracked in repo Status section above)
 npm install -g @pax8/cli
 
 # Authenticate
@@ -47,26 +74,6 @@ pax8 dashboard
 # Or try with demo data (no credentials needed)
 PAX8_DEMO=1 pax8 dashboard
 ```
-
-### Running from source (contributors / unmerged branches)
-
-If you're contributing to the CLI or trying it before it's published:
-
-```bash
-git clone https://github.com/pax8labs/pax8-cli
-cd pax8-cli
-pnpm install
-pnpm build
-
-# Use directly:
-node packages/cli/dist/index.js status
-
-# Or symlink for global use:
-cd packages/cli && npm link
-pax8 status
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full dev workflow.
 
 ## Demo Flow (90 seconds)
 
