@@ -1,0 +1,61 @@
+name: CodeQL
+
+# Static analysis (SAST) for JavaScript / TypeScript. Runs on every push to
+# main, every PR targeting main, and on a weekly schedule for a deeper scan.
+# Findings surface in the repo Security tab once "Code scanning" is enabled
+# in repo settings (one-time admin step, tracked in #138).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly deep scan, Mondays at 06:00 UTC.
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  security-events: write
+  actions: read
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Initialize CodeQL BEFORE the build so it can observe compiler output
+      # and trace the TypeScript -> JavaScript transformation in our pnpm
+      # workspaces. `security-extended` is GitHub's recommended query suite
+      # for OSS projects — broader coverage than `security-and-quality` minus
+      # the noisier code-quality rules.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Build
+        run: pnpm build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

@@ -170,6 +170,10 @@ The release workflow publishes via [npm OIDC trusted publishing](https://docs.np
 
 Do **not** open a GitHub Issue for security vulnerabilities. Report them via the process in [SECURITY.md](SECURITY.md) (email to `security@pax8.com`).
 
+### Static analysis (CodeQL)
+
+We run [CodeQL](https://codeql.github.com) on every push to `main`, every PR, and a weekly schedule via [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml). The job uses the `javascript-typescript` analysis with the `security-extended` query suite. Findings appear in the repo **Security → Code scanning** tab. If a PR introduces a new finding, the check will fail — fix the issue or, if it's a false positive, dismiss it from the Security tab with a justification.
+
 ## Reporting Issues
 
 Use GitHub Issues. Include:
