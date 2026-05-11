@@ -63,10 +63,10 @@ Full audit, including the retrospective on why the initial wire-path investigati
 | `pax8 companies update <id\|name>` | `--name`, `--phone`, `--website`, `-y` | | No address/billing-flag updates exposed |
 | `pax8 companies more` | (interactive paging helper) | | CLI-only |
 | `pax8 contacts list` | `--company <id\|name>` (required), `--page`, `--size`, `--ids-only` | size=50 | |
-| `pax8 contacts show <id>` | | | |
-| `pax8 contacts create` | `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | type=Admin | `--type` accepts a comma-separated list (`Admin,Billing`) post-#255 |
-| `pax8 contacts update <id>` | `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | | `--type` accepts a comma-separated list post-#255 |
-| `pax8 contacts delete <id>` | `-y` | | |
+| `pax8 contacts show <id>` | `--company <id\|name>` (required) | | `--company` required post-#324 — the Pax8 public API only addresses contacts under `/companies/{companyId}/contacts/{contactId}` |
+| `pax8 contacts create` | `--company <id\|name>` (required), `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | type=Admin | `--type` accepts a comma-separated list (`Admin,Billing`) post-#255 |
+| `pax8 contacts update <id>` | `--company <id\|name>` (required), `--first-name`, `--last-name`, `--email`, `--phone`, `--type <list>`, `-y` | | `--type` accepts a comma-separated list post-#255; `--company` required post-#324 |
+| `pax8 contacts delete <id>` | `--company <id\|name>` (required), `-y` | | `--company` required post-#324 |
 
 CLI output schemas (Zod) — `Company`: `id, name, address{street,city,state,zip,country}, phone, website, status, billOnBehalfOfEnabled, selfServiceAllowed, orderApprovalRequired, created, modified`. `Contact`: `id, firstName, lastName, email, phone, companyId, types[]`.
 

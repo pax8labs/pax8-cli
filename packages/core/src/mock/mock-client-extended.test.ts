@@ -235,66 +235,72 @@ describe("MockPax8Client — extended coverage", () => {
 
   // ─── Contacts ────────────────────────────────────────────────────────────
 
+  // The Pax8 public spec only addresses contacts under
+  // `/companies/{companyId}/contacts[/{contactId}]` — there is no flat
+  // `/contacts` endpoint — so the mock now mirrors that contract (#324).
+  const SUMMIT_COMPANY_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
   describe("contacts.get()", () => {
-    it("returns contact by id", async () => {
-      const all = await client.contacts.list(
-        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        { size: 100 },
-      );
+    it("returns contact by id under its owning company", async () => {
+      const all = await client.contacts.list(SUMMIT_COMPANY_ID, { size: 100 });
       const firstId = all.content[0].id;
-      const contact = await client.contacts.get(firstId);
+      const contact = await client.contacts.get(SUMMIT_COMPANY_ID, firstId);
       expect(contact.id).toBe(firstId);
     });
 
     it("throws NotFoundError for unknown contact", async () => {
-      await expect(client.contacts.get("nonexistent")).rejects.toThrow(NotFoundError);
+      await expect(
+        client.contacts.get(SUMMIT_COMPANY_ID, "nonexistent"),
+      ).rejects.toThrow(NotFoundError);
     });
   });
 
   describe("contacts.create()", () => {
-    it("creates a contact", async () => {
-      const result = await client.contacts.create({
-        companyId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    it("creates a contact under the given company", async () => {
+      const result = await client.contacts.create(SUMMIT_COMPANY_ID, {
         firstName: "Jane",
         lastName: "Doe",
         email: "jane@example.com",
       });
       expect(result.id).toContain("contact-demo-");
       expect(result.firstName).toBe("Jane");
+      expect(result.companyId).toBe(SUMMIT_COMPANY_ID);
     });
   });
 
   describe("contacts.update()", () => {
-    it("updates a contact", async () => {
-      const all = await client.contacts.list(
-        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        { size: 100 },
-      );
+    it("updates a contact under its owning company", async () => {
+      const all = await client.contacts.list(SUMMIT_COMPANY_ID, { size: 100 });
       const firstId = all.content[0].id;
-      const result = await client.contacts.update(firstId, { firstName: "Updated" });
+      const result = await client.contacts.update(
+        SUMMIT_COMPANY_ID,
+        firstId,
+        { firstName: "Updated" },
+      );
       expect(result.firstName).toBe("Updated");
       expect(result.id).toBe(firstId);
     });
 
     it("throws NotFoundError for unknown contact", async () => {
       await expect(
-        client.contacts.update("nonexistent", { firstName: "X" }),
+        client.contacts.update(SUMMIT_COMPANY_ID, "nonexistent", { firstName: "X" }),
       ).rejects.toThrow(NotFoundError);
     });
   });
 
   describe("contacts.delete()", () => {
-    it("deletes existing contact", async () => {
-      const all = await client.contacts.list(
-        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        { size: 100 },
-      );
+    it("deletes existing contact under its owning company", async () => {
+      const all = await client.contacts.list(SUMMIT_COMPANY_ID, { size: 100 });
       const firstId = all.content[0].id;
-      await expect(client.contacts.delete(firstId)).resolves.toBeUndefined();
+      await expect(
+        client.contacts.delete(SUMMIT_COMPANY_ID, firstId),
+      ).resolves.toBeUndefined();
     });
 
     it("throws NotFoundError for unknown contact", async () => {
-      await expect(client.contacts.delete("nonexistent")).rejects.toThrow(NotFoundError);
+      await expect(
+        client.contacts.delete(SUMMIT_COMPANY_ID, "nonexistent"),
+      ).rejects.toThrow(NotFoundError);
     });
   });
 

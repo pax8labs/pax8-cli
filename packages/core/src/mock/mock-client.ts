@@ -492,7 +492,9 @@ class OrdersResource {
 }
 
 class ContactsResource {
-  // Mirrors ContactsApi.list — companyId is the first positional argument.
+  // Mirrors ContactsApi — every method threads companyId as the first argument
+  // because the Pax8 public spec only addresses contacts under the nested
+  // `/companies/{companyId}/contacts[/{contactId}]` paths.
   async list(
     companyId: string,
     params?: ListParams,
@@ -502,18 +504,20 @@ class ContactsResource {
     return paginate(filtered, params);
   }
 
-  async get(id: string): Promise<Contact> {
+  async get(companyId: string, contactId: string): Promise<Contact> {
     await randomDelay();
-    const contact = contacts.find((c) => c.id === id);
-    if (!contact) throw notFound("Contact", id);
+    const contact = contacts.find(
+      (c) => c.id === contactId && c.companyId === companyId,
+    );
+    if (!contact) throw notFound("Contact", contactId);
     return contact;
   }
 
-  async create(data: Partial<Contact>): Promise<Contact> {
+  async create(companyId: string, data: Partial<Contact>): Promise<Contact> {
     await randomDelay();
     const newContact: Contact = {
       id: `contact-demo-${Date.now()}`,
-      companyId: data.companyId ?? "",
+      companyId,
       firstName: data.firstName ?? "",
       lastName: data.lastName ?? "",
       email: data.email ?? "",
@@ -523,17 +527,25 @@ class ContactsResource {
     return newContact;
   }
 
-  async update(id: string, data: Partial<Contact>): Promise<Contact> {
+  async update(
+    companyId: string,
+    contactId: string,
+    data: Partial<Contact>,
+  ): Promise<Contact> {
     await randomDelay();
-    const contact = contacts.find((c) => c.id === id);
-    if (!contact) throw notFound("Contact", id);
-    return { ...contact, ...data, id: contact.id };
+    const contact = contacts.find(
+      (c) => c.id === contactId && c.companyId === companyId,
+    );
+    if (!contact) throw notFound("Contact", contactId);
+    return { ...contact, ...data, id: contact.id, companyId: contact.companyId };
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(companyId: string, contactId: string): Promise<void> {
     await randomDelay();
-    const contact = contacts.find((c) => c.id === id);
-    if (!contact) throw notFound("Contact", id);
+    const contact = contacts.find(
+      (c) => c.id === contactId && c.companyId === companyId,
+    );
+    if (!contact) throw notFound("Contact", contactId);
   }
 }
 

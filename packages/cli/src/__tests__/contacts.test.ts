@@ -7,6 +7,59 @@ import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 const SUMMIT_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
 describe("pax8 contacts", () => {
+  // ─── nested wire path / `--company` requirement (#324) ─────────────────
+
+  describe("contacts list", () => {
+    it("lists contacts for a company", async () => {
+      const result = await runCliExpectSuccess([
+        "contacts",
+        "list",
+        "--company",
+        SUMMIT_ID,
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBeGreaterThan(0);
+      for (const c of data) {
+        expect(c.companyId).toBe(SUMMIT_ID);
+      }
+    });
+  });
+
+  describe("contacts show", () => {
+    it("requires --company", async () => {
+      const result = await runCliExpectFailure([
+        "contacts",
+        "show",
+        "contact-summit-001",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/--company is required/);
+      expect(combined).toMatch(/Contacts in v2 must be addressed under a company/);
+    });
+
+    it("returns the contact when --company is provided", async () => {
+      const result = await runCliExpectSuccess([
+        "contacts",
+        "show",
+        "contact-summit-001",
+        "--company",
+        SUMMIT_ID,
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.id).toBe("contact-summit-001");
+      expect(data.companyId).toBe(SUMMIT_ID);
+    });
+
+    it("shows the migration note in --help", async () => {
+      const result = await runCliExpectSuccess(["contacts", "show", "--help"]);
+      expect(result.stdout).toContain("--company");
+      expect(result.stdout).toMatch(/companies\/\{companyId\}\/contacts/);
+    });
+  });
+
   describe("contacts create --type", () => {
     it("accepts a single ContactType (default Admin)", async () => {
       const result = await runCliExpectSuccess(
@@ -29,6 +82,7 @@ describe("pax8 contacts", () => {
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(true);
       expect(data[0].types).toEqual(["Admin"]);
+      expect(data[0].companyId).toBe(SUMMIT_ID);
     });
 
     it("accepts comma-separated multiple ContactTypes", async () => {
@@ -114,13 +168,32 @@ describe("pax8 contacts", () => {
     });
   });
 
-  describe("contacts update --type", () => {
+  describe("contacts update", () => {
+    it("requires --company", async () => {
+      const result = await runCliExpectFailure(
+        [
+          "contacts",
+          "update",
+          "contact-summit-001",
+          "--email",
+          "x@example.com",
+          "--yes",
+        ],
+        { PAX8_YES: "1" },
+      );
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/--company is required/);
+      expect(combined).toMatch(/Contacts in v2 must be addressed under a company/);
+    });
+
     it("accepts comma-separated multiple ContactTypes", async () => {
       const result = await runCliExpectSuccess(
         [
           "contacts",
           "update",
           "contact-summit-001",
+          "--company",
+          SUMMIT_ID,
           "--type",
           "Admin,Technical",
           "--json",
@@ -139,6 +212,8 @@ describe("pax8 contacts", () => {
           "contacts",
           "update",
           "contact-summit-001",
+          "--company",
+          SUMMIT_ID,
           "--type",
           " , ,",
           "--yes",
@@ -155,6 +230,8 @@ describe("pax8 contacts", () => {
           "contacts",
           "update",
           "contact-summit-001",
+          "--company",
+          SUMMIT_ID,
           "--type",
           "Admin,NotReal",
           "--yes",
@@ -164,6 +241,41 @@ describe("pax8 contacts", () => {
       const combined = result.stdout + result.stderr;
       expect(combined).toMatch(/Invalid --type/);
       expect(combined).toContain("NotReal");
+    });
+  });
+
+  describe("contacts delete", () => {
+    it("requires --company", async () => {
+      const result = await runCliExpectFailure(
+        [
+          "contacts",
+          "delete",
+          "contact-summit-001",
+          "--yes",
+        ],
+        { PAX8_YES: "1" },
+      );
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/--company is required/);
+      expect(combined).toMatch(/Contacts in v2 must be addressed under a company/);
+    });
+
+    it("deletes when --company is provided", async () => {
+      const result = await runCliExpectSuccess(
+        [
+          "contacts",
+          "delete",
+          "contact-summit-001",
+          "--company",
+          SUMMIT_ID,
+          "--json",
+          "--yes",
+        ],
+        { PAX8_YES: "1" },
+      );
+      const data = JSON.parse(result.stdout);
+      expect(data[0].id).toBe("contact-summit-001");
+      expect(data[0].status).toBe("Deleted");
     });
   });
 });

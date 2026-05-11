@@ -44,7 +44,12 @@ export const contactsCreateCommand = new Command("create")
 Examples:
   pax8 contacts create --company "Summit Healthcare Partners" --email rachel@example.com --first-name Rachel --last-name Thornton
   pax8 contacts create --company a1b2c3d4 --email tech@example.com --first-name Sam --last-name Lee --type Technical
-  pax8 contacts create --company a1b2c3d4 --email ops@example.com --first-name Pat --last-name Kim --type Admin,Billing`
+  pax8 contacts create --company a1b2c3d4 --email ops@example.com --first-name Pat --last-name Kim --type Admin,Billing
+
+Notes:
+  Contacts in the Pax8 public API are addressed only under their owning
+  company (\`POST /v1/companies/{companyId}/contacts\`). The \`--company\`
+  flag is required; there is no flat create endpoint.`
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
@@ -104,7 +109,7 @@ Examples:
       const doneCreate = markWriteInFlight("contacts");
       let contact;
       try {
-        contact = await ctx.api.contacts.create(input);
+        contact = await ctx.api.contacts.create(company.id, input);
       } finally {
         doneCreate();
       }
