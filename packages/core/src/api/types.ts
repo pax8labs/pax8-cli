@@ -616,14 +616,22 @@ export type PaginatedResponse<T> = {
 
 // ─── Quote Input Types ──────────────────────────────────────────────────────
 
+/**
+ * Body for `POST /v2/quotes` per the public quoting OpenAPI spec (v2.0.0):
+ * `{ clientId, quoteRequestId? }`. Line items are **not** accepted on create —
+ * they must be added through a separate `POST /v2/quotes/{quoteId}/line-items`
+ * call after the quote exists (see `AddQuoteLineItemInputSchema` below).
+ *
+ * `clientId` is the v2 term for what older Pax8 surfaces (and most other v1
+ * endpoints here) call `companyId`. The CLI's `quotes create` command resolves
+ * `--company <id|name>` to a company ID and sends it as `clientId`; we don't
+ * leak the v2 naming into the user-facing flag vocabulary.
+ *
+ * See #311 and `docs/triage/quotes-api-version.md` §9.1.
+ */
 export const CreateQuoteInputSchema = z.object({
-  companyId: z.string(),
-  lineItems: z.array(z.object({
-    productId: z.string(),
-    quantity: z.number().int().positive(),
-    billingTerm: BillingTermSchema.optional(),
-    provisioningDetails: z.record(z.string(), z.unknown()).optional(),
-  })),
+  clientId: z.string(),
+  quoteRequestId: z.string().optional(),
 });
 export type CreateQuoteInput = z.infer<typeof CreateQuoteInputSchema>;
 

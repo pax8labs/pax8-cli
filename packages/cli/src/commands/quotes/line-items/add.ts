@@ -16,104 +16,15 @@ import {
   ERROR_INVALID_INPUT,
   type BillingTerm,
   type AddQuoteLineItemInput,
-  type ProductPricingPlan,
 } from "@pax8/core";
-import type { CommandContext } from "../../../lib/context.js";
+import {
+  resolveEffectiveDate,
+  resolveListPrice,
+} from "../../../lib/quote-line-item-defaults.js";
 
-/**
- * Normalize a user-supplied `--effective-date` (or the default of "today,
- * UTC") to the ISO 8601 date-time string the v2 quoting API requires on
- * `AddStandardLineItemPayload`. Accepts `YYYY-MM-DD` for the user-friendly
- * shape; rejects anything that doesn't round-trip through `Date`. The output
- * is always midnight UTC of the chosen day — line-item effective dates are
- * day-grained on the upstream side, and pinning the time avoids accidental
- * day shifts when the user's local zone is ahead/behind UTC.
- */
-function resolveEffectiveDate(raw: string | undefined): string {
-  if (!raw) {
-    // Today in UTC, midnight.
-    const now = new Date();
-    return `${now.toISOString().slice(0, 10)}T00:00:00Z`;
-  }
-  // Accept `YYYY-MM-DD` (strict — anything else is rejected to avoid
-  // ambiguous zone-relative parses).
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    throw new CliError(
-      `Invalid --effective-date: "${raw}"`,
-      ["Use the YYYY-MM-DD format (e.g. 2026-06-01)"],
-      undefined,
-      undefined,
-      ERROR_INVALID_INPUT,
-    );
-  }
-  const parsed = new Date(`${raw}T00:00:00Z`);
-  if (isNaN(parsed.getTime())) {
-    throw new CliError(
-      `Invalid --effective-date: "${raw}"`,
-      ["Use a real calendar date in YYYY-MM-DD form"],
-      undefined,
-      undefined,
-      ERROR_INVALID_INPUT,
-    );
-  }
-  return `${raw}T00:00:00Z`;
-}
-
-/**
- * Resolve the default per-unit list price for a product at a given billing
- * term. Returns `suggestedRetailPrice` from the first matching pricing plan
- * (matching `cost-simulator` / `orders create` conventions). Returns
- * `undefined` if the product has no pricing or no plan for the chosen term —
- * callers fall back to requiring `--price` and surfacing a clear error.
- *
- * Caching is per-command-run via a module-level `Map` keyed by productId.
- * `quotes line-items add` is a single write per invocation, so this is
- * effectively a memoize on the one product the command touches.
- */
-const pricingCache = new Map<string, ProductPricingPlan[]>();
-
-async function resolveListPrice(
-  ctx: CommandContext,
-  productId: string,
-  billingTerm: BillingTerm,
-): Promise<number | undefined> {
-  let pricing = pricingCache.get(productId);
-  if (!pricing) {
-    try {
-      pricing = await ctx.api.products.getPricing(productId);
-      pricingCache.set(productId, pricing);
-    } catch {
-      // Best-effort: a 404 / parse failure means we have no default to
-      // offer. The caller will fail closed with a helpful message.
-      return undefined;
-    }
-  }
-  if (!pricing || pricing.length === 0) return undefined;
-
-  // Term match: case-insensitive exact, with the Annual/Yearly alias the
-  // rest of the codebase honors (see `cost-simulator.findPlan`).
-  const want = billingTerm.toLowerCase();
-  const plan =
-    pricing.find((p) => p.billingTerm.toLowerCase() === want)
-    ?? (want.includes("annual") || want.includes("yearly")
-      ? pricing.find(
-          (p) =>
-            p.billingTerm.toLowerCase().includes("annual")
-            || p.billingTerm.toLowerCase().includes("yearly"),
-        )
-      : undefined)
-    ?? (want.includes("month")
-      ? pricing.find((p) => p.billingTerm.toLowerCase().includes("month"))
-      : undefined);
-
-  if (!plan) return undefined;
-
-  // First rate row — matches `orders create` (#312 note: real Pax8 pricing
-  // can carry multiple tiers; quotes don't use them and the partner can
-  // always override via `--price`).
-  const rate = plan.rates?.[0];
-  return rate?.suggestedRetailPrice;
-}
+// `resolveEffectiveDate` and `resolveListPrice` moved to
+// `packages/cli/src/lib/quote-line-item-defaults.ts` so #311's `quotes create`
+// two-call orchestration can reuse the same defaults.
 
 export const quotesLineItemsAddCommand = new Command("add")
   .description("Add a line item to a quote")

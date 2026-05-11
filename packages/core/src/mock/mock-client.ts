@@ -600,16 +600,38 @@ class QuotesResource {
     return quote;
   }
 
-  async create(data: Partial<Quote>): Promise<Quote> {
+  /**
+   * Create an empty draft quote against the v2 body shape `{ clientId,
+   * quoteRequestId? }`. Line items are added separately via `addLineItem`
+   * after creation — `POST /v2/quotes` does not accept `lineItems`. See #311
+   * and `docs/triage/quotes-api-version.md` §9.1.
+   *
+   * The legacy `companyId` / `lineItems` fields are still tolerated on the
+   * `data` parameter for back-compat with older callers that may pass them;
+   * they're ignored except for resolving the client/company linkage so demo
+   * mode behaves the same as the real v2 API. The schema (`CreateQuoteInput`)
+   * is now strict — `{ clientId, quoteRequestId? }`.
+   */
+  async create(
+    data: { clientId?: string; quoteRequestId?: string } & Partial<Quote>,
+  ): Promise<Quote> {
     await randomDelay();
+    const clientId = data.clientId ?? data.companyId ?? "";
     const newQuote: Quote = {
       id: `quote-demo-${Date.now()}`,
-      companyId: data.companyId ?? "",
+      companyId: clientId,
       createdOn: new Date().toISOString().split("T")[0],
       ...(data.expiresOn ? { expiresOn: data.expiresOn } : {}),
       status: "Draft",
-      lineItems: data.lineItems ?? [],
+      lineItems: [],
     };
+    // Push into the in-memory fixture so a follow-up `addLineItem` /
+    // `get` / `setStatus` on the freshly-created quote ID resolves in
+    // demo mode. This mirrors the real v2 API where the returned quote
+    // ID is immediately addressable by subsequent calls. Important for
+    // the `quotes create --product ...` shorthand path, which chains a
+    // create + line-item add in a single command (#311).
+    quotes.push(newQuote);
     return newQuote;
   }
 
@@ -636,6 +658,15 @@ class QuotesResource {
     input: AddQuoteLineItemInput,
   ): Promise<Quote> {
     await randomDelay();
+    // Test-only fault injection for the `quotes create --product ...`
+    // partial-failure recovery hint (#311). When this env var is set, the
+    // demo mock simulates an upstream 5xx on the line-item add so the
+    // subprocess test can assert the "Quote created but line-item add
+    // failed; recover with ..." UX. Scoped to demo mode only; the real API
+    // client never reads this var.
+    if (process.env.PAX8_DEMO_FAIL_QUOTE_LINE_ITEM_ADD) {
+      throw new Error("Simulated upstream failure on POST /v2/quotes/{id}/line-items");
+    }
     const quote = quotes.find((q) => q.id === quoteId);
     if (!quote) throw notFound("Quote", quoteId);
     // Prefer the explicit `input.price` (required since #312 to mirror the
