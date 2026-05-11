@@ -1,4 +1,4 @@
-# pax8-cli PM Review Response — 2026-05
+# pax8-cli API Contract Review Detail — 2026-05
 
 **Status:** All four reviewer concerns code-resolved. One additional security finding surfaced by the broader audit and also shipped. Ready for PM sign-off.
 
