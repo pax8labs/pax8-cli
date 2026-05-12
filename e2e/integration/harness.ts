@@ -63,8 +63,10 @@
  */
 
 import { execFile } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { promisify } from "node:util";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe } from "vitest";
 
@@ -107,6 +109,30 @@ export const describeIntegration: typeof describe = HAS_CREDENTIALS
   ? describe
   : describe.skip;
 
+// Per-worker temp config dir. Pax8Client's `FileCache` lives under
+// `<configDir>/cache/` with a 1-hour default TTL — re-running an
+// integration test within that window served a stale `[pax8] CACHE HIT`
+// instead of issuing a fresh wire call, which then made `expectWireUrl`
+// fail (no `[pax8] METHOD url=...` line was emitted on the cache hit
+// path). Isolating each worker's cache + config to a throwaway dir
+// guarantees every test exercises the wire and removes the
+// cross-invocation flakiness.
+//
+// Vitest forks a worker per file; each worker gets its own dir and its
+// own cleanup hook. No cross-worker contention.
+const TEST_CONFIG_DIR = HAS_CREDENTIALS
+  ? mkdtempSync(join(tmpdir(), "pax8-integration-"))
+  : "";
+if (TEST_CONFIG_DIR) {
+  process.on("exit", () => {
+    try {
+      rmSync(TEST_CONFIG_DIR, { recursive: true, force: true });
+    } catch {
+      // best-effort; OS will reap /tmp eventually
+    }
+  });
+}
+
 export interface CliResult {
   stdout: string;
   stderr: string;
@@ -123,7 +149,26 @@ export interface CliResult {
 export async function runCliVerbose(args: string[]): Promise<CliResult> {
   try {
     const result = await exec("node", [CLI_PATH, "--verbose", ...args], {
-      env: { ...process.env, NO_COLOR: "1" },
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        // Force the real-API path. Without this, a developer with
+        // `demo: true` in `~/.pax8/config.yaml` would silently exercise
+        // `MockPax8Client` and the harness's wire assertions would all
+        // skip — false-green. The presence of `PAX8_CLIENT_ID` /
+        // `PAX8_CLIENT_SECRET` (which `describeIntegration` gates on) is
+        // the integration-test signal; demo config in the dev environment
+        // must not override that.
+        PAX8_DEMO: "false",
+        // Point at the per-worker throwaway config dir so every CLI
+        // invocation starts with a fresh `FileCache`. Without this, a
+        // previous test's response gets served from `~/.pax8/cache/`
+        // (1-hour default TTL) on rerun and `expectWireUrl` fails
+        // because cache hits don't emit the `[pax8] METHOD url=...`
+        // line the assertion grep depends on.
+        PAX8_CONFIG_DIR: TEST_CONFIG_DIR,
+        PAX8_ALLOW_NON_HOME_CONFIG: "1",
+      },
       timeout: 30_000,
       maxBuffer: 10 * 1024 * 1024,
     });
