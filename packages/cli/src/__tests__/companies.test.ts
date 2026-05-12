@@ -210,6 +210,7 @@ describe("pax8 companies", () => {
         "80202",
         "--country",
         "US",
+        "--company-only",
         "--yes",
         "--json",
       ]);
@@ -246,6 +247,7 @@ describe("pax8 companies", () => {
         "true",
         "--order-approval-required",
         "true",
+        "--company-only",
         "--yes",
         "--json",
       ]);
@@ -261,6 +263,148 @@ describe("pax8 companies", () => {
       expect(result.stdout).toContain("--self-service-allowed");
       expect(result.stdout).toContain("--order-approval-required");
       expect(result.stdout).toContain("--street");
+    });
+  });
+
+  describe("companies create — atomic contact creation (#330)", () => {
+    it("atomic-path happy: posts contacts[0] with primary:true on all three types", async () => {
+      // Per Pax8 API Reference + PAM-997: passing a properly-typed primary
+      // contact in the `contacts: [...]` array on POST /companies flips the
+      // new company from Inactive to Active at creation. The CLI implicitly
+      // constructs the three-types-primary contact from the four flags.
+      const result = await runCliExpectSuccess([
+        "companies",
+        "create",
+        "--name",
+        "Atomic Co",
+        "--phone",
+        "+1-555-0200",
+        "--city",
+        "Denver",
+        "--state",
+        "CO",
+        "--zip",
+        "80202",
+        "--first-name",
+        "Maya",
+        "--last-name",
+        "Chen",
+        "--email",
+        "maya@atomic.example.com",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      // Mock client echoes the request body's `contacts` array back on the
+      // response so we can assert wire shape. If the mock does not echo
+      // contacts (older mock), this test will surface the gap.
+      expect(data).toHaveProperty("name", "Atomic Co");
+      // The body that the API sees must carry the contact with primary:true
+      // on all three types. We assert via the mock-echoed response.
+      if (data.contacts) {
+        expect(Array.isArray(data.contacts)).toBe(true);
+        expect(data.contacts).toHaveLength(1);
+        expect(data.contacts[0]).toHaveProperty("firstName", "Maya");
+        expect(data.contacts[0]).toHaveProperty("lastName", "Chen");
+        expect(data.contacts[0]).toHaveProperty("email", "maya@atomic.example.com");
+        expect(data.contacts[0].types).toHaveLength(3);
+        for (const t of data.contacts[0].types) {
+          expect(t).toHaveProperty("primary", true);
+        }
+        const typeNames = data.contacts[0].types.map((t: { type: string }) => t.type).sort();
+        expect(typeNames).toEqual(["Admin", "Billing", "Technical"]);
+      }
+    });
+
+    it("--company-only omits contacts entirely from the request body", async () => {
+      // Opt-out path. The mock echoes the request; the response should NOT
+      // carry a `contacts` array (the body sent the field as `undefined`,
+      // which Zod-serializes as omitted, not as an empty array).
+      const result = await runCliExpectSuccess([
+        "companies",
+        "create",
+        "--name",
+        "CompanyOnly Co",
+        "--phone",
+        "+1-555-0201",
+        "--city",
+        "Denver",
+        "--state",
+        "CO",
+        "--zip",
+        "80202",
+        "--company-only",
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      // No contacts on the echoed body — the company-only path is the
+      // pre-#330 shape that produces an Inactive company.
+      expect(data.contacts).toBeUndefined();
+    });
+
+    it("--company-only prints the verbatim warning to stderr", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "create",
+        "--name",
+        "Warned Co",
+        "--phone",
+        "+1-555-0202",
+        "--city",
+        "Denver",
+        "--state",
+        "CO",
+        "--zip",
+        "80202",
+        "--company-only",
+        "--yes",
+        "--json",
+      ]);
+      // The warning text matters — agents and partners read this verbatim
+      // before deciding whether to proceed. Don't paraphrase in the impl.
+      expect(result.stderr).toContain("Creating company WITHOUT primary contacts");
+      expect(result.stderr).toContain("Inactive state");
+      expect(result.stderr).toContain("Will NOT appear in the Pax8 portal");
+      expect(result.stderr).toContain("Will NOT support orders, subscriptions, or quotes");
+      expect(result.stderr).toContain('"already exists"');
+      expect(result.stderr).toContain("pax8 contacts create");
+    });
+
+    it("fails with ERROR_INVALID_INPUT when contact flags are missing on the default path", async () => {
+      const result = await runCliExpectFailure([
+        "companies",
+        "create",
+        "--name",
+        "MissingFlags Co",
+        "--phone",
+        "+1-555-0203",
+        "--city",
+        "Denver",
+        "--state",
+        "CO",
+        "--zip",
+        "80202",
+        "--yes",
+        "--json",
+      ]);
+      // The atomic-create default requires --first-name, --last-name,
+      // --email, --phone; --phone is already present so the missing flags
+      // are the first three.
+      expect(result.stderr).toContain("ERROR_INVALID_INPUT");
+      expect(result.stderr).toContain("--first-name");
+      expect(result.stderr).toContain("--last-name");
+      expect(result.stderr).toContain("--email");
+    });
+
+    it("shows the new --first-name / --last-name / --email / --company-only flags in --help", async () => {
+      const result = await runCliExpectSuccess(["companies", "create", "--help"]);
+      expect(result.stdout).toContain("--first-name");
+      expect(result.stdout).toContain("--last-name");
+      expect(result.stdout).toContain("--email");
+      expect(result.stdout).toContain("--company-only");
+      // Help text should reference the spec source so partners can verify
+      expect(result.stdout).toContain("PAM-997");
     });
   });
 

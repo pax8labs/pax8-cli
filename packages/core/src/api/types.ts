@@ -143,6 +143,29 @@ export const CompanySchema = z.object({
 export type Company = z.infer<typeof CompanySchema>;
 
 /**
+ * Inline contact shape for `POST /companies` atomic create. Mirrors the spec
+ * body for the contacts-array element: same four scalars as the standalone
+ * contact body (`firstName`, `lastName`, `email`, `phone`) plus the `types`
+ * array of `{type, primary}` objects (`ContactTypeSchema`). Pre-PAM-997 this
+ * shape did not exist; the create endpoint took company-only fields and
+ * partners had to follow up with `POST /companies/{id}/contacts` for each
+ * primary contact, leaving a window where the company was Inactive.
+ *
+ * Distinct from `CreateContactInputSchema` only because the atomic-create
+ * variant cannot carry `companyId` (the company doesn't exist yet) — every
+ * other field matches. We re-derive rather than `.omit()` because the spec
+ * gives this nested shape its own schema name.
+ */
+export const CreateCompanyContactInputSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  email: z.string().email(),
+  phone: z.string().min(1),
+  types: z.array(ContactTypeSchema).min(1),
+});
+export type CreateCompanyContactInput = z.infer<typeof CreateCompanyContactInputSchema>;
+
+/**
  * Body for `POST /companies`. The public OpenAPI marks
  * `["name", "address", "phone", "website", "billOnBehalfOfEnabled",
  *   "selfServiceAllowed", "orderApprovalRequired"]` as required (see
@@ -155,6 +178,18 @@ export type Company = z.infer<typeof CompanySchema>;
  * object on the wire. The CLI's `companies create` handler fail-fasts with
  * `ERROR_INVALID_INPUT` when no address flag is supplied (matches the spec's
  * `address` requirement at the UX layer).
+ *
+ * `contacts` is the atomic-create payload delivered under PAM-997 / PAM-1171
+ * / ARC-774. Including a properly-typed primary contact (`primary: true` on
+ * all three `ContactType` values — Admin, Billing, Technical) flips the new
+ * company from Inactive to Active at creation. Per the Pax8 API Reference:
+ * "A Company is required to have a primary Contact for each Contact Type
+ * ('Admin', 'Billing', 'Technical'). One contact with all three types and
+ * marked as primary for each type is sufficient." The CLI handler implicitly
+ * constructs the three-types-primary contact from `--first-name`,
+ * `--last-name`, `--email`, `--phone`. Omitting `contacts` entirely (the
+ * `--company-only` path) produces an Inactive company; the handler prints a
+ * loud warning before that path. Closes #330.
  */
 export const CreateCompanyInputSchema = z.object({
   name: z.string().min(1),
@@ -164,6 +199,7 @@ export const CreateCompanyInputSchema = z.object({
   billOnBehalfOfEnabled: z.boolean(),
   selfServiceAllowed: z.boolean(),
   orderApprovalRequired: z.boolean(),
+  contacts: z.array(CreateCompanyContactInputSchema).optional(),
 });
 export type CreateCompanyInput = z.infer<typeof CreateCompanyInputSchema>;
 
