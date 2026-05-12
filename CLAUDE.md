@@ -9,10 +9,10 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | User asks about | Run this |
 |---|---|
 | overview / status / how am I doing | `pax8 dashboard --json 2>/dev/null` |
-| companies / customers | `pax8 companies list --json 2>/dev/null` |
+| clients / companies / customers | `pax8 clients list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
-| MRR / revenue | `pax8 report mrr --json 2>/dev/null` (or `pax8 subscriptions list --json --size 1000` AND `pax8 companies list --json` in parallel) |
+| MRR / revenue | `pax8 report mrr --json 2>/dev/null` (or `pax8 subscriptions list --json --size 1000` AND `pax8 clients list --json` in parallel) |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
@@ -23,9 +23,11 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | invoice dispute | `pax8 invoices dispute --discrepancy <id>` (id from `invoices audit`) |
 | diagnostics / health | `pax8 doctor --json 2>/dev/null` |
 
-MRR math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `companies list`. Prefer `report mrr` — it already does this.
+MRR math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `clients list`. Prefer `report mrr` — it already does this.
 
 Rules: no clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, hide UUIDs. Only confirm writes — never reads.
+
+> `pax8 clients *` is the canonical command surface (per #317). `pax8 companies *` is retained as an indefinite deprecated alias — both invocations share the same command graph. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
 
 The full read-vs-write safety contract for agent-driven sessions lives in `packages/claude-skill/skill.md`. Honor it whether the skill is loaded or not: every command listed under "Write commands" requires explicit user approval before execution.
 

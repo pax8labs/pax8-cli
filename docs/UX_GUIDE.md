@@ -150,7 +150,7 @@ When you throw an error you control, use `CliError` with all four fields:
 throw new CliError(
   "No active subscriptions found for that company.",
   ["The company may have churned, or the name didn't match."],   // causes
-  [`Run ${replCmd("pax8 companies list")} to see active companies.`],  // recovery
+  [`Run ${replCmd("pax8 clients list")} to see active clients.`],  // recovery
   "https://devx.pax8.com/docs/subscriptions"                     // docs
 );
 ```
@@ -164,7 +164,7 @@ The user sees:
     • The company may have churned, or the name didn't match.
 
   Recovery steps:
-    → Run pax8 companies list to see active companies.
+    → Run pax8 clients list to see active clients.
 
   Docs: https://devx.pax8.com/docs/subscriptions
 ```
@@ -238,11 +238,11 @@ Every command needs a one-sentence `.description()` and an `.addHelpText("after"
 ```ts
 .addHelpText("after", `
 Examples:
-  pax8 companies list
-  pax8 companies list --status Active
-  pax8 companies list --coverage
-  pax8 companies list --json
-  pax8 companies list --ids-only | xargs -I{} pax8 subscriptions list --company {}`)
+  pax8 clients list
+  pax8 clients list --status Active
+  pax8 clients list --coverage
+  pax8 clients list --json
+  pax8 clients list --ids-only | xargs -I{} pax8 subscriptions list --company {}`)
 ```
 
 Descriptions are imperative and short: "List all companies", "Show company details", "Cancel a subscription". No trailing period.
@@ -302,7 +302,7 @@ Agents shouldn't have to regex-match English error strings to decide whether to 
 throw new CliError(
   "No company matched 'Acme'.",
   ["The name didn't match any active company."],
-  [`Run ${replCmd("pax8 companies list")} to see active companies.`],
+  [`Run ${replCmd("pax8 clients list")} to see active clients.`],
   "https://devx.pax8.com/",
   "ERROR_COMPANY_NOT_FOUND"
 );

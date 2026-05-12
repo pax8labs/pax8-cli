@@ -13,10 +13,10 @@ When asked anything about Pax8 data, your first action should be a shell call. N
 | Question | Run this |
 |---|---|
 | overview / status / how am I doing | `pax8 dashboard --json 2>/dev/null` |
-| companies / customers | `pax8 companies list --json 2>/dev/null` |
+| clients / companies / customers | `pax8 clients list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
-| MRR / revenue | `pax8 report mrr --json 2>/dev/null` (or `pax8 subscriptions list --json --size 1000` AND `pax8 companies list --json` in parallel) |
+| MRR / revenue | `pax8 report mrr --json 2>/dev/null` (or `pax8 subscriptions list --json --size 1000` AND `pax8 clients list --json` in parallel) |
 | growth trend | `pax8 report growth --json 2>/dev/null` |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
@@ -30,7 +30,7 @@ When asked anything about Pax8 data, your first action should be a shell call. N
 | webhook delivery history | `pax8 webhooks logs <id> --json 2>/dev/null` |
 | diagnostics / health | `pax8 doctor --json 2>/dev/null` |
 
-MRR math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `companies list`. Prefer `report mrr` — it already does this.
+MRR math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `clients list`. Prefer `report mrr` — it already does this.
 
 Operating principles:
 
@@ -48,11 +48,11 @@ Read-only commands run autonomously. Write commands require explicit approval be
 
 These never mutate state. Run them freely, in parallel, and as often as needed.
 
-- `pax8 *list` — `companies list`, `subscriptions list`, `invoices list`, `orders list`, `recommendations list`, `products list`, `quotes list`, `webhooks list`, `usage list`, `contacts list`
+- `pax8 *list` — `clients list`, `subscriptions list`, `invoices list`, `orders list`, `recommendations list`, `products list`, `quotes list`, `webhooks list`, `usage list`, `contacts list`
 - `pax8 *show <id>` — every show command across every resource
 - `pax8 products search`
 - `pax8 report mrr`, `pax8 report growth`
-- `pax8 companies more <name>` — rich read-only summary
+- `pax8 clients more <name>` — rich read-only summary
 - `pax8 subscriptions renewals` — computes renewals from existing data
 - `pax8 invoices items` — line items for an invoice
 - `pax8 invoices audit` — read-only computation, no writes
@@ -74,7 +74,9 @@ Write commands:
 - `pax8 recommendations act` — places real orders. Always interactive; only invoke during a human-in-the-loop session.
 - `pax8 invoices dispute` — files a billing dispute against a discrepancy.
 - `pax8 orders create` — places a real order, charges the partner, creates a subscription.
-- `pax8 companies create`, `pax8 companies update` — partner-account-level customer-record changes.
+- `pax8 clients create`, `pax8 clients update` — partner-account-level customer-record changes.
+
+> `pax8 clients *` is the canonical command surface. `pax8 companies *` is retained as an indefinite deprecated alias — both invocations share the exact same command graph, so agents can use either form. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
 - `pax8 contacts create`, `pax8 contacts update`, `pax8 contacts delete` — modifies customer contacts.
 - `pax8 quotes create`, `pax8 quotes update`, `pax8 quotes delete` — modifies sales quotes.
 - `pax8 subscriptions update`, `pax8 subscriptions cancel` — changes seat counts, billing terms, or terminates a subscription.
@@ -115,7 +117,7 @@ Group discrepancies by category (overcharge, undercharge, orphan line item). Lea
 Run in parallel:
 ```
 pax8 recommendations list --json --priority high
-pax8 companies list --json
+pax8 clients list --json
 ```
 For each rec, show: company, missing product, estimated MRR uplift. The JSON output includes an `orderCommand` field — that's the exact `pax8 orders create …` to run. **Always show the order preview and wait for explicit approval before executing the write.**
 
@@ -123,7 +125,7 @@ For each rec, show: company, missing product, estimated MRR uplift. The JSON out
 Run in parallel:
 ```
 pax8 report mrr --json
-pax8 companies list --json
+pax8 clients list --json
 ```
 `report mrr` already breaks down by company. Lead with total MRR and top 5 customers; offer per-vendor or per-product breakdown if asked.
 
@@ -146,7 +148,7 @@ The recipes above cover the questions the CLI is opinionated about. For novel qu
 ```
 pax8 subscriptions list --json --size 1000
 pax8 invoices list --json
-pax8 companies list --json
+pax8 clients list --json
 ```
 
 Don't reimplement what's already a first-class command (renewals, audit, recommendations, MRR) — those exist precisely because they're hard to get right from the raw shape.
