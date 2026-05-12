@@ -72,6 +72,50 @@ describe("InvoicesApi", () => {
     expect(result.content[0].total).toBe(2450.0);
   });
 
+  // #389: spec adds `sort`, `invoiceDateRangeStart`/`End`, `dueDate`,
+  // `total`/`balance`/`carriedBalance` query parameters. The API client
+  // must forward all of them verbatim — the CLI maps friendly names like
+  // `--from` / `--to` / `--sort due-date` onto these wire fields.
+  it("list forwards #389 spec params to GET", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedInvoices);
+
+    await api.list({
+      page: 0,
+      size: 25,
+      status: "Unpaid",
+      invoiceDateRangeStart: "2026-01-01",
+      invoiceDateRangeEnd: "2026-03-31",
+      dueDate: "2026-03-31",
+      total: 2450.0,
+      balance: 2450.0,
+      carriedBalance: 0,
+      sort: "dueDate",
+    });
+
+    expect(client.get).toHaveBeenCalledWith("/invoices", {
+      page: 0,
+      size: 25,
+      status: "Unpaid",
+      invoiceDateRangeStart: "2026-01-01",
+      invoiceDateRangeEnd: "2026-03-31",
+      dueDate: "2026-03-31",
+      total: 2450.0,
+      balance: 2450.0,
+      carriedBalance: 0,
+      sort: "dueDate",
+    });
+  });
+
+  it("list still maps `month` to `invoiceDate` for backwards compatibility (#389)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedInvoices);
+
+    await api.list({ month: "2026-03" });
+
+    // Backwards compatibility: callers passing `--month` continue to see it
+    // remapped to `invoiceDate` on the wire — pre-#389 behavior preserved.
+    expect(client.get).toHaveBeenCalledWith("/invoices", { invoiceDate: "2026-03" });
+  });
+
   it("get returns a single invoice", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleInvoice);
 

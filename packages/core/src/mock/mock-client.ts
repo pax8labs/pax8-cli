@@ -384,7 +384,27 @@ class ProductsResource {
 
 class InvoicesResource {
   async list(
-    params?: ListParams & { companyId?: string; month?: string; status?: string }
+    params?: ListParams & {
+      companyId?: string;
+      month?: string;
+      invoiceDate?: string;
+      status?: string;
+      // #389 spec params
+      invoiceDateRangeStart?: string;
+      invoiceDateRangeEnd?: string;
+      dueDate?: string;
+      total?: number;
+      balance?: number;
+      carriedBalance?: number;
+      sort?:
+        | "invoiceDate"
+        | "dueDate"
+        | "status"
+        | "partnerName"
+        | "total"
+        | "balance"
+        | "carriedBalance";
+    }
   ): Promise<PaginatedResponse<Invoice>> {
     await randomDelay();
     let filtered = invoices;
@@ -397,6 +417,47 @@ class InvoicesResource {
     if (params?.status) {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((i) => i.status.toLowerCase() === s);
+    }
+    // #389: spec-backed date-range + numeric / sort filters. Demo mode mirrors
+    // the server-side semantics so subprocess tests can exercise the wire path.
+    if (params?.invoiceDateRangeStart) {
+      filtered = filtered.filter((i) => i.invoiceDate >= params.invoiceDateRangeStart!);
+    }
+    if (params?.invoiceDateRangeEnd) {
+      filtered = filtered.filter((i) => i.invoiceDate <= params.invoiceDateRangeEnd!);
+    }
+    if (params?.dueDate) {
+      filtered = filtered.filter((i) => i.dueDate === params.dueDate);
+    }
+    if (typeof params?.total === "number") {
+      filtered = filtered.filter((i) => i.total === params.total);
+    }
+    if (typeof params?.balance === "number") {
+      filtered = filtered.filter((i) => i.balance === params.balance);
+    }
+    if (typeof params?.carriedBalance === "number") {
+      filtered = filtered.filter(
+        (i) => (i as { carriedBalance?: number }).carriedBalance === params.carriedBalance,
+      );
+    }
+    if (params?.sort) {
+      const key = params.sort;
+      const getField = (i: Invoice): string | number => {
+        if (key === "invoiceDate") return i.invoiceDate ?? "";
+        if (key === "dueDate") return i.dueDate ?? "";
+        if (key === "status") return i.status ?? "";
+        if (key === "partnerName") return (i as { partnerName?: string }).partnerName ?? "";
+        if (key === "total") return i.total ?? 0;
+        if (key === "balance") return i.balance ?? 0;
+        if (key === "carriedBalance") return (i as { carriedBalance?: number }).carriedBalance ?? 0;
+        return "";
+      };
+      filtered = [...filtered].sort((a, b) => {
+        const av = getField(a);
+        const bv = getField(b);
+        if (typeof av === "number" && typeof bv === "number") return av - bv;
+        return String(av).localeCompare(String(bv));
+      });
     }
     return paginate(filtered, params);
   }

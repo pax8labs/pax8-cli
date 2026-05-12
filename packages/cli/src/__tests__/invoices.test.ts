@@ -51,6 +51,65 @@ describe("pax8 invoices", () => {
       }
     });
 
+    // #389: spec-backed date range filter. `--from` / `--to` are ergonomic
+    // aliases for `invoiceDateRangeStart` / `invoiceDateRangeEnd`. Demo data
+    // generates invoices on the 1st of the current and previous months.
+    it("filters by --from / --to (#389)", async () => {
+      // Compute the start of the current month and use a tight window around it
+      // so we hit current-month invoices but not last-month ones.
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const from = `${y}-${m}-01`;
+      const to = `${y}-${m}-28`;
+      const result = await runCliExpectSuccess([
+        "invoices",
+        "list",
+        "--from",
+        from,
+        "--to",
+        to,
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.length).toBeGreaterThan(0);
+      for (const inv of data) {
+        expect(inv.invoiceDate >= from).toBe(true);
+        expect(inv.invoiceDate <= to).toBe(true);
+      }
+    });
+
+    it("--status Unpaid filters server-side (#389)", async () => {
+      const result = await runCliExpectSuccess([
+        "invoices",
+        "list",
+        "--status",
+        "Unpaid",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.length).toBeGreaterThan(0);
+      for (const inv of data) {
+        expect(inv.status).toBe("Unpaid");
+      }
+    });
+
+    it("--sort due-date maps to spec's camelCase dueDate (#389)", async () => {
+      const result = await runCliExpectSuccess([
+        "invoices",
+        "list",
+        "--sort",
+        "due-date",
+        "--size",
+        "100",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      const dueDates = data.map((i: { dueDate: string }) => i.dueDate);
+      const sorted = [...dueDates].sort((a, b) => a.localeCompare(b));
+      expect(dueDates).toEqual(sorted);
+    });
+
     it("--with-actions wraps in { invoices, nextActions }", async () => {
       const result = await runCliExpectSuccess([
         "invoices",
@@ -164,6 +223,34 @@ describe("pax8 invoices", () => {
       expect(result.stdout).toContain("show");
       expect(result.stdout).toContain("items");
       expect(result.stdout).toContain("audit");
+    });
+
+    // #389: every spec-backed filter must appear in --help. Pre-#389 the CLI
+    // didn't surface --from / --to / --sort at all.
+    it("list --help advertises every #389 filter and sort flag", async () => {
+      const result = await runCliExpectSuccess([
+        "invoices",
+        "list",
+        "--help",
+      ]);
+      const flat = result.stdout.replace(/\s+/g, " ");
+      // Date range
+      expect(flat).toContain("--from");
+      expect(flat).toContain("--to");
+      // Sort + a sampling of the documented spec enum values (in kebab-case
+      // since that is the user-facing flag-value form).
+      expect(flat).toContain("--sort");
+      for (const v of [
+        "invoice-date",
+        "due-date",
+        "status",
+        "partner-name",
+        "total",
+        "balance",
+        "carried-balance",
+      ]) {
+        expect(flat).toContain(v);
+      }
     });
 
     // #250: `--status` help text must enumerate every value documented for
