@@ -30,19 +30,21 @@ import {
   type Contact,
   type UsageSummary,
   type UsageLine,
-  type Quote,
+  type Quote as DemoQuote,
   type Webhook,
   type WebhookLog,
   type WebhookTopicDefinition,
 } from "./demo-data.js";
 import { ApiError, NotFoundError } from "../api/errors.js";
-import type {
-  CreateOrderInput,
-  ProductPricing as ProductPricingPlans,
-  ProvisioningDetail as ProvisioningDetailType,
-  ProductDependency as ProductDependencyType,
-  AddQuoteLineItemInput,
-  QuoteStatusTransition,
+import {
+  QuoteSchema,
+  type CreateOrderInput,
+  type ProductPricing as ProductPricingPlans,
+  type ProvisioningDetail as ProvisioningDetailType,
+  type ProductDependency as ProductDependencyType,
+  type AddQuoteLineItemInput,
+  type QuoteStatusTransition,
+  type Quote,
 } from "../api/types.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -726,13 +728,29 @@ class UsageResource {
 }
 
 class QuotesResource {
+  /**
+   * Project a stored `DemoQuote` (wire-shape, with nested `client: {...}`)
+   * through `QuoteSchema` so demo-mode callers see the same canonical
+   * `Quote` (with flat `companyId`) the real API client returns after
+   * parsing. Demo data is wire-shape per #384 so the same Zod preprocess
+   * exercised against the real API runs in demo mode too — that's the
+   * point of the issue.
+   */
+  private project(q: DemoQuote): Quote {
+    return QuoteSchema.parse(q);
+  }
+
   async list(
     params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Quote>> {
     await randomDelay();
     let filtered = quotes;
     if (params?.companyId) {
-      filtered = filtered.filter((q) => q.companyId === params.companyId);
+      // Demo data stores the wire-shape nested `client.id` (#384). The
+      // CLI flag still resolves to a flat `companyId` query param on the
+      // public API — match by `client.id` here so the demo filter agrees
+      // with the wire-side filter the real API runs.
+      filtered = filtered.filter((q) => q.client.id === params.companyId);
     }
     if (params?.status) {
       // Mirror the real API's server-side filter (#387). Demo `Quote.status`
@@ -742,14 +760,15 @@ class QuotesResource {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((q) => String(q.status).toLowerCase() === s);
     }
-    return paginate(filtered, params);
+    const page = paginate(filtered, params);
+    return { ...page, content: page.content.map((q) => this.project(q)) };
   }
 
   async get(id: string): Promise<Quote> {
     await randomDelay();
     const quote = quotes.find((q) => q.id === id);
     if (!quote) throw notFound("Quote", id);
-    return quote;
+    return this.project(quote);
   }
 
   /**
@@ -765,15 +784,22 @@ class QuotesResource {
    * is now strict — `{ clientId, quoteRequestId? }`.
    */
   async create(
-    data: { clientId?: string; quoteRequestId?: string } & Partial<Quote>,
+    data: { clientId?: string; quoteRequestId?: string; companyId?: string },
   ): Promise<Quote> {
     await randomDelay();
     const clientId = data.clientId ?? data.companyId ?? "";
-    const newQuote: Quote = {
+    const clientName = companies.find((c) => c.id === clientId)?.name;
+    const newQuote: DemoQuote = {
       id: `quote-demo-${Date.now()}`,
-      companyId: clientId,
+      // Wire-shape nested client per #384. Demo data stores the same shape
+      // the real /v2/quotes API returns; `QuoteSchema` flattens it on the
+      // way out (see `project()` above).
+      client: {
+        id: clientId,
+        isShadowCompany: false,
+        ...(clientName ? { name: clientName } : {}),
+      },
       createdOn: new Date().toISOString().split("T")[0],
-      ...(data.expiresOn ? { expiresOn: data.expiresOn } : {}),
       status: "Draft",
       // Empty defaults for the two free-text fields the v2 read shape marks
       // required (#313). Real partners populate these via the marketplace UI
@@ -790,7 +816,7 @@ class QuotesResource {
     // the `quotes create --product ...` shorthand path, which chains a
     // create + line-item add in a single command (#311).
     quotes.push(newQuote);
-    return newQuote;
+    return this.project(newQuote);
   }
 
   /**
@@ -826,7 +852,7 @@ class QuotesResource {
     }
     if (data.status) {
       const cap = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-      const allowed: Record<string, Quote["status"]> = {
+      const allowed: Record<string, DemoQuote["status"]> = {
         Draft: "Draft",
         Sent: "Sent",
         Accepted: "Accepted",
@@ -834,7 +860,7 @@ class QuotesResource {
       };
       quote.status = allowed[cap] ?? quote.status;
     }
-    return quote;
+    return this.project(quote);
   }
 
   async delete(id: string): Promise<void> {
@@ -885,7 +911,7 @@ class QuotesResource {
         : {}),
     };
     quote.lineItems = [...(quote.lineItems ?? []), newLine];
-    return quote;
+    return this.project(quote);
   }
 
   async removeLineItem(quoteId: string, lineItemId: string): Promise<void> {

@@ -35,6 +35,25 @@ describeIntegration("quotes (v2)", () => {
       // Empty-portfolio sandboxes are valid here; the load-bearing assertion
       // is the wire URL above.
       expect(Array.isArray(data) || typeof data === "object").toBe(true);
+
+      // #384: assert at least one row carries a non-empty `companyId` when
+      // the sandbox has any quotes. Pre-#384, `companyId` was undefined on
+      // every row because the Zod schema expected a flat `companyId` while
+      // the v2 API returns `client: {id, ...}` nested — the unknown key
+      // was silently dropped and the required `companyId` parse failed (or
+      // landed as undefined depending on permissiveness). The schema now
+      // preprocesses `client.id → companyId` so partners get a usable ID
+      // back. Empty-portfolio sandboxes still skip the assertion.
+      const rows = Array.isArray(data)
+        ? data
+        : Array.isArray((data as { content?: unknown[] }).content)
+          ? (data as { content: unknown[] }).content
+          : [];
+      if (rows.length > 0) {
+        const first = rows[0] as { companyId?: unknown };
+        expect(typeof first.companyId).toBe("string");
+        expect((first.companyId as string).length).toBeGreaterThan(0);
+      }
     },
     60_000,
   );
