@@ -178,7 +178,12 @@ export async function buildContext(
     telemetry: { enabled: false },
   }));
 
-  const isDemo = resolveDemoMode(config);
+  // Extract `demo` rather than passing the whole Config union — the union
+  // branch for an empty config object doesn't include `demo`, so passing
+  // the bare `config` trips the TypeScript narrower. Pulling the field
+  // first gives `resolveDemoMode` exactly the `{ demo?: boolean }` shape
+  // its signature requires.
+  const isDemo = resolveDemoMode({ demo: "demo" in config ? config.demo : undefined });
   const outputFormat = getOutputFormat(options, config.defaults?.output_format);
 
   let api: ApiClient | MockPax8Client;
