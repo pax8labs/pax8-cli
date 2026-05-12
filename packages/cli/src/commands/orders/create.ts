@@ -12,6 +12,7 @@ import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import {
   ApiError,
+  BillingTermSchema,
   ERROR_API_VALIDATION,
   ERROR_INVALID_INPUT,
   ERROR_PRODUCT_NOT_FOUND,
@@ -27,6 +28,9 @@ import { resolveProduct } from "../../lib/resolve-product.js";
 import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
 import { hashArgs, isValidKey, withIdempotency } from "../../lib/idempotency.js";
 import { setTelemetryFields } from "../../lib/telemetry-context.js";
+import { validateEnum } from "../../lib/validate.js";
+
+const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
 
 // ─── Multi-line parsing ───────────────────────────────────────────────────────
 //
@@ -225,14 +229,27 @@ async function resolveLine(
   let productNotFound = false;
   const warnings: string[] = [];
 
-  const productResult = await resolveProduct(ctx, raw.product).catch(() => {
+  // Capture resolveProduct's CliError so we can re-surface its top-3
+  // "Did you mean" suggestions to the user (#408 / partner-walkthrough
+  // finding #8). Pre-#408 we swallowed the error and emitted a generic
+  // "Product not found" with only a `products search` hint — the partner
+  // round-tripped through `pax8 products search` just to find a typo'd
+  // name. The new resolver already ranks the catalog top-3; preserve
+  // that richer error here so it makes it to the user.
+  let resolveErr: unknown = null;
+  const productResult = await resolveProduct(ctx, raw.product).catch((err) => {
     productNotFound = true;
+    resolveErr = err;
     return null;
   });
   if (productResult) {
     productId = productResult.id;
     productName = productResult.name;
   } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(raw.product)) {
+    // Re-throw the resolver's richer CliError when we have it (carries
+    // "Did you mean" suggestions); fall back to the legacy generic shape
+    // only if the failure wasn't a CliError (defensive — shouldn't happen).
+    if (resolveErr instanceof CliError) throw resolveErr;
     throw new CliError(
       `Product not found: "${raw.product}"`,
       ["Could not resolve product name to a product ID"],
@@ -325,7 +342,11 @@ export const ordersCreateCommand = new Command("create")
   .option("--company <id|name>", "Company ID or name (required)")
   .option("--product <id|name>", "Product ID or name (single-line shorthand)")
   .option("--quantity <number>", "Quantity (single-line)", "1")
-  .option("--billing-term <term>", "Billing term — Monthly or Annual (default Monthly)", "Monthly")
+  .option(
+    "--billing-term <term>",
+    `Billing term — one of ${BILLING_TERM_VALUES.join(" | ")} (default Monthly)`,
+    "Monthly",
+  )
   .option("--commitment-term <term>", "Commitment term (Monthly, 1-Year, or 3-Year) — auto-resolves to UUID from existing subscription")
   .option("--commitment-term-id <uuid>", "Commitment term UUID (from subscription commitment.id)")
   .option(
@@ -360,6 +381,25 @@ Examples:
     let companyName: string = allOpts.company ?? "";
 
     const rawLineItems: RawLineItem[] = (allOpts.lineItem as RawLineItem[]) ?? [];
+
+    // Fail-fast enum validation BEFORE any IO (#408). The single-line
+    // `--billing-term` lands on `allOpts.billingTerm`; each `--line-item`
+    // spec can also carry its own `billing-term=` clause and the parser
+    // surfaces it on `RawLineItem.billingTerm`. Validate both so a typo'd
+    // value like `--billing-term annual` (lowercased) fails before
+    // resolveCompany / resolveProduct ever fires.
+    try {
+      validateEnum(allOpts.billingTerm, BILLING_TERM_VALUES, "--billing-term", {
+        cmdHint: "pax8 orders create",
+      });
+      for (const li of rawLineItems) {
+        validateEnum(li.billingTerm, BILLING_TERM_VALUES, "--line-item billing-term", {
+          cmdHint: "pax8 orders create",
+        });
+      }
+    } catch (error) {
+      await handleCommandError(error);
+    }
     const dryRun: boolean = !!allOpts.dryRun;
 
     // ── Mode detection: single-line shorthand vs multi-line ──

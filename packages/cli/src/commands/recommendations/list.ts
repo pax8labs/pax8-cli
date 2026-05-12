@@ -15,6 +15,14 @@ import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
+import { validateEnum } from "../../lib/validate.js";
+
+// `filter.ts` lowercases the priority/type before comparing, so we accept
+// any casing from the CLI but only the canonical set survives validation.
+// Per #408: a typo'd `--priority Hgih` previously slipped through, the
+// filter matched nothing, and the user got an empty list with no clue why.
+const PRIORITY_VALUES = ["high", "medium", "low"] as const;
+const RECOMMENDATION_TYPE_VALUES = ["seat_gap", "cross_sell"] as const;
 
 const columns: Column[] = [
   {
@@ -113,6 +121,22 @@ Estimate semantics:
     // Rejoin them so the filter works as intended.
     if (options.company && cmd.args.length > 0) {
       options.company = [options.company, ...cmd.args].join(" ");
+    }
+
+    // Fail-fast on typo'd `--priority` or `--type` BEFORE buildContext /
+    // any network call (#408). The downstream filter silently dropped
+    // unknown values, leaving the partner staring at an empty table.
+    try {
+      validateEnum(options.priority, PRIORITY_VALUES, "--priority", {
+        lowercase: true,
+        cmdHint: "pax8 recommendations list",
+      });
+      validateEnum(options.type, RECOMMENDATION_TYPE_VALUES, "--type", {
+        lowercase: true,
+        cmdHint: "pax8 recommendations list",
+      });
+    } catch (error) {
+      await handleCommandError(error);
     }
 
     const ctx = await buildContext(allOpts);

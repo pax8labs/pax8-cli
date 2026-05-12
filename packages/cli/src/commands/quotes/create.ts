@@ -17,12 +17,15 @@ import {
   resolveEffectiveDate,
   resolveListPrice,
 } from "../../lib/quote-line-item-defaults.js";
-import { ERROR_INVALID_INPUT } from "@pax8/core";
+import { BillingTermSchema, ERROR_INVALID_INPUT } from "@pax8/core";
 import type {
   CreateQuoteInput,
   AddQuoteLineItemInput,
   BillingTerm,
 } from "@pax8/core";
+import { validateEnum } from "../../lib/validate.js";
+
+const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
 
 export const quotesCreateCommand = new Command("create")
   .description("Create a new quote (empty, or with a single line item via --product)")
@@ -31,7 +34,7 @@ export const quotesCreateCommand = new Command("create")
   .option("--quantity <number>", "Quantity (only meaningful with --product)", "1")
   .option(
     "--billing-term <term>",
-    "Billing term (Monthly or Annual; only meaningful with --product)",
+    `Billing term — one of ${BILLING_TERM_VALUES.join(" | ")} (only meaningful with --product; default Monthly)`,
     "Monthly",
   )
   .option("-y, --yes", "Skip confirmation prompt")
@@ -60,6 +63,18 @@ Setting an expiration date:
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
+    // Fail-fast on typo'd `--billing-term` BEFORE buildContext / any
+    // network call (#408). Only enforced when --product is set; otherwise
+    // billingTerm is unused by the create path.
+    if (typeof options.product === "string" && options.product.length > 0) {
+      try {
+        validateEnum(options.billingTerm, BILLING_TERM_VALUES, "--billing-term", {
+          cmdHint: "pax8 quotes create",
+        });
+      } catch (error) {
+        await handleCommandError(error);
+      }
+    }
     const ctx = await buildContext(globalOpts);
 
     try {

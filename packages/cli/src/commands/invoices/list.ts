@@ -9,6 +9,21 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
+import { validateEnum } from "../../lib/validate.js";
+
+// Help text mirrors the public OpenAPI enum for `GET /invoices`'s
+// `status` query parameter (#250). The wire emits a narrower 4-value
+// set (`InvoiceStatusSchema`); the query side documents 6 acceptable
+// inputs. Per #408 we now fail-fast on a typo'd value rather than
+// passing it through and returning `[]`.
+const INVOICE_STATUS_VALUES = [
+  "Unpaid",
+  "Paid",
+  "Void",
+  "Carried",
+  "Nothing Due",
+  "Credited",
+] as const;
 
 // #389: --sort accepts the spec's camelCase field names plus kebab-cased CLI
 // aliases for ergonomics. Keep this map locked to the OpenAPI sort enum:
@@ -79,6 +94,17 @@ Examples:
   )
   .action(async (options, command) => {
     const allOpts = command.optsWithGlobals();
+    // Fail-fast on typo'd `--status` BEFORE buildContext / any network call
+    // (#408 / partner-walkthrough finding #2). Previously `--status FooBar`
+    // hit the API as a no-op filter and returned `[]`, so partners debugged
+    // an empty-result mystery instead of fixing a typo.
+    try {
+      validateEnum(allOpts.status, INVOICE_STATUS_VALUES, "--status", {
+        cmdHint: "pax8 invoices list",
+      });
+    } catch (error) {
+      await handleCommandError(error);
+    }
     const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Fetching invoices...");
 

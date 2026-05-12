@@ -3,6 +3,7 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
+import { SubscriptionStatusSchema, type SubscriptionStatus } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -14,6 +15,14 @@ import {
 } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import { validateEnum } from "../../lib/validate.js";
+
+// Single source of truth for `--status` accepted values. Mirrors the
+// public OpenAPI enum for `GET /subscriptions`'s `status` query parameter
+// (per #250 / #408). Help text, examples, and the fail-fast validator
+// all read from this array — keeps them from drifting.
+const SUBSCRIPTION_STATUS_VALUES = SubscriptionStatusSchema.options as readonly SubscriptionStatus[];
+const SUBSCRIPTION_STATUS_HELP = SUBSCRIPTION_STATUS_VALUES.join(", ");
 
 const columns: Column[] = [
   {
@@ -49,10 +58,12 @@ export const subscriptionsListCommand = new Command("list")
   .option("--company <id|name>", "Filter by company ID or name")
   // Help text mirrors the full public OpenAPI enum for `GET /subscriptions`'s
   // `status` query parameter (#250). Previously the help listed a "...etc."
-  // subset that elided 6 of the 10 documented values.
+  // subset that elided 6 of the 10 documented values. Per #408, an unknown
+  // value now fails fast at the CLI layer with a helpful "Allowed:" list
+  // rather than silently returning an empty array.
   .option(
     "--status <status>",
-    "Filter by status (Active, Cancelled, PendingManual, PendingAutomated, PendingCancel, WaitingForDetails, Trial, Converted, PendingActivation, Activated)"
+    `Filter by status (${SUBSCRIPTION_STATUS_HELP})`
   )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
@@ -73,6 +84,18 @@ Examples:
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
+    // Fail-fast on `--status FooBar` BEFORE any network call. Pre-#408 this
+    // value was passed straight through to the API, which silently returned
+    // an empty array — the partner couldn't tell whether they had no
+    // matching subscriptions or had typo'd the filter. See partner-
+    // walkthrough finding #2.
+    try {
+      validateEnum(allOpts.status, SUBSCRIPTION_STATUS_VALUES, "--status", {
+        cmdHint: "pax8 subscriptions list",
+      });
+    } catch (error) {
+      await handleCommandError(error);
+    }
     const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Fetching subscriptions...").start();
 

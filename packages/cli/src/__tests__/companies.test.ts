@@ -169,6 +169,22 @@ describe("pax8 companies", () => {
         expect(typeof action.description).toBe("string");
       }
     });
+
+    // #408: fail-fast on typo'd --status before any network call so the
+    // partner doesn't debug an "empty result" mystery.
+    it("rejects unknown --status with the allowed enum list (#408)", async () => {
+      const result = await runCliExpectFailure([
+        "companies",
+        "list",
+        "--status",
+        "BogusStatus",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid value for --status: "BogusStatus"`);
+      expect(combined).toContain("Active");
+      expect(combined).toContain("Inactive");
+      expect(combined).toContain("Deleted");
+    });
   });
 
   describe("companies show", () => {

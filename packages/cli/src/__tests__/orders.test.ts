@@ -269,6 +269,71 @@ describe("pax8 orders", () => {
       expect(combined).toMatch(/Cannot mix.*--product.*--line-item|--product.*--line-item.*not both/i);
     });
 
+    // #408 / partner-walkthrough finding #8: a partner's first guess at a
+    // product name shouldn't dead-end with "Product not found" — surface
+    // inline "Did you mean: ..." suggestions with product IDs so the
+    // recovery path stays one round-trip away rather than requiring a
+    // separate `pax8 products search` call.
+    it("surfaces 'Did you mean' suggestions when --product is ambiguous (#408)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--product",
+        "Microsoft 365",
+        "--quantity",
+        "5",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      // "Microsoft 365" is a prefix of several products in the demo catalog,
+      // so the resolver hits the multiple-matches branch — same UX shape:
+      // a "Did you mean" list with copy-pasteable IDs.
+      expect(combined).toContain("Did you mean");
+      expect(combined).toMatch(/Microsoft 365 Business Premium/);
+      expect(combined).toContain("prod-m365-biz-prem-0001");
+    });
+
+    it("surfaces 'Did you mean' when --product is a typo with no exact match (#408)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--product",
+        "Microsoft365",
+        "--quantity",
+        "5",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain("not found");
+      // Even without an exact prefix match, token-overlap ranking should
+      // surface Microsoft products as the closest catalog entries.
+      expect(combined).toMatch(/Did you mean|products search/);
+    });
+
+    it("fails fast with helpful list when --billing-term is invalid (#408)", async () => {
+      const result = await runCliExpectFailure([
+        "orders",
+        "create",
+        "--company",
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "--product",
+        "prod-m365-biz-prem-0001",
+        "--quantity",
+        "5",
+        "--billing-term",
+        "Quarterly",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid value for --billing-term: "Quarterly"`);
+      expect(combined).toContain("Monthly");
+      expect(combined).toContain("Annual");
+    });
+
     it("errors on malformed --line-item spec (#246)", async () => {
       const result = await runCliExpectFailure([
         "orders",

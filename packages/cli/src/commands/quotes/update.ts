@@ -17,7 +17,7 @@ import {
   resolveEffectiveDate,
   resolveListPrice,
 } from "../../lib/quote-line-item-defaults.js";
-import { ERROR_INVALID_INPUT, type Product } from "@pax8/core";
+import { BillingTermSchema, ERROR_INVALID_INPUT, type Product } from "@pax8/core";
 import type {
   AddQuoteLineItemInput,
   BillingTerm,
@@ -25,6 +25,9 @@ import type {
   UpdateQuoteInput,
 } from "@pax8/core";
 import type { CommandContext } from "../../lib/context.js";
+import { validateEnum } from "../../lib/validate.js";
+
+const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
 
 /**
  * Best-effort lookup of product names for a set of productIds. Failures are
@@ -91,7 +94,11 @@ export const quotesUpdateCommand = new Command("update")
   .argument("<id>", "Quote ID")
   .option("--product <id|name>", "Replace line items with a single line for this product")
   .option("--quantity <number>", "Quantity for the replacement line item", "1")
-  .option("--billing-term <term>", "Billing term (Monthly or Annual)", "Monthly")
+  .option(
+    "--billing-term <term>",
+    `Billing term — one of ${BILLING_TERM_VALUES.join(" | ")} (default Monthly)`,
+    "Monthly",
+  )
   .option("--expiration-date <date>", "New expiration date (YYYY-MM-DD)")
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
@@ -111,6 +118,18 @@ Note:
   )
   .action(async (id, options, command) => {
     const globalOpts = command.optsWithGlobals();
+    // Fail-fast on typo'd `--billing-term` BEFORE buildContext / any
+    // network call (#408). Only relevant when `--product` is set; when
+    // it isn't, billingTerm is unused by the update path.
+    if (options.product !== undefined) {
+      try {
+        validateEnum(options.billingTerm, BILLING_TERM_VALUES, "--billing-term", {
+          cmdHint: "pax8 quotes update",
+        });
+      } catch (error) {
+        await handleCommandError(error);
+      }
+    }
     const ctx = await buildContext(globalOpts);
 
     try {

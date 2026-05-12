@@ -97,14 +97,17 @@ export async function resolveProduct(ctx: CommandContext, input: string): Promis
   const fuzzy = result.content.filter((p) => p.name.toLowerCase().includes(lower));
   if (fuzzy.length === 1) return fuzzy[0];
   if (fuzzy.length > 1) {
-    const names = fuzzy
+    // #408: include IDs in the "Did you mean" list so the user can
+    // copy/paste a canonical match instead of round-tripping through
+    // `pax8 products search`. Mirrors the partner-walkthrough rec.
+    const lines = fuzzy
       .slice(0, 5)
-      .map((p) => p.name)
-      .join(", ");
+      .map((p) => `  ${p.name} (${p.id})`)
+      .join("\n");
     throw new CliError(
       `Multiple products match "${input}"`,
-      [`Matches: ${names}`],
-      ["Use an exact name or product ID."],
+      [`Use an exact name or product ID.`],
+      [`Did you mean:\n${lines}`],
       undefined,
       ERROR_PRODUCT_NOT_FOUND,
     );
@@ -133,11 +136,57 @@ export async function resolveProduct(ctx: CommandContext, input: string): Promis
     );
   }
 
+  // #408: surface inline "Did you mean" suggestions on a not-found miss
+  // rather than only pointing the user at `pax8 products search`. We
+  // already have a 200-row keyword search result in `result.content` —
+  // rank those by simple token-overlap against the input and surface the
+  // top 3. Falls back gracefully when there are zero candidates.
+  const recoverySteps: string[] = [];
+  const suggestions = rankProductSuggestions(input, result.content).slice(0, 3);
+  if (suggestions.length > 0) {
+    const lines = suggestions.map((p) => `  ${p.name} (${p.id})`).join("\n");
+    recoverySteps.push(`Did you mean:\n${lines}`);
+  }
+  recoverySteps.push(`Try ${replCmd("pax8 products search")} "${input}" to browse the catalog.`);
+
   throw new CliError(
     `Product not found: "${input}"`,
     ["No product in the catalog matched the supplied name or ID."],
-    [`Try ${replCmd("pax8 products search")} "${input}" to browse the catalog.`],
+    recoverySteps,
     undefined,
     ERROR_PRODUCT_NOT_FOUND,
   );
+}
+
+/**
+ * Token-overlap ranking for "Did you mean" suggestions. Order:
+ *   1. Most input tokens contained in the product name (descending)
+ *   2. Shorter product name as a tie-breaker (more specific matches first)
+ *
+ * Excludes products with zero token overlap so we never surface
+ * irrelevant suggestions just to pad the list.
+ */
+function rankProductSuggestions(
+  input: string,
+  candidates: Array<{ id: string; name: string }>,
+): Array<{ id: string; name: string }> {
+  const inputTokens = input
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !STOPWORDS.has(t));
+  if (inputTokens.length === 0) return [];
+
+  const scored = candidates
+    .map((p) => {
+      const name = p.name.toLowerCase();
+      const hits = inputTokens.filter((t) => name.includes(t)).length;
+      return { p, hits };
+    })
+    .filter((s) => s.hits > 0)
+    .sort((a, b) => {
+      if (b.hits !== a.hits) return b.hits - a.hits;
+      return a.p.name.length - b.p.name.length;
+    });
+
+  return scored.map((s) => s.p);
 }

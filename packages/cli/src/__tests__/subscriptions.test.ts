@@ -134,6 +134,47 @@ describe("pax8 subscriptions list", () => {
       expect(action).toHaveProperty("description");
     }
   });
+
+  // #408 / partner-walkthrough finding #2: a typo'd --status used to silently
+  // return [] from the API. Now fails fast with the allowed enum list so the
+  // partner can self-correct without guessing.
+  describe("--status fail-fast validation (#408)", () => {
+    it("rejects an unknown status with the allowed list", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "list",
+        "--status",
+        "FooBar",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid value for --status: "FooBar"`);
+      expect(combined).toContain("Active");
+      expect(combined).toContain("Cancelled");
+    });
+
+    it("emits ERROR_INVALID_INPUT under --json", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "list",
+        "--status",
+        "FooBar",
+        "--json",
+      ]);
+      expect(result.stderr).toContain("ERROR_INVALID_INPUT");
+    });
+
+    it("accepts canonical Active and still returns rows", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "list",
+        "--status",
+        "Active",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+    });
+  });
 });
 
 describe("pax8 subscriptions show", () => {

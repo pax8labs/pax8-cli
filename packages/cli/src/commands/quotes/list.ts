@@ -10,7 +10,24 @@ import { handleCommandError } from "../../lib/errors.js";
 import { formatDate, formatCurrency } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
+import { validateEnum } from "../../lib/validate.js";
 import type { Quote } from "@pax8/core";
+
+// Lowercase enum from `quoting-endpoints.json` → `GET /v2/quotes`. The
+// wire is case-sensitive, but we accept any casing from the CLI and
+// canonicalize via `validateEnum({ lowercase: true })` so the partner
+// can type `Sent` / `SENT` / `sent` interchangeably.
+const QUOTE_STATUS_VALUES = [
+  "draft",
+  "assigned",
+  "sent",
+  "closed",
+  "declined",
+  "accepted",
+  "changes_requested",
+  "expired",
+  "pending",
+] as const;
 
 function quoteTotal(q: Quote): number {
   if (!q.lineItems) return 0;
@@ -43,6 +60,21 @@ Examples:
   )
   .action(async (options, command) => {
     const allOpts = command.optsWithGlobals();
+    // Fail-fast on typo'd `--status` BEFORE any network call (#408).
+    // Accepts mixed casing because the CLI normalizes before sending; an
+    // unknown value still raises a helpful "Allowed:" list rather than
+    // silently round-tripping as `?status=foobar` and returning `[]`.
+    let status: string | undefined;
+    try {
+      status = validateEnum(
+        allOpts.status,
+        QUOTE_STATUS_VALUES,
+        "--status",
+        { lowercase: true, cmdHint: "pax8 quotes list" },
+      );
+    } catch (error) {
+      await handleCommandError(error);
+    }
     const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Fetching quotes...");
 
@@ -52,12 +84,6 @@ Examples:
         ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
-      // `--status` is server-side per the v2 spec (#387). Lowercase before
-      // sending so partner input like "Sent" or "ACCEPTED" still matches the
-      // wire enum (`sent`, `accepted`, ...).
-      const status: string | undefined = allOpts.status
-        ? String(allOpts.status).toLowerCase()
-        : undefined;
       const result = await ctx.api.quotes.list({
         companyId,
         status,
