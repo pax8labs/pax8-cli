@@ -260,6 +260,7 @@ class CompaniesResource {
       selfServiceAllowed: data.selfServiceAllowed ?? false,
       orderApprovalRequired: data.orderApprovalRequired ?? false,
       created: new Date().toISOString().split("T")[0],
+      createdAt: new Date().toISOString().split("T")[0],
     };
     return withCompanyTimestampAliases(newCompany);
   }
@@ -664,6 +665,7 @@ class OrdersResource {
       orderedBy: "Demo User",
       orderedByEmail: "demo@example.com",
       createdDate: new Date().toISOString().split("T")[0],
+      createdAt: new Date().toISOString().split("T")[0],
       // Echo `lineItemNumber` back so callers can verify it was sent. Falls
       // back to 1-based array position when callers don't supply one — same
       // behavior `OrdersApi.create()` enforces on the real wire path (#331).
@@ -866,6 +868,7 @@ class QuotesResource {
         ...(clientName ? { name: clientName } : {}),
       },
       createdOn: new Date().toISOString().split("T")[0],
+      createdAt: new Date().toISOString().split("T")[0],
       status: "Draft",
       // Empty defaults for the two free-text fields the v2 read shape marks
       // required (#313). Real partners populate these via the marketplace UI
@@ -910,7 +913,13 @@ class QuotesResource {
     const quote = quotes.find((q) => q.id === id);
     if (!quote) throw notFound("Quote", id);
 
-    if (typeof data.expiresOn === "string") quote.expiresOn = data.expiresOn;
+    if (typeof data.expiresOn === "string") {
+      // Set BOTH names — without this, the stored `expiresAt` alias would
+      // win in the schema preprocess (it prefers the canonical name when
+      // both are present) and the user's update would silently revert.
+      quote.expiresOn = data.expiresOn;
+      quote.expiresAt = data.expiresOn;
+    }
     if (typeof data.introMessage === "string") quote.introMessage = data.introMessage;
     if (typeof data.published === "boolean") quote.published = data.published;
     if (typeof data.termsAndDisclaimers === "string") {
@@ -1050,6 +1059,7 @@ class WebhooksResource {
       status: "Active",
       topics: data.webhookTopics.map((t) => t.topic),
       createdDate: new Date().toISOString().split("T")[0],
+      createdAt: new Date().toISOString().split("T")[0],
       secret: `whsec_demo_${Date.now()}`,
       displayName: data.displayName,
     };
