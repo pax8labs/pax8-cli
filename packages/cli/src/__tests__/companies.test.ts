@@ -55,6 +55,85 @@ describe("pax8 companies", () => {
       expect(result.stderr).toContain("companies");
     });
 
+    // #388: geography filters are server-side per OpenAPI. Demo Summit
+    // Healthcare lives in Denver, CO — these tests exercise the wire mapping
+    // (`--state` → `stateOrProvince`, `--zip` → `postalCode`) end-to-end.
+    it("filters by --city (#388)", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "list",
+        "--city",
+        "Denver",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.length).toBeGreaterThan(0);
+      for (const c of data) {
+        expect(c.address?.city).toBe("Denver");
+      }
+    });
+
+    it("--state maps to stateOrProvince on the wire (#388)", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "list",
+        "--state",
+        "CO",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.length).toBeGreaterThan(0);
+      for (const c of data) {
+        expect(c.address?.stateOrProvince).toBe("CO");
+      }
+    });
+
+    it("--country filters server-side (#388)", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "list",
+        "--country",
+        "US",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.length).toBeGreaterThan(0);
+      for (const c of data) {
+        expect(c.address?.country).toBe("US");
+      }
+    });
+
+    it("--zip maps to postalCode on the wire (#388)", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "list",
+        "--zip",
+        "80246",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.length).toBeGreaterThan(0);
+      for (const c of data) {
+        expect(c.address?.postalCode).toBe("80246");
+      }
+    });
+
+    it("--sort city orders results by city ascending (#388)", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "list",
+        "--sort",
+        "city",
+        "--size",
+        "100",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      const cities = data.map((c: { address?: { city?: string } }) => c.address?.city ?? "");
+      const sorted = [...cities].sort((a, b) => a.localeCompare(b));
+      expect(cities).toEqual(sorted);
+    });
+
     it("--with-actions wraps in { companies, nextActions }", async () => {
       const result = await runCliExpectSuccess([
         "companies",
@@ -422,6 +501,28 @@ describe("pax8 companies", () => {
       expect(result.stdout).toContain("Examples:");
       expect(result.stdout).toContain("--page");
       expect(result.stdout).toContain("--size");
+    });
+
+    // #388: spec-backed geography / capability / sort flags must be discoverable
+    // via `--help`. Pin every new flag plus the `--sort` enum values so a
+    // regression that quietly drops a flag fails here.
+    it("list --help advertises every #388 filter and sort flag", async () => {
+      const result = await runCliExpectSuccess(["companies", "list", "--help"]);
+      const flat = result.stdout.replace(/\s+/g, " ");
+      // Geography
+      expect(flat).toContain("--city");
+      expect(flat).toContain("--state");
+      expect(flat).toContain("--country");
+      expect(flat).toContain("--zip");
+      // Capabilities
+      expect(flat).toContain("--self-service");
+      expect(flat).toContain("--bill-on-behalf");
+      expect(flat).toContain("--order-approval");
+      // Sort + enum members
+      expect(flat).toContain("--sort");
+      for (const v of ["name", "city", "country", "state", "zip"]) {
+        expect(flat).toContain(v);
+      }
     });
 
     // #250: `--status` help text must mirror the documented enum exactly —

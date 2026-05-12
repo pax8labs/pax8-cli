@@ -36,9 +36,52 @@ const coverageColumns: Column[] = [
   },
 ];
 
+// #388: --sort accepts spec field names + CLI vocab aliases. The user-facing
+// short names (`state`, `zip`) mirror the existing flag vocabulary established
+// for `companies create` (docs/UX_GUIDE.md); the wire field names are
+// `stateOrProvince` / `postalCode`. Keep this map in lock-step with the spec
+// enum: `name | city | country | stateOrProvince | postalCode`.
+const SORT_ALIASES: Record<string, "name" | "city" | "country" | "stateOrProvince" | "postalCode"> = {
+  name: "name",
+  city: "city",
+  country: "country",
+  state: "stateOrProvince",
+  stateorprovince: "stateOrProvince",
+  zip: "postalCode",
+  postalcode: "postalCode",
+};
+
+function parseTriBool(raw: unknown): boolean | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === true) return true;
+  if (raw === false) return false;
+  const s = String(raw).toLowerCase();
+  if (s === "true" || s === "1" || s === "yes") return true;
+  if (s === "false" || s === "0" || s === "no") return false;
+  return undefined;
+}
+
 export const companiesListCommand = new Command("list")
   .description("List all companies")
   .option("--status <status>", "Filter by status (Active, Inactive, Deleted)")
+  // ─── Geography filters (#388) ───────────────────────────────────────────
+  // Spec params: city, country, stateOrProvince, postalCode. We keep the
+  // shorter UX names (`--state`, `--zip`) per the vocabulary mapping
+  // established for `companies create` — see docs/UX_GUIDE.md and
+  // packages/cli/src/commands/companies/create.ts:226-239.
+  .option("--city <city>", "Filter by city (server-side)")
+  .option("--state <state>", "Filter by state or province (maps to stateOrProvince on the wire)")
+  .option("--country <country>", "Filter by country (server-side)")
+  .option("--zip <postalCode>", "Filter by postal code (maps to postalCode on the wire)")
+  // ─── Capability filters (#388) ──────────────────────────────────────────
+  .option("--self-service [true|false]", "Filter by selfServiceAllowed (capability flag)")
+  .option("--bill-on-behalf [true|false]", "Filter by billOnBehalfOfEnabled (capability flag)")
+  .option("--order-approval [true|false]", "Filter by orderApprovalRequired (capability flag)")
+  // ─── Sort (#388) ─────────────────────────────────────────────────────────
+  .option(
+    "--sort <field>",
+    "Sort by field (name, city, country, state, zip)"
+  )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
   .option("--ids-only", "Output only resource IDs, one per line")
@@ -50,6 +93,10 @@ export const companiesListCommand = new Command("list")
 Examples:
   pax8 companies list
   pax8 companies list --status Active
+  pax8 companies list --city Denver --state CO
+  pax8 companies list --country US --sort city
+  pax8 companies list --self-service true
+  pax8 companies list --bill-on-behalf true --order-approval false
   pax8 companies list --page 1 --size 25
   pax8 companies list --coverage
   pax8 companies list --json
@@ -67,10 +114,26 @@ Examples:
       const userPage = parseInt(allOpts.page, 10);
       const pageSize = parseInt(allOpts.size, 10);
       const apiPage = Math.max(userPage - 1, 0); // User sees 1-based, API is 0-based
+      // #388: map CLI vocabulary (`--state`, `--zip`, `--self-service`, ...)
+      // onto the spec-canonical query-parameter names that `CompaniesApi.list`
+      // expects. The `--sort` field also accepts the shorter aliases. Booleans
+      // pass through commander as either a string ("true" / "false" when the
+      // user supplies a value) or `true` when the flag is bare; `parseTriBool`
+      // normalizes both.
+      const sortRaw = allOpts.sort ? String(allOpts.sort).toLowerCase() : undefined;
+      const sort = sortRaw ? SORT_ALIASES[sortRaw] : undefined;
       const result = await ctx.api.companies.list({
         page: apiPage,
         size: pageSize,
         status: allOpts.status,
+        city: allOpts.city,
+        country: allOpts.country,
+        stateOrProvince: allOpts.state,
+        postalCode: allOpts.zip,
+        selfServiceAllowed: parseTriBool(allOpts.selfService),
+        billOnBehalfOfEnabled: parseTriBool(allOpts.billOnBehalf),
+        orderApprovalRequired: parseTriBool(allOpts.orderApproval),
+        sort,
       });
 
       if (allOpts.idsOnly) {

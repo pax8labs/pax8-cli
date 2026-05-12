@@ -51,6 +51,50 @@ describe("CompaniesApi", () => {
     expect(result.page.totalElements).toBe(1);
   });
 
+  // #388: every spec-defined query parameter on `GET /companies` must be
+  // forwarded verbatim. Booleans serialize as the string "true" / "false" on
+  // the wire (Pax8Client's query-param shape is `string | number`); we coerce
+  // them in CompaniesApi.list rather than forcing CLI callers to pre-stringify.
+  it("list forwards geography + capability + sort params to GET (#388)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+
+    await api.list({
+      page: 0,
+      size: 25,
+      status: "Active",
+      city: "Denver",
+      country: "US",
+      stateOrProvince: "CO",
+      postalCode: "80202",
+      selfServiceAllowed: true,
+      billOnBehalfOfEnabled: false,
+      orderApprovalRequired: true,
+      sort: "city",
+    });
+
+    expect(client.get).toHaveBeenCalledWith("/companies", {
+      page: 0,
+      size: 25,
+      status: "Active",
+      city: "Denver",
+      country: "US",
+      stateOrProvince: "CO",
+      postalCode: "80202",
+      selfServiceAllowed: "true",
+      billOnBehalfOfEnabled: "false",
+      orderApprovalRequired: "true",
+      sort: "city",
+    });
+  });
+
+  it("list with no params still forwards an empty object", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+
+    await api.list();
+
+    expect(client.get).toHaveBeenCalledWith("/companies", {});
+  });
+
   it("get returns a single company", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleCompany);
 

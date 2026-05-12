@@ -102,17 +102,72 @@ function notFound(resource: string, id: string): NotFoundError {
 
 class CompaniesResource {
   async list(
-    params?: ListParams & { filter?: string; status?: string }
+    params?: ListParams & {
+      status?: string;
+      // Geography filters (#388) — spec-canonical names
+      city?: string;
+      country?: string;
+      stateOrProvince?: string;
+      postalCode?: string;
+      // Capability filters (#388)
+      selfServiceAllowed?: boolean;
+      billOnBehalfOfEnabled?: boolean;
+      orderApprovalRequired?: boolean;
+      // Sort field (#388) — spec enum
+      sort?: "name" | "city" | "country" | "stateOrProvince" | "postalCode";
+    }
   ): Promise<PaginatedResponse<Company>> {
     await randomDelay();
     let filtered = companies;
-    if (params?.filter) {
-      const q = params.filter.toLowerCase();
-      filtered = filtered.filter((c) => c.name.toLowerCase().includes(q));
-    }
     if (params?.status) {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((c) => c.status.toLowerCase() === s);
+    }
+    if (params?.city) {
+      const q = params.city.toLowerCase();
+      filtered = filtered.filter((c) => c.address?.city?.toLowerCase() === q);
+    }
+    if (params?.country) {
+      const q = params.country.toLowerCase();
+      filtered = filtered.filter((c) => c.address?.country?.toLowerCase() === q);
+    }
+    if (params?.stateOrProvince) {
+      const q = params.stateOrProvince.toLowerCase();
+      filtered = filtered.filter(
+        (c) => c.address?.stateOrProvince?.toLowerCase() === q,
+      );
+    }
+    if (params?.postalCode) {
+      filtered = filtered.filter((c) => c.address?.postalCode === params.postalCode);
+    }
+    if (typeof params?.selfServiceAllowed === "boolean") {
+      filtered = filtered.filter(
+        (c) => Boolean(c.selfServiceAllowed) === params.selfServiceAllowed,
+      );
+    }
+    if (typeof params?.billOnBehalfOfEnabled === "boolean") {
+      filtered = filtered.filter(
+        (c) => Boolean(c.billOnBehalfOfEnabled) === params.billOnBehalfOfEnabled,
+      );
+    }
+    if (typeof params?.orderApprovalRequired === "boolean") {
+      filtered = filtered.filter(
+        (c) => Boolean(c.orderApprovalRequired) === params.orderApprovalRequired,
+      );
+    }
+    if (params?.sort) {
+      // Spec sort key maps directly onto a field selector — stable sort,
+      // ascending (the spec doesn't define direction; we default to natural).
+      const key = params.sort;
+      const getField = (c: Company): string => {
+        if (key === "name") return c.name ?? "";
+        if (key === "city") return c.address?.city ?? "";
+        if (key === "country") return c.address?.country ?? "";
+        if (key === "stateOrProvince") return c.address?.stateOrProvince ?? "";
+        if (key === "postalCode") return c.address?.postalCode ?? "";
+        return "";
+      };
+      filtered = [...filtered].sort((a, b) => getField(a).localeCompare(getField(b)));
     }
     return paginate(filtered, params);
   }
