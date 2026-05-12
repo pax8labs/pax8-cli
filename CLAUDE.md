@@ -13,14 +13,17 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
 | MRR / revenue | `pax8 report mrr --json 2>/dev/null` (or `pax8 subscriptions list --json --size 1000` AND `pax8 clients list --json` in parallel) |
+| growth trend | `pax8 report growth --json 2>/dev/null` |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
+| invoice line items | `pax8 invoices items --invoice-id <invoice-id> --json 2>/dev/null` |
 | products / catalog | `pax8 products search "query" --json 2>/dev/null` |
 | cost sim / what if / pricing change / SKU swap | `pax8 cost sim --company <name> --product <name> --quantity <n> --json 2>/dev/null` |
 | place an order | `pax8 orders create --company <id> --product <id> --quantity <n>` (confirm first) |
 | act on a recommendation | Extract `orderCommand` from `pax8 recommendations list --json` and run it (confirm first), or use `pax8 recommendations act` for the interactive flow |
 | invoice dispute | `pax8 invoices dispute --discrepancy <id>` (id from `invoices audit`) |
+| webhook delivery history | `pax8 webhooks logs <id> --json 2>/dev/null` |
 | diagnostics / health | `pax8 doctor --json 2>/dev/null` |
 
 MRR math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `clients list`. Prefer `report mrr` — it already does this.

@@ -486,7 +486,6 @@ signal across the customer's stack, not a utilization rate within one product.
 
 - [Credential Setup Guide](docs/credential-setup.md)
 - [Product Requirements](docs/PRD.md)
-- [Credential Setup Guide](docs/credential-setup.md)
 - [Build Prompt](docs/BUILD.md)
 - [Pax8 API Reference](https://devx.pax8.com/)
 

@@ -21,7 +21,7 @@ When asked anything about Pax8 data, your first action should be a shell call. N
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
-| invoice line items | `pax8 invoices items <invoice-id> --json 2>/dev/null` |
+| invoice line items | `pax8 invoices items --invoice-id <invoice-id> --json 2>/dev/null` |
 | products / catalog | `pax8 products search "<query>" --json 2>/dev/null` |
 | cost sim / what-if / SKU swap / pricing change | `pax8 cost sim --company <name> --product <name> --quantity <n> --json 2>/dev/null` |
 | place an order | `pax8 orders create --company <id> --product <id> --quantity <n>` (confirm first) |

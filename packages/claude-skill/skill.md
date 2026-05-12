@@ -19,7 +19,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 report *` — `report mrr`, `report growth`
 - `pax8 clients more <name>` — rich read-only summary
 - `pax8 subscriptions renewals` — computes renewals from existing data
-- `pax8 invoices items` — line items for an invoice
+- `pax8 invoices items --invoice-id <id>` — line items for an invoice
 - `pax8 invoices audit` — read-only computation, no writes
 - `pax8 cost sim` — what-if pricing simulation, no writes
 - `pax8 dashboard`, `pax8 dashboard --all|--renewals|--growth`
