@@ -190,6 +190,13 @@ pax8 invoices list --csv > march-billing.csv
 pax8 clients list --ids-only | xargs -I{} pax8 subscriptions list --company {}
 ```
 
+**Piping JSON to other tools.** Banners and spinners go to stderr; redirect for clean JSON:
+
+```bash
+pax8 subscriptions list --json 2>/dev/null | jq '.[].id'
+pax8 dashboard --json 2>/dev/null > today.json
+```
+
 ## REPL Mode
 
 Run `pax8` with no arguments to enter the interactive REPL:
