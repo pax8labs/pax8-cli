@@ -54,6 +54,31 @@ describe("pax8 quotes", () => {
       expect(result.stdout).toContain("accepted");
       expect(result.stdout).toContain("declined");
     });
+
+    // #387: spec enumerates 9 values for /v2/quotes?status=. Help text must
+    // list every documented value — the pre-#387 help omitted half of them
+    // ("draft, sent, accepted, declined, expired, ..."), so partners had no
+    // way to discover assigned / closed / changes_requested / pending.
+    it("--status help advertises every documented v2 enum value (#387)", async () => {
+      const result = await runCliExpectSuccess(["quotes", "list", "--help"]);
+      // Commander wraps long descriptions on narrow terminals — collapse
+      // whitespace before matching multi-word values.
+      const flat = result.stdout.replace(/\s+/g, " ");
+      const DOCUMENTED = [
+        "draft",
+        "assigned",
+        "sent",
+        "closed",
+        "declined",
+        "accepted",
+        "changes_requested",
+        "expired",
+        "pending",
+      ];
+      for (const v of DOCUMENTED) {
+        expect(flat).toContain(v);
+      }
+    });
   });
 
   describe("quotes show", () => {

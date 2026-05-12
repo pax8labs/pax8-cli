@@ -22,7 +22,10 @@ export const quotesListCommand = new Command("list")
   .option("--company <id|name>", "Filter by company ID or name")
   .option(
     "--status <status>",
-    "Filter by status (draft, sent, accepted, declined, expired, ...)"
+    // Lowercase enum from `quoting-endpoints.json` → `GET /v2/quotes`. The
+    // CLI previously filtered client-side (#387) because the API client
+    // hid this parameter; now it threads straight to the wire.
+    "Filter by status (draft, assigned, sent, closed, declined, accepted, changes_requested, expired, pending)"
   )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "50")
@@ -49,19 +52,21 @@ Examples:
         ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
+      // `--status` is server-side per the v2 spec (#387). Lowercase before
+      // sending so partner input like "Sent" or "ACCEPTED" still matches the
+      // wire enum (`sent`, `accepted`, ...).
+      const status: string | undefined = allOpts.status
+        ? String(allOpts.status).toLowerCase()
+        : undefined;
       const result = await ctx.api.quotes.list({
         companyId,
+        status,
         page: apiPage,
         size: parseInt(allOpts.size, 10),
       });
       spinner.stop();
 
-      // The Pax8 API doesn't expose a status filter on quotes list,
-      // so honor --status client-side.
-      const status: string | undefined = allOpts.status;
-      const quotes = status
-        ? result.content.filter((q) => q.status?.toLowerCase() === status.toLowerCase())
-        : result.content;
+      const quotes = result.content;
 
       if (allOpts.idsOnly) {
         for (const item of quotes) {

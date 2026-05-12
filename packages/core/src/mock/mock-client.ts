@@ -611,12 +611,20 @@ class UsageResource {
 
 class QuotesResource {
   async list(
-    params?: ListParams & { companyId?: string }
+    params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Quote>> {
     await randomDelay();
     let filtered = quotes;
     if (params?.companyId) {
-      filtered = quotes.filter((q) => q.companyId === params.companyId);
+      filtered = filtered.filter((q) => q.companyId === params.companyId);
+    }
+    if (params?.status) {
+      // Mirror the real API's server-side filter (#387). Demo `Quote.status`
+      // is titlecased ("Draft", "Sent", ...) while the wire enum is lowercase
+      // ("draft", "sent", ...) — compare case-insensitively so either form
+      // works against demo mode.
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((q) => String(q.status).toLowerCase() === s);
     }
     return paginate(filtered, params);
   }

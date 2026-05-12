@@ -82,6 +82,14 @@ export class QuotesApi {
     page?: number;
     size?: number;
     companyId?: string;
+    /**
+     * Lowercase enum from `quoting-endpoints.json` → `GET /v2/quotes` →
+     * `status` query param: `draft | assigned | sent | closed | declined |
+     * accepted | changes_requested | expired | pending`. Threaded straight
+     * through to the wire — previously the CLI filtered client-side because
+     * this parameter was hidden. See #387.
+     */
+    status?: string;
   }): Promise<PaginatedResponse<Quote>> {
     const raw = await this.client.get<unknown>(
       "/quotes",
