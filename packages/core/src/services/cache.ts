@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as fs from "node:fs/promises";
-import { homedir } from "node:os";
 import * as path from "node:path";
+import { getConfigDir } from "../config/loader.js";
 
 interface CacheEntry<T> {
   data: T;
@@ -11,7 +11,15 @@ interface CacheEntry<T> {
 }
 
 export class FileCache {
-  constructor(private cacheDir: string = path.join(homedir(), ".pax8", "cache")) {}
+  // Honor `PAX8_CONFIG_DIR` (via `getConfigDir()`) so the cache follows
+  // the config root. Previously hardcoded `~/.pax8/cache`, which meant
+  // integration tests and any caller using `PAX8_CONFIG_DIR` got a
+  // stale cross-invocation cache they couldn't redirect — surfaced
+  // when the integration suite hit `[pax8] CACHE HIT` on rerun and the
+  // wire-URL assertions had nothing to grep. Resolves on construction
+  // so each `FileCache` pins the dir it was built with (matches the
+  // prior behavior for callers that pass an explicit path).
+  constructor(private cacheDir: string = path.join(getConfigDir(), "cache")) {}
 
   private filePath(key: string): string {
     // Sanitize key to be safe as filename
