@@ -644,6 +644,23 @@ export const QuoteRespondedBySchema = z.object({
 export type QuoteRespondedBy = z.infer<typeof QuoteRespondedBySchema>;
 
 /**
+ * Wire shape for the nested `client` object on `GET /v2/quotes` /
+ * `GET /v2/quotes/{id}`. Per `quoting-endpoints.json` →
+ * `components.schemas.ClientDetails`, this is `{ id, isShadowCompany, name }`.
+ *
+ * The CLI surfaces these as flat fields (`companyId`, `clientIsShadow`,
+ * `clientName`) for ergonomic JSON output and downstream consumers that look
+ * up `companyId` directly. See `QuoteSchema`'s preprocess step for the
+ * flattening.
+ */
+export const QuoteClientSchema = z.object({
+  id: z.string(),
+  isShadowCompany: z.boolean().optional(),
+  name: z.string().optional(),
+});
+export type QuoteClient = z.infer<typeof QuoteClientSchema>;
+
+/**
  * Quote response body. The public quoting v2 endpoint returns the workflow
  * fields (`acceptedBy`, `declinedBy`, `respondedOn`, `revokedOn`,
  * `publishedOn`, `published`, `referenceCode`, `salesMarginPercentage`,
@@ -655,40 +672,90 @@ export type QuoteRespondedBy = z.infer<typeof QuoteRespondedBySchema>;
  * `changes_requested`, `pending`, `assigned`) but legacy demo data and the
  * test suite use the historical titlecase form. Forward-compat with new
  * statuses is also a goal.
+ *
+ * Wire-shape note (#384): the v2 quoting API returns `client: {id, ...}` as a
+ * nested object, not a flat `companyId`. We `preprocess` the raw payload to
+ * flatten `client.id → companyId` (and surface `client.name` / `client.
+ * isShadowCompany` as flat optional fields) before object validation. Demo
+ * data emits the same wire shape so demo and real-API output stay
+ * indistinguishable downstream. Legacy callers that hand-construct a flat
+ * `companyId` (older fixtures, the `QuotesApi` test mocks) still parse
+ * because the preprocess falls through to whatever's already on the input
+ * when `client` is absent.
  */
-export const QuoteSchema = z.object({
-  id: z.string(),
-  companyId: z.string(),
-  // Field names mirror the public quoting v2 API: `createdOn` and `expiresOn`.
-  // Earlier CLI versions exposed these as `createdDate` and `expirationDate`;
-  // renamed in #273 (fixes #8) to align `--json` output with the upstream
-  // contract. The `--expiration-date` CLI flag is unchanged — flag vocabulary
-  // and field vocabulary are intentionally separate concerns.
-  createdOn: z.string(),
-  expiresOn: z.string().optional(),
-  status: z.string(),
-  lineItems: z.array(QuoteLineItemSchema).optional(),
+export const QuoteSchema = z.preprocess(
+  (raw) => {
+    if (raw === null || typeof raw !== "object") return raw;
+    const r = raw as Record<string, unknown>;
+    // If wire has nested `client`, surface its fields as flat aliases.
+    // If `client` is absent (legacy flat input), pass through unchanged.
+    const client = r.client as
+      | { id?: string; isShadowCompany?: boolean; name?: string }
+      | undefined;
+    if (!client || typeof client !== "object") return raw;
+    const { client: _client, ...rest } = r;
+    void _client;
+    return {
+      ...rest,
+      // `client.id` wins over an explicit `companyId` — the wire is the
+      // authority. Falls through to existing `companyId` if `client.id` is
+      // missing (defensive; the spec marks it required).
+      companyId: client.id ?? r.companyId,
+      clientIsShadow:
+        typeof client.isShadowCompany === "boolean"
+          ? client.isShadowCompany
+          : r.clientIsShadow,
+      clientName:
+        typeof client.name === "string" ? client.name : r.clientName,
+    };
+  },
+  z.object({
+    id: z.string(),
+    companyId: z.string(),
+    /**
+     * Flattened from wire `client.name`. Optional because the spec marks it
+     * required on the nested object but legacy/demo inputs that bypass the
+     * preprocess (flat-shape) don't carry it.
+     */
+    clientName: z.string().optional(),
+    /**
+     * Flattened from wire `client.isShadowCompany`. Optional for the same
+     * reason as `clientName` — and because the field semantics (the client
+     * is a Pax8-internal shadow record vs. a partner-owned company) are
+     * informational, not load-bearing for any current CLI command.
+     */
+    clientIsShadow: z.boolean().optional(),
+    // Field names mirror the public quoting v2 API: `createdOn` and `expiresOn`.
+    // Earlier CLI versions exposed these as `createdDate` and `expirationDate`;
+    // renamed in #273 (fixes #8) to align `--json` output with the upstream
+    // contract. The `--expiration-date` CLI flag is unchanged — flag vocabulary
+    // and field vocabulary are intentionally separate concerns.
+    createdOn: z.string(),
+    expiresOn: z.string().optional(),
+    status: z.string(),
+    lineItems: z.array(QuoteLineItemSchema).optional(),
 
-  // The two free-text body fields the v2 quoting API marks as required on the
-  // `QuoteResponse` shape AND on the `PUT /v2/quotes/{quoteId}` request body.
-  // The CLI doesn't expose either as a user-settable flag today, but both must
-  // be modeled on the read shape so the fetch-then-merge in `update` /
-  // `setStatus` can round-trip the server-side values back without dropping
-  // them. See #313, #314 and `docs/triage/quotes-api-version.md` §9.1.
-  introMessage: z.string(),
-  termsAndDisclaimers: z.string(),
+    // The two free-text body fields the v2 quoting API marks as required on the
+    // `QuoteResponse` shape AND on the `PUT /v2/quotes/{quoteId}` request body.
+    // The CLI doesn't expose either as a user-settable flag today, but both must
+    // be modeled on the read shape so the fetch-then-merge in `update` /
+    // `setStatus` can round-trip the server-side values back without dropping
+    // them. See #313, #314 and `docs/triage/quotes-api-version.md` §9.1.
+    introMessage: z.string(),
+    termsAndDisclaimers: z.string(),
 
-  // Workflow fields (read-only visibility for the accept/decline lifecycle).
-  acceptedBy: QuoteRespondedBySchema.optional(),
-  declinedBy: QuoteRespondedBySchema.optional(),
-  respondedOn: z.string().optional(),
-  revokedOn: z.string().optional(),
-  publishedOn: z.string().optional(),
-  published: z.boolean().optional(),
-  referenceCode: z.string().optional(),
-  salesMarginPercentage: z.number().optional(),
-  intentType: z.string().optional(),
-});
+    // Workflow fields (read-only visibility for the accept/decline lifecycle).
+    acceptedBy: QuoteRespondedBySchema.optional(),
+    declinedBy: QuoteRespondedBySchema.optional(),
+    respondedOn: z.string().optional(),
+    revokedOn: z.string().optional(),
+    publishedOn: z.string().optional(),
+    published: z.boolean().optional(),
+    referenceCode: z.string().optional(),
+    salesMarginPercentage: z.number().optional(),
+    intentType: z.string().optional(),
+  }),
+);
 export type Quote = z.infer<typeof QuoteSchema>;
 
 // ─── Webhook ─────────────────────────────────────────────────────────────────

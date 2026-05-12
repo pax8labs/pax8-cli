@@ -222,7 +222,22 @@ export interface UsageLine {
 
 export interface Quote {
   id: string;
-  companyId: string;
+  /**
+   * Nested client object — matches the wire shape of `GET /v2/quotes` per
+   * `quoting-endpoints.json → components.schemas.QuoteResponse` (#384).
+   *
+   * Demo data emits the spec's nested shape rather than a flat `companyId`
+   * so demo-mode parsing exercises the `QuoteSchema` preprocess that
+   * flattens `client.id → companyId`. Pre-#384 demo data carried a flat
+   * `companyId`, which masked the real-API mismatch and let `quotes list`
+   * pass demo tests while returning `undefined` `companyId` on the real
+   * wire.
+   */
+  client: {
+    id: string;
+    isShadowCompany?: boolean;
+    name?: string;
+  };
   /** Mirrors the public quoting v2 API field name (was `createdDate`). */
   createdOn: string;
   /** Mirrors the public quoting v2 API field name (was `expirationDate`). */
@@ -1776,7 +1791,7 @@ export const usageLines: UsageLine[] = [
 export const quotes: Quote[] = [
   {
     id: "quote-summit-001",
-    companyId: SUMMIT_ID,
+    client: { id: SUMMIT_ID, isShadowCompany: false, name: "Summit Healthcare Partners" },
     createdOn: "2026-03-10",
     expiresOn: "2026-04-10",
     status: "Sent",
@@ -1808,7 +1823,7 @@ export const quotes: Quote[] = [
   },
   {
     id: "quote-bright-001",
-    companyId: BRIGHT_ID,
+    client: { id: BRIGHT_ID, isShadowCompany: false, name: "Bright Minds Academy" },
     createdOn: "2026-03-05",
     expiresOn: "2026-04-05",
     status: "Draft",
@@ -1841,7 +1856,7 @@ export const quotes: Quote[] = [
     // count matches the existing count). The other Draft quote
     // (quote-bright-001) has 2 items and triggers the destructive path.
     id: "quote-acme-001",
-    companyId: ACME_ID,
+    client: { id: ACME_ID, isShadowCompany: false, name: "Acme Corp" },
     createdOn: "2026-04-15",
     expiresOn: "2026-05-15",
     status: "Draft",
@@ -1862,7 +1877,7 @@ export const quotes: Quote[] = [
   },
   {
     id: "quote-redwood-001",
-    companyId: REDWOOD_ID,
+    client: { id: REDWOOD_ID, isShadowCompany: false, name: "Redwood Manufacturing" },
     createdOn: "2026-02-20",
     expiresOn: "2026-03-20",
     status: "Accepted",
@@ -1892,7 +1907,7 @@ export const quotes: Quote[] = [
   },
   {
     id: "quote-coastline-001",
-    companyId: COASTLINE_ID,
+    client: { id: COASTLINE_ID, isShadowCompany: false, name: "Coastline Legal Group" },
     createdOn: "2026-02-12",
     expiresOn: "2026-03-12",
     status: "Declined",

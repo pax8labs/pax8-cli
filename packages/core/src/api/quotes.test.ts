@@ -3,6 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QuotesApi, buildFullUpdatePayload } from "./quotes.js";
+import { QuoteSchema } from "./types.js";
 import type { Pax8Client } from "./client.js";
 
 function createMockClient(): Pax8Client {
@@ -257,6 +258,84 @@ describe("QuotesApi", () => {
       },
       V2_OPTS,
     );
+  });
+});
+
+// ─── #384: nested-client wire-shape → flat companyId ──────────────────────────
+//
+// The v2 quoting API returns `client: {id, isShadowCompany, name}` per
+// `quoting-endpoints.json → components.schemas.QuoteResponse`. The CLI's
+// downstream code (table renderers, JSON output, filters) wants a flat
+// `companyId` field. `QuoteSchema` preprocesses the wire payload to flatten
+// `client.id → companyId` and surface `client.name` / `client.isShadowCompany`
+// as flat optional aliases. Pre-#384, the schema expected flat `companyId`
+// and silently dropped the nested `client` object — `companyId` parsed as
+// undefined against real API responses; demo mode (which carried a flat
+// `companyId` directly) masked the bug.
+describe("QuoteSchema (#384 nested client → flat companyId)", () => {
+  const baseQuoteFields = {
+    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    createdOn: "2026-01-15T00:00:00Z",
+    status: "draft",
+    introMessage: "Hello partner.",
+    termsAndDisclaimers: "Standard terms.",
+    published: false,
+  } as const;
+
+  it("flattens nested wire `client.id` to flat `companyId`", () => {
+    const wire = {
+      ...baseQuoteFields,
+      client: {
+        id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        isShadowCompany: false,
+        name: "Acme Corp",
+      },
+    };
+    const parsed = QuoteSchema.parse(wire);
+    expect(parsed.companyId).toBe("b2c3d4e5-f6a7-8901-bcde-f12345678901");
+    expect(parsed.clientName).toBe("Acme Corp");
+    expect(parsed.clientIsShadow).toBe(false);
+    // The nested `client` object is consumed by the preprocess; the parsed
+    // output does not carry it through (z.object strips unknown keys).
+    expect("client" in parsed).toBe(false);
+  });
+
+  it("accepts the legacy flat shape (no nested client)", () => {
+    // The QuotesApi unit tests and historical demo fixtures hand `parse()`
+    // an already-flat object — the preprocess must pass these through
+    // unchanged so existing call sites keep working.
+    const flat = {
+      ...baseQuoteFields,
+      companyId: "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    };
+    const parsed = QuoteSchema.parse(flat);
+    expect(parsed.companyId).toBe("c3d4e5f6-a7b8-9012-cdef-123456789012");
+    expect(parsed.clientName).toBeUndefined();
+  });
+
+  it("nested `client.id` wins over an explicit flat `companyId` on the wire", () => {
+    // Defensive: if the API ever returned both shapes simultaneously
+    // (it doesn't today, but hedging against drift), the nested object is
+    // the authority — that's the spec-aligned field.
+    const wire = {
+      ...baseQuoteFields,
+      companyId: "ignore-me",
+      client: { id: "trust-me", isShadowCompany: false, name: "Wins" },
+    };
+    const parsed = QuoteSchema.parse(wire);
+    expect(parsed.companyId).toBe("trust-me");
+    expect(parsed.clientName).toBe("Wins");
+  });
+
+  it("tolerates a partial nested client (missing optional fields)", () => {
+    const wire = {
+      ...baseQuoteFields,
+      client: { id: "minimal-client-id" },
+    };
+    const parsed = QuoteSchema.parse(wire);
+    expect(parsed.companyId).toBe("minimal-client-id");
+    expect(parsed.clientName).toBeUndefined();
+    expect(parsed.clientIsShadow).toBeUndefined();
   });
 });
 
