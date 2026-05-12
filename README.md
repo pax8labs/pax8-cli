@@ -81,8 +81,8 @@ PAX8_DEMO=1 pax8 dashboard
 pax8 dashboard                           # estimated MRR, renewals, growth opportunities
 pax8 recommendations list                # Cross-sell and seat gap opportunities
 pax8 recommendations act                 # Multi-select picker → batch order
-pax8 companies list                      # Browse customers (type # to drill in)
-pax8 companies more "Acme Corp"          # Full customer summary
+pax8 clients list                        # Browse customers (type # to drill in)
+pax8 clients more "Acme Corp"            # Full customer summary
 ```
 
 ## Commands
@@ -96,14 +96,16 @@ pax8 dashboard --renewals      # Focus on upcoming renewals
 pax8 dashboard --growth        # Focus on growth opportunities
 ```
 
-### Companies
+### Clients
 
 ```bash
-pax8 companies list                            # List all (type # to drill in)
-pax8 companies list --status Active            # Filter by status
-pax8 companies show "Acme Corp"                # Company details
-pax8 companies more "Acme Corp"                # Full summary: subs, vendors, estimated MRR, issues
+pax8 clients list                              # List all (type # to drill in)
+pax8 clients list --status Active              # Filter by status
+pax8 clients show "Acme Corp"                  # Customer details
+pax8 clients more "Acme Corp"                  # Full summary: subs, vendors, estimated MRR, issues
 ```
+
+> `pax8 companies *` works as an indefinite deprecated alias of `pax8 clients *` — both invocations route through the same command graph, so partner scripts written against the old name keep working. The data surface (`companyId`, `companyName`, `--company` flag, etc.) stays aligned with the wire until Pax8's API renames the field.
 
 ### Subscriptions
 
@@ -185,7 +187,7 @@ pax8 auth status               # Check credentials
 ```bash
 pax8 subscriptions list --json | jq '.[] | select(.quantity > 10)'
 pax8 invoices list --csv > march-billing.csv
-pax8 companies list --ids-only | xargs -I{} pax8 subscriptions list --company {}
+pax8 clients list --ids-only | xargs -I{} pax8 subscriptions list --company {}
 ```
 
 ## REPL Mode
@@ -194,9 +196,9 @@ Run `pax8` with no arguments to enter the interactive REPL:
 
 ```
 $ pax8
-pax8> status
-pax8> companies list
-pax8> 3                          # Drill into company #3
+pax8> dashboard
+pax8> clients list
+pax8> 3                          # Drill into client #3
 pax8> recommendations act        # Multi-select picker → batch order
 pax8> exit
 ```
@@ -251,7 +253,7 @@ The CLI ships with a Claude Code skill, so AI agents get the same computed intel
 
 An agent asking "Am I being overbilled?" doesn't need to make 13+ API calls, join invoice line items against subscriptions, and compute deltas. It runs `pax8 invoices audit --json` and gets categorized discrepancies with dollar impact in one call.
 
-Available tools: companies, subscriptions, renewals, invoices, invoice audits, recommendations, MRR reports, and product search — all returning structured JSON.
+Available tools: clients, subscriptions, renewals, invoices, invoice audits, recommendations, MRR reports, and product search — all returning structured JSON.
 
 ### Setup (Claude Code)
 
@@ -315,7 +317,7 @@ The CLI also honors two ambient environment variables (no opt-in required) and s
 
 | Property | Sent | Notes |
 |---|---|---|
-| `command` | always | The top-level command, e.g. `companies` |
+| `command` | always | The top-level command, e.g. `clients` |
 | `subcommand` | when present | Dotted path, e.g. `recommendations.list` |
 | `flags` | always | The flag *names* the user passed (no values) |
 | `duration_ms` | always | Wall-clock duration in ms |
@@ -362,7 +364,7 @@ When a command fails, the CLI prints recovery hints and a one-line nudge:
 - `$HOME` paths on macOS / Linux / Windows / `~/...` form (`<REDACTED:PATH>` — the suffix after the username is preserved so the tail of the path is still useful for debugging)
 - JWTs and `Bearer` tokens (`<REDACTED:JWT>` / `<REDACTED:TOKEN>`)
 - Long opaque hex / base64-shaped strings (`>=32` chars; covers Pax8 client secrets and similar) (`<REDACTED:TOKEN>`)
-- **Positional argument values** (the company / customer / product names you typed at the command line) — replaced with `<REDACTED:ARG>` placeholders in both the `command` field and the `Message` body. The command structure (`companies show <REDACTED:ARG>`) is preserved so maintainers can reproduce the bug without partner-specific data ever leaving your machine.
+- **Positional argument values** (the client / customer / product names you typed at the command line) — replaced with `<REDACTED:ARG>` placeholders in both the `command` field and the `Message` body. The command structure (`clients show <REDACTED:ARG>`) is preserved so maintainers can reproduce the bug without partner-specific data ever leaving your machine.
 
 The reporter is **opt-in per invocation**, not via a config setting. Nothing leaves your machine without explicit `[y/N]` confirmation — the command always prints the body to stdout *first*, so you can see exactly what would be submitted.
 

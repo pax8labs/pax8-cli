@@ -52,11 +52,11 @@ Five themes were flagged for domain-owner attention. After the 2026-05-07 merges
 
 | Command | Args / Flags | Default | Notes |
 |---|---|---|---|
-| `pax8 companies list` | `--status`, `--page`, `--size`, `--ids-only`, `--coverage`, `--with-actions` | size=25 | `--coverage` adds portfolio coverage analysis (computed) |
-| `pax8 companies show <id\|name>` | accepts name as alternative to UUID | | |
-| `pax8 companies create` | `--name`, `--phone`, `--website`, `--street`, `--city`, `--state`, `--zip`, `--country`, `--bill-on-behalf-of`, `--self-service-allowed`, `--order-approval-required`, `-y` | country=US; booleans all default to `false` | Address required (fail-fast); three billing booleans added in #329 |
-| `pax8 companies update <id\|name>` | `--name`, `--phone`, `--website`, `-y` | | No address/billing-flag updates exposed |
-| `pax8 companies more` | (interactive paging helper) | | CLI-only |
+| `pax8 clients list` | `--status`, `--page`, `--size`, `--ids-only`, `--coverage`, `--with-actions` | size=25 | `--coverage` adds portfolio coverage analysis (computed) |
+| `pax8 clients show <id\|name>` | accepts name as alternative to UUID | | |
+| `pax8 clients create` | `--name`, `--phone`, `--website`, `--street`, `--city`, `--state`, `--zip`, `--country`, `--bill-on-behalf-of`, `--self-service-allowed`, `--order-approval-required`, `-y` | country=US; booleans all default to `false` | Address required (fail-fast); three billing booleans added in #329 |
+| `pax8 clients update <id\|name>` | `--name`, `--phone`, `--website`, `-y` | | No address/billing-flag updates exposed |
+| `pax8 clients more` | (interactive paging helper) | | CLI-only |
 | `pax8 contacts list` | `--company <id\|name>` (required), `--page`, `--size`, `--ids-only` | size=50 | |
 | `pax8 contacts show <id>` | `--company <id\|name>` (required) | | `--company` required post-#324 — the Pax8 public API only addresses contacts under `/companies/{companyId}/contacts/{contactId}` |
 | `pax8 contacts create` | `--company <id\|name>` (required), `--first-name`, `--last-name`, `--email`, `--phone` (required post-#325), `--type <list>`, `-y` | type=Admin | `--type` accepts a comma-separated list (`Admin,Billing`); `--phone` now required because the v2 spec contract mandates a non-empty phone (#325/#353) |
@@ -64,6 +64,8 @@ Five themes were flagged for domain-owner attention. After the 2026-05-07 merges
 | `pax8 contacts delete <id>` | `--company <id\|name>` (required), `-y` | | `--company` required post-#324 |
 
 CLI output schemas (Zod) — `Company`: `id, name, address{street,street2,city,stateOrProvince,postalCode,country}, phone, website, status, billOnBehalfOfEnabled, selfServiceAllowed, orderApprovalRequired, externalId, created, updatedDate`. `Contact`: `id, firstName, lastName, email, phone, types[{type, primary}]` [contact `types` reshaped to spec object form in #325/#353; `companyId` no longer carried on the body since the nested URL identifies it].
+
+> **Command-surface naming.** `pax8 clients *` is the canonical user-facing command group as of #317. `pax8 companies *` is retained as an indefinite deprecated alias via Commander's native `.alias()` — both invocations share the exact same command graph, so the surfaces structurally can't drift. The domain heading "Companies & Contacts" above is the *domain* name (matching API vocabulary), separate from the command surface. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands track the wire and will rename when the API does.
 
 ### Public API Surface
 
@@ -77,32 +79,32 @@ API `Company`: `id, name, address, phone, website, status, billOnBehalfOfEnabled
 |---|---|---|
 | `address.stateOrProvince` | `--state` | Wire field is `stateOrProvince`; CLI keeps the shorter `--state` flag for UX continuity [Wire rename in #327/#328] |
 | `address.postalCode` | `--zip` | Wire field is `postalCode`; CLI keeps the shorter `--zip` flag for UX continuity [Wire rename in #327/#328] |
-| `externalId` | `externalId` | Surfaced on Company in `pax8 companies show` (table + `--json`) [Resolved in #273] |
+| `externalId` | `externalId` | Surfaced on Company in `pax8 clients show` (table + `--json`) [Resolved in #273] |
 | `updatedDate` | `updatedDate` | Aligned with API in #273 (was `modified`) |
 | `createdDate` (Contact) | (not exposed on Contact) | Only surfaced on Company-ish resources |
 | `contacts[]` (embedded on Company) | (separate `contacts list`) | CLI separates rather than embeds |
 | `types[]` (spec shape: `Array<{type: ContactType, primary: boolean}>`) | `--type <comma-list>` | CLI accepts multiple types as a comma-separated string [Surface flag resolved in #255; wire shape aligned with spec in #325/#353 — was bare string array, now object array. Primary defaults to `false` on create] |
 | `Partial PUT` on `contacts update` | Fetch-then-merge | v2 spec requires full body on PUT; CLI now reads the current contact and merges overrides before sending [Resolved in #325/#353] |
-| `companies update` PUT vs PATCH | PATCH | v2 spec documents only PATCH; CLI switched from PUT [Resolved in #326/#346] |
-| `companies create` required fields | `--bill-on-behalf-of`, `--self-service-allowed`, `--order-approval-required` (default `false`) | The three booleans are required by the spec but not user-facing concerns for partners in most cases; defaults preserve the previous UX [Resolved in #329/#352] |
+| `clients update` PUT vs PATCH | PATCH | v2 spec documents only PATCH; CLI switched from PUT [Resolved in #326/#346] |
+| `clients create` required fields | `--bill-on-behalf-of`, `--self-service-allowed`, `--order-approval-required` (default `false`) | The three booleans are required by the spec but not user-facing concerns for partners in most cases; defaults preserve the previous UX [Resolved in #329/#352] |
 | Contacts wire path (`/contacts/{id}` vs `/companies/{cid}/contacts/{id}`) | Nested per spec | Flat path doesn't exist in the API; CLI commands now thread `--company` through all per-contact operations [Resolved in #324/#350] |
 
 ### Coverage
 
-- **API-only (CLI doesn't expose):** address-based filters on `companies list` (`--city`, `--country`, `--state`, `--zip`), the `selfServiceAllowed`/`billOnBehalfOfEnabled`/`orderApprovalRequired` filters on list, `externalId` field on Company, address & billing-flag updates via `companies update`.
-- **CLI-only:** `--coverage` flag (computed: see Recommendations); `--ids-only`; `--with-actions`; `companies more` (interactive paging).
+- **API-only (CLI doesn't expose):** address-based filters on `clients list` (`--city`, `--country`, `--state`, `--zip`), the `selfServiceAllowed`/`billOnBehalfOfEnabled`/`orderApprovalRequired` filters on list, `externalId` field on Company, address & billing-flag updates via `clients update`.
+- **CLI-only:** `--coverage` flag (computed: see Recommendations); `--ids-only`; `--with-actions`; `clients more` (interactive paging).
 
 ### Naming Drift Flags
 
 - `--type` accepts one value; API accepts an array. [Resolved in #255 — comma-separated list now accepted on both create and update.]
-- `companies update` cannot change address or the three boolean billing flags. Confirm whether this is an intentional safety choice or an oversight.
+- `clients update` cannot change address or the three boolean billing flags. Confirm whether this is an intentional safety choice or an oversight.
 - CLI `Company.modified` vs API `updatedDate` — pick one and align. [Resolved in #273 — renamed to `updatedDate`.]
 - Per-contact operations (`show`, `update`, `delete`) now require `--company` — breaking change. The flat `/contacts/{id}` path doesn't exist in the v2 spec, so the CLI cannot address a contact without its company. [Resolved in #324/#350; migration message included in each command's error path.]
 
 ### Questions for Domain Owner
 
 1. ~~Is the CLI right to hide `externalId` from list/show, or do partners need it?~~ [Resolved in #273] — surfaced.
-2. Is `companies update` deliberately address-immutable?
+2. Is `clients update` deliberately address-immutable?
 
 ---
 
@@ -251,7 +253,7 @@ CLI `Order`: `id, companyId, companyName, orderedBy, orderedByEmail, status, cre
 |---|---|---|---|
 | `pax8 quotes list` | `--company`, `--status`, `--page`, `--size`, `--ids-only` | size=50 | Status help text now lowercase to match API (`draft, sent, ...`) [#261] |
 | `pax8 quotes show <id>` | | | Now exposes accept/decline workflow fields when present [#261] |
-| `pax8 quotes create` | `--company`, `--product`, `--quantity`, `--billing-term`, `--expiration-date`, `-y` | qty=1, billing=Monthly | Single-line shorthand; use `quotes line-items add` to add more |
+| `pax8 quotes create` | `--company`, `--product`, `--quantity`, `--billing-term`, `-y` | qty=1, billing=Monthly | Single-line shorthand; use `quotes line-items add` to add more. `--expiration-date` was removed in #339 (it was a silent no-op against the v2 spec); set expiration via `quotes update` after create. |
 | `pax8 quotes update <id>` | `--product`, `--quantity`, `--billing-term`, `--expiration-date`, `-y` | | Now displays a default-no `REPLACES` confirmation diff before clobbering line items [#264] |
 | `pax8 quotes delete <id>` | `-y` | | |
 | `pax8 quotes line-items list <quote-id>` | `--ids-only` | | Lists line items on a quote [Added in #266] |
@@ -388,7 +390,7 @@ The seven categories, the seven cross-sell rules, the seat-gap thresholds (10 se
 - The category taxonomy (`productivity, email, security, endpoint_protection, identity, backup, cloud_infrastructure`) is not from the API. If Pax8 has a canonical category model, confirm it.
 - The cross-sell reasons are written for end-user MSPs; some make security claims ("the #1 attack vector") that should be reviewed by Pax8 messaging owners before being treated as a public contract.
 - The hardcoded suggested-product names tie this engine to specific SKUs; vendor renames break it silently.
-- `companies list --coverage` exposes the same coverage analysis under the Companies surface — surface duplication.
+- `clients list --coverage` exposes the same coverage analysis under the Clients surface — surface duplication.
 
 ### Questions for Domain Owner
 
@@ -536,7 +538,7 @@ Note: "the CLI consumes endpoint X" is **not** evidence here — this doc review
 |---|---|---|
 | **Public-blessed (contract)** | `/orders`, `/subscriptions`, `/companies`, `/contacts`, `/products`, `/invoices`, `/usage-summaries`, `/webhooks` (config/topics/logs/retry), `/v2/quotes` (+ `/line-items`, `/take-ownership`) | On `api.pax8.com`; TypeSpec contracts exist; partner docs treat as core; ADRs cover versioning and idempotency. |
 | **Portal-only (not in public API)** | Storefront publishing, notification template sends, vendor resource-group mapping | Explicitly flagged as gaps in the internal API-vs-portal review; the CLI does not and should not expose these. |
-| **Computed (CLI invents)** | `subscriptions renewals`, `invoices audit`, `invoices dispute`, `recommendations list`/`act`, `report mrr`/`growth`, `cost sim`, `companies list --coverage`, `status` | No API equivalent; needs domain-owner blessing before partners depend on these as a public contract. |
+| **Computed (CLI invents)** | `subscriptions renewals`, `invoices audit`, `invoices dispute`, `recommendations list`/`act`, `report mrr`/`growth`, `cost sim`, `clients list --coverage`, `dashboard` | No API equivalent; needs domain-owner blessing before partners depend on these as a public contract. |
 
 ### Conventions
 
