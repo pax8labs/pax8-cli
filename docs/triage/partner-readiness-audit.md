@@ -1,9 +1,12 @@
 # Partner-readiness audit — v0.1.0
 
 **Audit date:** 2026-05-11
-**Repo state:** `main @ 830774a` (post-#381 atomic companies create, post-#379 clients rename, post-#376 recommendations OE axis)
+**Repo state at audit time:** `main @ 830774a` (post-#381 atomic companies create, post-#379 clients rename, post-#376 recommendations OE axis)
+**Last reconciled:** 2026-05-11 against main @ `1a082a8` (post-#382 docs alignment, post-#374 orders Status column drop, post-#380 integration harness cache fix, post-#373 PAX8_DEMO override)
 **Method:** Six parallel dimension agents, plus a top-level synthesis. Each dimension report lives under `docs/triage/partner-readiness-audit/`.
 **Scope:** Read-only audit. No code changes, no PRs, no issue filings.
+
+> **Post-audit reconciliation note.** Four PRs from this session merged after the audit ran. The findings below are annotated with **[resolved]** where a subsequent merge closed them. The dimension reports under `partner-readiness-audit/` are point-in-time snapshots and have NOT been edited to reflect the merges — this top-level doc is the reconciled view. See the [Post-audit reconciliation](#post-audit-reconciliation) section below for the full mapping.
 
 ---
 
@@ -40,7 +43,7 @@ Numbers 1 and 2 are concrete, scoped fixes (~half a day combined). Number 3 is a
 | 4 | API conformity | Quotes `--status` filtered client-side; spec supports server-side filter | `packages/cli/src/commands/quotes/list.ts:59-64` |
 | 5 | API conformity | Companies missing geo/business-rule filters (`city`, `country`, `stateOrProvince`, `selfServiceAllowed`, etc.) | `packages/core/src/api/companies.ts:19-22` |
 | 6 | API conformity | Invoices missing advanced filters (`sort`, date range, balance, `status` not surfaced in CLI) | `packages/core/src/api/invoices.ts:20-27` |
-| 7 | Internal consistency | README + AGENTS.md still lead with `pax8 companies *` after the rename | `README.md:84,102,105`, `AGENTS.md:78-81` |
+| 7 | Internal consistency | ~~README + AGENTS.md still lead with `pax8 companies *` after the rename~~ **[resolved by #382]** | `README.md:84,102,105`, `AGENTS.md:78-81` |
 | 8 | Internal consistency | `Company.created` is bare; all other types use camelCase timestamps | `packages/core/src/api/types.ts:140` |
 | 9 | Docs accuracy | skill.md + AGENTS.md document `pax8 invoices items <invoice-id>` as a positional; command requires `--invoice-id` flag | `packages/claude-skill/skill.md:22`, `AGENTS.md:24` |
 | 10 | Docs accuracy | `CLAUDE.md` missing `pax8 report growth` row in queries table (present in AGENTS.md) | `CLAUDE.md:9-24` |
@@ -85,8 +88,30 @@ Numbers 1 and 2 are concrete, scoped fixes (~half a day combined). Number 3 is a
 | Hidden commands | 3 (1 deprecation alias, 2 easter eggs) |
 | `PAX8_*` env vars | 24 (6 documented for partners, 18 internal) |
 | Unit test coverage | 74.22% statements / 59.11% branches (thresholds: 60% / 42%) |
-| Wire-level integration tests | 5 files, all read-only (companies, quotes, products, subscriptions, invoices) |
+| Wire-level integration tests | 6 files, all read-only (companies, quotes, products, subscriptions, invoices, orders — orders added by #380) |
 | Write operations without integration tests | 18 |
+
+---
+
+## Post-audit reconciliation
+
+Four PRs from this session merged after the audit was written. Where they touch audit findings:
+
+| PR | Title | Audit impact |
+|---|---|---|
+| #373 | `PAX8_DEMO=false` overrides `demo:true` in config | None — finding-orthogonal infra fix. Side-effect: the audit files were swept into this commit's working tree and pushed to main alongside it. |
+| #374 | Orders: drop Status column; mark `--status` as documented no-op | None — no audit finding cited the Status column. |
+| #380 | Integration harness cache isolation + orders v1 smoke + `--status` wire-pin test | **D4 partial:** wire-smoke test count is now 6 (added orders). The block-launch finding "zero wire-level coverage for any write operation" still stands — #380 added a read-side test, not a write. |
+| #382 | Align user-facing docs to clients-rename + contacts-create canonical names | **D2 finding #7 RESOLVED.** README + AGENTS.md now lead with `pax8 clients *` per the diff. The `companies` references in user-facing demo flows are gone. |
+
+**Findings NOT yet addressed by these merges** (verified by re-checking the source files at the post-merge HEAD):
+
+- **D3 finding #9** — `pax8 invoices items` is still documented as a positional in `packages/claude-skill/skill.md:22` and `AGENTS.md:24`. The actual command requires `--invoice-id <id>` (silent failure if positional is supplied). #382 didn't touch these lines.
+- **D3 finding #10** — `CLAUDE.md` still does not have a `pax8 report growth` row in the queries table. #382 updated other rows for `clients` but didn't add this one.
+- All block-launch findings (#1 quotes schema, #2 timestamp naming, #3 no wire write coverage) remain open.
+- All fix-before-launch findings except #7 remain open.
+
+Recommendation unchanged: land the three block-launch fixes + the remaining docs items pre-launch.
 
 ---
 
