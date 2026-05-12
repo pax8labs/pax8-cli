@@ -102,17 +102,72 @@ function notFound(resource: string, id: string): NotFoundError {
 
 class CompaniesResource {
   async list(
-    params?: ListParams & { filter?: string; status?: string }
+    params?: ListParams & {
+      status?: string;
+      // Geography filters (#388) — spec-canonical names
+      city?: string;
+      country?: string;
+      stateOrProvince?: string;
+      postalCode?: string;
+      // Capability filters (#388)
+      selfServiceAllowed?: boolean;
+      billOnBehalfOfEnabled?: boolean;
+      orderApprovalRequired?: boolean;
+      // Sort field (#388) — spec enum
+      sort?: "name" | "city" | "country" | "stateOrProvince" | "postalCode";
+    }
   ): Promise<PaginatedResponse<Company>> {
     await randomDelay();
     let filtered = companies;
-    if (params?.filter) {
-      const q = params.filter.toLowerCase();
-      filtered = filtered.filter((c) => c.name.toLowerCase().includes(q));
-    }
     if (params?.status) {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((c) => c.status.toLowerCase() === s);
+    }
+    if (params?.city) {
+      const q = params.city.toLowerCase();
+      filtered = filtered.filter((c) => c.address?.city?.toLowerCase() === q);
+    }
+    if (params?.country) {
+      const q = params.country.toLowerCase();
+      filtered = filtered.filter((c) => c.address?.country?.toLowerCase() === q);
+    }
+    if (params?.stateOrProvince) {
+      const q = params.stateOrProvince.toLowerCase();
+      filtered = filtered.filter(
+        (c) => c.address?.stateOrProvince?.toLowerCase() === q,
+      );
+    }
+    if (params?.postalCode) {
+      filtered = filtered.filter((c) => c.address?.postalCode === params.postalCode);
+    }
+    if (typeof params?.selfServiceAllowed === "boolean") {
+      filtered = filtered.filter(
+        (c) => Boolean(c.selfServiceAllowed) === params.selfServiceAllowed,
+      );
+    }
+    if (typeof params?.billOnBehalfOfEnabled === "boolean") {
+      filtered = filtered.filter(
+        (c) => Boolean(c.billOnBehalfOfEnabled) === params.billOnBehalfOfEnabled,
+      );
+    }
+    if (typeof params?.orderApprovalRequired === "boolean") {
+      filtered = filtered.filter(
+        (c) => Boolean(c.orderApprovalRequired) === params.orderApprovalRequired,
+      );
+    }
+    if (params?.sort) {
+      // Spec sort key maps directly onto a field selector — stable sort,
+      // ascending (the spec doesn't define direction; we default to natural).
+      const key = params.sort;
+      const getField = (c: Company): string => {
+        if (key === "name") return c.name ?? "";
+        if (key === "city") return c.address?.city ?? "";
+        if (key === "country") return c.address?.country ?? "";
+        if (key === "stateOrProvince") return c.address?.stateOrProvince ?? "";
+        if (key === "postalCode") return c.address?.postalCode ?? "";
+        return "";
+      };
+      filtered = [...filtered].sort((a, b) => getField(a).localeCompare(getField(b)));
     }
     return paginate(filtered, params);
   }
@@ -329,7 +384,27 @@ class ProductsResource {
 
 class InvoicesResource {
   async list(
-    params?: ListParams & { companyId?: string; month?: string; status?: string }
+    params?: ListParams & {
+      companyId?: string;
+      month?: string;
+      invoiceDate?: string;
+      status?: string;
+      // #389 spec params
+      invoiceDateRangeStart?: string;
+      invoiceDateRangeEnd?: string;
+      dueDate?: string;
+      total?: number;
+      balance?: number;
+      carriedBalance?: number;
+      sort?:
+        | "invoiceDate"
+        | "dueDate"
+        | "status"
+        | "partnerName"
+        | "total"
+        | "balance"
+        | "carriedBalance";
+    }
   ): Promise<PaginatedResponse<Invoice>> {
     await randomDelay();
     let filtered = invoices;
@@ -342,6 +417,47 @@ class InvoicesResource {
     if (params?.status) {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((i) => i.status.toLowerCase() === s);
+    }
+    // #389: spec-backed date-range + numeric / sort filters. Demo mode mirrors
+    // the server-side semantics so subprocess tests can exercise the wire path.
+    if (params?.invoiceDateRangeStart) {
+      filtered = filtered.filter((i) => i.invoiceDate >= params.invoiceDateRangeStart!);
+    }
+    if (params?.invoiceDateRangeEnd) {
+      filtered = filtered.filter((i) => i.invoiceDate <= params.invoiceDateRangeEnd!);
+    }
+    if (params?.dueDate) {
+      filtered = filtered.filter((i) => i.dueDate === params.dueDate);
+    }
+    if (typeof params?.total === "number") {
+      filtered = filtered.filter((i) => i.total === params.total);
+    }
+    if (typeof params?.balance === "number") {
+      filtered = filtered.filter((i) => i.balance === params.balance);
+    }
+    if (typeof params?.carriedBalance === "number") {
+      filtered = filtered.filter(
+        (i) => (i as { carriedBalance?: number }).carriedBalance === params.carriedBalance,
+      );
+    }
+    if (params?.sort) {
+      const key = params.sort;
+      const getField = (i: Invoice): string | number => {
+        if (key === "invoiceDate") return i.invoiceDate ?? "";
+        if (key === "dueDate") return i.dueDate ?? "";
+        if (key === "status") return i.status ?? "";
+        if (key === "partnerName") return (i as { partnerName?: string }).partnerName ?? "";
+        if (key === "total") return i.total ?? 0;
+        if (key === "balance") return i.balance ?? 0;
+        if (key === "carriedBalance") return (i as { carriedBalance?: number }).carriedBalance ?? 0;
+        return "";
+      };
+      filtered = [...filtered].sort((a, b) => {
+        const av = getField(a);
+        const bv = getField(b);
+        if (typeof av === "number" && typeof bv === "number") return av - bv;
+        return String(av).localeCompare(String(bv));
+      });
     }
     return paginate(filtered, params);
   }
@@ -611,12 +727,20 @@ class UsageResource {
 
 class QuotesResource {
   async list(
-    params?: ListParams & { companyId?: string }
+    params?: ListParams & { companyId?: string; status?: string }
   ): Promise<PaginatedResponse<Quote>> {
     await randomDelay();
     let filtered = quotes;
     if (params?.companyId) {
-      filtered = quotes.filter((q) => q.companyId === params.companyId);
+      filtered = filtered.filter((q) => q.companyId === params.companyId);
+    }
+    if (params?.status) {
+      // Mirror the real API's server-side filter (#387). Demo `Quote.status`
+      // is titlecased ("Draft", "Sent", ...) while the wire enum is lowercase
+      // ("draft", "sent", ...) — compare case-insensitively so either form
+      // works against demo mode.
+      const s = params.status.toLowerCase();
+      filtered = filtered.filter((q) => String(q.status).toLowerCase() === s);
     }
     return paginate(filtered, params);
   }

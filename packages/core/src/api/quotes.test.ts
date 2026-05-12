@@ -65,6 +65,21 @@ describe("QuotesApi", () => {
     expect(result.content[0].status).toBe("draft");
   });
 
+  // #387: `status` is a server-side query parameter on /v2/quotes. The CLI
+  // previously filtered client-side; this test pins the wire-side contract
+  // so a regression to client-side filtering doesn't silently re-enter.
+  it("list threads --status through to the GET query params (#387)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+
+    await api.list({ page: 0, size: 50, status: "sent" });
+
+    expect(client.get).toHaveBeenCalledWith(
+      "/quotes",
+      { page: 0, size: 50, status: "sent" },
+      V2_OPTS,
+    );
+  });
+
   it("get returns a single quote (routed to /v2)", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleQuote);
 

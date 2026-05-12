@@ -25,15 +25,21 @@ describe("MockPax8Client", () => {
       expect(result.page.totalPages).toBe(1);
     });
 
-    it("filters by name", async () => {
-      const result = await client.companies.list({ filter: "summit" });
-      expect(result.content).toHaveLength(1);
-      expect(result.content[0].name).toBe("Summit Healthcare Partners");
+    // #388: the pre-#388 mock supported a generic `filter` parameter with no
+    // OpenAPI backing; it has been dropped in favor of the spec's geography
+    // filters (`city`, `country`, `stateOrProvince`, `postalCode`). These
+    // tests pin the new spec-backed filter behavior.
+    it("filters by city (spec geography filter)", async () => {
+      const result = await client.companies.list({ city: "Denver" });
+      expect(result.content.length).toBeGreaterThan(0);
+      for (const c of result.content) {
+        expect(c.address?.city).toBe("Denver");
+      }
     });
 
-    it("returns empty for non-matching filter", async () => {
+    it("returns empty when city filter matches nothing", async () => {
       const result = await client.companies.list({
-        filter: "nonexistent-company",
+        city: "Atlantis",
       });
       expect(result.content).toHaveLength(0);
       expect(result.page.totalElements).toBe(0);

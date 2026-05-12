@@ -10,6 +10,30 @@ import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 
+// #389: --sort accepts the spec's camelCase field names plus kebab-cased CLI
+// aliases for ergonomics. Keep this map locked to the OpenAPI sort enum:
+// invoiceDate | dueDate | status | partnerName | total | balance |
+// carriedBalance.
+const INVOICE_SORT_ALIASES: Record<
+  string,
+  "invoiceDate" | "dueDate" | "status" | "partnerName" | "total" | "balance" | "carriedBalance"
+> = {
+  "invoice-date": "invoiceDate",
+  invoicedate: "invoiceDate",
+  date: "invoiceDate",
+  "due-date": "dueDate",
+  duedate: "dueDate",
+  status: "status",
+  "partner-name": "partnerName",
+  partnername: "partnerName",
+  partner: "partnerName",
+  total: "total",
+  balance: "balance",
+  "carried-balance": "carriedBalance",
+  carriedbalance: "carriedBalance",
+  carried: "carriedBalance",
+};
+
 export const invoicesListCommand = new Command("list")
   .description("List invoices")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
@@ -17,9 +41,21 @@ export const invoicesListCommand = new Command("list")
   // Help text mirrors the full public OpenAPI enum for `GET /invoices`'s
   // `status` query parameter (#250). Previously the help listed only 4 of the
   // 6 documented values (`Nothing Due` and `Credited` were missing).
+  // The multi-word "Nothing Due" passes through to the wire as-is.
   .option(
     "--status <status>",
     'Filter by status (Unpaid, Paid, Void, Carried, "Nothing Due", Credited)'
+  )
+  // ─── Date range filters (#389) ──────────────────────────────────────────
+  // Ergonomic aliases mapping to the spec's `invoiceDateRangeStart` /
+  // `invoiceDateRangeEnd`. `--from` / `--to` are the human-friendly names
+  // partners reach for first.
+  .option("--from <YYYY-MM-DD>", "Start of invoice-date range (maps to invoiceDateRangeStart)")
+  .option("--to <YYYY-MM-DD>", "End of invoice-date range (maps to invoiceDateRangeEnd)")
+  // ─── Sort (#389) ────────────────────────────────────────────────────────
+  .option(
+    "--sort <field>",
+    "Sort by field (invoice-date, due-date, status, partner-name, total, balance, carried-balance)"
   )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", "Page size", "25")
@@ -31,8 +67,11 @@ export const invoicesListCommand = new Command("list")
 Examples:
   pax8 invoices list
   pax8 invoices list --month 2026-03
+  pax8 invoices list --from 2026-01-01 --to 2026-03-31
   pax8 invoices list --company "Summit Healthcare"
   pax8 invoices list --status Unpaid
+  pax8 invoices list --status "Nothing Due"
+  pax8 invoices list --sort due-date
   pax8 invoices list --json
   pax8 invoices list --json --with-actions
   pax8 invoices list --csv
@@ -49,10 +88,17 @@ Examples:
         ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
+      // #389: map ergonomic CLI flags (`--from` / `--to`, `--sort` in kebab-
+      // case) onto the spec-canonical query-parameter names.
+      const sortRaw = allOpts.sort ? String(allOpts.sort).toLowerCase() : undefined;
+      const sort = sortRaw ? INVOICE_SORT_ALIASES[sortRaw] : undefined;
       const result = await ctx.api.invoices.list({
         month: allOpts.month,
         companyId,
         status: allOpts.status,
+        invoiceDateRangeStart: allOpts.from,
+        invoiceDateRangeEnd: allOpts.to,
+        sort,
         page: apiPage,
         size: parseInt(allOpts.size, 10),
       });
