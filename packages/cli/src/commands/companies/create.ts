@@ -3,7 +3,11 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { ERROR_INVALID_INPUT, type CreateCompanyInput } from "@pax8/core";
+import {
+  ERROR_INVALID_INPUT,
+  type CreateCompanyInput,
+  type CreateCompanyContactInput,
+} from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { CliError, handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
@@ -25,10 +29,39 @@ function parseBool(value: unknown, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
+/**
+ * Build the atomic-create contact payload from the four required contact
+ * flags. Implicitly sets `primary: true` on all three ContactType values
+ * (Admin, Billing, Technical) per the Pax8 API Reference: "one contact
+ * with all three types and marked as primary for each type is sufficient"
+ * for activation. The common case for the atomic path is one human runs
+ * the new company; requiring partners to enumerate three types adds
+ * verbosity without value. Partners needing separate contacts per type
+ * can use `pax8 contacts create` after creation. See #330 and ARC-774.
+ */
+function buildPrimaryContact(
+  firstName: string,
+  lastName: string,
+  email: string,
+  phone: string,
+): CreateCompanyContactInput {
+  return {
+    firstName,
+    lastName,
+    email,
+    phone,
+    types: [
+      { type: "Admin", primary: true },
+      { type: "Billing", primary: true },
+      { type: "Technical", primary: true },
+    ],
+  };
+}
+
 export const companiesCreateCommand = new Command("create")
-  .description("Create a new company")
+  .description("Create a new company (Active by default via atomic contact creation per PAM-997)")
   .requiredOption("--name <name>", "Company name (required)")
-  .option("--phone <phone>", "Company phone number")
+  .option("--phone <phone>", "Company phone number (also used as the primary-contact phone on the default atomic path)")
   .option("--website <url>", "Company website")
   .option("--street <street>", "Street address")
   .option("--city <city>", "City")
@@ -41,29 +74,64 @@ export const companiesCreateCommand = new Command("create")
   .option(
     "--bill-on-behalf-of <true|false>",
     "Pax8 bills the customer on the partner's behalf (defaults to false)",
-    "false"
+    "false",
   )
   .option(
     "--self-service-allowed <true|false>",
     "Customer can self-service via the marketplace (defaults to false)",
-    "false"
+    "false",
   )
   .option(
     "--order-approval-required <true|false>",
     "Orders require partner approval (defaults to false)",
-    "false"
+    "false",
+  )
+  // Atomic-path contact flags (#330). Required on the default path; ignored
+  // on `--company-only`. The same `--phone` value is sent as both the
+  // company phone and the contact phone — partners who need different
+  // phones can use `--company-only` then `pax8 contacts create`.
+  .option("--first-name <name>", "Primary contact first name (required unless --company-only)")
+  .option("--last-name <name>", "Primary contact last name (required unless --company-only)")
+  .option("--email <email>", "Primary contact email (required unless --company-only)")
+  // `--company-only` opt-out
+  .option(
+    "--company-only",
+    "Skip the atomic contact payload. Creates an Inactive company. See warning in --help.",
   )
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
     `
+Atomic-create behavior (default):
+  Per Pax8 API Reference and PAM-997, the same POST /companies accepts an
+  optional contacts: [...] array. Including a properly-typed primary contact
+  flips the new company from Inactive to Active at creation. The CLI builds
+  the contact from --first-name, --last-name, --email, and --phone, and
+  implicitly marks it as primary:true for all three ContactType values
+  (Admin, Billing, Technical) per the spec's activation rule.
+
+  The contact phone uses the same --phone value as the company phone. If
+  the contact phone needs to differ, use --company-only and then add the
+  contact separately via 'pax8 contacts create' with the desired --phone.
+
+--company-only (opt-out, Inactive company):
+  Creates the company without the contacts array. The company will be
+  Inactive — won't appear in the portal, won't support orders or
+  subscriptions, and blocks re-creation with "already exists" until
+  primary contacts are added via 'pax8 contacts create'.
+
 Examples:
-  pax8 companies create --name "Summit Healthcare Partners" --phone "+1-303-555-0101" --website "https://summithealthcare.example.com" --city Denver --state CO --zip 80246
-  pax8 companies create --name "Test Co" --city Denver --state CO --zip 80202 --country US --bill-on-behalf-of true
-  pax8 companies create --name "Approval Co" --city NYC --state NY --zip 10001 --order-approval-required true --yes`
+  # Atomic (Active company in one call)
+  pax8 companies create --name "Summit Healthcare" --phone "+1-303-555-0101" \\
+      --website "https://summithealthcare.example.com" --city Denver --state CO --zip 80246 \\
+      --first-name Maya --last-name Chen --email maya@summit.example.com
+
+  # Company-only (Inactive — must follow up with 'pax8 contacts create')
+  pax8 companies create --name "Test Co" --city Denver --state CO --zip 80202 --company-only`,
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+    const companyOnly = Boolean(allOpts.companyOnly);
 
     try {
       const ctx = await buildContext(allOpts);
@@ -72,7 +140,7 @@ Examples:
       // with a structured error rather than silently shipping a degenerate
       // empty address object on the wire (#329).
       const hasAddress = Boolean(
-        allOpts.street || allOpts.city || allOpts.state || allOpts.zip
+        allOpts.street || allOpts.city || allOpts.state || allOpts.zip,
       );
       if (!hasAddress) {
         throw new CliError(
@@ -80,11 +148,37 @@ Examples:
           ["The Pax8 spec marks `address` as a required field on POST /companies."],
           [
             "Pass at least one of --street, --city, --state, --zip (and --country if not US).",
-            "Example: pax8 companies create --name \"Acme\" --city Denver --state CO --zip 80202",
+            'Example: pax8 companies create --name "Acme" --city Denver --state CO --zip 80202',
           ],
           undefined,
           ERROR_INVALID_INPUT,
         );
+      }
+
+      // Atomic-path contact validation — only required when --company-only is NOT set.
+      // The four contact flags map to the API's required scalars on
+      // CreateCompanyContactInputSchema; --phone is shared with the company.
+      if (!companyOnly) {
+        const missing: string[] = [];
+        if (!allOpts.firstName) missing.push("--first-name");
+        if (!allOpts.lastName) missing.push("--last-name");
+        if (!allOpts.email) missing.push("--email");
+        if (!allOpts.phone) missing.push("--phone");
+        if (missing.length > 0) {
+          throw new CliError(
+            `Missing required contact flag(s): ${missing.join(", ")}`,
+            [
+              "POST /companies accepts an optional contacts[] array; the default atomic-create path requires the four contact scalars to construct a primary contact that activates the company.",
+              "Per PAM-997 / ARC-774: companies created without a primary Admin/Billing/Technical contact are Inactive and unusable.",
+            ],
+            [
+              'Pass --first-name, --last-name, --email, --phone (e.g. --first-name Maya --last-name Chen --email maya@example.com --phone "+1-303-555-0101")',
+              "Or pass --company-only to skip the atomic path (creates an Inactive company — see --help for caveats).",
+            ],
+            undefined,
+            ERROR_INVALID_INPUT,
+          );
+        }
       }
 
       const billOnBehalfOfEnabled = parseBool(allOpts.billOnBehalfOf, false);
@@ -101,6 +195,24 @@ Examples:
       process.stderr.write(`  ${chalk.dim("Bill-on-behalf-of:")} ${billOnBehalfOfEnabled}\n`);
       process.stderr.write(`  ${chalk.dim("Self-service:")}      ${selfServiceAllowed}\n`);
       process.stderr.write(`  ${chalk.dim("Order approval:")}    ${orderApprovalRequired}\n`);
+
+      if (companyOnly) {
+        // Verbatim warning text per #330. The wording matters — agents and
+        // partners reading this need to know exactly what state the company
+        // ends up in and how to recover.
+        process.stderr.write("\n");
+        process.stderr.write(chalk.yellow.bold("  ⚠️  Creating company WITHOUT primary contacts.\n\n"));
+        process.stderr.write(chalk.yellow("  This company will be created in Inactive state. It:\n"));
+        process.stderr.write(chalk.yellow("    - Will NOT appear in the Pax8 portal\n"));
+        process.stderr.write(chalk.yellow("    - Will NOT support orders, subscriptions, or quotes\n"));
+        process.stderr.write(chalk.yellow('    - Will block re-creation with "already exists" until primary contacts are added\n\n'));
+        process.stderr.write(chalk.yellow("  To activate, add contacts via:\n"));
+        process.stderr.write(chalk.yellow("      pax8 contacts create --company <id> --first-name X --last-name Y --email Z --phone W --type Admin,Billing,Technical\n\n"));
+        process.stderr.write(chalk.yellow("  Or omit --company-only on this command to add primary contacts atomically.\n"));
+      } else {
+        process.stderr.write(`  ${chalk.dim("Primary contact:")}    ${allOpts.firstName} ${allOpts.lastName} <${allOpts.email}>\n`);
+        process.stderr.write(`  ${chalk.dim("Contact types:")}       Admin, Billing, Technical (all primary)\n`);
+      }
       process.stderr.write("\n");
 
       const confirmed = await confirm("Create this company?", { default: true });
@@ -129,6 +241,22 @@ Examples:
         billOnBehalfOfEnabled,
         selfServiceAllowed,
         orderApprovalRequired,
+        // Atomic-create: include the contacts array only on the default
+        // path. Omitting the field entirely (not sending an empty array) on
+        // `--company-only` keeps the request body identical to the pre-#330
+        // shape that produces an Inactive company.
+        ...(companyOnly
+          ? {}
+          : {
+              contacts: [
+                buildPrimaryContact(
+                  allOpts.firstName,
+                  allOpts.lastName,
+                  allOpts.email,
+                  allOpts.phone,
+                ),
+              ],
+            }),
       };
 
       const doneCreate = markWriteInFlight("companies");
@@ -140,7 +268,7 @@ Examples:
       }
 
       await invalidateCacheAfterWrite();
-      spinner.succeed("Company created 🎉");
+      spinner.succeed(companyOnly ? "Company created (Inactive — add contacts to activate)" : "Company created 🎉");
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(JSON.stringify(company, null, 2) + "\n");
