@@ -109,6 +109,16 @@ export type Address = z.infer<typeof AddressSchema>;
 
 // ─── Company ─────────────────────────────────────────────────────────────────
 
+/**
+ * `companyId` mirrors the public API's current field name. Pax8 is
+ * structurally moving away from the COMPANY noun in API contracts (per
+ * PAE-2054 governance rule and the Client Archetype PRD). The user-
+ * facing canonical term is `client`; the underlying API field name
+ * may eventually become `accountId` rather than `clientId`, per Pax8's
+ * account-archetype model. The CLI command surface uses `clients`
+ * today (per #317); the data surface stays aligned with whatever the
+ * wire actually carries.
+ */
 export const CompanySchema = z.object({
   id: z.string(),
   name: z.string(),
