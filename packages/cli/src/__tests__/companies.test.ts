@@ -16,6 +16,21 @@ describe("pax8 companies", () => {
       expect(data[0]).toHaveProperty("status");
     });
 
+    it("emits BOTH `created` and canonical `createdAt` on every row (#385 deprecation window)", async () => {
+      // #385: timestamp field standardization. `createdAt` is the canonical
+      // past-tense camelCase name; bare `created` is preserved as a deprecated
+      // alias for one minor version cycle so existing `--json` consumers
+      // don't break. Removal scheduled for v0.3.0.
+      const result = await runCliExpectSuccess(["companies", "list", "--json"]);
+      const data = JSON.parse(result.stdout);
+      expect(data.length).toBeGreaterThan(0);
+      for (const row of data) {
+        expect(row).toHaveProperty("created");
+        expect(row).toHaveProperty("createdAt");
+        expect(row.createdAt).toBe(row.created);
+      }
+    });
+
     it("outputs table format by default (non-TTY falls back to JSON)", async () => {
       const result = await runCliExpectSuccess(["companies", "list"]);
       // Non-TTY defaults to JSON

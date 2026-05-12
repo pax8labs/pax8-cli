@@ -99,7 +99,9 @@ Examples:
           columns: [
             { key: "id", header: "ID" },
             { key: "companyName", header: "Company" },
-            { key: "createdDate", header: "Date" },
+            // #385: canonical `createdAt`; legacy `createdDate` alias is still
+            // present in `--json` for back-compat, but CSV/table use the new name.
+            { key: "createdAt", header: "Date" },
             { key: "status", header: "Status" },
             { key: "orderedBy", header: "Ordered By" },
           ],
@@ -112,7 +114,9 @@ Examples:
       process.stdout.write(chalk.bold(`  Order ${order.id}\n\n`));
       process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${companyDisplay}\n`);
       if (order.status) process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(order.status)}\n`);
-      process.stdout.write(`  ${chalk.dim("Date:".padEnd(18))}${formatDate(order.createdDate)}\n`);
+      // #385: read the canonical `createdAt`. `order.createdDate` still works
+      // (alias is dual-emitted) but new code references the canonical name.
+      process.stdout.write(`  ${chalk.dim("Date:".padEnd(18))}${formatDate(order.createdAt)}\n`);
       process.stdout.write(`  ${chalk.dim("Ordered By:".padEnd(18))}${order.orderedBy ?? chalk.dim("—")}${order.orderedByEmail ? ` (${order.orderedByEmail})` : ""}\n`);
       process.stdout.write("\n");
 

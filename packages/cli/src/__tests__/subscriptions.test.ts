@@ -42,6 +42,24 @@ describe("pax8 subscriptions list", () => {
     expect(data[0]).toHaveProperty("status");
   });
 
+  it("emits BOTH `createdDate` and canonical `createdAt` on every row (#385 deprecation window)", async () => {
+    // #385: timestamp field standardization. `createdAt` is the canonical
+    // past-tense camelCase name; `createdDate` is preserved as a deprecated
+    // alias for one minor version cycle so `--json` consumers don't break.
+    const result = await runCliExpectSuccess([
+      "subscriptions",
+      "list",
+      "--json",
+    ]);
+    const data = JSON.parse(result.stdout);
+    expect(data.length).toBeGreaterThan(0);
+    for (const row of data) {
+      expect(row).toHaveProperty("createdDate");
+      expect(row).toHaveProperty("createdAt");
+      expect(row.createdAt).toBe(row.createdDate);
+    }
+  });
+
   it("shows help text", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",

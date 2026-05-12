@@ -96,8 +96,32 @@ describe("CompanySchema", () => {
     updatedDate: "2024-06-15T12:00:00Z",
   };
 
-  it("validates a correct payload", () => {
-    expect(CompanySchema.parse(valid)).toEqual(valid);
+  it("validates a correct payload and dual-emits canonical timestamp aliases (#385)", () => {
+    const parsed = CompanySchema.parse(valid);
+    // Both the legacy wire-shape names AND the canonical past-tense camelCase
+    // names must appear on the parsed object so existing `--json` consumers
+    // keep working through the v0.2.x → v0.3.0 deprecation window.
+    expect(parsed.created).toBe(valid.created);
+    expect(parsed.createdAt).toBe(valid.created);
+    expect(parsed.updatedDate).toBe(valid.updatedDate);
+    expect(parsed.updatedAt).toBe(valid.updatedDate);
+  });
+
+  it("accepts the canonical `createdAt` / `updatedAt` wire shape (#385)", () => {
+    // Forward-compat: when a future server starts emitting only the new
+    // names, both shapes still parse and both still appear on the output.
+    const canonical = {
+      ...valid,
+      created: undefined,
+      updatedDate: undefined,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-06-15T12:00:00Z",
+    };
+    const parsed = CompanySchema.parse(canonical);
+    expect(parsed.createdAt).toBe("2024-01-01T00:00:00Z");
+    expect(parsed.created).toBe("2024-01-01T00:00:00Z");
+    expect(parsed.updatedAt).toBe("2024-06-15T12:00:00Z");
+    expect(parsed.updatedDate).toBe("2024-06-15T12:00:00Z");
   });
 
   it("validates minimal payload (only required fields)", () => {
@@ -440,14 +464,30 @@ describe("OrderSchema", () => {
     ],
   };
 
-  it("validates a correct payload", () => {
-    expect(OrderSchema.parse(valid)).toEqual(valid);
+  it("validates a correct payload and dual-emits canonical createdAt (#385)", () => {
+    const parsed = OrderSchema.parse(valid);
+    expect(parsed.createdDate).toBe(valid.createdDate);
+    expect(parsed.createdAt).toBe(valid.createdDate);
+  });
+
+  it("accepts the canonical `createdAt` wire shape (#385)", () => {
+    const canonical = {
+      id: uuid,
+      companyId: uuid2,
+      orderedBy: "admin@partner.com",
+      createdAt: "2024-03-15T10:00:00Z",
+    };
+    const parsed = OrderSchema.parse(canonical);
+    expect(parsed.createdAt).toBe("2024-03-15T10:00:00Z");
+    expect(parsed.createdDate).toBe("2024-03-15T10:00:00Z");
   });
 
   it("validates without lineItems", () => {
     // Strip lineItems via destructure; the unused name is the rest-sibling idiom.
     const { lineItems, ...rest } = valid;
-    expect(OrderSchema.parse(rest)).toEqual(rest);
+    const parsed = OrderSchema.parse(rest);
+    expect(parsed.createdDate).toBe(rest.createdDate);
+    expect(parsed.createdAt).toBe(rest.createdDate);
   });
 
   it("rejects missing companyId", () => {
@@ -735,8 +775,17 @@ describe("SubscriptionSchema", () => {
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
   };
 
-  it("validates a correct payload", () => {
-    expect(SubscriptionSchema.parse(valid)).toEqual(valid);
+  it("validates a correct payload and dual-emits canonical createdAt (#385)", () => {
+    const parsed = SubscriptionSchema.parse(valid);
+    expect(parsed.createdDate).toBe(valid.createdDate);
+    expect(parsed.createdAt).toBe(valid.createdDate);
+  });
+
+  it("accepts the canonical `createdAt` wire shape (#385)", () => {
+    const canonical = { ...valid, createdDate: undefined, createdAt: "2023-12-15T00:00:00Z" };
+    const parsed = SubscriptionSchema.parse(canonical);
+    expect(parsed.createdAt).toBe("2023-12-15T00:00:00Z");
+    expect(parsed.createdDate).toBe("2023-12-15T00:00:00Z");
   });
 
   it("validates minimal payload", () => {
@@ -749,7 +798,8 @@ describe("SubscriptionSchema", () => {
       createdDate: "2024-01-01",
       status: "Active",
     };
-    expect(SubscriptionSchema.parse(minimal)).toEqual(minimal);
+    // #385 — canonical createdAt is dual-emitted alongside createdDate.
+    expect(SubscriptionSchema.parse(minimal)).toEqual({ ...minimal, createdAt: "2024-01-01" });
   });
 
   it("rejects invalid status", () => {
@@ -1004,14 +1054,35 @@ describe("QuoteSchema", () => {
     ],
   };
 
-  it("validates a correct payload", () => {
-    expect(QuoteSchema.parse(valid)).toEqual(valid);
+  it("validates a correct payload and dual-emits canonical timestamp aliases (#385)", () => {
+    const parsed = QuoteSchema.parse(valid);
+    expect(parsed.createdOn).toBe(valid.createdOn);
+    expect(parsed.createdAt).toBe(valid.createdOn);
+    expect(parsed.expiresOn).toBe(valid.expiresOn);
+    expect(parsed.expiresAt).toBe(valid.expiresOn);
+  });
+
+  it("accepts the canonical `createdAt` / `expiresAt` wire shape (#385)", () => {
+    const canonical = {
+      ...valid,
+      createdOn: undefined,
+      expiresOn: undefined,
+      createdAt: "2024-03-01",
+      expiresAt: "2024-04-01",
+    };
+    const parsed = QuoteSchema.parse(canonical);
+    expect(parsed.createdAt).toBe("2024-03-01");
+    expect(parsed.createdOn).toBe("2024-03-01");
+    expect(parsed.expiresAt).toBe("2024-04-01");
+    expect(parsed.expiresOn).toBe("2024-04-01");
   });
 
   it("validates without lineItems", () => {
     // Strip lineItems via destructure; rest-sibling idiom.
     const { lineItems, ...rest } = valid;
-    expect(QuoteSchema.parse(rest)).toEqual(rest);
+    const parsed = QuoteSchema.parse(rest);
+    expect(parsed.createdOn).toBe(rest.createdOn);
+    expect(parsed.createdAt).toBe(rest.createdOn);
   });
 
   it("rejects missing status", () => {
@@ -1051,8 +1122,25 @@ describe("WebhookSchema", () => {
     secret: "whsec_abc123",
   };
 
-  it("validates a correct payload", () => {
-    expect(WebhookSchema.parse(valid)).toEqual(valid);
+  it("validates a correct payload and dual-emits canonical createdAt (#385)", () => {
+    const parsed = WebhookSchema.parse(valid);
+    expect(parsed.createdDate).toBe(valid.createdDate);
+    expect(parsed.createdAt).toBe(valid.createdDate);
+  });
+
+  it("accepts the canonical `createdAt` wire shape (#385) and leaves updatedAt as-is (already canonical)", () => {
+    const canonical = {
+      id: uuid,
+      url: "https://example.com/webhook",
+      topics: ["subscription.created"],
+      status: "Active",
+      createdAt: "2024-03-01",
+      updatedAt: "2024-04-01",
+    };
+    const parsed = WebhookSchema.parse(canonical);
+    expect(parsed.createdAt).toBe("2024-03-01");
+    expect(parsed.createdDate).toBe("2024-03-01");
+    expect(parsed.updatedAt).toBe("2024-04-01");
   });
 
   it("rejects invalid url", () => {
@@ -1188,7 +1276,11 @@ describe("PaginatedResponseSchema", () => {
         },
       ],
     };
-    expect(schema.parse(data)).toEqual(data);
+    // #385 — canonical createdAt is dual-emitted alongside createdDate.
+    expect(schema.parse(data)).toEqual({
+      ...data,
+      content: data.content.map((s) => ({ ...s, createdAt: "2024-01-01" })),
+    });
   });
 
   it("works with empty content", () => {
@@ -1324,12 +1416,21 @@ function* walkObjectShapes(
         options?: unknown[];
         left?: unknown;
         right?: unknown;
+        // ZodEffects (z.preprocess / z.transform / z.refine) exposes its
+        // wrapped schema as `schema` rather than `innerType`. Added in #385
+        // when several `*Schema` exports were wrapped in `z.preprocess()` to
+        // canonicalize wire-shape timestamp field aliases.
+        schema?: unknown;
       };
     }
   )._def;
   if (!def) return;
   if (def.innerType) {
     yield* walkObjectShapes(def.innerType, path, visited);
+  }
+  if (def.schema) {
+    // ZodEffects wrapper — descend into the wrapped schema at the same path.
+    yield* walkObjectShapes(def.schema, path, visited);
   }
   if (def.type) {
     yield* walkObjectShapes(def.type, `${path}[*]`, visited);

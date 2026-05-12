@@ -206,8 +206,10 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
 
       // Recent orders (today)
       const today = new Date().toISOString().slice(0, 10);
+      // #385: read canonical `createdAt`. `createdDate` is still dual-emitted
+      // on `--json` for back-compat; removal in v0.3.0.
       const recentOrders = ordersResult.content
-        .filter((o) => o.createdDate.startsWith(today))
+        .filter((o) => o.createdAt.startsWith(today))
         .map((o) => ({
           ...o,
           companyName: (o as Record<string, unknown>).companyName as string
@@ -296,7 +298,10 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           recentOrders: recentOrders.map((o) => ({
             companyName: o.companyName,
             status: o.status,
-            createdDate: o.createdDate,
+            // #385: emit canonical `createdAt` alongside the legacy
+            // `createdDate` alias for one minor version cycle. Removal in v0.3.0.
+            createdAt: o.createdAt,
+            createdDate: o.createdAt,
             lineItems: o.lineItems?.map(
               (li: { productId: string; productName?: string; quantity: number }) => ({
                 productName: li.productName ?? li.productId,
@@ -347,7 +352,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
                 },
               ).join(", ")
             : "order placed";
-          const ago = formatTimeAgo(new Date(o.createdDate));
+          const ago = formatTimeAgo(new Date(o.createdAt));
           out.write(`  ${chalk.green("✓")} ${o.companyName} — ${productDesc}  ${chalk.dim(ago)}\n`);
         }
       }

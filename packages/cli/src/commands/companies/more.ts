@@ -206,7 +206,9 @@ Examples:
 
       process.stdout.write("\n");
       process.stdout.write(chalk.bold.white(`  ${company.name}`) + chalk.dim(`  ${company.id.slice(0, 8)}...`) + "\n");
-      const sinceStr = company.created ? chalk.dim("  ·  Since " + formatDate(company.created)) : "";
+      // #385: read canonical `createdAt`. Legacy bare `created` is still
+      // dual-emitted on `--json` for back-compat; removal in v0.3.0.
+      const sinceStr = company.createdAt ? chalk.dim("  ·  Since " + formatDate(company.createdAt)) : "";
       process.stdout.write(`  ${formatStatus(company.status)}${sinceStr}` + "\n");
       process.stdout.write("\n");
 
