@@ -12,11 +12,14 @@ import { output, type Column } from "../../lib/output.js";
 import { formatDate } from "../../lib/formatters.js";
 import { enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 
+// #385: timestamp column references the canonical `createdAt`. The legacy
+// `createdDate` alias is still emitted on every row in `--json` output for
+// backwards compatibility; removal in v0.3.0.
 const columns: Column[] = [
   { key: "id", header: "ID", format: (v) => chalk.dim(String(v).slice(0, 8)) },
   { key: "companyName", header: "Company" },
   { key: "orderedBy", header: "Ordered By" },
-  { key: "createdDate", header: "Date", format: (v) => formatDate(String(v)) },
+  { key: "createdAt", header: "Date", format: (v) => formatDate(String(v)) },
   { key: "lineItems", header: "Items", format: (v) => String(Array.isArray(v) ? v.length : 0) },
 ];
 

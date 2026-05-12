@@ -119,27 +119,83 @@ export type Address = z.infer<typeof AddressSchema>;
  * today (per #317); the data surface stays aligned with whatever the
  * wire actually carries.
  */
-export const CompanySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  address: AddressSchema.optional(),
-  phone: z.string().optional(),
-  website: z.string().optional(),
-  status: CompanyStatusSchema.optional(),
-  billOnBehalfOfEnabled: z.boolean().optional(),
-  selfServiceAllowed: z.boolean().optional(),
-  orderApprovalRequired: z.boolean().optional(),
-  /**
-   * Partner-side external identifier — typically a PSA / billing-system ID
-   * the partner uses to map their own records to a Pax8 company. Surfaced in
-   * #273 (fixes #5) so partners using this field to bridge Pax8 ↔ PSA aren't
-   * forced to round-trip through the portal. Lookup/filter by `externalId`
-   * is intentionally not added here — that's a feature, not a fix.
-   */
-  externalId: z.string().optional(),
-  created: z.string().optional(),
-  updatedDate: z.string().optional(),
-});
+/**
+ * Wire shape for `GET /companies{,/{id}}`. Reads accept both the legacy
+ * Pax8-API field names (`created`, `updatedDate`) and the canonical
+ * camelCase / past-tense names (`createdAt`, `updatedAt`) introduced under
+ * #385. The Zod preprocess populates BOTH on the parsed object so existing
+ * `--json` consumers that read `created` / `updatedDate` keep working
+ * while new consumers can read `createdAt` / `updatedAt`. The old aliases
+ * are slated for removal in v0.3.0; new internal code SHOULD reference
+ * the new names exclusively. See `.changeset/timestamp-field-standardization.md`.
+ */
+export const CompanySchema = z.preprocess(
+  (raw) => {
+    if (raw === null || typeof raw !== "object") return raw;
+    const r = raw as Record<string, unknown>;
+    // `createdAt` ↔ `created`: whichever is present on the wire wins; we
+    // populate the other side so consumers see both shapes.
+    const createdAt =
+      typeof r.createdAt === "string"
+        ? r.createdAt
+        : typeof r.created === "string"
+          ? r.created
+          : undefined;
+    const updatedAt =
+      typeof r.updatedAt === "string"
+        ? r.updatedAt
+        : typeof r.updatedDate === "string"
+          ? r.updatedDate
+          : undefined;
+    return {
+      ...r,
+      ...(createdAt !== undefined ? { createdAt, created: createdAt } : {}),
+      ...(updatedAt !== undefined
+        ? { updatedAt, updatedDate: updatedAt }
+        : {}),
+    };
+  },
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    address: AddressSchema.optional(),
+    phone: z.string().optional(),
+    website: z.string().optional(),
+    status: CompanyStatusSchema.optional(),
+    billOnBehalfOfEnabled: z.boolean().optional(),
+    selfServiceAllowed: z.boolean().optional(),
+    orderApprovalRequired: z.boolean().optional(),
+    /**
+     * Partner-side external identifier — typically a PSA / billing-system ID
+     * the partner uses to map their own records to a Pax8 company. Surfaced in
+     * #273 (fixes #5) so partners using this field to bridge Pax8 ↔ PSA aren't
+     * forced to round-trip through the portal. Lookup/filter by `externalId`
+     * is intentionally not added here — that's a feature, not a fix.
+     */
+    externalId: z.string().optional(),
+    /**
+     * Canonical timestamp the company was created (camelCase, past tense,
+     * ISO 8601 string). Introduced in #385. Always present on read if the
+     * wire payload carried either `createdAt` or the legacy `created`.
+     */
+    createdAt: z.string().optional(),
+    /**
+     * Canonical timestamp the company was last updated. Introduced in #385.
+     * Optional because the wire may omit it.
+     */
+    updatedAt: z.string().optional(),
+    /**
+     * @deprecated Use `createdAt`. One-cycle alias preserved so existing
+     * `--json` consumers don't break; removal in v0.3.0. See #385.
+     */
+    created: z.string().optional(),
+    /**
+     * @deprecated Use `updatedAt`. One-cycle alias preserved so existing
+     * `--json` consumers don't break; removal in v0.3.0. See #385.
+     */
+    updatedDate: z.string().optional(),
+  }),
+);
 export type Company = z.infer<typeof CompanySchema>;
 
 /**
@@ -439,19 +495,55 @@ export const OrderLineItemSchema = z.object({
 });
 export type OrderLineItem = z.infer<typeof OrderLineItemSchema>;
 
-export const OrderSchema = z.object({
-  id: z.string(),
-  companyId: z.string(),
-  /** Denormalized company name. Returned by the demo client; the real API
-   * doesn't include it directly but the CLI populates it after lookup. */
-  companyName: z.string().optional(),
-  orderedBy: z.string().optional(),
-  /** Denormalized email of the placing user (demo data convenience). */
-  orderedByEmail: z.string().optional(),
-  status: z.string().optional(),
-  createdDate: z.string(),
-  lineItems: z.array(OrderLineItemSchema).optional(),
-});
+/**
+ * Wire shape for `GET /orders{,/{id}}`. Reads accept both the legacy Pax8
+ * field name (`createdDate`) and the canonical camelCase / past-tense name
+ * (`createdAt`) introduced under #385. The Zod preprocess populates BOTH on
+ * the parsed object so existing `--json` consumers that read `createdDate`
+ * keep working while new consumers can read `createdAt`. The `createdDate`
+ * alias is slated for removal in v0.3.0; new internal code SHOULD reference
+ * `createdAt` exclusively. See `.changeset/timestamp-field-standardization.md`.
+ */
+export const OrderSchema = z.preprocess(
+  (raw) => {
+    if (raw === null || typeof raw !== "object") return raw;
+    const r = raw as Record<string, unknown>;
+    const createdAt =
+      typeof r.createdAt === "string"
+        ? r.createdAt
+        : typeof r.createdDate === "string"
+          ? r.createdDate
+          : undefined;
+    return {
+      ...r,
+      ...(createdAt !== undefined
+        ? { createdAt, createdDate: createdAt }
+        : {}),
+    };
+  },
+  z.object({
+    id: z.string(),
+    companyId: z.string(),
+    /** Denormalized company name. Returned by the demo client; the real API
+     * doesn't include it directly but the CLI populates it after lookup. */
+    companyName: z.string().optional(),
+    orderedBy: z.string().optional(),
+    /** Denormalized email of the placing user (demo data convenience). */
+    orderedByEmail: z.string().optional(),
+    status: z.string().optional(),
+    /**
+     * Canonical timestamp the order was placed (camelCase, past tense,
+     * ISO 8601 string). Introduced in #385.
+     */
+    createdAt: z.string(),
+    /**
+     * @deprecated Use `createdAt`. One-cycle alias preserved so existing
+     * `--json` consumers don't break; removal in v0.3.0. See #385.
+     */
+    createdDate: z.string(),
+    lineItems: z.array(OrderLineItemSchema).optional(),
+  }),
+);
 export type Order = z.infer<typeof OrderSchema>;
 
 export const CreateOrderInputSchema = z.object({
@@ -494,13 +586,43 @@ export type Commitment = z.infer<typeof CommitmentSchema>;
  * dropping the flattened field, or vice versa) would be a breaking change
  * tracked separately.
  */
-export const SubscriptionSchema = z.object({
+export const SubscriptionSchema = z.preprocess(
+  (raw) => {
+    if (raw === null || typeof raw !== "object") return raw;
+    const r = raw as Record<string, unknown>;
+    // #385: accept both `createdDate` (legacy wire field) and `createdAt`
+    // (canonical, introduced this cycle). Whichever is present wins, and
+    // both are populated on the parsed object so existing `--json` consumers
+    // keep working through the v0.2.x → v0.3.0 deprecation window.
+    const createdAt =
+      typeof r.createdAt === "string"
+        ? r.createdAt
+        : typeof r.createdDate === "string"
+          ? r.createdDate
+          : undefined;
+    return {
+      ...r,
+      ...(createdAt !== undefined
+        ? { createdAt, createdDate: createdAt }
+        : {}),
+    };
+  },
+  z.object({
   id: z.string(),
   companyId: z.string(),
   productId: z.string(),
   quantity: z.number(),
   startDate: z.string(),
   endDate: z.string().optional(),
+  /**
+   * Canonical timestamp the subscription was created (camelCase, past tense,
+   * ISO 8601 string). Introduced in #385.
+   */
+  createdAt: z.string(),
+  /**
+   * @deprecated Use `createdAt`. One-cycle alias preserved so existing
+   * `--json` consumers don't break; removal in v0.3.0. See #385.
+   */
   createdDate: z.string(),
   billingStart: z.string().optional(),
   status: SubscriptionStatusSchema,
@@ -518,7 +640,8 @@ export const SubscriptionSchema = z.object({
   commitmentTermEndDate: z.string().nullable().optional(),
   companyName: z.string().optional(),
   productName: z.string().optional(),
-});
+  }),
+);
 export type Subscription = z.infer<typeof SubscriptionSchema>;
 
 export const UpdateSubscriptionInputSchema = z.object({
@@ -687,27 +810,59 @@ export const QuoteSchema = z.preprocess(
   (raw) => {
     if (raw === null || typeof raw !== "object") return raw;
     const r = raw as Record<string, unknown>;
+    // Stage 1: flatten the nested `client` object (if present) — #384.
     // If wire has nested `client`, surface its fields as flat aliases.
     // If `client` is absent (legacy flat input), pass through unchanged.
     const client = r.client as
       | { id?: string; isShadowCompany?: boolean; name?: string }
       | undefined;
-    if (!client || typeof client !== "object") return raw;
-    const { client: _client, ...rest } = r;
-    void _client;
-    return {
-      ...rest,
-      // `client.id` wins over an explicit `companyId` — the wire is the
-      // authority. Falls through to existing `companyId` if `client.id` is
-      // missing (defensive; the spec marks it required).
-      companyId: client.id ?? r.companyId,
-      clientIsShadow:
-        typeof client.isShadowCompany === "boolean"
-          ? client.isShadowCompany
-          : r.clientIsShadow,
-      clientName:
-        typeof client.name === "string" ? client.name : r.clientName,
-    };
+    let working: Record<string, unknown>;
+    if (client && typeof client === "object") {
+      const { client: _client, ...rest } = r;
+      void _client;
+      working = {
+        ...rest,
+        // `client.id` wins over an explicit `companyId` — the wire is the
+        // authority. Falls through to existing `companyId` if `client.id`
+        // is missing (defensive; the spec marks it required).
+        companyId: client.id ?? r.companyId,
+        clientIsShadow:
+          typeof client.isShadowCompany === "boolean"
+            ? client.isShadowCompany
+            : r.clientIsShadow,
+        clientName:
+          typeof client.name === "string" ? client.name : r.clientName,
+      };
+    } else {
+      working = { ...r };
+    }
+    // Stage 2: canonicalize timestamp field names — #385. Accept BOTH the
+    // legacy quoting-v2 names (`createdOn`, `expiresOn`) and the canonical
+    // camelCase / past-tense names (`createdAt`, `expiresAt`). Whichever is
+    // present wins, and both are populated on the parsed object so existing
+    // `--json` consumers don't break through the v0.2.x → v0.3.0 deprecation
+    // window.
+    const createdAt =
+      typeof working.createdAt === "string"
+        ? working.createdAt
+        : typeof working.createdOn === "string"
+          ? working.createdOn
+          : undefined;
+    const expiresAt =
+      typeof working.expiresAt === "string"
+        ? working.expiresAt
+        : typeof working.expiresOn === "string"
+          ? working.expiresOn
+          : undefined;
+    if (createdAt !== undefined) {
+      working.createdAt = createdAt;
+      working.createdOn = createdAt;
+    }
+    if (expiresAt !== undefined) {
+      working.expiresAt = expiresAt;
+      working.expiresOn = expiresAt;
+    }
+    return working;
   },
   z.object({
     id: z.string(),
@@ -725,12 +880,24 @@ export const QuoteSchema = z.preprocess(
      * informational, not load-bearing for any current CLI command.
      */
     clientIsShadow: z.boolean().optional(),
-    // Field names mirror the public quoting v2 API: `createdOn` and `expiresOn`.
-    // Earlier CLI versions exposed these as `createdDate` and `expirationDate`;
-    // renamed in #273 (fixes #8) to align `--json` output with the upstream
-    // contract. The `--expiration-date` CLI flag is unchanged — flag vocabulary
-    // and field vocabulary are intentionally separate concerns.
+    /**
+     * Canonical timestamp the quote was created (camelCase, past tense,
+     * ISO 8601 string). Introduced in #385 alongside `expiresAt`.
+     */
+    createdAt: z.string(),
+    /**
+     * Canonical expiration timestamp. Introduced in #385.
+     */
+    expiresAt: z.string().optional(),
+    /**
+     * @deprecated Use `createdAt`. One-cycle alias preserved so existing
+     * `--json` consumers don't break; removal in v0.3.0. See #385.
+     */
     createdOn: z.string(),
+    /**
+     * @deprecated Use `expiresAt`. One-cycle alias preserved so existing
+     * `--json` consumers don't break; removal in v0.3.0. See #385.
+     */
     expiresOn: z.string().optional(),
     status: z.string(),
     lineItems: z.array(QuoteLineItemSchema).optional(),
@@ -760,11 +927,47 @@ export type Quote = z.infer<typeof QuoteSchema>;
 
 // ─── Webhook ─────────────────────────────────────────────────────────────────
 
-export const WebhookSchema = z.object({
+/**
+ * Wire shape for `GET /webhooks{,/{id}}`. Webhook's `updatedAt` is already
+ * canonical (matches the new convention). Reads accept both the legacy Pax8
+ * field name (`createdDate`) and the canonical camelCase / past-tense name
+ * (`createdAt`) introduced under #385. The Zod preprocess populates BOTH on
+ * the parsed object so existing `--json` consumers that read `createdDate`
+ * keep working while new consumers can read `createdAt`. The `createdDate`
+ * alias is slated for removal in v0.3.0; new internal code SHOULD reference
+ * `createdAt` exclusively. See `.changeset/timestamp-field-standardization.md`.
+ */
+export const WebhookSchema = z.preprocess(
+  (raw) => {
+    if (raw === null || typeof raw !== "object") return raw;
+    const r = raw as Record<string, unknown>;
+    const createdAt =
+      typeof r.createdAt === "string"
+        ? r.createdAt
+        : typeof r.createdDate === "string"
+          ? r.createdDate
+          : undefined;
+    return {
+      ...r,
+      ...(createdAt !== undefined
+        ? { createdAt, createdDate: createdAt }
+        : {}),
+    };
+  },
+  z.object({
   id: z.string(),
   url: z.string().url(),
   topics: z.array(z.string()),
   status: WebhookStatusSchema,
+  /**
+   * Canonical timestamp the webhook was created (camelCase, past tense,
+   * ISO 8601 string). Introduced in #385.
+   */
+  createdAt: z.string(),
+  /**
+   * @deprecated Use `createdAt`. One-cycle alias preserved so existing
+   * `--json` consumers don't break; removal in v0.3.0. See #385.
+   */
   createdDate: z.string(),
   /**
    * HMAC signing secret. Tier 0 (Existential) per Pax8 Data Risk Tiering.
@@ -786,9 +989,10 @@ export const WebhookSchema = z.object({
   errorThreshold: z.number().int().optional(),
   /** Last delivery outcome reported by Pax8 (PENDING | SUCCESS | FAILED | RETRYING). */
   lastDeliveryStatus: z.string().optional(),
-  /** ISO timestamp of last update (Pax8 v2.1+). */
+  /** ISO timestamp of last update (Pax8 v2.1+). Already canonical per #385. */
   updatedAt: z.string().optional(),
-});
+  }),
+);
 export type Webhook = z.infer<typeof WebhookSchema>;
 
 /**

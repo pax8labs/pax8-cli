@@ -81,12 +81,16 @@ Examples:
         _items: q.lineItems?.length ?? 0,
       }));
 
+      // #385: timestamp columns reference the canonical `createdAt` /
+      // `expiresAt`. The legacy `createdOn` / `expiresOn` aliases are still
+      // emitted on every row in `--json` output for backwards compatibility;
+      // removal in v0.3.0.
       const columns: Column[] = [
         { key: "id", header: "ID", width: 14, format: (v) => chalk.dim(String(v).slice(0, 12)) },
         { key: "companyId", header: "Company ID", width: 14, format: (v) => chalk.dim(String(v).slice(0, 12)) },
         { key: "status", header: "Status", width: 12 },
-        { key: "createdOn", header: "Created", width: 14, format: (v) => formatDate(String(v)) },
-        { key: "expiresOn", header: "Expires", width: 14, format: (v) => v ? formatDate(String(v)) : "—" },
+        { key: "createdAt", header: "Created", width: 14, format: (v) => formatDate(String(v)) },
+        { key: "expiresAt", header: "Expires", width: 14, format: (v) => v ? formatDate(String(v)) : "—" },
         { key: "_items", header: "Items", width: 7 },
         { key: "_total", header: "Total", width: 12, format: (v) => formatCurrency(Number(v)) },
       ];

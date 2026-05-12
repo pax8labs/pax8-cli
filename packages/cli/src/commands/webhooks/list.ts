@@ -100,7 +100,9 @@ Examples:
           },
         },
         {
-          key: "createdDate",
+          // #385: canonical `createdAt`. `createdDate` is still dual-emitted
+          // on `--json` for back-compat; removal in v0.3.0.
+          key: "createdAt",
           header: "Created",
           width: 14,
           format: (v: unknown) => formatDate(String(v)),

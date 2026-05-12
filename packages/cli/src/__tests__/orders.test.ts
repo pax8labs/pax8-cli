@@ -17,6 +17,21 @@ describe("pax8 orders", () => {
       expect(data[0]).toHaveProperty("createdDate");
     });
 
+    it("emits BOTH `createdDate` and canonical `createdAt` on every row (#385 deprecation window)", async () => {
+      // #385: timestamp field naming was standardized (`createdAt` is the
+      // canonical past-tense camelCase name). The legacy `createdDate` is
+      // emitted alongside `createdAt` for one minor version cycle so existing
+      // `--json` consumers don't break; both are removed/renamed in v0.3.0.
+      const result = await runCliExpectSuccess(["orders", "list", "--json"]);
+      const data = JSON.parse(result.stdout);
+      expect(data.length).toBeGreaterThan(0);
+      for (const row of data) {
+        expect(row).toHaveProperty("createdDate");
+        expect(row).toHaveProperty("createdAt");
+        expect(row.createdAt).toBe(row.createdDate);
+      }
+    });
+
     it("outputs data by default (non-TTY falls back to JSON)", async () => {
       const result = await runCliExpectSuccess(["orders", "list"]);
       const data = JSON.parse(result.stdout);

@@ -79,8 +79,10 @@ Examples:
           `  ${chalk.dim("Last Delivery:".padEnd(20))}${webhook.lastDeliveryStatus}\n`,
         );
       }
+      // #385: read canonical `createdAt`. Legacy `createdDate` is still
+      // dual-emitted on `--json` for back-compat; removal in v0.3.0.
       process.stdout.write(
-        `  ${chalk.dim("Created:".padEnd(20))}${formatDate(webhook.createdDate)}\n`,
+        `  ${chalk.dim("Created:".padEnd(20))}${formatDate(webhook.createdAt)}\n`,
       );
       if (webhook.updatedAt) {
         process.stdout.write(

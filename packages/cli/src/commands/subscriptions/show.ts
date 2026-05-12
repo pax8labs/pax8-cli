@@ -97,7 +97,9 @@ provisioning detail.`
         ["Price", priceFormatted],
         ["Billing Term", sub.billingTerm ?? ""],
         ["Start Date", formatDate(sub.startDate)],
-        ["Created", formatDate(sub.createdDate)],
+        // #385: read canonical `createdAt`. Legacy `createdDate` is still
+        // dual-emitted on `--json` for back-compat; removal in v0.3.0.
+        ["Created", formatDate(sub.createdAt)],
         ["Provisioning", (sub as { provisioningStatus?: string }).provisioningStatus ?? ""],
       ];
 

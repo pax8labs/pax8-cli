@@ -123,6 +123,25 @@ describe("pax8 webhooks show", () => {
       expect(result.stdout).not.toMatch(/whsec_/);
     });
 
+    it("emits BOTH `createdDate` and canonical `createdAt` on every row (#385 deprecation window)", async () => {
+      // #385: timestamp field standardization. `createdAt` is the canonical
+      // past-tense camelCase name; `createdDate` is preserved as a deprecated
+      // alias for one minor version cycle so existing `--json` consumers
+      // don't break. Removal scheduled for v0.3.0. `updatedAt` was already
+      // canonical (Pax8 v2.1+) so it doesn't need an alias.
+      const result = await runCliExpectSuccess(["webhooks", "list", "--json"]);
+      const data = JSON.parse(result.stdout);
+      const items: Array<Record<string, unknown>> = Array.isArray(data)
+        ? data
+        : ((data as { webhooks?: Array<Record<string, unknown>> }).webhooks ?? []);
+      expect(items.length).toBeGreaterThan(0);
+      for (const item of items) {
+        expect(item).toHaveProperty("createdDate");
+        expect(item).toHaveProperty("createdAt");
+        expect(item.createdAt).toBe(item.createdDate);
+      }
+    });
+
     it("`webhooks logs <id> --json` does NOT include any secret field", async () => {
       const result = await runCliExpectSuccess([
         "webhooks",

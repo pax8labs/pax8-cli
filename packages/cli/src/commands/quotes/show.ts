@@ -72,9 +72,12 @@ Examples:
       if (quote.intentType) {
         writeRow("Intent", quote.intentType);
       }
-      writeRow("Created", formatDate(quote.createdOn));
-      if (quote.expiresOn) {
-        writeRow("Expires", formatDate(quote.expiresOn));
+      // #385: read canonical `createdAt` / `expiresAt`. Legacy `createdOn` /
+      // `expiresOn` are still dual-emitted on `--json` for back-compat;
+      // removal in v0.3.0.
+      writeRow("Created", formatDate(quote.createdAt));
+      if (quote.expiresAt) {
+        writeRow("Expires", formatDate(quote.expiresAt));
       }
       if (quote.publishedOn) {
         writeRow("Published", formatDate(quote.publishedOn));

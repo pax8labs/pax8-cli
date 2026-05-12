@@ -351,8 +351,10 @@ Note:
       process.stdout.write("\n");
       process.stdout.write(`  ${chalk.dim("ID:".padEnd(14))}${updated.id}\n`);
       process.stdout.write(`  ${chalk.dim("Status:".padEnd(14))}${updated.status}\n`);
-      if (updated.expiresOn) {
-        process.stdout.write(`  ${chalk.dim("Expires:".padEnd(14))}${updated.expiresOn}\n`);
+      // #385: read canonical `expiresAt`. `expiresOn` is still dual-emitted
+      // on `--json` for back-compat; removal in v0.3.0.
+      if (updated.expiresAt) {
+        process.stdout.write(`  ${chalk.dim("Expires:".padEnd(14))}${updated.expiresAt}\n`);
       }
       process.stdout.write(`  ${chalk.dim("Items:".padEnd(14))}${updated.lineItems?.length ?? 0}\n`);
       process.stdout.write("\n");

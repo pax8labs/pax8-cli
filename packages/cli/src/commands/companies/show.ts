@@ -115,7 +115,9 @@ Examples:
           process.stdout.write(`  ${"".padEnd(18)}${parts.join(", ")}\n`);
         }
       }
-      process.stdout.write(`  ${chalk.dim("Created:".padEnd(18))}${company.created ?? ""}\n`);
+      // #385: read canonical `createdAt`. Legacy bare `created` is still
+      // dual-emitted on `--json` for back-compat; removal in v0.3.0.
+      process.stdout.write(`  ${chalk.dim("Created:".padEnd(18))}${company.createdAt ?? ""}\n`);
       process.stdout.write("\n");
 
       if (allOpts.subscriptions) {
