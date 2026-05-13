@@ -171,10 +171,22 @@ Behavior on committed subscriptions:
         // consequence is "fees paid are nonrefundable", i.e. billing
         // continues, not a separate penalty). See the canonical Rovo
         // research grounding for #294.
+        //
+        // Both branches print BEFORE the confirmation prompt so the partner
+        // sees the full picture (committed vs uncommitted) before they
+        // commit to the cancellation. Pre-#409 the uncommitted case fell
+        // straight through to the destructive preview with no narrative
+        // about timing — partners cancelling a Monthly sub had no
+        // pre-flight signal that cancellation would take effect immediately.
         if (activeCommitment) {
           const estimatedCost =
             (sub.price ?? 0) * sub.quantity * activeCommitment.monthsRemaining;
           process.stdout.write(chalk.yellow.bold("\n  ⚠ COMMITMENT ACTIVE\n\n"));
+          process.stdout.write(
+            chalk.bold(
+              `  This subscription has an active commitment ending ${activeCommitment.endIso}.\n\n`,
+            ),
+          );
           process.stdout.write(
             `  ${chalk.bold("Product")}            ${productName}\n`,
           );
@@ -207,10 +219,29 @@ Behavior on committed subscriptions:
           } else {
             process.stdout.write(
               chalk.dim(
-                `  Defaulting to schedule cancellation for the commitment term end date.\n  Use --immediately to cancel today, or --cancel-date <YYYY-MM-DD> to schedule a different date.\n\n`,
+                `  By default cancellation will take effect on the commitment term end date.\n  Use --immediately to cancel today, or --cancel-date <YYYY-MM-DD> to schedule a different date.\n\n`,
               ),
             );
           }
+        } else if (!explicitCancelDate) {
+          // Uncommitted-sub preview (#409 finding #7). The committed branch
+          // above is loud (yellow + ⚠ + estimated cost). For uncommitted
+          // subs the framing is the inverse: the partner needs to know
+          // that cancellation will NOT wait for any term end — it takes
+          // effect immediately. Stays dim because there's no commitment
+          // protection to surface, but the headline is still explicit so
+          // a Monthly-sub partner doesn't conflate this with the safe-path
+          // default they see in the help text.
+          //
+          // Only render when there's no `--cancel-date` override; an
+          // explicit future date already prints below via the standard
+          // preview block's `Cancel Date` row, so duplicating "takes
+          // effect immediately" here would be misleading.
+          process.stdout.write(
+            chalk.dim(
+              "\n  This subscription has no active commitment. Cancellation will take effect immediately.\n\n",
+            ),
+          );
         }
 
         const heading = effectiveCancelDate
