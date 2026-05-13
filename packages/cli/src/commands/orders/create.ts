@@ -421,7 +421,7 @@ Examples:
           ["--company <id|name> is required for orders create"],
           [
             `Example: ${replCmd("pax8 orders create")} --company "Acme" --product prod-123 --quantity 5`,
-            `List companies: ${replCmd("pax8 companies list")}`,
+            `List clients: ${replCmd("pax8 clients list")}`,
           ],
           undefined,
           ERROR_INVALID_INPUT,
@@ -818,7 +818,7 @@ Examples:
               ],
               [
                 `Search for alternatives: ${replCmd("pax8 products search")} "${shortName}"`,
-                `View ${displayCompany}'s current subscriptions: ${replCmd("pax8 companies more")} "${displayCompany}"`,
+                `View ${displayCompany}'s current subscriptions: ${replCmd("pax8 clients more")} "${displayCompany}"`,
               ],
               undefined,
               ERROR_PRODUCT_NOT_FOUND,

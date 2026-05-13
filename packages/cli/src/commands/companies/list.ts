@@ -102,19 +102,19 @@ export const companiesListCommand = new Command("list")
     "after",
     `
 Examples:
-  pax8 companies list
-  pax8 companies list --status Active
-  pax8 companies list --city Denver --state CO
-  pax8 companies list --country US --sort city
-  pax8 companies list --self-service true
-  pax8 companies list --bill-on-behalf true --order-approval false
-  pax8 companies list --page 1 --size 25
-  pax8 companies list --coverage
-  pax8 companies list --json
-  pax8 companies list --json --with-actions
-  pax8 companies list --csv
-  pax8 companies list --ids-only
-  pax8 companies list --ids-only | xargs -I{} pax8 subscriptions list --company {}`
+  pax8 clients list
+  pax8 clients list --status Active
+  pax8 clients list --city Denver --state CO
+  pax8 clients list --country US --sort city
+  pax8 clients list --self-service true
+  pax8 clients list --bill-on-behalf true --order-approval false
+  pax8 clients list --page 1 --size 25
+  pax8 clients list --coverage
+  pax8 clients list --json
+  pax8 clients list --json --with-actions
+  pax8 clients list --csv
+  pax8 clients list --ids-only
+  pax8 clients list --ids-only | xargs -I{} pax8 subscriptions list --company {}`
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -124,7 +124,7 @@ Examples:
     // tell whether they typo'd or genuinely had no matching companies.
     try {
       validateEnum(allOpts.status, COMPANY_STATUS_VALUES, "--status", {
-        cmdHint: "pax8 companies list",
+        cmdHint: "pax8 clients list",
       });
     } catch (error) {
       await handleCommandError(error);
@@ -265,7 +265,7 @@ Examples:
         writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(
           result.content.map((_c, i) => ({
             key: String(startNum + i + 1),
-            command: `companies more ${startNum + i + 1}`,
+            command: `clients more ${startNum + i + 1}`,
           }))
         ));
       } catch { /* best effort */ }
@@ -284,7 +284,7 @@ Examples:
           : result.content;
         for (const c of ranked.slice(0, 3)) {
           nextActions.push({
-            command: `pax8 companies more "${c.name}"`,
+            command: `pax8 clients more "${c.name}"`,
             description: `Drill into ${c.name}`,
           });
         }
@@ -298,7 +298,7 @@ Examples:
           }
         } else {
           nextActions.push({
-            command: "pax8 companies list --coverage --json",
+            command: "pax8 clients list --coverage --json",
             description: "Re-run with portfolio coverage analysis to surface gaps",
           });
         }
@@ -329,15 +329,15 @@ Examples:
           reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
             {
-              command: "pax8 companies list",
+              command: "pax8 clients list",
               description: "list all companies (no filters)",
             },
             {
-              command: replCmd("pax8 companies create --name <name> ..."),
+              command: replCmd("pax8 clients create --name <name> ..."),
               description: "add your first company",
             },
             {
-              command: "PAX8_DEMO=1 pax8 companies list",
+              command: "PAX8_DEMO=1 pax8 clients list",
               description: "see what an active tenant looks like",
             },
           ],
@@ -357,7 +357,7 @@ Examples:
 
         if (totalPages > 1 && currentPage < totalPages - 1) {
           process.stderr.write(
-            chalk.dim("  Next page: ") + chalk.cyan(replCmd(`pax8 companies list --page ${currentPage + 2}`)) + "\n"
+            chalk.dim("  Next page: ") + chalk.cyan(replCmd(`pax8 clients list --page ${currentPage + 2}`)) + "\n"
           );
         }
 

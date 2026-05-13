@@ -43,7 +43,7 @@ Notes:
             "(Previously: `pax8 contacts show <contact-id>`.)",
           ],
           [
-            `Pick a company first: ${replCmd("pax8 companies list")}`,
+            `Pick a client first: ${replCmd("pax8 clients list")}`,
             `Then: ${replCmd(`pax8 contacts show ${id}`)} --company <id|name>`,
           ],
           undefined,

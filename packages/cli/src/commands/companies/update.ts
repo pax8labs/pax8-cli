@@ -23,9 +23,9 @@ export const companiesUpdateCommand = new Command("update")
     "after",
     `
 Examples:
-  pax8 companies update a1b2c3d4-e5f6-7890-abcd-ef1234567890 --name "New Name"
-  pax8 companies update a1b2c3d4-e5f6-7890-abcd-ef1234567890 --phone "+1-555-1234"
-  pax8 companies update a1b2c3d4-e5f6-7890-abcd-ef1234567890 --name "Updated" --yes`
+  pax8 clients update a1b2c3d4-e5f6-7890-abcd-ef1234567890 --name "New Name"
+  pax8 clients update a1b2c3d4-e5f6-7890-abcd-ef1234567890 --phone "+1-555-1234"
+  pax8 clients update a1b2c3d4-e5f6-7890-abcd-ef1234567890 --name "Updated" --yes`
   )
   .action(async (idOrName: string, options, command: Command) => {
     const allOpts = command.optsWithGlobals();

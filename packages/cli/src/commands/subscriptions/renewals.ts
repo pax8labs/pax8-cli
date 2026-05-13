@@ -240,8 +240,8 @@ JSON output (--json):
           },
           {
             key: "2",
-            label: `${chalk.cyan(`companies more "${top.companyName}"`)}  ${chalk.dim("view company")}`,
-            command: ["companies", "more", top.companyName],
+            label: `${chalk.cyan(`clients more "${top.companyName}"`)}  ${chalk.dim("view client")}`,
+            command: ["clients", "more", top.companyName],
           },
         ];
         process.stderr.write(chalk.dim("\n  Try next:\n"));

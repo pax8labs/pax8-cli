@@ -47,7 +47,7 @@ Examples:
           config.demo = true;
           await saveConfig(config);
           process.stdout.write(
-            chalk.green(`\n  ✓ Demo mode enabled. Try: ${replCmd("pax8 companies list")}\n`)
+            chalk.green(`\n  ✓ Demo mode enabled. Try: ${replCmd("pax8 clients list")}\n`)
           );
           process.stdout.write(
             chalk.dim(`  Disable with: ${replCmd("pax8 init --demo off")}\n\n`)

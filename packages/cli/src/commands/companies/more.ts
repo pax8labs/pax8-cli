@@ -60,16 +60,16 @@ function daysUntil(dateStr: string | undefined): number | null {
 }
 
 export const companiesMoreCommand = new Command("more")
-  .description("Full company summary — subscriptions, vendors, seats, estimated MRR, and issues")
-  .argument("<name-or-number>", "Company name, ID, or # from companies list")
+  .description("Full client summary — subscriptions, vendors, seats, estimated MRR, and issues")
+  .argument("<name-or-number>", "Client name, ID, or # from companies list")
   .allowExcessArguments(true)
   .addHelpText(
     "after",
     `
 Examples:
-  pax8 companies more 1                                  Use # from companies list
-  pax8 companies more "Summit Healthcare Partners"
-  pax8 companies more "Summit Healthcare Partners" --json`
+  pax8 clients more 1                                  Use # from companies list
+  pax8 clients more "Summit Healthcare Partners"
+  pax8 clients more "Summit Healthcare Partners" --json`
   )
   .action(async (idOrName: string, _options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -333,7 +333,7 @@ Examples:
         process.stderr.write(
           chalk.red.bold(`\n  \u2717 Could not load company summary\n`) +
           chalk.dim(`    The company may not exist or the API returned no data.\n`) +
-          chalk.yellow(`    \u2192 Run ${chalk.cyan(replCmd("pax8 companies list"))} to see available companies\n\n`)
+          chalk.yellow(`    \u2192 Run ${chalk.cyan(replCmd("pax8 clients list"))} to see available clients\n\n`)
         );
         process.exit(1);
         throw new Error("process.exit intercepted", { cause: error });
