@@ -26,6 +26,7 @@ import type {
 } from "@pax8/core";
 import type { CommandContext } from "../../lib/context.js";
 import { validateEnum } from "../../lib/validate.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
 
@@ -377,6 +378,32 @@ Note:
       }
       process.stdout.write(`  ${chalk.dim("Items:".padEnd(14))}${updated.lineItems?.length ?? 0}\n`);
       process.stdout.write("\n");
+
+      // Pickable next steps after a successful update. `quotes show` is
+      // the standard verification path; `quotes send` is the natural
+      // follow-on for a Draft quote that's now ready.
+      const steps: NextStep[] = [
+        {
+          key: "1",
+          label: `${chalk.cyan(replCmd(`pax8 quotes show ${updated.id}`))}  ${chalk.dim("verify the updated quote")}`,
+          command: ["quotes", "show", String(updated.id)],
+        },
+      ];
+      let k = 2;
+      if (updated.status === "Draft") {
+        steps.push({
+          key: String(k++),
+          label: `${chalk.cyan(replCmd(`pax8 quotes send ${updated.id}`))}  ${chalk.dim("send to the customer")}`,
+          command: ["quotes", "send", String(updated.id)],
+        });
+      }
+      steps.push({
+        key: String(k++),
+        label: `${chalk.cyan(replCmd(`pax8 quotes line-items list ${updated.id}`))}  ${chalk.dim("inspect line items")}`,
+        command: ["quotes", "line-items", "list", String(updated.id)],
+      });
+      process.stderr.write(chalk.dim("  Try next:\n"));
+      await promptNextSteps(steps, { renderList: true });
     } catch (error) {
       await handleCommandError(error, undefined, "Failed to update quote");
     }

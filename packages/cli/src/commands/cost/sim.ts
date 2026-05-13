@@ -22,6 +22,7 @@ import type { Subscription } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { validateEnum } from "../../lib/validate.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
 
@@ -159,12 +160,15 @@ JSON output (--json):
         // simulate against an empty current state (i.e. add-new).
       }
 
-      // Resolve the "current" leg.
+      // Resolve the "current" leg. Track the matched subscription so the
+      // "Try next" block below can offer a pickable drill-in to it.
       let currentInput: SimulationInput["current"] | undefined;
+      let affectedSubscriptionId: string | undefined;
       if (allOpts.from) {
         // Explicit --from: resolve it as a separate product.
         const fromProduct = await resolveProduct(ctx, allOpts.from);
         const existing = pickCurrentSubscription(companySubs, fromProduct.id);
+        affectedSubscriptionId = existing?.id;
         const fromQty = allOpts.fromQuantity !== undefined
           ? parseInt(allOpts.fromQuantity, 10)
           : existing?.quantity ?? 0;
@@ -203,6 +207,7 @@ JSON output (--json):
       } else {
         // No --from: try to auto-detect a matching subscription on the proposed product.
         const existing = pickCurrentSubscription(companySubs, proposedProduct.id);
+        affectedSubscriptionId = existing?.id;
         if (existing && (existing.price !== undefined) && (existing.billingTerm !== undefined)) {
           currentInput = {
             productId: proposedProduct.id,
@@ -374,17 +379,47 @@ JSON output (--json):
         }
       }
 
-      // Suggested next step
+      // Pickable next steps. Place the change as an order is the headline
+      // action; viewing the affected subscription (if one exists) is the
+      // natural verification step.
+      const steps: NextStep[] = [
+        {
+          key: "1",
+          label: `${chalk.cyan(
+            replCmd(
+              `pax8 orders create --company "${company.name}" --product "${proposedProduct.name}" --quantity ${proposedQuantity} --billing-term ${result.proposed.billingTerm}`,
+            ),
+          )}  ${chalk.dim("place this change")}`,
+          command: [
+            "orders",
+            "create",
+            "--company",
+            company.name,
+            "--product",
+            proposedProduct.name,
+            "--quantity",
+            String(proposedQuantity),
+            "--billing-term",
+            result.proposed.billingTerm,
+          ],
+        },
+      ];
+      let nKey = 2;
+      if (affectedSubscriptionId) {
+        steps.push({
+          key: String(nKey++),
+          label: `${chalk.cyan(replCmd(`pax8 subscriptions show ${affectedSubscriptionId}`))}  ${chalk.dim("inspect the affected subscription")}`,
+          command: ["subscriptions", "show", affectedSubscriptionId],
+        });
+      }
+      steps.push({
+        key: String(nKey++),
+        label: `${chalk.cyan(replCmd(`pax8 clients more "${company.name}"`))}  ${chalk.dim("view client")}`,
+        command: ["clients", "more", company.name],
+      });
       process.stderr.write("\n");
       process.stderr.write(chalk.dim("  Try next:\n"));
-      process.stderr.write(
-        `    ${chalk.cyan(
-          replCmd(
-            `pax8 orders create --company "${company.name}" --product "${proposedProduct.name}" --quantity ${proposedQuantity} --billing-term ${result.proposed.billingTerm}`,
-          ),
-        )}  ${chalk.dim("place this change")}\n`,
-      );
-      process.stderr.write("\n");
+      await promptNextSteps(steps, { renderList: true });
     } catch (error) {
       spinner.stop();
       handleCommandError(error, undefined, "Cost simulation failed");

@@ -12,6 +12,7 @@ import { resolveProduct } from "../../../lib/resolve-product.js";
 import { invalidateCacheAfterWrite } from "../../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../../lib/signals.js";
 import { formatQuantity, formatCurrency as formatPrice } from "../../../lib/formatters.js";
+import { promptNextSteps, type NextStep } from "../../../lib/next-step.js";
 import {
   BillingTermSchema,
   ERROR_INVALID_INPUT,
@@ -205,9 +206,26 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Total lines:".padEnd(16))}${updated.lineItems?.length ?? 0}\n`);
       process.stdout.write("\n");
 
+      // Pickable next steps after a successful line-item add.
+      const steps: NextStep[] = [
+        {
+          key: "1",
+          label: `${chalk.cyan(replCmd(`pax8 quotes show ${updated.id}`))}  ${chalk.dim("review the updated quote")}`,
+          command: ["quotes", "show", String(updated.id)],
+        },
+        {
+          key: "2",
+          label: `${chalk.cyan(replCmd(`pax8 quotes line-items list ${updated.id}`))}  ${chalk.dim("see all line items")}`,
+          command: ["quotes", "line-items", "list", String(updated.id)],
+        },
+        {
+          key: "3",
+          label: `${chalk.cyan(replCmd(`pax8 quotes send ${updated.id}`))}  ${chalk.dim("send the quote to the customer")}`,
+          command: ["quotes", "send", String(updated.id)],
+        },
+      ];
       process.stderr.write(chalk.dim("  Try next:\n"));
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes line-items list ${updated.id}`))}  ${chalk.dim("see all line items")}\n`);
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes send ${updated.id}`))}  ${chalk.dim("send the quote to the customer")}\n\n`);
+      await promptNextSteps(steps, { renderList: true });
     } catch (error) {
       await handleCommandError(error, undefined, "Failed to add line item");
     }

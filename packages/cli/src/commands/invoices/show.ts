@@ -9,6 +9,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 export const invoicesShowCommand = new Command("show")
   .description("Show invoice details")
@@ -62,12 +63,28 @@ Examples:
       process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(invoice.status)}\n`);
       process.stdout.write(`  ${chalk.dim("Total:".padEnd(18))}${formatCurrency(invoice.total)}\n`);
       process.stdout.write(`  ${chalk.dim("Balance:".padEnd(18))}${formatCurrency(invoice.balance)}\n`);
-      // Next steps
+      // Pickable next steps. Drill in by typing 1, 2, ... — every entry has
+      // its arguments resolved from the invoice already loaded above.
       if (ctx.outputFormat === "table") {
+        const steps: NextStep[] = [
+          {
+            key: "1",
+            label: `${chalk.cyan(replCmd(`pax8 invoices items ${invoice.id}`))}  ${chalk.dim("view line items")}`,
+            command: ["invoices", "items", "--invoice-id", invoice.id],
+          },
+          {
+            key: "2",
+            label: `${chalk.cyan(replCmd(`pax8 clients more "${invoice.companyName}"`))}  ${chalk.dim("view client")}`,
+            command: ["clients", "more", String(invoice.companyName)],
+          },
+          {
+            key: "3",
+            label: `${chalk.cyan(replCmd(`pax8 invoices audit --company "${invoice.companyName}"`))}  ${chalk.dim("audit this client's invoices")}`,
+            command: ["invoices", "audit", "--company", String(invoice.companyName)],
+          },
+        ];
         process.stderr.write(chalk.dim("  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 invoices items ${invoice.id}`))}  ${chalk.dim("view line items")}\n`);
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 companies more "${invoice.companyName}"`))}  ${chalk.dim("view company")}\n`);
-        process.stderr.write("\n");
+        await promptNextSteps(steps, { renderList: true });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to show invoice");

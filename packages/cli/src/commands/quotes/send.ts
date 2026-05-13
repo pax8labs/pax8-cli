@@ -11,6 +11,7 @@ import { confirm, replCmd } from "../../lib/confirm.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import { formatCurrency } from "../../lib/formatters.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import type { Quote } from "@pax8/core";
 
 /**
@@ -128,9 +129,34 @@ Note:
       }
       process.stdout.write("\n");
 
+      // Pickable next steps. The natural follow-on after `send` is to
+      // re-check the quote for the customer response and to surface the
+      // owning client. `webhooks list` (verify QUOTE.Accepted subscribers)
+      // is real-but-tangential — kept as an affordance pointer below
+      // rather than a pickable step the partner is unlikely to choose in
+      // this moment.
+      const companyId = (updated as Quote).companyId;
+      const steps: NextStep[] = [
+        {
+          key: "1",
+          label: `${chalk.cyan(replCmd(`pax8 quotes show ${updated.id}`))}  ${chalk.dim("view the live quote (check responses)")}`,
+          command: ["quotes", "show", String(updated.id)],
+        },
+      ];
+      if (companyId) {
+        steps.push({
+          key: "2",
+          label: `${chalk.cyan(replCmd(`pax8 clients more "${companyId}"`))}  ${chalk.dim("view client")}`,
+          command: ["clients", "more", companyId],
+        });
+      }
       process.stderr.write(chalk.dim("  Try next:\n"));
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes show ${updated.id}`))}  ${chalk.dim("view the live quote")}\n`);
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 webhooks list`))}  ${chalk.dim("verify QUOTE.Accepted webhooks are configured")}\n\n`);
+      await promptNextSteps(steps, { renderList: true });
+      process.stderr.write(
+        chalk.dim(
+          `  Verify QUOTE.Accepted webhook delivery — run ${chalk.cyan(replCmd("pax8 webhooks list"))} to inspect subscribers.\n\n`,
+        ),
+      );
     } catch (error) {
       await handleCommandError(error, undefined, "Failed to send quote");
     }

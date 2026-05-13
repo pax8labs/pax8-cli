@@ -1,0 +1,11 @@
+---
+"@pax8/cli": minor
+---
+
+UX: number-pickable next-step affordances across show/detail commands and `invoices audit`. Previously, "Try next:" blocks were emitted as plain `process.stderr.write` text — partners had to copy-paste the suggested command. This change converts those blocks to use `promptNextSteps({ renderList: true })`, so a partner can scan the numbered list, type a number, and drill in.
+
+Converted to pickable: `subscriptions show`, `invoices show`, `quotes show` (status-aware — Draft now leads with `quotes send`), `quotes send`, `quotes update` (newly added), `quotes line-items add`, `quotes line-items list`, `companies more`, `cost sim` (now also surfaces the affected subscription when present), `contacts create`, `contacts list`, `contacts show`, `orders show` (newly added), `products search`, `subscriptions cancel`, `recommendations upsell` (newly actionable — one `orders create` step per upsell match). `invoices audit` discrepancies are indexed 1-N in the rendered output and each becomes a pickable `dispute --discrepancy <id>` step, carrying the `--month` filter through when set.
+
+Placeholder-style entries (`pax8 X update <some-id> --y <n>`) are dropped from pickable lists wherever they appeared and replaced with affordance-pointer framing — short prose lines that name the capability without offering a literal command (e.g. "You can also adjust quantity or billing term — run `pax8 subscriptions update --help` for syntax"). The pickable list is the entry point a partner can drill into; the affordance pointer is what they read when the next step needs values they have to choose. A regression test (`packages/cli/src/__tests__/next-step-placeholders.test.ts`) prevents drift back to the placeholder pattern.
+
+Workflow follow-ons added: `quotes show` on a Draft surfaces `quotes send` as the first pickable step (was missing); `recommendations upsell` is now pickable across all listed matches with a parameterized `orders create` per row; `orders show` and `quotes update` gained Try-next blocks they didn't have before. List-style commands (`subscriptions list`, `invoices list`, `orders list`, `quotes list`) are deferred to #418 — they render tables and the drill-in design is a separate choice (extend the existing `_num`-column pattern from `clients list` / `recommendations list`).

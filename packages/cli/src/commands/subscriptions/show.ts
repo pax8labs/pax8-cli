@@ -15,6 +15,7 @@ import {
 } from "../../lib/formatters.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const historyColumns: Column[] = [
   { key: "date", header: "Date", format: (v) => formatDate(String(v)) },
@@ -130,13 +131,38 @@ provisioning detail.`
         }
       }
 
-      // Next steps
+      // Pickable next steps. The `subscriptions update --quantity <n>` action
+      // is intentionally omitted from the pickable list — it needs a value
+      // the user has to choose, so it can't be drilled into by number.
+      // Surfaced as an affordance pointer below the list instead.
       if (ctx.outputFormat === "table") {
+        const companyLabel = sub.companyName ?? sub.companyId;
+        const steps: NextStep[] = [];
+        let n = 1;
+        if (!options.history) {
+          steps.push({
+            key: String(n++),
+            label: `${chalk.cyan(replCmd(`pax8 subscriptions show ${id} --history`))}  ${chalk.dim("view change history")}`,
+            command: ["subscriptions", "show", id, "--history"],
+          });
+        }
+        steps.push({
+          key: String(n++),
+          label: `${chalk.cyan(replCmd(`pax8 clients more "${companyLabel}"`))}  ${chalk.dim("view client")}`,
+          command: ["clients", "more", String(companyLabel)],
+        });
+        steps.push({
+          key: String(n++),
+          label: `${chalk.cyan(replCmd(`pax8 subscriptions cancel ${id}`))}  ${chalk.dim("cancel this subscription")}`,
+          command: ["subscriptions", "cancel", id],
+        });
         process.stderr.write(chalk.dim("  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions update ${id} --quantity <n>`))}  ${chalk.dim("change seats")}\n`);
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions show ${id} --history`))}  ${chalk.dim("view changes")}\n`);
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 companies more "${sub.companyName ?? sub.companyId}"`))}  ${chalk.dim("view company")}\n`);
-        process.stderr.write("\n");
+        await promptNextSteps(steps, { renderList: true });
+        process.stderr.write(
+          chalk.dim(
+            `  You can also adjust quantity or billing term — run ${chalk.cyan(replCmd("pax8 subscriptions update --help"))} for syntax.\n\n`,
+          ),
+        );
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to show subscription");

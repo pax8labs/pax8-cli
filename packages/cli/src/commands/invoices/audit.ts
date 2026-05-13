@@ -12,6 +12,7 @@ import { ALL_SUBS_PAGE_SIZE, auditInvoices } from "@pax8/core";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { discrepancyId } from "./dispute.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 export const invoicesAuditCommand = new Command("audit")
   .description("Audit invoices against active subscriptions")
@@ -173,9 +174,15 @@ JSON output (--json):
         `\n  ${chalk.yellow("⚠")} ${report.discrepancies.length} discrepancies found in ${monthLabel} invoices:\n\n`
       );
 
-      for (const d of stampedDiscrepancies) {
+      // Prefix each discrepancy with `N.` so the partner can read the
+      // pickable list below as a direct reference into this output (e.g.
+      // "type 3 to dispute discrepancy #3"). Keeps the existing single-id
+      // form in the `[…]` brackets so partners who copy-paste the id by
+      // hand can still locate it.
+      stampedDiscrepancies.forEach((d, i) => {
+        const idx = i + 1;
         process.stdout.write(
-          `  ${chalk.bold(d.companyName)} — ${d.productName}  ${chalk.dim(`[${d.discrepancyId}]`)}\n`
+          `  ${chalk.bold(`${idx}.`)} ${chalk.bold(d.companyName)} — ${d.productName}  ${chalk.dim(`[${d.discrepancyId}]`)}\n`
         );
 
         const deltaSign = d.delta > 0 ? "+" : "";
@@ -185,10 +192,10 @@ JSON output (--json):
             : `${formatCurrency(Math.abs(d.dollarImpact))} undercharge`;
 
         process.stdout.write(
-          `    Invoiced: ${formatQuantity(d.invoicedQuantity)}    Active: ${formatQuantity(d.activeQuantity)}    Δ ${deltaSign}${d.delta} (${impactLabel})\n`
+          `     Invoiced: ${formatQuantity(d.invoicedQuantity)}    Active: ${formatQuantity(d.activeQuantity)}    Δ ${deltaSign}${d.delta} (${impactLabel})\n`
         );
         process.stdout.write("\n");
-      }
+      });
 
       // Footer with totals
       process.stdout.write(chalk.dim("  ─────────────────────────────\n"));
@@ -207,15 +214,22 @@ JSON output (--json):
       );
       process.stdout.write("\n");
 
-      // Closed-loop hint: surface the dispute command so the partner can act
-      // on what the audit just found, without leaving the terminal.
+      // Closed-loop hint: every discrepancy becomes a pickable dispute
+      // entry. Partners can scan the indexed list above, type a number, and
+      // the dispute is drafted with the discrepancy id (and month, when
+      // filtering by month) carried through automatically.
       if (stampedDiscrepancies.length > 0) {
+        const monthArgs = options.month ? ["--month", options.month] : [];
+        const steps: NextStep[] = stampedDiscrepancies.map((d, i) => {
+          const command = ["invoices", "dispute", "--discrepancy", d.discrepancyId, ...monthArgs];
+          return {
+            key: String(i + 1),
+            label: `${chalk.cyan(replCmd(`pax8 invoices dispute --discrepancy ${d.discrepancyId}`))}  ${chalk.dim(`${d.companyName} — ${d.productName}`)}`,
+            command,
+          };
+        });
         process.stderr.write(chalk.dim("  Try next:\n"));
-        const first = stampedDiscrepancies[0];
-        process.stderr.write(
-          `    ${chalk.cyan(replCmd(`pax8 invoices dispute --discrepancy ${first.discrepancyId}`))}  ${chalk.dim("file a dispute draft")}\n`,
-        );
-        process.stderr.write("\n");
+        await promptNextSteps(steps, { renderList: true });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to audit invoices");

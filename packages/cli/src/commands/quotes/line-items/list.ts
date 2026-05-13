@@ -9,6 +9,7 @@ import { createSpinner } from "../../../lib/spinner.js";
 import { handleCommandError } from "../../../lib/errors.js";
 import { formatCurrency, formatQuantity } from "../../../lib/formatters.js";
 import { replCmd } from "../../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../../lib/next-step.js";
 
 export const quotesLineItemsListCommand = new Command("list")
   .description("List the line items on a quote")
@@ -77,12 +78,37 @@ Examples:
         process.stderr.write(
           chalk.dim(`\n  ${lineItems.length} line item${lineItems.length === 1 ? "" : "s"} on quote ${quote.id}\n`),
         );
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes line-items add ${quote.id} --product <id|name> --quantity <n>`))}  ${chalk.dim("add another line item")}\n`);
-        if (lineItems[0]?.id) {
-          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes line-items remove ${quote.id} ${lineItems[0].id}`))}  ${chalk.dim("remove a line item")}\n`);
+        // Pickable next steps. `quotes line-items add` needs --product +
+        // --quantity values the user has to choose, so it can't be drilled
+        // into by number — surfaced as an affordance pointer below.
+        const steps: NextStep[] = [
+          {
+            key: "1",
+            label: `${chalk.cyan(replCmd(`pax8 quotes show ${quote.id}`))}  ${chalk.dim("review the quote (total, status)")}`,
+            command: ["quotes", "show", quote.id],
+          },
+        ];
+        let n = 2;
+        const firstWithId = lineItems.find((li) => Boolean(li.id));
+        if (firstWithId?.id) {
+          steps.push({
+            key: String(n++),
+            label: `${chalk.cyan(replCmd(`pax8 quotes line-items remove ${quote.id} ${firstWithId.id}`))}  ${chalk.dim("remove this line item")}`,
+            command: ["quotes", "line-items", "remove", quote.id, firstWithId.id],
+          });
         }
-        process.stderr.write("\n");
+        steps.push({
+          key: String(n++),
+          label: `${chalk.cyan(replCmd(`pax8 quotes send ${quote.id}`))}  ${chalk.dim("send the quote to the customer")}`,
+          command: ["quotes", "send", quote.id],
+        });
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        await promptNextSteps(steps, { renderList: true });
+        process.stderr.write(
+          chalk.dim(
+            `  Add another line item — run ${chalk.cyan(replCmd("pax8 quotes line-items add --help"))} for syntax.\n\n`,
+          ),
+        );
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list line items");

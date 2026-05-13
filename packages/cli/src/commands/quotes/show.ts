@@ -9,6 +9,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatDate, formatCurrency, formatQuantity } from "../../lib/formatters.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 export const quotesShowCommand = new Command("show")
   .description("Show quote details with line items")
@@ -123,10 +124,73 @@ Examples:
         output(lineItems, { format: ctx.outputFormat, columns });
       }
 
-      process.stderr.write(chalk.dim("\n  Try next:\n"));
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes update ${quote.id} --expiration-date <YYYY-MM-DD>`))}  ${chalk.dim("update this quote")}\n`);
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes delete ${quote.id}`))}  ${chalk.dim("delete this quote")}\n`);
-      process.stderr.write("\n");
+      // Pickable next steps. Status-dependent — the natural action varies
+      // by where the quote is in its lifecycle:
+      //   Draft  → `send` is the headline action; line-items add for
+      //            quotes that aren't ready yet; delete to abandon.
+      //   Sent   → `show` again to check responses; client view; delete.
+      //   Accepted → place the order; client view; delete is not surfaced.
+      // Other states fall through to the generic set.
+      if (ctx.outputFormat === "table") {
+        const steps: NextStep[] = [];
+        const status = quote.status;
+        let n = 1;
+        if (status === "Draft") {
+          steps.push({
+            key: String(n++),
+            label: `${chalk.cyan(replCmd(`pax8 quotes send ${quote.id}`))}  ${chalk.dim("send this quote to the customer")}`,
+            command: ["quotes", "send", quote.id],
+          });
+          steps.push({
+            key: String(n++),
+            label: `${chalk.cyan(replCmd(`pax8 quotes line-items list ${quote.id}`))}  ${chalk.dim("inspect line items")}`,
+            command: ["quotes", "line-items", "list", quote.id],
+          });
+        } else if (status === "Accepted") {
+          // Pax8 processes acceptance server-side — there's no CLI command
+          // that converts the quote into a CLI-side order. The natural
+          // follow-on is to verify the resulting order/subscription landed
+          // on the customer.
+          steps.push({
+            key: String(n++),
+            label: `${chalk.cyan(replCmd(`pax8 orders list --company "${quote.companyId}"`))}  ${chalk.dim("check the resulting order")}`,
+            command: ["orders", "list", "--company", quote.companyId],
+          });
+          steps.push({
+            key: String(n++),
+            label: `${chalk.cyan(replCmd(`pax8 subscriptions list --company "${quote.companyId}"`))}  ${chalk.dim("see the active subscription")}`,
+            command: ["subscriptions", "list", "--company", quote.companyId],
+          });
+        } else {
+          // Sent / Declined / Revoked / Expired — surface line items + client.
+          steps.push({
+            key: String(n++),
+            label: `${chalk.cyan(replCmd(`pax8 quotes line-items list ${quote.id}`))}  ${chalk.dim("inspect line items")}`,
+            command: ["quotes", "line-items", "list", quote.id],
+          });
+        }
+        steps.push({
+          key: String(n++),
+          label: `${chalk.cyan(replCmd(`pax8 clients more "${quote.companyId}"`))}  ${chalk.dim("view client")}`,
+          command: ["clients", "more", quote.companyId],
+        });
+        // Delete stays accessible from non-Accepted states; once accepted it
+        // would orphan the downstream order and isn't a natural action.
+        if (status !== "Accepted") {
+          steps.push({
+            key: String(n++),
+            label: `${chalk.cyan(replCmd(`pax8 quotes delete ${quote.id}`))}  ${chalk.dim("delete this quote")}`,
+            command: ["quotes", "delete", quote.id],
+          });
+        }
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        await promptNextSteps(steps, { renderList: true });
+        process.stderr.write(
+          chalk.dim(
+            `  You can also change the expiration or replace line items — run ${chalk.cyan(replCmd("pax8 quotes update --help"))} for syntax.\n\n`,
+          ),
+        );
+      }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to show quote");
     }

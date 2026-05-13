@@ -12,6 +12,7 @@ import { confirmDestructive } from "../../lib/confirm.js";
 import { formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 
 /**
@@ -304,12 +305,30 @@ Behavior on committed subscriptions:
         );
       }
 
-      // Next steps
-      process.stderr.write(chalk.dim("\n  Try next:\n"));
+      // Pickable next steps. `orders create --product <name>` is the
+      // natural follow-on (order a replacement) but it needs the product
+      // name from the user, so it can't be drilled into by number —
+      // surfaced as an affordance pointer below.
       const coName = sub.companyName ?? sub.companyId;
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${coName}"`))}  ${chalk.dim("remaining subscriptions")}\n`);
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders create --company "${coName}" --product <name>`))}  ${chalk.dim("order a replacement")}\n`);
-      process.stderr.write("\n");
+      const steps: NextStep[] = [
+        {
+          key: "1",
+          label: `${chalk.cyan(replCmd(`pax8 subscriptions list --company "${coName}"`))}  ${chalk.dim("remaining subscriptions")}`,
+          command: ["subscriptions", "list", "--company", String(coName)],
+        },
+        {
+          key: "2",
+          label: `${chalk.cyan(replCmd(`pax8 clients more "${coName}"`))}  ${chalk.dim("view client summary")}`,
+          command: ["clients", "more", String(coName)],
+        },
+      ];
+      process.stderr.write(chalk.dim("\n  Try next:\n"));
+      await promptNextSteps(steps, { renderList: true });
+      process.stderr.write(
+        chalk.dim(
+          `  Order a replacement — run ${chalk.cyan(replCmd("pax8 orders create --help"))} for syntax.\n\n`,
+        ),
+      );
     } catch (error) {
       // Wrap API rejections (vendor-specific commitment enforcement: NCE
       // 7-day window, Adobe renewal-only window, Azure Savings Plan

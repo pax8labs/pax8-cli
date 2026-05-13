@@ -10,6 +10,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 export const contactsListCommand = new Command("list")
   .description("List contacts for a company")
@@ -99,14 +100,9 @@ Examples:
         emptyState: {
           headline: `No contacts found at ${company.name}.`,
           reasons: ["This company has no contacts recorded yet."],
-          suggestions: [
-            {
-              command: replCmd(
-                `pax8 contacts create --company "${company.name}" --email <email> --first-name <name> --last-name <name>`,
-              ),
-              description: "add a contact",
-            },
-          ],
+          // `contacts create` needs an email + first/last name that the
+          // user has to provide — surfaced as an affordance pointer below
+          // the headline instead of a copy-paste placeholder template.
         },
       });
 
@@ -115,10 +111,28 @@ Examples:
           chalk.dim(`\n  ${result.content.length} contacts at ${company.name}\n`)
         );
         const first = result.content[0];
+        // Pickable next steps. `contacts create` needs email + first/last
+        // name from the user, so it can't be drilled into by number;
+        // surfaced as an affordance pointer below the pickable list.
+        const steps: NextStep[] = [
+          {
+            key: "1",
+            label: `${chalk.cyan(replCmd(`pax8 contacts show ${first.id}`))}  ${chalk.dim("view contact details")}`,
+            command: ["contacts", "show", String(first.id)],
+          },
+          {
+            key: "2",
+            label: `${chalk.cyan(replCmd(`pax8 clients more "${company.name}"`))}  ${chalk.dim("view client summary")}`,
+            command: ["clients", "more", company.name],
+          },
+        ];
         process.stderr.write(chalk.dim("\n  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts show ${first.id}`))}  ${chalk.dim("view contact details")}\n`);
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts create --company "${company.name}" --email <email> --first-name <name> --last-name <name>`))}  ${chalk.dim("add a contact")}\n`);
-        process.stderr.write("\n");
+        await promptNextSteps(steps, { renderList: true });
+        process.stderr.write(
+          chalk.dim(
+            `  Add another contact — run ${chalk.cyan(replCmd("pax8 contacts create --help"))} for syntax.\n\n`,
+          ),
+        );
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list contacts");
