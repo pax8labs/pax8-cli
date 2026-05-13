@@ -121,15 +121,11 @@ Examples:
         { key: "_total", header: "Total", width: 12, format: (v) => formatCurrency(Number(v)) },
       ];
 
+      const filtersApplied: Record<string, string> = {};
+      if (allOpts.company) filtersApplied.company = `"${allOpts.company}"`;
+      if (status) filtersApplied.status = String(status);
       const emptyReasons: string[] = [];
-      const filterDesc: string[] = [];
-      if (allOpts.company) filterDesc.push(`company "${allOpts.company}"`);
-      if (status) filterDesc.push(`status ${status}`);
-      if (filterDesc.length > 0) {
-        emptyReasons.push(
-          `No quotes match the filters: ${filterDesc.join(", ")}.`,
-        );
-      } else {
+      if (Object.keys(filtersApplied).length === 0) {
         emptyReasons.push("This tenant has no quotes yet.");
       }
 
@@ -138,8 +134,13 @@ Examples:
         columns,
         emptyState: {
           headline: "No quotes found.",
-          reasons: emptyReasons,
+          filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
+          reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
+            {
+              command: "pax8 quotes list",
+              description: "list all quotes (no filters)",
+            },
             {
               command: replCmd("pax8 quotes create --company <id|name>"),
               description: "draft your first quote",

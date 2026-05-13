@@ -100,10 +100,11 @@ Notes:
         { key: "subtotal", header: "Subtotal", width: 14, format: (v: unknown) => formatCurrency(Number(v)) },
       ];
 
+      const filtersApplied: Record<string, string> = {};
+      if (options.subscription) filtersApplied.subscription = String(options.subscription);
+      if (options.company) filtersApplied.company = `"${options.company}"`;
+      if (options.month) filtersApplied.month = String(options.month);
       const emptyReasons: string[] = [];
-      if (options.month) {
-        emptyReasons.push(`No usage summaries recorded for ${options.month}.`);
-      }
       if (options.subscription) {
         emptyReasons.push(
           "The subscription may not be a metered/usage-based product.",
@@ -123,6 +124,7 @@ Notes:
         columns,
         emptyState: {
           headline: "No usage summaries found.",
+          filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
           reasons: emptyReasons,
           suggestions: [
             {

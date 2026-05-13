@@ -51,23 +51,43 @@ Examples:
         return name.includes(q) || queryTokens.every((t) => name.includes(t));
       });
 
-      if (matches.length === 0) {
-        if (ctx.outputFormat === "json") {
-          output([], { format: "json" });
-        } else if (ctx.outputFormat !== "quiet") {
-          process.stderr.write(
-            chalk.dim(`\n  No products matching "${query}". Try a broader search.\n\n`)
-          );
-        }
-        return;
-      }
-
       const columns = [
         { key: "name", header: "Name", width: 40 },
         { key: "vendorName", header: "Vendor", width: 20 },
         { key: "sku", header: "SKU", width: 30 },
         { key: "unitOfMeasure", header: "Category", width: 15 },
       ];
+
+      // Route the empty-search case through the standard `output()` helper so
+      // it picks up the same "Filters applied:" / "Try next:" block partners
+      // see on every other list command. JSON mode still emits `[]` (the
+      // pipeline contract); CSV still emits a header-only row.
+      if (matches.length === 0) {
+        const filtersApplied: Record<string, string> = { query: `"${query}"` };
+        if (options.vendor) filtersApplied.vendor = `"${options.vendor}"`;
+        output([], {
+          format: ctx.outputFormat,
+          columns,
+          emptyState: {
+            headline: `No products matching "${query}".`,
+            filtersApplied,
+            reasons: [
+              "The search may be too narrow, or the catalog doesn't carry that name.",
+            ],
+            suggestions: [
+              {
+                command: "pax8 products search <broader-query>",
+                description: "try a shorter or more generic term",
+              },
+              {
+                command: "pax8 products list",
+                description: "browse the full catalog",
+              },
+            ],
+          },
+        });
+        return;
+      }
 
       output(matches, { format: ctx.outputFormat, columns });
 

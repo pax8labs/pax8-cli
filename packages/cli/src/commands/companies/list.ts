@@ -306,19 +306,32 @@ Examples:
         return;
       }
 
+      const filtersApplied: Record<string, string> = {};
+      if (allOpts.status) filtersApplied.status = String(allOpts.status);
+      if (allOpts.city) filtersApplied.city = String(allOpts.city);
+      if (allOpts.country) filtersApplied.country = String(allOpts.country);
+      if (allOpts.state) filtersApplied.state = String(allOpts.state);
+      if (allOpts.zip) filtersApplied.zip = String(allOpts.zip);
+      if (allOpts.selfService !== undefined) filtersApplied["self-service"] = String(allOpts.selfService);
+      if (allOpts.billOnBehalf !== undefined) filtersApplied["bill-on-behalf"] = String(allOpts.billOnBehalf);
+      if (allOpts.orderApproval !== undefined) filtersApplied["order-approval"] = String(allOpts.orderApproval);
       const emptyReasons: string[] = [];
-      if (allOpts.status) {
-        emptyReasons.push(`No companies match --status ${allOpts.status}.`);
+      if (Object.keys(filtersApplied).length === 0) {
+        emptyReasons.push("This may be a fresh tenant with no partners onboarded yet.");
       }
-      emptyReasons.push("This may be a fresh tenant with no partners onboarded yet.");
 
       output(numbered, {
         format: ctx.outputFormat,
         columns,
         emptyState: {
           headline: "No companies found.",
-          reasons: emptyReasons,
+          filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
+          reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
+            {
+              command: "pax8 companies list",
+              description: "list all companies (no filters)",
+            },
             {
               command: replCmd("pax8 companies create --name <name> ..."),
               description: "add your first company",

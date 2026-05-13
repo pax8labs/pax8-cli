@@ -54,26 +54,28 @@ Examples:
         { key: "unitOfMeasure", header: "Category", width: 15 },
       ];
 
+      const filtersApplied: Record<string, string> = {};
+      if (allOpts.vendor) filtersApplied.vendor = `"${allOpts.vendor}"`;
       const emptyReasons: string[] = [];
-      if (allOpts.vendor) {
-        emptyReasons.push(`No products match --vendor "${allOpts.vendor}".`);
+      if (Object.keys(filtersApplied).length === 0) {
+        emptyReasons.push("The catalog may not be reachable.");
       }
-      emptyReasons.push("The catalog may not be reachable, or filters are too narrow.");
 
       output(result.content, {
         format: ctx.outputFormat,
         columns,
         emptyState: {
           headline: "No products found.",
-          reasons: emptyReasons,
+          filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
+          reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
-            {
-              command: "pax8 products search <query>",
-              description: "search the catalog by name or SKU",
-            },
             {
               command: "pax8 products list",
               description: "browse without filters",
+            },
+            {
+              command: "pax8 products search <query>",
+              description: "search the catalog by name or SKU",
             },
           ],
         },

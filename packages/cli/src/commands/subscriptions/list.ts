@@ -157,15 +157,11 @@ Examples:
         return;
       }
 
+      const filtersApplied: Record<string, string> = {};
+      if (allOpts.company) filtersApplied.company = `"${allOpts.company}"`;
+      if (allOpts.status) filtersApplied.status = String(allOpts.status);
       const emptyReasons: string[] = [];
-      const filterDesc: string[] = [];
-      if (allOpts.company) filterDesc.push(`company "${allOpts.company}"`);
-      if (allOpts.status) filterDesc.push(`status ${allOpts.status}`);
-      if (filterDesc.length > 0) {
-        emptyReasons.push(
-          `No subscriptions match the filters: ${filterDesc.join(", ")}.`,
-        );
-      } else {
+      if (Object.keys(filtersApplied).length === 0) {
         emptyReasons.push("This tenant has no subscriptions yet.");
       }
 
@@ -174,11 +170,16 @@ Examples:
         columns,
         emptyState: {
           headline: "No subscriptions found.",
-          reasons: emptyReasons,
+          filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
+          reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
             {
-              command: "pax8 products search <name>",
-              description: "find a product to sell",
+              command: "pax8 subscriptions list",
+              description: "list all subscriptions (no filters)",
+            },
+            {
+              command: "pax8 subscriptions list --status Active",
+              description: "filter to active subscriptions only",
             },
             {
               command: "pax8 orders create --company <id> --product <id> --quantity <n>",
