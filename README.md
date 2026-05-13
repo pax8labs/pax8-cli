@@ -489,6 +489,48 @@ distinct from Pax8's canonical "Seat Utilization" metric, which measures
 single-product assigned-vs-purchased seats. The CLI's heuristic is a coverage
 signal across the customer's stack, not a utilization rate within one product.
 
+### Recommendations taxonomy vs. STAX
+
+`pax8 recommendations list` emits a `type` field with the CLI's local product
+taxonomy alongside an `opportunityType` field with OE's canonical 5-type
+taxonomy. Two things diverge from Pax8's canonical models — partners parsing
+`--json` should know about both:
+
+1. **Product categories.** The recommendations engine bins products into a
+   local 7-category taxonomy (`productivity`, `email`, `security`,
+   `endpoint_protection`, `identity`, `backup`, `cloud_infrastructure`) that
+   does **not** match Pax8's canonical STAX taxonomy (8 L1 categories:
+   Productivity, Infrastructure, Continuity, Security, Communications,
+   Network, Operations, Network & Communications Commissioned). The CLI
+   over-decomposes Security into four buckets and omits Communications,
+   Network, and Operations entirely. The simplification was deliberate for
+   the local security-focused cross-sell heuristic.
+
+2. **`seat_gap` heuristic.** The CLI's `seat_gap` type flags **cross-product**
+   seat mismatches (e.g. 100 email seats but only 30 backup seats). It is
+   **not** Pax8's canonical Seat Utilization metric, which is a
+   single-product assigned-vs-purchased rate. The closest OE-canonical
+   surrogate is `Upsell` — carried on the additive `opportunityType` field.
+
+| CLI category (`type` / module taxonomy) | Closest Pax8 / OE concept | Notes |
+| --- | --- | --- |
+| `productivity` | STAX L1 *Productivity* | Aligned |
+| `email`, `security`, `endpoint_protection`, `identity` | STAX L1 *Security* (+ *Productivity* for email) | CLI over-decomposes STAX *Security* into four buckets |
+| `backup` | STAX L1 *Continuity* | Aligned |
+| `cloud_infrastructure` | STAX L1 *Infrastructure* | Aligned |
+| (no CLI category) | STAX L1 *Communications* / *Network* / *Operations* | Not currently produced by the engine |
+| `type: "seat_gap"` | OE `opportunityType: "Upsell"` (closest), NOT Seat Utilization | Cross-product coverage signal, not a utilization rate |
+| `type: "cross_sell"` + active subs | OE `opportunityType: "Cross-sell"` | Both carried on the record |
+| `type: "cross_sell"` + zero-sub company | OE `opportunityType: "Net-new"` | Both carried on the record |
+
+Both the CLI's product taxonomy and the `seat_gap` heuristic will sunset when
+Pax8's first-party Opportunity Explorer API ships (ARC-785, `GET /opportunities`).
+The local taxonomy is replaced at that point — tracked under
+[#375](https://github.com/pax8labs/pax8-cli/issues/375). The module docstring
+at `packages/core/src/services/recommendations.ts` carries the same disclosure
+for in-IDE readers; this README section is the canonical version for partners
+who only see `--json` output.
+
 ## Documentation
 
 - [Credential Setup Guide](docs/credential-setup.md)

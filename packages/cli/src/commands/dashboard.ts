@@ -529,7 +529,45 @@ Examples:
   pax8 ${name} --all
   pax8 ${name} --customers
   pax8 ${name} --renewals --growth
-  pax8 ${name} --json`,
+  pax8 ${name} --json
+
+JSON output (--json):
+  {
+    "totalCompanies": number,
+    "activeSubscriptions": number,
+    "companiesWithActiveSubs": number,
+    "totalSeats": number,
+    "mrr": number,                        // estimated MRR across active subs
+    "arr": number,                        // mrr × 12
+    "topCustomers": [{
+      "name": string,
+      "mrr": number,
+      "seats": number,
+      "subscriptions": number
+    }],
+    "renewalsNext30Days": number,
+    "urgentRenewals": number,             // renewals within 14d
+    "mrrRenewing": number,                // canonical key (#298)
+    "mrrAtRisk": number,                  // DEPRECATED alias of mrrRenewing — removed in a future minor
+    "renewals": [{
+      "companyName": string,
+      "productName": string,
+      "daysUntilRenewal": number,
+      "mrrRenewing": number,
+      "mrrAtRisk": number                 // DEPRECATED alias
+    }],
+    "highPriorityRecs": number,
+    "potentialMrrUplift": number,         // sum of estimatedMrrUplift for high-priority recs
+    "activeTrials": number,
+    "recentOrders": [{
+      "companyName": string,
+      "status": string,
+      "createdAt": string,                // ISO-8601 (canonical, #385)
+      "createdDate": string,              // DEPRECATED alias — removed in v0.3.0
+      "lineItems": [{ "productName": string, "quantity": number }]
+    }],
+    "nextActions": [{ "command": string, "description": string }]
+  }`,
     )
     .action(async (options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, c: Command) => {
       if (name === "status") {

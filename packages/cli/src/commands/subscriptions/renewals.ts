@@ -75,7 +75,32 @@ Metric definitions:
   metric taxonomy.
 
   ARR (Annual Recurring Revenue): MRR × 12. The yearly equivalent of MRR,
-  used to measure long-term financial health.`
+  used to measure long-term financial health.
+
+JSON output (--json):
+  Default: a flat array of Renewal objects. With --with-actions,
+  wrapped as { renewals, nextActions }.
+
+  Renewal = {
+    "subscriptionId": string,
+    "companyId": string,
+    "companyName": string,
+    "productName": string,
+    "quantity": number,
+    "renewalDate": string,                // YYYY-MM-DD
+    "billingTerm": string,
+    "price": number,
+    "mrrRenewing": number,                // canonical key (#298)
+    "mrrAtRisk": number,                  // DEPRECATED alias of mrrRenewing — removed in a future minor
+    "arrRenewing": number,                // canonical key (#298)
+    "arrAtRisk": number,                  // DEPRECATED alias of arrRenewing — removed in a future minor
+    "daysUntilRenewal": number
+  }
+
+  The mrrAtRisk / arrAtRisk aliases are dual-emitted alongside the canonical
+  mrrRenewing / arrRenewing fields for one minor version cycle so existing
+  scripts don't break. Migrate to the renewing-named fields; the at-risk
+  names will be removed in a future minor version (see #299).`
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();

@@ -28,7 +28,20 @@ Metric definitions:
   metric taxonomy.
 
   ARR (Annual Recurring Revenue): MRR × 12. The yearly equivalent of MRR,
-  used to measure long-term financial health.`)
+  used to measure long-term financial health.
+
+JSON output (--json):
+  {
+    "months": [{
+      "month": string,                    // YYYY-MM
+      "mrr": number,                      // invoiced MRR for that month
+      "delta": number,                    // mrr − previous month's mrr
+      "growthPercent": number             // delta / previous mrr × 100 (one decimal)
+    }],
+    "averageGrowthPercent": number,       // mean of per-month growthPercent
+    "overallGrowthPercent": number,       // first → last month percentage change
+    "nextActions": [{ "command": string, "description": string }]
+  }`)
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
     const ctx = await buildContext(globalOpts);
