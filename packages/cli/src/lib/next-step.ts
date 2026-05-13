@@ -13,19 +13,41 @@ export interface NextStep {
 }
 
 /**
- * Prompt the user to drill into a numbered row from the most-recent table.
- * Only interactive in TTY mode. Skips silently when piped.
+ * Prompt the user to drill into a numbered option. Only interactive in TTY
+ * mode. Skips silently when piped.
  *
- * The table itself is the menu — every row already shows its index in the
- * `#` column — so we don't re-print each option here. We just show one
- * concise hint with a representative example, then read input.
+ * Two rendering modes, controlled by `options.renderList`:
+ *
+ *   1. **Headless** (default — `renderList` false or absent): the caller
+ *      is responsible for printing the menu, typically as a numbered table
+ *      above this prompt. Used by `recommendations list`, `companies list`,
+ *      etc. — every row already shows its index in the `#` column, so we
+ *      don't re-print each option, just show one concise drill-in hint.
+ *
+ *   2. **Embedded list** (`renderList: true`): no table above. We print
+ *      every step as `  N. label` before the prompt so the user has
+ *      something to pick from. Used by `dashboard` (Quick Actions block)
+ *      and `subscriptions renewals` (`Try next:` block).
  */
-export async function promptNextSteps(steps: NextStep[]): Promise<void> {
+export async function promptNextSteps(
+  steps: NextStep[],
+  options?: { renderList?: boolean },
+): Promise<void> {
   if (!process.stdin.isTTY) return;
   if (steps.length === 0) return;
 
+  // Embedded-list mode: print each option before the prompt. Otherwise the
+  // prompt below references a "1-N" range with no visible menu (the bug
+  // the dashboard's Quick Actions block hit pre-this-fix).
+  if (options?.renderList) {
+    for (const step of steps) {
+      process.stderr.write(`  ${chalk.dim(`${step.key}.`)} ${step.label}\n`);
+    }
+    process.stderr.write("\n");
+  }
+
   // Pick a sample row to illustrate "what does typing a number do?"
-  // First row is representative for any list-style table.
+  // First row is representative for any list-style menu.
   const sample = steps[0];
   const max = steps[steps.length - 1].key;
 

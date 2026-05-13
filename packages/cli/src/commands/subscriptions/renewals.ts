@@ -15,6 +15,7 @@ import {
 } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 function parseWithinDays(within: string): number {
   const match = within.match(/^(\d+)d$/);
@@ -223,13 +224,34 @@ JSON output (--json):
         process.stdout.write(chalk.dim("    • Cancel if the customer is churning\n"));
       }
 
-      // Show actionable commands for the most urgent items
+      // Show actionable commands for the most urgent item — numbered so
+      // partners and agents can drill in interactively via `promptNextSteps`.
+      // The `subscriptions update ... --quantity <n>` option carries a
+      // placeholder so we leave it off the pickable list (drilling into it
+      // would just hit a quantity-required error); it remains as advisory
+      // text in the renewals output above. See #379-area UX feedback.
       if (ctx.outputFormat === "table" && report.items.length > 0) {
         const top = report.items[0];
+        const steps: NextStep[] = [
+          {
+            key: "1",
+            label: `${chalk.cyan(`subscriptions show ${top.subscriptionId}`)}  ${chalk.dim("view details")}`,
+            command: ["subscriptions", "show", top.subscriptionId],
+          },
+          {
+            key: "2",
+            label: `${chalk.cyan(`companies more "${top.companyName}"`)}  ${chalk.dim("view company")}`,
+            command: ["companies", "more", top.companyName],
+          },
+        ];
         process.stderr.write(chalk.dim("\n  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(`subscriptions show ${top.subscriptionId}`)}  ${chalk.dim("view details")}\n`);
-        process.stderr.write(`    ${chalk.cyan(`subscriptions update ${top.subscriptionId} --quantity <n>`)}  ${chalk.dim("adjust seats")}\n`);
-        process.stderr.write(`    ${chalk.cyan(`companies more "${top.companyName}"`)}  ${chalk.dim("view company")}\n`);
+        await promptNextSteps(steps, { renderList: true });
+        // Static advisory below the pickable list — the `--quantity <n>`
+        // command can't be picked interactively (needs a value), but the
+        // suggestion is still worth surfacing.
+        process.stderr.write(
+          `  ${chalk.dim("Or:")} ${chalk.cyan(`pax8 subscriptions update ${top.subscriptionId} --quantity <n>`)} ${chalk.dim("to adjust seats")}\n`,
+        );
       }
 
       process.stdout.write("\n");
