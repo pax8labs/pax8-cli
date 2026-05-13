@@ -16,6 +16,7 @@ import { handleCommandError, CliError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName } from "../../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const columns: Column[] = [
   { key: "companyName", header: "Company", format: (v) => formatCompanyName(String(v)) },
@@ -215,6 +216,30 @@ Output:
         process.stderr.write(
           chalk.dim(`\n  Add ${chalk.cyan("--with-contacts")} to pull contact emails per company.\n`),
         );
+      }
+
+      // Pickable next steps — one per displayed match, parameterized as a
+      // ready-to-place `orders create` against the `--to-product` target.
+      // `displayed` is what's actually on screen (respects --limit), so the
+      // 1-N indices line up with the table the partner just read.
+      const visibleMatches = report.matches.slice(0, limit);
+      if (visibleMatches.length > 0) {
+        const steps: NextStep[] = visibleMatches.map((m, i) => ({
+          key: String(i + 1),
+          label: `${chalk.cyan(replCmd(`pax8 orders create --company "${m.companyName}" --product "${toProduct}" --quantity ${m.fromSeats}`))}  ${chalk.dim(`upsell ${m.companyName} → ${toProduct}`)}`,
+          command: [
+            "orders",
+            "create",
+            "--company",
+            m.companyName,
+            "--product",
+            toProduct,
+            "--quantity",
+            String(m.fromSeats),
+          ],
+        }));
+        process.stderr.write(chalk.dim("\n  Try next:\n"));
+        await promptNextSteps(steps, { renderList: true });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to compute upsell cohort");

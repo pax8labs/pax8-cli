@@ -8,6 +8,7 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 export const productsSearchCommand = new Command("search")
   .description("Search products by name")
@@ -95,11 +96,26 @@ Examples:
         process.stderr.write(chalk.dim(`\n  ${matches.length} products\n`));
         if (matches.length > 0) {
           const first = matches[0] as Record<string, unknown>;
+          // Pickable next step: drill into the top match. `orders create`
+          // needs --company (a value the user has to choose) so it can't be
+          // pickable — surfaced as an affordance pointer below.
+          const steps: NextStep[] = [
+            {
+              key: "1",
+              label: `${chalk.cyan(replCmd(`pax8 products show ${String(first.id)}`))}  ${chalk.dim("view details & pricing")}`,
+              command: ["products", "show", String(first.id)],
+            },
+          ];
           process.stderr.write(chalk.dim("\n  Try next:\n"));
-          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 products show ${first.id}`))}  ${chalk.dim("view details & pricing")}\n`);
-          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 orders create --product <id> --company <id> --quantity <n>`))}  ${chalk.dim("place an order")}\n`);
+          await promptNextSteps(steps, { renderList: true });
+          process.stderr.write(
+            chalk.dim(
+              `  Place an order — run ${chalk.cyan(replCmd("pax8 orders create --help"))} for syntax.\n\n`,
+            ),
+          );
+        } else {
+          process.stderr.write("\n");
         }
-        process.stderr.write("\n");
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to search products");

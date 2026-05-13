@@ -19,6 +19,7 @@ import { resolveCompany } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
 import { output, type Column } from "../../lib/output.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 
 interface SubSummary {
@@ -296,11 +297,34 @@ Examples:
         process.stdout.write(chalk.green("  ✓ No issues found\n\n"));
       }
 
+      // Pickable next steps. Every entry uses the resolved company name so
+      // partners can drill across the major surfaces (subscriptions,
+      // recommendations, invoices, orders) without retyping.
       if (ctx.outputFormat === "table") {
+        const steps: NextStep[] = [
+          {
+            key: "1",
+            label: `${chalk.cyan(replCmd(`pax8 subscriptions list --company "${company.name}"`))}  ${chalk.dim("all subscriptions")}`,
+            command: ["subscriptions", "list", "--company", company.name],
+          },
+          {
+            key: "2",
+            label: `${chalk.cyan(replCmd(`pax8 recommendations list --company "${company.name}"`))}  ${chalk.dim("growth opportunities")}`,
+            command: ["recommendations", "list", "--company", company.name],
+          },
+          {
+            key: "3",
+            label: `${chalk.cyan(replCmd(`pax8 invoices list --company "${company.name}"`))}  ${chalk.dim("billing history")}`,
+            command: ["invoices", "list", "--company", company.name],
+          },
+          {
+            key: "4",
+            label: `${chalk.cyan(replCmd(`pax8 orders list --company "${company.name}"`))}  ${chalk.dim("order history")}`,
+            command: ["orders", "list", "--company", company.name],
+          },
+        ];
         process.stderr.write(chalk.dim("  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 recommendations list --company "${company.name}"`))}  ${chalk.dim("growth opportunities")}\n`);
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 subscriptions list --company "${company.name}"`))}  ${chalk.dim("all subscriptions")}\n`);
-        process.stderr.write("\n");
+        await promptNextSteps(steps, { renderList: true });
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

@@ -12,6 +12,7 @@ import { confirm, replCmd } from "../../lib/confirm.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import type { CreateContactInput, ContactTypeKind } from "@pax8/core";
 
 const VALID_TYPES: ContactTypeKind[] = ["Admin", "Billing", "Technical"];
@@ -136,9 +137,20 @@ Notes:
       process.stdout.write(`  ${chalk.dim("Types:".padEnd(14))}${(contact.types ?? []).map((t) => t.type).join(", ")}\n`);
       process.stdout.write("\n");
 
+      const steps: NextStep[] = [
+        {
+          key: "1",
+          label: `${chalk.cyan(replCmd(`pax8 contacts list --company "${company.name}"`))}  ${chalk.dim("view all contacts at this client")}`,
+          command: ["contacts", "list", "--company", company.name],
+        },
+        {
+          key: "2",
+          label: `${chalk.cyan(replCmd(`pax8 clients more "${company.name}"`))}  ${chalk.dim("view client summary")}`,
+          command: ["clients", "more", company.name],
+        },
+      ];
       process.stderr.write(chalk.dim("  Try next:\n"));
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 contacts list --company "${company.name}"`))}  ${chalk.dim("view all contacts at this company")}\n`);
-      process.stderr.write("\n");
+      await promptNextSteps(steps, { renderList: true });
     } catch (error) {
       await handleCommandError(error, undefined, "Failed to create contact");
     }

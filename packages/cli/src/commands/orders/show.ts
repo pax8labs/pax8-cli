@@ -9,6 +9,8 @@ import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { formatStatus, formatDate, formatCurrency } from "../../lib/formatters.js";
 import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { replCmd } from "../../lib/confirm.js";
+import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const lineItemColumns: Column[] = [
   { key: "productName", header: "Product" },
@@ -124,6 +126,32 @@ Examples:
         process.stdout.write(chalk.dim(`  Line Items (${lineItems.length}):\n\n`));
         output(lineItems, { format: "table", columns: lineItemColumns });
         process.stdout.write("\n");
+      }
+
+      // Pickable next steps. From an order detail view, the natural moves
+      // are: see the resulting subscription(s) on the customer, look at
+      // the client summary, and check what else this client has ordered.
+      const companyId = order.companyId ?? "";
+      if (companyId) {
+        const steps: NextStep[] = [
+          {
+            key: "1",
+            label: `${chalk.cyan(replCmd(`pax8 subscriptions list --company "${order.companyName ?? companyId}"`))}  ${chalk.dim("see the resulting subscriptions")}`,
+            command: ["subscriptions", "list", "--company", String(order.companyName ?? companyId)],
+          },
+          {
+            key: "2",
+            label: `${chalk.cyan(replCmd(`pax8 clients more "${order.companyName ?? companyId}"`))}  ${chalk.dim("view client")}`,
+            command: ["clients", "more", String(order.companyName ?? companyId)],
+          },
+          {
+            key: "3",
+            label: `${chalk.cyan(replCmd(`pax8 orders list --company "${order.companyName ?? companyId}"`))}  ${chalk.dim("other orders on this client")}`,
+            command: ["orders", "list", "--company", String(order.companyName ?? companyId)],
+          },
+        ];
+        process.stderr.write(chalk.dim("  Try next:\n"));
+        await promptNextSteps(steps, { renderList: true });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to show order");
