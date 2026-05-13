@@ -29,7 +29,28 @@ Examples:
 Note: this audit compares the partner's invoiced charges against their
 current active subscriptions (a partner-side reconciliation). It is not
 the same as Pax8's internal vendor reconciliation, which compares
-vendor-billed amounts against Pax8's records (vendor-side).`
+vendor-billed amounts against Pax8's records (vendor-side).
+
+JSON output (--json):
+  Returns a single-element array (legacy shape) wrapping the audit report:
+
+  [{
+    "discrepancies": [{
+      "companyId": string,
+      "companyName": string,
+      "productName": string,
+      "invoicedQuantity": number,
+      "activeQuantity": number,
+      "delta": number,                    // invoicedQuantity − activeQuantity
+      "dollarImpact": number,             // positive = overcharge, negative = undercharge
+      "type": "overcharge" | "undercharge" | "unexpected",
+      "discrepancyId": string             // stable id — pass to "pax8 invoices dispute --discrepancy <id>"
+    }],
+    "totalOvercharge": number,
+    "totalUndercharge": number,
+    "netImpact": number,
+    "nextActions": [{ "command": string, "description": string }]
+  }]`
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();

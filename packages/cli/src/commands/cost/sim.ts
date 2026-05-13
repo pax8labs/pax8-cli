@@ -76,7 +76,39 @@ Examples:
   pax8 cost sim --company "Bright Minds Academy" --product "M365 Business Premium" --from "M365 Business Basic" --quantity 25
 
   # Add a brand-new product (no current subscription)
-  pax8 cost sim --company "Coastline Legal Group" --product "AvePoint Cloud Backup" --quantity 30 --json`,
+  pax8 cost sim --company "Coastline Legal Group" --product "AvePoint Cloud Backup" --quantity 30 --json
+
+JSON output (--json):
+  {
+    "companyName": string,
+    "companyId": string,
+    "current": {                          // null on add-new (no existing sub)
+      "productName": string,
+      "billingTerm": "Monthly" | "Annual",
+      "quantity": number,
+      "unitPrice": number,
+      "monthly": number,                  // normalized monthly cost
+      "annual": number                    // normalized annual cost
+    } | null,
+    "proposed": {                         // same shape as "current"
+      "productName": string,
+      "billingTerm": "Monthly" | "Annual",
+      "quantity": number,
+      "unitPrice": number,
+      "monthly": number,
+      "annual": number
+    },
+    "delta": {
+      "monthly": number,                  // proposed.monthly − current.monthly
+      "annual": number,                   // proposed.annual − current.annual
+      "perSeat": number                   // per-seat monthly delta
+    },
+    "notes": string[],                    // human-readable caveats (e.g. SKU swap, term change)
+    "nextActions": [{                     // ready-to-run follow-up commands
+      "command": string,                  // e.g. "pax8 orders create --company ..."
+      "description": string
+    }]
+  }`,
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();

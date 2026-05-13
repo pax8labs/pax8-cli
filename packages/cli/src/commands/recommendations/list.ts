@@ -110,7 +110,38 @@ Estimate semantics:
   estimatedMrrUplift is an upper-bound estimate (unit price × seat
   count). It is NOT equivalent to Pax8's PMRR (Potential MRR) metric,
   which uses ML-based seat estimation. Use it as a directional ceiling,
-  not a forecast.`
+  not a forecast.
+
+JSON output (--json):
+  Default: a flat array of Recommendation objects. With --with-actions,
+  wrapped as { recommendations, nextActions, unmatchedProducts }.
+
+  Recommendation = {
+    "companyId": string,
+    "companyName": string,
+    "type": "seat_gap" | "cross_sell",   // CLI-local taxonomy; see Recommendation types above
+    "opportunityType": "Upsell" | "Cross-sell" | "Add-on" | "Upgrade" | "Net-new",
+                                          // OE canonical 5-type taxonomy (additive, mapped from "type")
+    "priority": "high" | "medium" | "low",
+    "title": string,
+    "reason": string,
+    "suggestedProducts": string[],        // human-readable product names
+    "orderCommand": string | null,        // ready-to-run "pax8 orders create ..." command;
+                                          // null if no orderable product matched in your catalog
+    "productAvailable": boolean,          // true when orderCommand resolves to a real product
+    "currentMrr": number,                 // company's current MRR (context)
+    "estimatedMrrUplift": number,         // upper-bound — see Estimate semantics above; NOT Pax8 PMRR
+    "targetSeats": number,
+    "estimateType": "upper_bound"
+  }
+
+  Note on STAX divergence: the CLI uses a local 7-category product
+  taxonomy (productivity, email, security, endpoint_protection,
+  identity, backup, cloud_infrastructure) and a "seat_gap" heuristic
+  that are NOT Pax8's canonical STAX taxonomy or Seat Utilization
+  metric. See "Metric definitions" in README.md and the module
+  docstring at packages/core/src/services/recommendations.ts. Will
+  sunset when OE's first-party /opportunities API ships (ARC-785, #375).`
   )
   .allowExcessArguments(true)
   .action(async (options, cmd) => {
