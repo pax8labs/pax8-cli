@@ -199,16 +199,14 @@ Examples:
         return;
       }
 
+      const filtersApplied: Record<string, string> = {};
+      if (allOpts.company) filtersApplied.company = `"${allOpts.company}"`;
+      if (allOpts.status) filtersApplied.status = String(allOpts.status);
+      if (allOpts.month) filtersApplied.month = String(allOpts.month);
+      if (allOpts.from) filtersApplied.from = String(allOpts.from);
+      if (allOpts.to) filtersApplied.to = String(allOpts.to);
       const emptyReasons: string[] = [];
-      const filterDesc: string[] = [];
-      if (allOpts.company) filterDesc.push(`company "${allOpts.company}"`);
-      if (allOpts.status) filterDesc.push(`status ${allOpts.status}`);
-      if (allOpts.month) filterDesc.push(`month ${allOpts.month}`);
-      if (filterDesc.length > 0) {
-        emptyReasons.push(
-          `No invoices match the filters: ${filterDesc.join(", ")}.`,
-        );
-      } else {
+      if (Object.keys(filtersApplied).length === 0) {
         emptyReasons.push("This is a fresh tenant with no historical billing yet.");
       }
 
@@ -217,8 +215,13 @@ Examples:
         columns,
         emptyState: {
           headline: "No invoices found.",
-          reasons: emptyReasons,
+          filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
+          reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
+            {
+              command: "pax8 invoices list",
+              description: "list all invoices (no filters)",
+            },
             {
               command: "pax8 invoices list --status Unpaid",
               description: "show only unpaid invoices",

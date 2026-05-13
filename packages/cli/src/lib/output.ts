@@ -37,7 +37,21 @@ export interface EmptyStateSuggestion {
 export interface EmptyState {
   /** Headline shown in place of the table, e.g. "No companies found." */
   headline: string;
-  /** Optional bullet list explaining why the list might be empty. */
+  /**
+   * Optional structured filter context, rendered as a single "Filters
+   * applied:" line below the headline. Order is insertion order; keys are
+   * flag names without leading dashes (e.g. `status`, `company`), values
+   * are the user-supplied values. Use this when the caller knows exactly
+   * which filters narrowed the result set to zero rows — it tells the
+   * partner "you typed these filters, that's why it's empty" before any
+   * speculative explanation. Per #409 (partner walkthrough finding #3).
+   */
+  filtersApplied?: Record<string, string>;
+  /**
+   * Optional bullet list explaining why the list might be empty. Used when
+   * the explanation is speculative (e.g. "fresh tenant", "no orders yet")
+   * rather than a direct echo of filter flags.
+   */
   reasons?: string[];
   /** Optional "Try next:" block with copy-pasteable commands. */
   suggestions?: EmptyStateSuggestion[];
@@ -193,6 +207,21 @@ function inferColumns(rows: readonly Record<string, unknown>[]): Column[] {
  */
 function renderEmptyState(state: EmptyState): void {
   process.stderr.write("\n  " + state.headline + "\n");
+
+  // Echo the filters the caller declared, e.g.
+  //   Filters applied: status=Inactive, company="Acme Corp"
+  // This is the partner-facing answer to "why is this empty?" before any
+  // speculative reasons. Rendered as a single line in dim text so it sits
+  // visually under the headline without competing with it.
+  if (state.filtersApplied) {
+    const entries = Object.entries(state.filtersApplied);
+    if (entries.length > 0) {
+      const formatted = entries
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ");
+      process.stderr.write(chalk.dim(`  Filters applied: ${formatted}\n`));
+    }
+  }
 
   if (state.reasons && state.reasons.length > 0) {
     process.stderr.write("\n" + chalk.dim("  Possible reasons:\n"));

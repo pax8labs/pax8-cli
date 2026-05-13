@@ -91,15 +91,11 @@ Examples:
         return;
       }
 
+      const filtersApplied: Record<string, string> = {};
+      if (allOpts.company) filtersApplied.company = `"${allOpts.company}"`;
+      if (allOpts.status) filtersApplied.status = String(allOpts.status);
       const emptyReasons: string[] = [];
-      const filterDesc: string[] = [];
-      if (allOpts.company) filterDesc.push(`company "${allOpts.company}"`);
-      if (allOpts.status) filterDesc.push(`status ${allOpts.status}`);
-      if (filterDesc.length > 0) {
-        emptyReasons.push(
-          `No orders match the filters: ${filterDesc.join(", ")}.`,
-        );
-      } else {
+      if (Object.keys(filtersApplied).length === 0) {
         emptyReasons.push("This tenant hasn't placed any orders yet.");
       }
 
@@ -108,8 +104,13 @@ Examples:
         columns,
         emptyState: {
           headline: "No orders found.",
-          reasons: emptyReasons,
+          filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
+          reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
+            {
+              command: "pax8 orders list",
+              description: "list all orders (no filters)",
+            },
             {
               command: "pax8 orders create --company <id> --product <id> --quantity <n>",
               description: "place a new order",

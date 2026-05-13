@@ -735,6 +735,83 @@ describe("pax8 subscriptions cancel", () => {
       expect(combined).not.toMatch(/cancellation[- ]fee/i);
     });
 
+    // #409: commitment-aware cancel preview. Both branches of the preview
+    // text must surface BEFORE the confirmation prompt so the partner sees
+    // the timing reality (committed = scheduled, uncommitted = immediate)
+    // before they commit to the action. Force table output via
+    // PAX8_OUTPUT_FORMAT so we exercise the human-facing preview block
+    // through the subprocess (it would default to JSON otherwise).
+    it("preview names the commitment end date on a committed sub (#409)", async () => {
+      const result = await runCliExpectSuccess(
+        [
+          "subscriptions",
+          "cancel",
+          COMMITTED_SUB,
+          "--yes",
+        ],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      const combined = result.stdout + result.stderr;
+      // Headline phrasing from the issue: "This subscription has an active
+      // commitment ending YYYY-MM-DD." The actual date comes from demo
+      // fixtures (sub-summit-m365bp-001 ends 3 days from now), so we match
+      // the prefix + ISO shape rather than pinning a fixed value.
+      expect(combined).toMatch(
+        /This subscription has an active commitment ending \d{4}-\d{2}-\d{2}\./,
+      );
+      // Vocabulary discipline (carries the #294 contract forward).
+      expect(combined).not.toMatch(/\bETF\b/);
+      expect(combined).not.toMatch(/\bpenalty\b/i);
+    });
+
+    it("preview names the immediate-effect path on an uncommitted sub (#409)", async () => {
+      // sub-bright-m365bb-001 is a Monthly sub with no commitment in
+      // demo data — the exact case the partner walkthrough flagged
+      // (Finding #7): cancelling defaults to immediate with no
+      // pre-flight signal about timing.
+      const UNCOMMITTED_SUB = "sub-bright-m365bb-001";
+      const result = await runCliExpectSuccess(
+        [
+          "subscriptions",
+          "cancel",
+          UNCOMMITTED_SUB,
+          "--yes",
+        ],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(
+        "This subscription has no active commitment. Cancellation will take effect immediately.",
+      );
+      // The committed-branch headline must NOT appear on an uncommitted sub.
+      expect(combined).not.toMatch(/COMMITMENT ACTIVE/);
+      expect(combined).not.toMatch(/active commitment ending/);
+    });
+
+    it("JSON mode is unchanged for the uncommitted preview branch (#409)", async () => {
+      // The new preview text is table-mode only. JSON pipelines must
+      // remain a flat one-element array exactly as before.
+      const UNCOMMITTED_SUB = "sub-bright-m365bb-001";
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "cancel",
+        UNCOMMITTED_SUB,
+        "--yes",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data[0]).toMatchObject({
+        id: UNCOMMITTED_SUB,
+        status: "Cancelled",
+      });
+      expect(data[0].cancelDate).toBeUndefined();
+      // The preview narrative must not leak into stdout — pipelines
+      // reading `--json` must not see it.
+      expect(result.stdout).not.toMatch(/no active commitment/i);
+      expect(result.stdout).not.toMatch(/take effect immediately/i);
+    });
+
     it("--help documents the safe-path default and --immediately escape hatch", async () => {
       const result = await runCliExpectSuccess([
         "subscriptions",
