@@ -297,6 +297,25 @@ describe("pax8 recommendations", () => {
       await fs.rm(tmpConfigDir, { recursive: true, force: true });
     });
 
+    // Disclosure parity with `recommendations list` (which already calls out
+    // the CLI-local engine, STAX divergence, provisional framing, and
+    // ARC-785/#375 sunset). Mirroring that disclosure onto `act` closes a
+    // gap Randall Ellis raised in the domain review: bulk order placement
+    // against a CLI-side heuristic deserves the same up-front disclosure as
+    // the list command it inherits from.
+    it("--help discloses the CLI-local heuristic nature and provisional engine status", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "act", "--help"]);
+      // Names the local engine vs canonical OE
+      expect(result.stdout).toContain("CLI-side heuristics");
+      expect(result.stdout).toMatch(/canonical Opportunity Explorer|OE/);
+      // STAX divergence callout (consistent with `recommendations list --help`)
+      expect(result.stdout).toMatch(/STAX|seat_gap/);
+      // Provisional framing — names the OE first-party API + ARC-785/#375
+      expect(result.stdout).toMatch(/ARC-785|#375|first-party.*API/);
+      // Names that bulk action places REAL orders (not a dry run)
+      expect(result.stdout).toMatch(/REAL orders|orders API/);
+    });
+
     it("--yes places all recommendations without prompting", async () => {
       const result = await runCliExpectSuccess(
         ["recommendations", "act", "--company", "Bright Minds Academy", "--yes"],
