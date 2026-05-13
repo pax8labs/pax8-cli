@@ -243,6 +243,33 @@ export interface UsageLine {
   date: string;
 }
 
+/**
+ * Currency-aware money value mirroring the v2 quoting API's `AmountCurrency`
+ * schema (`components.schemas.AmountCurrency` in `quoting-endpoints.json`).
+ * The Zod-validated equivalent lives in `packages/core/src/api/types.ts` —
+ * the demo type is hand-maintained to keep the demo seed editable without a
+ * test-time Zod parse on the fixture file itself.
+ */
+export interface AmountCurrency {
+  amount: number;
+  currency: string;
+}
+
+/**
+ * Server-side totals object returned at both quote and line-item level on
+ * the v2 quoting API. Mirrors `components.schemas.InvoiceTotals`. Optional
+ * on both consumers (Quote, QuoteLineItem) so a partial demo fixture
+ * doesn't fail the demo-mode type check.
+ */
+export interface InvoiceTotals {
+  initialCost: AmountCurrency;
+  initialProfit: AmountCurrency;
+  initialTotal: AmountCurrency;
+  recurringCost: AmountCurrency;
+  recurringProfit: AmountCurrency;
+  recurringTotal: AmountCurrency;
+}
+
 export interface Quote {
   id: string;
   /**
@@ -305,6 +332,13 @@ export interface Quote {
   salesMarginPercentage?: number;
   /** API: `PARTNER_TO_CLIENT` | `PAX8_TO_PARTNER` | `PAX8_TO_PARTNER_CLIENT`. */
   intentType?: string;
+  /**
+   * Server-side totals split (one-time `initial*` vs subscription-period
+   * `recurring*`). Required on the wire per the v2 spec; optional here so
+   * partial / legacy fixtures still parse during the demo-mode round-trip
+   * test. See packages/core/src/api/types.ts → InvoiceTotalsSchema.
+   */
+  totals?: InvoiceTotals;
 }
 
 export interface QuoteRespondedBy {
@@ -326,6 +360,8 @@ export interface QuoteLineItem {
   billingTerm?: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";
   unitPrice?: number;
   subtotal?: number;
+  /** Per-line server-side totals (same shape as quote-level totals). */
+  totals?: InvoiceTotals;
 }
 
 export interface Webhook {
@@ -1890,6 +1926,15 @@ export const quotes: Quote[] = [
         subtotal: 30.0,
       },
     ],
+    // recurring-only subscription quote — $210/period total at 18.5% margin
+    totals: {
+      initialCost: { amount: 0, currency: "USD" },
+      initialProfit: { amount: 0, currency: "USD" },
+      initialTotal: { amount: 0, currency: "USD" },
+      recurringCost: { amount: 171.15, currency: "USD" },
+      recurringProfit: { amount: 38.85, currency: "USD" },
+      recurringTotal: { amount: 210.0, currency: "USD" },
+    },
   },
   {
     id: "quote-bright-001",
@@ -1921,6 +1966,16 @@ export const quotes: Quote[] = [
         subtotal: 150.0,
       },
     ],
+    // recurring-only Draft quote — $225/period at 20% margin (no
+    // salesMarginPercentage on Draft quotes; demo uses the default-margin path)
+    totals: {
+      initialCost: { amount: 0, currency: "USD" },
+      initialProfit: { amount: 0, currency: "USD" },
+      initialTotal: { amount: 0, currency: "USD" },
+      recurringCost: { amount: 180.0, currency: "USD" },
+      recurringProfit: { amount: 45.0, currency: "USD" },
+      recurringTotal: { amount: 225.0, currency: "USD" },
+    },
   },
   {
     // Single-line Draft quote — exercises the "terser confirm" path in
@@ -1948,6 +2003,18 @@ export const quotes: Quote[] = [
         subtotal: 220.0,
       },
     ],
+    // Mixed-bucket Draft quote — exercises the "BOTH initial AND recurring"
+    // render path. The $500 initial is a one-time onboarding charge that
+    // doesn't appear on the line items (server-computed at the totals level,
+    // not derivable from per-line subtotals). 20% margin both buckets.
+    totals: {
+      initialCost: { amount: 400.0, currency: "USD" },
+      initialProfit: { amount: 100.0, currency: "USD" },
+      initialTotal: { amount: 500.0, currency: "USD" },
+      recurringCost: { amount: 176.0, currency: "USD" },
+      recurringProfit: { amount: 44.0, currency: "USD" },
+      recurringTotal: { amount: 220.0, currency: "USD" },
+    },
   },
   {
     id: "quote-redwood-001",
@@ -1978,8 +2045,26 @@ export const quotes: Quote[] = [
         unitPrice: 57.0,
         billingTerm: "Annual",
         subtotal: 456.0,
+        // Per-line totals — schema-exercise; render still uses subtotal.
+        totals: {
+          initialCost: { amount: 0, currency: "USD" },
+          initialProfit: { amount: 0, currency: "USD" },
+          initialTotal: { amount: 0, currency: "USD" },
+          recurringCost: { amount: 360.24, currency: "USD" },
+          recurringProfit: { amount: 95.76, currency: "USD" },
+          recurringTotal: { amount: 456.0, currency: "USD" },
+        },
       },
     ],
+    // recurring-only Accepted quote — $456/yr at 21% margin
+    totals: {
+      initialCost: { amount: 0, currency: "USD" },
+      initialProfit: { amount: 0, currency: "USD" },
+      initialTotal: { amount: 0, currency: "USD" },
+      recurringCost: { amount: 360.24, currency: "USD" },
+      recurringProfit: { amount: 95.76, currency: "USD" },
+      recurringTotal: { amount: 456.0, currency: "USD" },
+    },
   },
   {
     id: "quote-coastline-001",
@@ -2011,6 +2096,52 @@ export const quotes: Quote[] = [
         subtotal: 684.0,
       },
     ],
+    // recurring-only Declined quote — $684/yr at 15% margin
+    totals: {
+      initialCost: { amount: 0, currency: "USD" },
+      initialProfit: { amount: 0, currency: "USD" },
+      initialTotal: { amount: 0, currency: "USD" },
+      recurringCost: { amount: 581.4, currency: "USD" },
+      recurringProfit: { amount: 102.6, currency: "USD" },
+      recurringTotal: { amount: 684.0, currency: "USD" },
+    },
+  },
+  {
+    // Initial-only quote — exercises the "ONLY initial, no recurring" render
+    // path. A one-time consulting / professional services engagement with
+    // no subscription lines. 20% margin.
+    id: "quote-pinnacle-001",
+    client: { id: PINNACLE_ID, isShadowCompany: false, name: "Pinnacle Financial Advisors" },
+    createdOn: "2026-04-01",
+    createdAt: "2026-04-01",
+    expiresOn: "2026-05-01",
+    expiresAt: "2026-05-01",
+    status: "Sent",
+    referenceCode: "Q-2026-004",
+    intentType: "PARTNER_TO_CLIENT",
+    published: true,
+    publishedOn: "2026-04-01T12:00:00Z",
+    salesMarginPercentage: 20.0,
+    introMessage: "Pinnacle Financial — proposal for the one-time M365 tenant migration engagement.",
+    termsAndDisclaimers: "Fixed-price engagement. Scope per attached SOW.",
+    lineItems: [
+      {
+        id: "li-pinnacle-001-a",
+        productId: "prod-m365-biz-prem-0001",
+        quantity: 1,
+        unitPrice: 2500.0,
+        billingTerm: "Monthly",
+        subtotal: 2500.0,
+      },
+    ],
+    totals: {
+      initialCost: { amount: 2000.0, currency: "USD" },
+      initialProfit: { amount: 500.0, currency: "USD" },
+      initialTotal: { amount: 2500.0, currency: "USD" },
+      recurringCost: { amount: 0, currency: "USD" },
+      recurringProfit: { amount: 0, currency: "USD" },
+      recurringTotal: { amount: 0, currency: "USD" },
+    },
   },
 ];
 

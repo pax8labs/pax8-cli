@@ -738,6 +738,48 @@ export type UsageLine = z.infer<typeof UsageLineSchema>;
 
 // ─── Quote ───────────────────────────────────────────────────────────────────
 
+/**
+ * Currency-aware money value used by the v2 quoting API. The spec carries
+ * the currency code per amount rather than at the quote level, so a single
+ * quote could in principle mix currencies across line items — render code
+ * should always print the currency alongside the amount.
+ *
+ * Spec ref: `components.schemas.AmountCurrency` in
+ * `https://devx.pax8.com/openapi/quoting-endpoints.json`.
+ */
+export const AmountCurrencySchema = z.object({
+  amount: z.number(),
+  currency: z.string(),
+});
+export type AmountCurrency = z.infer<typeof AmountCurrencySchema>;
+
+/**
+ * Server-side totals object the v2 quoting API returns on both quote-level
+ * (`QuoteResponse.totals`) and per-line (`LineItemResponse.totals`). Splits
+ * one-time charges (`initial*`) from subscription-period charges
+ * (`recurring*`). Spec marks every field required; we model the OBJECT as
+ * optional on the consuming schemas so a partial / drifted response doesn't
+ * cause a hard parse failure — the render layer falls back to the
+ * locally-summed line-item subtotals when this object is absent.
+ *
+ * Cost / Profit / Total fields:
+ *   `*Cost`   — Pax8's wholesale (partner-cost) leg
+ *   `*Profit` — partner-side margin amount
+ *   `*Total`  — cost + profit (the customer-facing total)
+ *
+ * Spec ref: `components.schemas.InvoiceTotals` in
+ * `https://devx.pax8.com/openapi/quoting-endpoints.json`.
+ */
+export const InvoiceTotalsSchema = z.object({
+  initialCost: AmountCurrencySchema,
+  initialProfit: AmountCurrencySchema,
+  initialTotal: AmountCurrencySchema,
+  recurringCost: AmountCurrencySchema,
+  recurringProfit: AmountCurrencySchema,
+  recurringTotal: AmountCurrencySchema,
+});
+export type InvoiceTotals = z.infer<typeof InvoiceTotalsSchema>;
+
 export const QuoteLineItemSchema = z.object({
   /**
    * Line item identifier. Optional because the v1 quote surface didn't expose
@@ -751,6 +793,13 @@ export const QuoteLineItemSchema = z.object({
   billingTerm: BillingTermSchema.optional(),
   unitPrice: z.number().optional(),
   subtotal: z.number().optional(),
+  /**
+   * Server-side per-line totals. Modeled optional for defensive parsing —
+   * the spec marks it required but we don't want a transiently-missing field
+   * to fail the whole quotes payload. Render code uses `subtotal` as the
+   * fallback when this is absent.
+   */
+  totals: InvoiceTotalsSchema.optional(),
 });
 export type QuoteLineItem = z.infer<typeof QuoteLineItemSchema>;
 
@@ -921,6 +970,15 @@ export const QuoteSchema = z.preprocess(
     referenceCode: z.string().optional(),
     salesMarginPercentage: z.number().optional(),
     intentType: z.string().optional(),
+    /**
+     * Server-side quote-level totals. Splits one-time (`initial*`) from
+     * subscription-period (`recurring*`) buckets, each carrying cost,
+     * profit, and total amounts with currency. Modeled optional so a partial
+     * / drifted API response doesn't fail the whole quote parse — the
+     * render layer falls back to locally-summed line subtotals when this
+     * is absent. Spec marks the field required.
+     */
+    totals: InvoiceTotalsSchema.optional(),
   }),
 );
 export type Quote = z.infer<typeof QuoteSchema>;
