@@ -432,7 +432,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         if (quickActions.length > 0) {
           divider();
           out.write(chalk.bold("  Quick Actions\n\n"));
-          await promptNextSteps(quickActions);
+          await promptNextSteps(quickActions, { renderList: true });
         }
 
         if (alerts.length === 0 && quickActions.length === 0) {
@@ -499,7 +499,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         if (allActions.length > 0) {
           divider();
           out.write(chalk.bold("  Quick Actions\n\n"));
-          await promptNextSteps(allActions);
+          await promptNextSteps(allActions, { renderList: true });
         }
       }
 
