@@ -13,6 +13,7 @@ import { invalidateCacheAfterWrite } from "../../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../../lib/signals.js";
 import { formatQuantity, formatCurrency as formatPrice } from "../../../lib/formatters.js";
 import {
+  BillingTermSchema,
   ERROR_INVALID_INPUT,
   type BillingTerm,
   type AddQuoteLineItemInput,
@@ -21,6 +22,9 @@ import {
   resolveEffectiveDate,
   resolveListPrice,
 } from "../../../lib/quote-line-item-defaults.js";
+import { validateEnum } from "../../../lib/validate.js";
+
+const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
 
 // `resolveEffectiveDate` and `resolveListPrice` moved to
 // `packages/cli/src/lib/quote-line-item-defaults.ts` so #311's `quotes create`
@@ -31,7 +35,11 @@ export const quotesLineItemsAddCommand = new Command("add")
   .argument("<quote-id>", "Quote ID")
   .requiredOption("--product <id|name>", "Product ID or name (required)")
   .option("--quantity <number>", "Quantity", "1")
-  .option("--billing-term <term>", "Billing term (Monthly or Annual)", "Monthly")
+  .option(
+    "--billing-term <term>",
+    `Billing term — one of ${BILLING_TERM_VALUES.join(" | ")} (default Monthly)`,
+    "Monthly",
+  )
   .option(
     "--price <number>",
     "Per-unit price for the line (defaults to the product's list price for the chosen billing term)",
@@ -56,6 +64,11 @@ Examples:
     const ctx = await buildContext(globalOpts);
 
     try {
+      // Fail-fast on typo'd `--billing-term` BEFORE any network call (#408).
+      validateEnum(options.billingTerm, BILLING_TERM_VALUES, "--billing-term", {
+        cmdHint: "pax8 quotes line-items add",
+      });
+
       const quantity = parseInt(options.quantity, 10);
       if (isNaN(quantity) || quantity <= 0) {
         throw new CliError(

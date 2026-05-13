@@ -15,6 +15,10 @@ import { markWriteInFlight } from "../../lib/signals.js";
 import { setTelemetryFields } from "../../lib/telemetry-context.js";
 import { replCmd } from "../../lib/confirm.js";
 import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
+import { validateEnum } from "../../lib/validate.js";
+
+// Mirror `list`'s validation set — same downstream `filterRecommendations`.
+const PRIORITY_VALUES = ["high", "medium", "low"] as const;
 
 interface PlacementResult {
   ordered: boolean;
@@ -176,6 +180,16 @@ Examples:
     // Rejoin excess args for unquoted company names
     if (options.company && cmd.args.length > 0) {
       options.company = [options.company, ...cmd.args].join(" ");
+    }
+
+    // Fail-fast on typo'd `--priority` BEFORE buildContext (#408).
+    try {
+      validateEnum(options.priority, PRIORITY_VALUES, "--priority", {
+        lowercase: true,
+        cmdHint: "pax8 recommendations act",
+      });
+    } catch (error) {
+      await handleCommandError(error);
     }
 
     const ctx = await buildContext(allOpts);

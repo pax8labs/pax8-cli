@@ -10,15 +10,20 @@ import { replCmd } from "../../lib/confirm.js";
 import { formatCurrency } from "../../lib/formatters.js";
 import { output } from "../../lib/output.js";
 import {
+  BillingTermSchema,
   ERROR_INVALID_INPUT,
   simulateCostChange,
   ALL_SUBS_PAGE_SIZE,
+  type BillingTerm,
   type SimulationInput,
   type SimulationResult,
 } from "@pax8/core";
 import type { Subscription } from "@pax8/core";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
+import { validateEnum } from "../../lib/validate.js";
+
+const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
 
 /**
  * Pick the most plausible "current" subscription for a company × product pair.
@@ -75,6 +80,14 @@ Examples:
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+    // Fail-fast on typo'd `--billing-term` BEFORE any network call (#408).
+    try {
+      validateEnum(allOpts.billingTerm, BILLING_TERM_VALUES, "--billing-term", {
+        cmdHint: "pax8 cost sim",
+      });
+    } catch (error) {
+      await handleCommandError(error);
+    }
     const spinner = createSpinner("Resolving company and product...");
 
     try {

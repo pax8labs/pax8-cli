@@ -3,7 +3,12 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { getRecommendations, getPortfolioCoverage } from "@pax8/core";
+import {
+  getRecommendations,
+  getPortfolioCoverage,
+  CompanyStatusSchema,
+  type CompanyStatus,
+} from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
@@ -14,6 +19,9 @@ import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/forma
 import { saveLastList } from "../../lib/last-list.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import { validateEnum } from "../../lib/validate.js";
+
+const COMPANY_STATUS_VALUES = CompanyStatusSchema.options as readonly CompanyStatus[];
 
 const baseColumns: Column[] = [
   { key: "_num", header: "#" },
@@ -63,7 +71,10 @@ function parseTriBool(raw: unknown): boolean | undefined {
 
 export const companiesListCommand = new Command("list")
   .description("List all companies")
-  .option("--status <status>", "Filter by status (Active, Inactive, Deleted)")
+  .option(
+    "--status <status>",
+    `Filter by status (${COMPANY_STATUS_VALUES.join(", ")})`,
+  )
   // ─── Geography filters (#388) ───────────────────────────────────────────
   // Spec params: city, country, stateOrProvince, postalCode. We keep the
   // shorter UX names (`--state`, `--zip`) per the vocabulary mapping
@@ -107,6 +118,17 @@ Examples:
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+    // Fail-fast on `--status FooBar` BEFORE buildContext / any network call
+    // (#408). Pre-validation the bad value silently round-tripped to the
+    // API as a filter and produced an empty list — the partner couldn't
+    // tell whether they typo'd or genuinely had no matching companies.
+    try {
+      validateEnum(allOpts.status, COMPANY_STATUS_VALUES, "--status", {
+        cmdHint: "pax8 companies list",
+      });
+    } catch (error) {
+      await handleCommandError(error);
+    }
     const spinner = createSpinner("Fetching companies...").start();
 
     try {
