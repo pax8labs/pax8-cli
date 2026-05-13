@@ -39,7 +39,7 @@ Examples:
           "--company is required",
           ["The Pax8 contacts API is scoped to a single company"],
           [
-            `Pick a company first: ${replCmd("pax8 companies list")}`,
+            `Pick a client first: ${replCmd("pax8 clients list")}`,
             `Then: ${replCmd("pax8 contacts list")} --company <id|name>`,
           ],
           undefined,

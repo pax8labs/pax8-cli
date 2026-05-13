@@ -257,7 +257,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         // Add top customer drilldown
         if (topCustomers.length > 0) {
           nextActions.push({
-            command: `pax8 companies more "${topCustomers[0].name}" --json`,
+            command: `pax8 clients more "${topCustomers[0].name}" --json`,
             description: `Drill into top customer ${topCustomers[0].name}`,
           });
         }
@@ -492,7 +492,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           allActions.push({
             key: String(allActions.length + 1),
             label: `Drill into ${topCustomers[0].name}`,
-            command: tokenizeCmd(`companies more "${topCustomers[0].name}"`),
+            command: tokenizeCmd(`clients more "${topCustomers[0].name}"`),
           });
         }
 

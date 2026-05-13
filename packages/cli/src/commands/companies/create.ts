@@ -59,7 +59,7 @@ function buildPrimaryContact(
 }
 
 export const companiesCreateCommand = new Command("create")
-  .description("Create a new company (Active by default via atomic contact creation per PAM-997)")
+  .description("Create a new client (Active by default via atomic contact creation per PAM-997)")
   .requiredOption("--name <name>", "Company name (required)")
   .option("--phone <phone>", "Company phone number (also used as the primary-contact phone on the default atomic path)")
   .option("--website <url>", "Company website")
@@ -122,12 +122,12 @@ Atomic-create behavior (default):
 
 Examples:
   # Atomic (Active company in one call)
-  pax8 companies create --name "Summit Healthcare" --phone "+1-303-555-0101" \\
+  pax8 clients create --name "Summit Healthcare" --phone "+1-303-555-0101" \\
       --website "https://summithealthcare.example.com" --city Denver --state CO --zip 80246 \\
       --first-name Maya --last-name Chen --email maya@summit.example.com
 
   # Company-only (Inactive — must follow up with 'pax8 contacts create')
-  pax8 companies create --name "Test Co" --city Denver --state CO --zip 80202 --company-only`,
+  pax8 clients create --name "Test Co" --city Denver --state CO --zip 80202 --company-only`,
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -148,7 +148,7 @@ Examples:
           ["The Pax8 spec marks `address` as a required field on POST /companies."],
           [
             "Pass at least one of --street, --city, --state, --zip (and --country if not US).",
-            'Example: pax8 companies create --name "Acme" --city Denver --state CO --zip 80202',
+            'Example: pax8 clients create --name "Acme" --city Denver --state CO --zip 80202',
           ],
           undefined,
           ERROR_INVALID_INPUT,

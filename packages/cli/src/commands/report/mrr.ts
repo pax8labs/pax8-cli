@@ -92,7 +92,7 @@ JSON output (--json):
       const nextActions: { command: string; description: string }[] = [];
       if (companies.length > 0) {
         nextActions.push({
-          command: `pax8 companies more "${companies[0].name}"`,
+          command: `pax8 clients more "${companies[0].name}"`,
           description: `Drill into top customer ${companies[0].name}`,
         });
       }
