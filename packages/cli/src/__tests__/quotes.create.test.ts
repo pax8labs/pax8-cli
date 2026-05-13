@@ -252,6 +252,56 @@ describe("pax8 quotes create", () => {
       expect(combined).toMatch(/[Ii]nvalid price/);
     });
 
+    it("--commitment-term-id rides through on the shorthand path and lands on the new line", async () => {
+      // The shorthand `--product` path must accept the same commitment-term
+      // flags as `quotes line-items add` (Candidate E follow-up to #426).
+      // Bypasses the auto-resolve lookup so we can pin a deterministic UUID
+      // and assert the wire-shape end-to-end.
+      const uuid = "cterm-create-shorthand-0001-000000000001";
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "2",
+        "--billing-term",
+        "Annual",
+        "--commitment-term-id",
+        uuid,
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data[0].lineItems.length).toBe(1);
+      expect(data[0].lineItems[0].commitmentTerm?.id).toBe(uuid);
+    });
+
+    it("--commitment-term <enum> is accepted on the shorthand path (auto-resolve may no-op for unknown products)", async () => {
+      // Even when the company has no matching subscription to resolve
+      // against, the flag must be parsed + accepted; the line item is
+      // simply created without a commitmentTermId. This is the same
+      // permissive behavior orders create has for non-commitment SKUs.
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "1",
+        "--commitment-term",
+        "1-Year",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data[0].lineItems.length).toBe(1);
+    });
+
     it("rejects a typo'd --billing-term up front (fail-fast)", async () => {
       const result = await runCliExpectFailure([
         "quotes",

@@ -40,6 +40,21 @@ export const quotesCreateCommand = new Command("create")
     "--effective-date <YYYY-MM-DD>",
     "Effective date for the line (only meaningful with --product; defaults to today, UTC)",
   )
+  // Parity with `quotes line-items add` (#426) and orders create. Required
+  // for Microsoft NCE / commitment-priced SKUs per QUOTE-311 (the
+  // `AddLineItemToQuoteCommandPayload.commitmentTermId` field) and the NCE
+  // proration spike (commitment is decided at quote-time — Model A canonical).
+  // The parity test at
+  // `packages/cli/src/__tests__/quotes-create-line-items-parity.test.ts`
+  // catches any future drift between the two commands.
+  .option(
+    "--commitment-term <term>",
+    "Commitment term (Monthly, 1-Year, or 3-Year) — auto-resolves to UUID from existing subscription (only meaningful with --product)",
+  )
+  .option(
+    "--commitment-term-id <uuid>",
+    "Commitment term UUID (from subscription commitment.id; only meaningful with --product). If both --commitment-term and --commitment-term-id are supplied, --commitment-term-id takes precedence.",
+  )
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
@@ -102,12 +117,23 @@ Setting an expiration date:
       // commits. The same helper backs `quotes line-items add` (#426), so
       // the two paths produce identical line items for identical inputs.
       const built = product && quantity !== undefined
-        ? await buildLineItemPayload(ctx, product, quantity, {
-            quantity: options.quantity,
-            billingTerm: options.billingTerm,
-            price: options.price,
-            effectiveDate: options.effectiveDate,
-          })
+        ? await buildLineItemPayload(
+            ctx,
+            product,
+            quantity,
+            {
+              quantity: options.quantity,
+              billingTerm: options.billingTerm,
+              price: options.price,
+              effectiveDate: options.effectiveDate,
+              commitmentTerm: options.commitmentTerm,
+              commitmentTermId: options.commitmentTermId,
+            },
+            // Resolved companyId so `--commitment-term <enum>` can be
+            // auto-resolved against existing subscriptions, same as the
+            // `quotes line-items add` path and orders create.
+            company.id,
+          )
         : undefined;
 
       process.stderr.write(chalk.bold("\n  New Quote:\n\n"));
@@ -124,6 +150,11 @@ Setting an expiration date:
         process.stderr.write(
           `  ${chalk.dim("Effective date:".padEnd(18))}${built.effectiveDate.slice(0, 10)}\n`,
         );
+        if (built.commitmentTerm) {
+          process.stderr.write(
+            `  ${chalk.dim("Commitment:".padEnd(18))}${built.commitmentTerm}\n`,
+          );
+        }
       } else {
         process.stderr.write(`  ${chalk.dim("Line items:".padEnd(18))}${chalk.dim("(none — add with `quotes line-items add`)")}\n`);
       }
@@ -180,6 +211,15 @@ Setting an expiration date:
           }
           if (options.effectiveDate) {
             recoveryParts.push(`--effective-date ${options.effectiveDate}`);
+          }
+          // Preserve commitment flags on the recovery command so the user
+          // doesn't have to re-derive the UUID / re-pick the enum after a
+          // mid-orchestration failure. Prefer the resolved UUID (canonical)
+          // when we have it, falling back to whatever the user typed.
+          if (built.commitmentTermId) {
+            recoveryParts.push(`--commitment-term-id ${built.commitmentTermId}`);
+          } else if (options.commitmentTerm) {
+            recoveryParts.push(`--commitment-term ${options.commitmentTerm}`);
           }
           const recoveryCmd = recoveryParts.join(" ");
           process.stderr.write(

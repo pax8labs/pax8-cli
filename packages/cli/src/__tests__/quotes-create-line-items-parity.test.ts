@@ -122,6 +122,12 @@ describe("pax8 quotes create / quotes line-items add flag parity (#426)", () => 
       "--billing-term",
       "--price",
       "--effective-date",
+      // Candidate E follow-up: commitment-term flags must mirror onto
+      // `quotes create` so the shorthand can produce commitment-priced
+      // line items (Microsoft NCE et al.) without first creating an empty
+      // quote. See QUOTE-311 / QUOTE-1283 and the NCE proration spike.
+      "--commitment-term",
+      "--commitment-term-id",
     ]) {
       expect(createFlags.has(flag), `quotes create is missing ${flag}`).toBe(true);
     }

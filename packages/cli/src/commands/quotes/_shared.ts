@@ -14,6 +14,7 @@ import {
   resolveEffectiveDate,
   resolveListPrice,
 } from "../../lib/quote-line-item-defaults.js";
+import { resolveCommitmentTermId } from "../../lib/resolve-commitment.js";
 import { validateEnum } from "../../lib/validate.js";
 
 /**
@@ -44,6 +45,19 @@ export interface LineItemFlagOptions {
   billingTerm?: string;
   price?: string;
   effectiveDate?: string;
+  /**
+   * Human-readable commitment-term enum (e.g. "Monthly", "1-Year", "3-Year").
+   * Auto-resolved to a UUID against the partner's existing subscriptions —
+   * same lookup path orders create uses. Mutually exclusive with
+   * `commitmentTermId`, which takes precedence when both are supplied.
+   */
+  commitmentTerm?: string;
+  /**
+   * Commitment-term UUID. When supplied, this wins over any
+   * `commitmentTerm` enum (no resolution lookup) — mirrors the orders create
+   * precedence rule (`packages/cli/src/commands/orders/create.ts:290`).
+   */
+  commitmentTermId?: string;
 }
 
 /**
@@ -114,6 +128,16 @@ export interface BuiltLineItemPayload {
   priceWasOverridden: boolean;
   effectiveDate: string;
   billingTerm: BillingTerm;
+  /**
+   * Human-readable commitment-term label (e.g. "1-Year"). Populated either
+   * because the caller passed `--commitment-term`, or because the UUID
+   * passed via `--commitment-term-id` was resolved back to a term during
+   * the existing-subscription lookup. Surfaced so callers can render the
+   * commitment line in the preview block without re-doing the lookup.
+   */
+  commitmentTerm?: string;
+  /** Commitment-term UUID, when resolved or supplied directly. */
+  commitmentTermId?: string;
 }
 
 export async function buildLineItemPayload(
@@ -121,6 +145,7 @@ export async function buildLineItemPayload(
   product: Product,
   quantity: number,
   options: LineItemFlagOptions,
+  companyId?: string,
 ): Promise<BuiltLineItemPayload> {
   const billingTerm = parseBillingTerm(options.billingTerm, "pax8 quotes line-items add");
   const priceOverride = parsePriceOverride(options.price);
@@ -140,6 +165,30 @@ export async function buildLineItemPayload(
     );
   }
 
+  // Commitment-term resolution — mirrors orders create
+  // (`packages/cli/src/commands/orders/create.ts:266-296`):
+  //   • If `--commitment-term-id <uuid>` is supplied, it wins; no resolution.
+  //   • Else if `--commitment-term <enum>` is supplied AND we have a
+  //     companyId, look up an existing subscription for this product on the
+  //     partner and reuse its commitment.id (so rates align with the partner's
+  //     existing book — Model A canonical per the NCE proration spike).
+  //   • Else leave both unset — the v2 wire `commitmentTermId` is optional
+  //     for Monthly / no-commitment SKUs.
+  let commitmentTerm = options.commitmentTerm;
+  let commitmentTermId = options.commitmentTermId;
+  if (!commitmentTermId && commitmentTerm && companyId) {
+    const info = await resolveCommitmentTermId(
+      ctx,
+      companyId,
+      product.id,
+      commitmentTerm,
+    );
+    if (info) {
+      commitmentTermId = info.id;
+      if (!commitmentTerm) commitmentTerm = info.term;
+    }
+  }
+
   return {
     input: {
       productId: product.id,
@@ -147,10 +196,13 @@ export async function buildLineItemPayload(
       billingTerm,
       effectiveDate,
       price,
+      ...(commitmentTermId ? { commitmentTermId } : {}),
     },
     price,
     priceWasOverridden: priceOverride !== undefined,
     effectiveDate,
     billingTerm,
+    commitmentTerm,
+    commitmentTermId,
   };
 }

@@ -61,6 +61,13 @@ JSON output (--json):
       }
 
       if (ctx.outputFormat === "csv") {
+        // CSV is reserved for flat / spreadsheet-friendly fields. The
+        // `commitmentTerm` value is the nested `{ id, term }` object the
+        // v2 quoting spec returns; surfacing it in CSV would require
+        // either (a) flattening or (b) the formatter applying `col.format`
+        // on string conversion (it currently doesn't — see #426 follow-up
+        // candidate). For CSV today we drop it cleanly; JSON callers get
+        // the full object, table mode renders the `term` label.
         const columns: Column[] = [
           { key: "productId", header: "Product ID" },
           { key: "quantity", header: "Quantity" },
@@ -178,10 +185,28 @@ JSON output (--json):
       if (lineItems.length === 0) {
         process.stdout.write(chalk.dim("  No line items.\n\n"));
       } else {
+        // Render `commitmentTerm.term` (the human-readable label, e.g.
+        // "1-Year") so the partner can see at a glance whether a line is
+        // tied to a commitment SKU. The wire shape is `{ id, term }` per the
+        // v2 quoting spec and QUOTE-311; we surface the label and leave the
+        // UUID for `--json` consumers. Mirrors how subscriptions render
+        // `commitment.term` (the closest existing convention in the CLI —
+        // orders show doesn't currently render commitment at all).
         const columns: Column[] = [
           { key: "productId", header: "Product ID", width: 38 },
           { key: "quantity", header: "Qty", width: 10, format: (v) => formatQuantity(Number(v)) },
           { key: "billingTerm", header: "Term", width: 10 },
+          {
+            key: "commitmentTerm",
+            header: "Commit",
+            width: 10,
+            format: (v) => {
+              if (v && typeof v === "object" && "term" in v && typeof (v as { term?: unknown }).term === "string") {
+                return (v as { term: string }).term;
+              }
+              return "—";
+            },
+          },
           { key: "unitPrice", header: "Unit", width: 12, format: (v) => v != null ? formatCurrency(Number(v)) : "—" },
           { key: "subtotal", header: "Subtotal", width: 14, format: (v) => v != null ? formatCurrency(Number(v)) : "—" },
         ];

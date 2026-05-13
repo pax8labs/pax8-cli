@@ -161,6 +161,14 @@ export class QuotesApi {
         ...(input.billingTerm ? { billingTerm: input.billingTerm } : {}),
         effectiveDate: input.effectiveDate,
         price: input.price,
+        // `commitmentTermId` is the canonical v2 wire field on
+        // `AddStandardLineItemPayload` (spec-confirmed against
+        // `quoting-endpoints.json`). Only sent when the caller actually
+        // supplied a UUID so we don't ship a `commitmentTermId: undefined`
+        // key to the API for the (common) Monthly / no-commitment case.
+        ...(input.commitmentTermId
+          ? { commitmentTermId: input.commitmentTermId }
+          : {}),
       },
     ];
     await this.client.post<unknown>(`/quotes/${quoteId}/line-items`, payload, V2);

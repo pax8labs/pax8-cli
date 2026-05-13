@@ -134,6 +134,105 @@ describe("pax8 quotes line-items", () => {
       expect(data[0]).toHaveProperty("lineItemId");
     });
 
+    it("--commitment-term <enum> resolves to a UUID against existing subscriptions and lands on the new line", async () => {
+      // Redwood already has an Active subscription with a commitment.id
+      // for the M365 E5 product in demo data, so the `--commitment-term`
+      // → commitmentTermId resolution path can land on a real UUID. Mirror
+      // of the orders create resolution flow (#311).
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "line-items",
+        "add",
+        "quote-redwood-001",
+        "--product",
+        "prod-m365-e5-0004",
+        "--quantity",
+        "2",
+        "--billing-term",
+        "Annual",
+        "--commitment-term",
+        "1-Year",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      const newLineId = data[0].lineItemId as string;
+      const newLine = (
+        data[0].quote.lineItems as Array<{
+          id: string;
+          commitmentTerm?: { id: string; term: string };
+        }>
+      ).find((li) => li.id === newLineId);
+      expect(newLine).toBeDefined();
+      expect(newLine?.commitmentTerm).toBeDefined();
+      expect(typeof newLine?.commitmentTerm?.id).toBe("string");
+      expect(newLine?.commitmentTerm?.id.length).toBeGreaterThan(0);
+    });
+
+    it("--commitment-term-id <uuid> rides straight through to the wire payload", async () => {
+      const uuid = "cterm-redwood-direct-0001-000000000001";
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "line-items",
+        "add",
+        "quote-redwood-001",
+        "--product",
+        "prod-m365-e5-0004",
+        "--quantity",
+        "1",
+        "--billing-term",
+        "Annual",
+        "--commitment-term-id",
+        uuid,
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      const newLineId = data[0].lineItemId as string;
+      const newLine = (
+        data[0].quote.lineItems as Array<{
+          id: string;
+          commitmentTerm?: { id: string; term: string };
+        }>
+      ).find((li) => li.id === newLineId);
+      expect(newLine?.commitmentTerm?.id).toBe(uuid);
+    });
+
+    it("when both --commitment-term and --commitment-term-id are supplied, the UUID wins", async () => {
+      // Mirrors the orders create precedence rule: the UUID short-circuits
+      // the auto-resolve lookup. We pin a UUID that doesn't match any
+      // existing subscription so the resolution path can't accidentally
+      // overwrite it.
+      const uuid = "cterm-explicit-wins-0001-000000000000";
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "line-items",
+        "add",
+        "quote-redwood-001",
+        "--product",
+        "prod-m365-e5-0004",
+        "--quantity",
+        "1",
+        "--billing-term",
+        "Annual",
+        "--commitment-term",
+        "1-Year",
+        "--commitment-term-id",
+        uuid,
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      const newLineId = data[0].lineItemId as string;
+      const newLine = (
+        data[0].quote.lineItems as Array<{
+          id: string;
+          commitmentTerm?: { id: string; term: string };
+        }>
+      ).find((li) => li.id === newLineId);
+      expect(newLine?.commitmentTerm?.id).toBe(uuid);
+    });
+
     it("rejects malformed --effective-date", async () => {
       const result = await runCliExpectFailure([
         "quotes",
