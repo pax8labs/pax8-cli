@@ -976,6 +976,25 @@ class QuotesResource {
     const unitPrice =
       typeof input.price === "number" ? input.price : plan?.partnerBuyPrice;
     const newId = `li-demo-${Date.now()}`;
+    // Round-trip `commitmentTermId` back onto the line as a
+    // `commitmentTerm: { id, term }` object, mirroring the real v2 read
+    // shape (`LineItemResponse.commitmentTerm`). The `term` label is
+    // inferred from the input billing term so a `--commitment-term 1-Year`
+    // call surfaces "1-Year" on the rendered line; if the caller bypassed
+    // the CLI's enum and only supplied the UUID, we fall back to an empty
+    // string so the line still parses.
+    const commitmentTerm = input.commitmentTermId
+      ? {
+          id: input.commitmentTermId,
+          // Demo-only inference — the real API stores the canonical term
+          // server-side. Use the billing term as a sensible label when
+          // the caller didn't pass a term flag.
+          term:
+            input.billingTerm === "Annual"
+              ? "1-Year"
+              : (input.billingTerm ?? "Monthly"),
+        }
+      : undefined;
     const newLine = {
       id: newId,
       productId: input.productId,
@@ -984,6 +1003,7 @@ class QuotesResource {
       ...(typeof unitPrice === "number"
         ? { unitPrice, subtotal: unitPrice * input.quantity }
         : {}),
+      ...(commitmentTerm ? { commitmentTerm } : {}),
     };
     quote.lineItems = [...(quote.lineItems ?? []), newLine];
     return this.project(quote);

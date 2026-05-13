@@ -53,6 +53,20 @@ Examples:
         { key: "productId", header: "Product ID", width: 26, format: (v) => chalk.dim(String(v)) },
         { key: "quantity", header: "Qty", width: 10, format: (v) => formatQuantity(Number(v)) },
         { key: "billingTerm", header: "Term", width: 10, format: (v) => v ? String(v) : "—" },
+        // `commitmentTerm` is the v2-canonical commitment object `{ id, term }`
+        // attached per-line (QUOTE-311 / QUOTE-1283). Render the term label;
+        // `--json` consumers get the full object.
+        {
+          key: "commitmentTerm",
+          header: "Commit",
+          width: 10,
+          format: (v) => {
+            if (v && typeof v === "object" && "term" in v && typeof (v as { term?: unknown }).term === "string") {
+              return (v as { term: string }).term;
+            }
+            return "—";
+          },
+        },
         { key: "unitPrice", header: "Unit", width: 12, format: (v) => v != null ? formatCurrency(Number(v)) : "—" },
         { key: "subtotal", header: "Subtotal", width: 14, format: (v) => v != null ? formatCurrency(Number(v)) : "—" },
       ];

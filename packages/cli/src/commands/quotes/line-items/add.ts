@@ -46,6 +46,20 @@ export const quotesLineItemsAddCommand = new Command("add")
     "--effective-date <YYYY-MM-DD>",
     "Effective date for the line (defaults to today, UTC)",
   )
+  // Mirror orders create's commitment-term flag pair (see
+  // `packages/cli/src/commands/orders/create.ts:350-351`). Same descriptions,
+  // same auto-resolve-from-existing-subscription behavior, same precedence
+  // rule: when both flags are supplied, `--commitment-term-id` wins (the UUID
+  // form short-circuits the lookup). Required for Microsoft NCE and other
+  // commitment-priced SKUs per QUOTE-311 / QUOTE-1283 / NCE proration spike.
+  .option(
+    "--commitment-term <term>",
+    "Commitment term (Monthly, 1-Year, or 3-Year) — auto-resolves to UUID from existing subscription",
+  )
+  .option(
+    "--commitment-term-id <uuid>",
+    "Commitment term UUID (from subscription commitment.id). If both --commitment-term and --commitment-term-id are supplied, --commitment-term-id takes precedence.",
+  )
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
     "after",
@@ -82,12 +96,25 @@ Examples:
 
       const product = await resolveProduct(ctx, options.product);
 
-      const built = await buildLineItemPayload(ctx, product, quantity, {
-        quantity: options.quantity,
-        billingTerm: options.billingTerm,
-        price: options.price,
-        effectiveDate: options.effectiveDate,
-      });
+      const built = await buildLineItemPayload(
+        ctx,
+        product,
+        quantity,
+        {
+          quantity: options.quantity,
+          billingTerm: options.billingTerm,
+          price: options.price,
+          effectiveDate: options.effectiveDate,
+          commitmentTerm: options.commitmentTerm,
+          commitmentTermId: options.commitmentTermId,
+        },
+        // Thread the quote's companyId so `--commitment-term <enum>` can be
+        // auto-resolved against the partner's existing subscriptions (same
+        // pattern orders create uses). For Microsoft NCE et al., this lets a
+        // partner pass `--commitment-term 1-Year` and have the CLI find the
+        // UUID without forcing them to surface it manually (#311 / #426).
+        quote.companyId,
+      );
       const { input, price, priceWasOverridden, effectiveDate, billingTerm } = built;
 
       process.stderr.write(chalk.bold("\n  Add line item:\n\n"));
@@ -103,6 +130,14 @@ Examples:
       process.stderr.write(
         `  ${chalk.dim("Effective date:".padEnd(18))}${effectiveDate.slice(0, 10)}\n`,
       );
+      // Surface commitment when set (auto-resolved or supplied) so the
+      // partner sees it before confirming. Mirrors orders create's
+      // "Commitment:" row (`packages/cli/src/commands/orders/create.ts:587`).
+      if (built.commitmentTerm) {
+        process.stderr.write(
+          `  ${chalk.dim("Commitment:".padEnd(18))}${built.commitmentTerm}\n`,
+        );
+      }
       process.stderr.write(`  ${chalk.dim("Existing items:".padEnd(18))}${quote.lineItems?.length ?? 0}\n\n`);
 
       const ok = await confirm("Add this line item?", { default: true });

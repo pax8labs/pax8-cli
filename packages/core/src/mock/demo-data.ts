@@ -362,6 +362,14 @@ export interface QuoteLineItem {
   subtotal?: number;
   /** Per-line server-side totals (same shape as quote-level totals). */
   totals?: InvoiceTotals;
+  /**
+   * Server-side commitment-term attached to the line item — `{ id, term }`,
+   * canonical on the v2 quoting read surface per QUOTE-311 / QUOTE-1283 and
+   * the Spike: Public APIs page (Quoting space). Populated on demo line
+   * items that simulate commitment-priced SKUs (e.g. Microsoft NCE 1-Year).
+   * Omitted on Monthly / no-commitment lines.
+   */
+  commitmentTerm?: { id: string; term: string };
 }
 
 export interface Webhook {
@@ -2045,6 +2053,15 @@ export const quotes: Quote[] = [
         unitPrice: 57.0,
         billingTerm: "Annual",
         subtotal: 456.0,
+        // `commitmentTerm` is the v2-canonical commitment-at-quote-time
+        // object (QUOTE-311 / QUOTE-1283 / NCE proration spike). Microsoft
+        // E5 with an annual billing term is the natural shape for a
+        // commitment-priced SKU; populating it here lets `quotes show` and
+        // `quotes line-items list` exercise the render path in demo mode.
+        commitmentTerm: {
+          id: "cterm-redwood-e5-0001-0000-000000000001",
+          term: "1-Year",
+        },
         // Per-line totals — schema-exercise; render still uses subtotal.
         totals: {
           initialCost: { amount: 0, currency: "USD" },

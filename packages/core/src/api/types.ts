@@ -800,6 +800,20 @@ export const QuoteLineItemSchema = z.object({
    * fallback when this is absent.
    */
   totals: InvoiceTotalsSchema.optional(),
+  /**
+   * Server-side commitment term attached to the line item — `{ id, term }`
+   * (shape matches `CommitmentTerm` in the v2 quoting spec). Canonical on the
+   * v2 read surface per QUOTE-311, QUOTE-1283, and the Spike: Public APIs page
+   * (Quoting space). Microsoft NCE and other commitment-priced SKUs persist
+   * the commitment-at-quote-time on the line item itself so the eventual order
+   * inherits the right rate (Model A canonical; see NCE proration spike).
+   *
+   * Reuses `CommitmentSchema` rather than defining a new shape: the v2 wire
+   * field carries `{ id, term }` (no endDate), and `CommitmentSchema` makes
+   * both optional + adds an optional `endDate` so it parses cleanly without
+   * forcing a divergent definition.
+   */
+  commitmentTerm: CommitmentSchema.nullable().optional(),
 });
 export type QuoteLineItem = z.infer<typeof QuoteLineItemSchema>;
 
@@ -1244,6 +1258,28 @@ export const AddQuoteLineItemInputSchema = z.object({
   billingTerm: BillingTermSchema.optional(),
   effectiveDate: z.string(),
   price: z.number(),
+  /**
+   * Optional commitment-term UUID. Pins the line item to a specific
+   * commitment-priced rate plan (Microsoft NCE 1-Year, 3-Year, etc.). Per
+   * the v2 quoting OpenAPI spec, `AddStandardLineItemPayload.commitmentTermId`
+   * is a UUID (`format: uuid`) and is optional on the write surface (not in
+   * the required set). Modeled as plain `string` here (not `z.string().uuid()`)
+   * to match `OrderLineItemInputSchema.commitmentTermId` — demo fixtures use
+   * Pax8-style synthetic IDs (`cterm-...`) that aren't strict RFC-4122 UUIDs,
+   * and we treat the wire-format check as the API's job.
+   * Internally canonical per QUOTE-311 (the `AddLineItemToQuoteCommandPayload`
+   * shape on the quoting service), QUOTE-1283 (`commitmentTerm` persisted on
+   * the line item itself), and QUOTE-406 (backfill of older NULL rows). See
+   * also the NCE proration spike (Model A canonical: commitment is decided
+   * at quote-time and rides through to the order).
+   *
+   * The CLI accepts the UUID directly via `--commitment-term-id` and also
+   * accepts a human-readable enum via `--commitment-term` (Monthly | 1-Year
+   * | 3-Year), which the command layer auto-resolves against the partner's
+   * existing subscriptions (same pattern orders create uses — see
+   * `packages/cli/src/lib/resolve-commitment.ts`).
+   */
+  commitmentTermId: z.string().optional(),
 });
 export type AddQuoteLineItemInput = z.infer<typeof AddQuoteLineItemInputSchema>;
 
