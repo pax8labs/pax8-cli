@@ -142,6 +142,136 @@ describe("pax8 quotes create", () => {
     });
   });
 
+  describe("line-item flag parity (#426)", () => {
+    // Each newly-supported flag on the shorthand `quotes create` path
+    // must actually apply to the line item that gets appended. Without
+    // these tests, the parity check at
+    // `quotes-create-line-items-parity.test.ts` would pin the *flag
+    // surface* but not catch a regression where a flag is declared yet
+    // silently dropped on the way to the line-item POST.
+
+    it("--price flows through to the appended line item's unitPrice", async () => {
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "2",
+        "--billing-term",
+        "Monthly",
+        "--price",
+        "77.77",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data[0].lineItems.length).toBe(1);
+      // Demo client persists unitPrice on the line; this is the regression
+      // pin for "shorthand silently used the list price instead of --price."
+      expect(data[0].lineItems[0].unitPrice).toBe(77.77);
+    });
+
+    it("--billing-term Annual produces a line item with billingTerm: \"Annual\"", async () => {
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "5",
+        "--billing-term",
+        "Annual",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data[0].lineItems.length).toBe(1);
+      expect(data[0].lineItems[0].billingTerm).toBe("Annual");
+    });
+
+    it("--effective-date YYYY-MM-DD is accepted and the line item is created", async () => {
+      // The demo client doesn't always echo effectiveDate, but the flag
+      // must be accepted end-to-end (parsed, validated, sent on the wire).
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "1",
+        "--effective-date",
+        "2026-06-15",
+        "--json",
+        "--yes",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data[0].lineItems.length).toBe(1);
+    });
+
+    it("rejects malformed --effective-date with the same error shape as line-items add", async () => {
+      const result = await runCliExpectFailure([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "1",
+        "--effective-date",
+        "06/15/2026",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/effective-date/i);
+    });
+
+    it("rejects negative --price with the same error shape as line-items add", async () => {
+      const result = await runCliExpectFailure([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "1",
+        "--price",
+        "-5",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/[Ii]nvalid price/);
+    });
+
+    it("rejects a typo'd --billing-term up front (fail-fast)", async () => {
+      const result = await runCliExpectFailure([
+        "quotes",
+        "create",
+        "--company",
+        "Summit Healthcare Partners",
+        "--product",
+        "prod-m365-e3-0003",
+        "--quantity",
+        "1",
+        "--billing-term",
+        "Annualy",
+        "--yes",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/billing-term/);
+      expect(combined).toMatch(/Annualy/);
+    });
+  });
+
   describe("partial-failure recovery hint (#311)", () => {
     // The shorthand path is two wire calls (POST /v2/quotes, then
     // POST /v2/quotes/{id}/line-items). If the second succeeds-but-fails

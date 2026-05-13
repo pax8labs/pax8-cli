@@ -6,7 +6,7 @@ import chalk from "chalk";
 import { buildContext } from "../../../lib/context.js";
 import { output } from "../../../lib/output.js";
 import { createSpinner } from "../../../lib/spinner.js";
-import { handleCommandError, CliError } from "../../../lib/errors.js";
+import { handleCommandError } from "../../../lib/errors.js";
 import { confirm, replCmd } from "../../../lib/confirm.js";
 import { resolveProduct } from "../../../lib/resolve-product.js";
 import { invalidateCacheAfterWrite } from "../../../lib/invalidate-cache.js";
@@ -14,22 +14,19 @@ import { markWriteInFlight } from "../../../lib/signals.js";
 import { formatQuantity, formatCurrency as formatPrice } from "../../../lib/formatters.js";
 import { promptNextSteps, type NextStep } from "../../../lib/next-step.js";
 import {
-  BillingTermSchema,
-  ERROR_INVALID_INPUT,
-  type BillingTerm,
-  type AddQuoteLineItemInput,
-} from "@pax8/core";
-import {
-  resolveEffectiveDate,
-  resolveListPrice,
-} from "../../../lib/quote-line-item-defaults.js";
-import { validateEnum } from "../../../lib/validate.js";
-
-const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
+  BILLING_TERM_VALUES,
+  buildLineItemPayload,
+  parseBillingTerm,
+  parsePriceOverride,
+  parseQuantity,
+} from "../_shared.js";
 
 // `resolveEffectiveDate` and `resolveListPrice` moved to
 // `packages/cli/src/lib/quote-line-item-defaults.ts` so #311's `quotes create`
-// two-call orchestration can reuse the same defaults.
+// two-call orchestration can reuse the same defaults. Per #426 the
+// `--price` / `--effective-date` flag wiring is also shared via
+// `packages/cli/src/commands/quotes/_shared.ts` so the shorthand and the
+// long-form path can't drift apart.
 
 export const quotesLineItemsAddCommand = new Command("add")
   .description("Add a line item to a quote")
@@ -65,43 +62,13 @@ Examples:
     const ctx = await buildContext(globalOpts);
 
     try {
-      // Fail-fast on typo'd `--billing-term` BEFORE any network call (#408).
-      validateEnum(options.billingTerm, BILLING_TERM_VALUES, "--billing-term", {
-        cmdHint: "pax8 quotes line-items add",
-      });
-
-      const quantity = parseInt(options.quantity, 10);
-      if (isNaN(quantity) || quantity <= 0) {
-        throw new CliError(
-          `Invalid quantity: "${options.quantity}"`,
-          ["Quantity must be a positive integer"],
-          undefined,
-          undefined,
-          ERROR_INVALID_INPUT,
-        );
-      }
-
-      // Resolve `--price` override if provided. Validate up-front so a bad
-      // value fails before any network/IO work.
-      let priceOverride: number | undefined;
-      if (options.price !== undefined) {
-        const parsed = Number(options.price);
-        if (!Number.isFinite(parsed) || parsed < 0) {
-          throw new CliError(
-            `Invalid price: "${options.price}"`,
-            ["Price must be a non-negative number"],
-            undefined,
-            undefined,
-            ERROR_INVALID_INPUT,
-          );
-        }
-        priceOverride = parsed;
-      }
-
-      // Resolve `--effective-date` override or default to today (UTC). The v2
-      // spec requires an ISO 8601 date-time; we accept the friendlier
-      // `YYYY-MM-DD` shape from the user and normalize to `T00:00:00Z`.
-      const effectiveDate = resolveEffectiveDate(options.effectiveDate);
+      // Pre-flight validation runs before any network call (#408, #426).
+      // The shared helpers validate `--billing-term`, `--quantity`, and
+      // `--price` so the shorthand path (`quotes create`) gets the same
+      // fail-fast behavior.
+      parseBillingTerm(options.billingTerm, "pax8 quotes line-items add");
+      parsePriceOverride(options.price);
+      const quantity = parseQuantity(options.quantity);
 
       const fetchSpinner = createSpinner("Fetching quote...").start();
       const quote = await ctx.api.quotes.get(quoteId);
@@ -115,26 +82,13 @@ Examples:
 
       const product = await resolveProduct(ctx, options.product);
 
-      // Resolve unit price: explicit `--price` wins; otherwise look up the
-      // product's list price (`suggestedRetailPrice`) for the chosen
-      // billing term. The lookup is best-effort and cached per command run,
-      // matching the convention used by `orders create` (#312).
-      const billingTerm = options.billingTerm as BillingTerm;
-      const price = priceOverride
-        ?? (await resolveListPrice(ctx, product.id, billingTerm));
-
-      if (price === undefined) {
-        throw new CliError(
-          `No list price found for "${product.name}" at billing term "${billingTerm}"`,
-          [
-            `Pass --price <number> to set the per-unit price explicitly`,
-            `Try a different --billing-term (Monthly or Annual)`,
-          ],
-          undefined,
-          undefined,
-          ERROR_INVALID_INPUT,
-        );
-      }
+      const built = await buildLineItemPayload(ctx, product, quantity, {
+        quantity: options.quantity,
+        billingTerm: options.billingTerm,
+        price: options.price,
+        effectiveDate: options.effectiveDate,
+      });
+      const { input, price, priceWasOverridden, effectiveDate, billingTerm } = built;
 
       process.stderr.write(chalk.bold("\n  Add line item:\n\n"));
       process.stderr.write(`  ${chalk.dim("Quote:".padEnd(18))}${quote.id} ${chalk.dim(`(${quote.status})`)}\n`);
@@ -143,7 +97,7 @@ Examples:
       process.stderr.write(`  ${chalk.dim("Billing term:".padEnd(18))}${billingTerm}\n`);
       process.stderr.write(
         `  ${chalk.dim("Unit price:".padEnd(18))}${formatPrice(price)}${
-          priceOverride !== undefined ? chalk.dim(" (override)") : chalk.dim(" (list)")
+          priceWasOverridden ? chalk.dim(" (override)") : chalk.dim(" (list)")
         }\n`,
       );
       process.stderr.write(
@@ -156,14 +110,6 @@ Examples:
         process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
         return;
       }
-
-      const input: AddQuoteLineItemInput = {
-        productId: product.id,
-        quantity,
-        billingTerm,
-        effectiveDate,
-        price,
-      };
 
       const spinner = createSpinner("Adding line item...").start();
       const done = markWriteInFlight("quotes");
