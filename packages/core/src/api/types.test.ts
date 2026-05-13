@@ -1108,6 +1108,78 @@ describe("QuoteSchema", () => {
     void _td;
     expect(() => QuoteSchema.parse(withoutTerms)).toThrow();
   });
+
+  // Server-side totals — surfaced from the v2 wire as `QuoteResponse.totals`
+  // (an `InvoiceTotals` object splitting one-time `initial*` vs subscription
+  // `recurring*` buckets, each carrying cost / profit / total amounts with
+  // currency). Spec marks the field required; we keep the Zod field optional
+  // for defensive parsing against API drift — the render layer handles the
+  // absent case.
+  it("parses a quote with server-side totals (initial + recurring)", () => {
+    const withTotals = {
+      ...valid,
+      totals: {
+        initialCost: { amount: 400, currency: "USD" },
+        initialProfit: { amount: 100, currency: "USD" },
+        initialTotal: { amount: 500, currency: "USD" },
+        recurringCost: { amount: 176, currency: "USD" },
+        recurringProfit: { amount: 44, currency: "USD" },
+        recurringTotal: { amount: 220, currency: "USD" },
+      },
+    };
+    const parsed = QuoteSchema.parse(withTotals);
+    expect(parsed.totals?.initialTotal.amount).toBe(500);
+    expect(parsed.totals?.initialTotal.currency).toBe("USD");
+    expect(parsed.totals?.recurringTotal.amount).toBe(220);
+  });
+
+  it("parses without `totals` (optional — defensive against API drift)", () => {
+    // Spec marks totals required, but a partial or older API response
+    // shouldn't fail the whole quote parse. Schema accepts the absence;
+    // render falls back to the locally-summed line subtotals.
+    const parsed = QuoteSchema.parse(valid);
+    expect(parsed.totals).toBeUndefined();
+  });
+
+  it("rejects malformed AmountCurrency inside totals (e.g. missing currency)", () => {
+    const malformed = {
+      ...valid,
+      totals: {
+        initialCost: { amount: 400 }, // missing currency
+        initialProfit: { amount: 100, currency: "USD" },
+        initialTotal: { amount: 500, currency: "USD" },
+        recurringCost: { amount: 176, currency: "USD" },
+        recurringProfit: { amount: 44, currency: "USD" },
+        recurringTotal: { amount: 220, currency: "USD" },
+      },
+    };
+    expect(() => QuoteSchema.parse(malformed)).toThrow();
+  });
+
+  it("accepts a quote-line-item with server-side per-line totals", () => {
+    const withLineTotals = {
+      ...valid,
+      lineItems: [
+        {
+          productId: uuid,
+          quantity: 10,
+          billingTerm: "Annual",
+          unitPrice: 22.5,
+          subtotal: 225,
+          totals: {
+            initialCost: { amount: 0, currency: "USD" },
+            initialProfit: { amount: 0, currency: "USD" },
+            initialTotal: { amount: 0, currency: "USD" },
+            recurringCost: { amount: 180, currency: "USD" },
+            recurringProfit: { amount: 45, currency: "USD" },
+            recurringTotal: { amount: 225, currency: "USD" },
+          },
+        },
+      ],
+    };
+    const parsed = QuoteSchema.parse(withLineTotals);
+    expect(parsed.lineItems?.[0].totals?.recurringTotal.amount).toBe(225);
+  });
 });
 
 // ─── Webhook ─────────────────────────────────────────────────────────────────

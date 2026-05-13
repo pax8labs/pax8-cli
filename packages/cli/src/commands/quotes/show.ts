@@ -20,7 +20,22 @@ export const quotesShowCommand = new Command("show")
 Examples:
   pax8 quotes show quote-summit-001
   pax8 quotes show quote-summit-001 --json
-  pax8 quotes show quote-summit-001 --csv`
+  pax8 quotes show quote-summit-001 --csv
+
+Totals:
+  When the v2 quoting API returns server-side totals on the quote
+  (\`QuoteResponse.totals\`), table output renders an initial-vs-recurring
+  split — "Total (initial)" for one-time charges and "Total (recurring)"
+  for the per-period subscription amount. Buckets that are zero are
+  suppressed. If the API omits totals, the rendered Total falls back to
+  the sum of line-item subtotals.
+
+JSON output (--json):
+  The \`totals\` field passes through unchanged from the API response —
+  a nested object \`{ initialCost, initialProfit, initialTotal,
+  recurringCost, recurringProfit, recurringTotal }\` where each leaf is
+  \`{ amount: number, currency: string }\`. Cost is partner wholesale,
+  Profit is partner-side margin, Total is the customer-facing amount.`
   )
   .action(async (id, _options, command) => {
     const globalOpts = command.optsWithGlobals();
@@ -61,7 +76,10 @@ Examples:
 
       process.stdout.write("\n");
       process.stdout.write(chalk.bold(`  Quote ${quote.id}\n\n`));
-      const labelWidth = 18;
+      // 20 (not the prior 18) so the longest label in the block —
+      // "Total (recurring):" at 18 chars — still gets a separator space
+      // between the colon and the right-aligned amount.
+      const labelWidth = 20;
       const writeRow = (label: string, value: string) => {
         process.stdout.write(`  ${chalk.dim((label + ":").padEnd(labelWidth))}${value}\n`);
       };
@@ -108,7 +126,53 @@ Examples:
       if (typeof quote.salesMarginPercentage === "number") {
         writeRow("Margin", `${quote.salesMarginPercentage.toFixed(1)}%`);
       }
-      writeRow("Total", chalk.bold(formatCurrency(total)));
+      // Totals rendering. When the v2 API returns `quote.totals` (the
+      // server-side InvoiceTotals — initial vs recurring buckets, each with
+      // amount + currency), surface both totals so partners see the
+      // initial-vs-recurring split that locally-summed line subtotals can't
+      // express. Falls back to the locally-summed `total` when the API
+      // omits totals (defensive against API drift; spec says required).
+      //
+      // Render shape: `$1,200.00 USD` and `$850.00 USD / month`. The amount
+      // column starts at the same column on both lines (the label-padding
+      // does the alignment); the `/ month` suffix extends past on the
+      // recurring line. Currency is always shown (even for USD) so partners
+      // never have to guess which units are in play.
+      const serverTotals = quote.totals;
+      if (serverTotals) {
+        const initialAmt = serverTotals.initialTotal.amount;
+        const recurringAmt = serverTotals.recurringTotal.amount;
+        const initialCur = serverTotals.initialTotal.currency;
+        const recurringCur = serverTotals.recurringTotal.currency;
+        const showInitial = initialAmt > 0;
+        const showRecurring = recurringAmt > 0;
+        if (showInitial) {
+          writeRow(
+            "Total (initial)",
+            chalk.bold(`${formatCurrency(initialAmt)} ${initialCur}`),
+          );
+        }
+        if (showRecurring) {
+          writeRow(
+            "Total (recurring)",
+            chalk.bold(`${formatCurrency(recurringAmt)} ${recurringCur} / month`),
+          );
+        }
+        // Edge case: server returned totals but both buckets are zero —
+        // surface a single zero line for consistency rather than silently
+        // showing nothing.
+        if (!showInitial && !showRecurring) {
+          writeRow(
+            "Total",
+            chalk.bold(`${formatCurrency(0)} ${recurringCur}`),
+          );
+        }
+      } else {
+        // Fallback: API didn't return server totals (legacy / drift).
+        // Use the locally-derived sum-of-subtotals, mirroring pre-#XYZ
+        // behavior so partners on older API versions don't see a regression.
+        writeRow("Total", chalk.bold(formatCurrency(total)));
+      }
       process.stdout.write("\n");
 
       if (lineItems.length === 0) {

@@ -149,6 +149,73 @@ describe("pax8 quotes", () => {
       expect(data.declinedBy).toBeUndefined();
       expect(data.respondedOn).toBeUndefined();
     });
+
+    // ─── Server-side totals (QuoteResponse.totals) ───────────────────────
+    // The v2 quoting API returns a `totals` object splitting one-time
+    // `initial*` vs subscription-period `recurring*` buckets (each
+    // carrying cost / profit / total AmountCurrency values). These tests
+    // pin the render contract for the three render-paths the totals
+    // logic distinguishes — both buckets present, only-recurring, and
+    // only-initial — plus the JSON pass-through contract for agents.
+
+    it("--json output includes the full server-side totals shape", async () => {
+      const result = await runCliExpectSuccess([
+        "quotes",
+        "show",
+        "quote-summit-001",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.totals).toBeDefined();
+      expect(data.totals.initialCost.amount).toBeTypeOf("number");
+      expect(data.totals.initialCost.currency).toBe("USD");
+      expect(data.totals.recurringTotal.amount).toBeGreaterThan(0);
+      expect(data.totals.recurringTotal.currency).toBe("USD");
+      // Six fields in the InvoiceTotals object — spec contract.
+      expect(Object.keys(data.totals).sort()).toEqual(
+        ["initialCost", "initialProfit", "initialTotal",
+         "recurringCost", "recurringProfit", "recurringTotal"].sort(),
+      );
+    });
+
+    it("table render shows BOTH Total (initial) and Total (recurring) for a mixed-bucket quote", async () => {
+      // quote-acme-001 fixture: $500 one-time onboarding + $220/mo recurring.
+      // Both buckets are non-zero, so both lines must render.
+      // Force table mode — execFile gives the subprocess a non-TTY stdout,
+      // and the CLI auto-falls back to JSON in that case.
+      const result = await runCliExpectSuccess(
+        ["quotes", "show", "quote-acme-001"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      expect(result.stdout).toMatch(/Total \(initial\):/);
+      expect(result.stdout).toMatch(/Total \(recurring\):/);
+      // Amounts surface with currency code (always shown for clarity, even on USD).
+      expect(result.stdout).toContain("USD");
+      // `/ month` suffix on the recurring line specifically.
+      expect(result.stdout).toMatch(/Total \(recurring\):[^\n]+\/ month/);
+    });
+
+    it("table render shows ONLY Total (recurring) for a recurring-only quote", async () => {
+      // quote-summit-001 fixture: only recurring component, initial bucket is $0.
+      // The zero-bucket initial line must be suppressed, not rendered as "$0.00".
+      const result = await runCliExpectSuccess(
+        ["quotes", "show", "quote-summit-001"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      expect(result.stdout).toMatch(/Total \(recurring\):/);
+      expect(result.stdout).not.toMatch(/Total \(initial\):/);
+    });
+
+    it("table render shows ONLY Total (initial) for an initial-only quote", async () => {
+      // quote-pinnacle-001 fixture: one-time consulting engagement with no
+      // recurring component. The zero-bucket recurring line must be suppressed.
+      const result = await runCliExpectSuccess(
+        ["quotes", "show", "quote-pinnacle-001"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      expect(result.stdout).toMatch(/Total \(initial\):/);
+      expect(result.stdout).not.toMatch(/Total \(recurring\):/);
+    });
   });
 
   describe("quotes --help", () => {
