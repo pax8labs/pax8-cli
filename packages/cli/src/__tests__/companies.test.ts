@@ -597,5 +597,37 @@ describe("pax8 companies", () => {
       expect(result.stdout).toContain("--phone");
       expect(result.stdout).toContain("Examples:");
     });
+
+    // #432: Franco Aurieme's domain-review finding. The atomic-create path
+    // implicitly assigns the supplied contact as primary Admin/Billing/
+    // Technical to satisfy activation. Partners need to discover that they
+    // can re-split those roles afterward — pin the Note block in --help so
+    // a future help-text refactor can't quietly drop it.
+    it("create --help documents the multi-role primary assignment (#432)", async () => {
+      const result = await runCliExpectSuccess([
+        "companies",
+        "create",
+        "--help",
+      ]);
+      expect(result.stdout).toMatch(/primary Admin, Billing, and Technical/i);
+      expect(result.stdout).toContain("pax8 contacts update");
+      expect(result.stdout).toContain("pax8 contacts create --type");
+    });
+
+    // #432: same assertion through the `clients` invocation path. The alias
+    // is wired via Commander's `.alias()` so both surfaces share one command
+    // graph (see clients-companies-parity.test.ts), but pin the user-facing
+    // contract here too so a regression that breaks alias inheritance fails
+    // loudly on the canonical surface.
+    it("`clients create --help` inherits the multi-role Note via the alias (#432)", async () => {
+      const result = await runCliExpectSuccess([
+        "clients",
+        "create",
+        "--help",
+      ]);
+      expect(result.stdout).toMatch(/primary Admin, Billing, and Technical/i);
+      expect(result.stdout).toContain("pax8 contacts update");
+      expect(result.stdout).toContain("pax8 contacts create --type");
+    });
   });
 });

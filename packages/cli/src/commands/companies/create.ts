@@ -127,7 +127,13 @@ Examples:
       --first-name Maya --last-name Chen --email maya@summit.example.com
 
   # Company-only (Inactive — must follow up with 'pax8 contacts create')
-  pax8 clients create --name "Test Co" --city Denver --state CO --zip 80202 --company-only`,
+  pax8 clients create --name "Test Co" --city Denver --state CO --zip 80202 --company-only
+
+Note:
+  The contact you provide is assigned as primary Admin, Billing, and Technical
+  to activate the company. To split these roles to different contacts, use
+  'pax8 contacts update' or create additional contacts with
+  'pax8 contacts create --type' after company creation.`,
   )
   .action(async (options, command: Command) => {
     const allOpts = command.optsWithGlobals();
