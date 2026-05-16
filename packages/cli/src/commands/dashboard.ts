@@ -270,16 +270,21 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           });
         }
 
-        // JSON field-naming note (Bret Pittenger reporting-domain review):
-        // the dollar figures here are the partner's monthly/annual COST to
-        // Pax8 (sum of price × quantity across active subs, amortized
-        // monthly). They were previously framed as partner-side "MRR" /
-        // "ARR" — that was misleading. The canonical names are now
-        // `pax8MonthlyCost` and `pax8AnnualCost`. The legacy `mrr` / `arr`
-        // / `topCustomers[].mrr` / `potentialMrrUplift` keys are dual-emitted
-        // for one minor version cycle so existing `--json` consumers don't
-        // break; removal in v0.3.0. Same pattern as the `mrrAtRisk` →
-        // `mrrRenewing` rename (#298) and `createdDate` → `createdAt` (#385).
+        // JSON field-naming note: the dollar figures here are the partner's
+        // monthly/annual COST to Pax8 (sum of price × quantity across active
+        // subs, amortized monthly). Emitted as wrapped `AmountCurrency`
+        // envelopes ({ amount, currency }) — the canonical Pax8 wire shape
+        // used by the v2 quoting API (`QuoteResponse.totals.initialCost`,
+        // etc., schema at `packages/core/src/api/types.ts`). Surface-
+        // consistent with the upcoming reporting commands (`report renewals`
+        // / `concentration` / `subscriptions`). The previous flat
+        // `pax8MonthlyCost` / `pax8AnnualCost` numbers and the deprecated
+        // `mrr` / `arr` aliases were dropped in this revision — v0.1.0 is
+        // pre-publish so there's no external contract to preserve.
+        // Currency is read from `Subscription.currencyCode` on the underlying
+        // subs (first active sub for aggregates), defaulting to "USD" when
+        // missing. Mixed-currency portfolios are out of scope for v0.x.
+        const portfolioCurrency = activeSubs.find((s) => s.currencyCode)?.currencyCode ?? "USD";
         const portfolioMonthlyCost = Number(cost.toFixed(2));
         const portfolioAnnualCost = Number((cost * 12).toFixed(2));
         const potentialUplift = Number(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0).toFixed(2));
@@ -288,21 +293,13 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           activeSubscriptions: activeSubs.length,
           companiesWithActiveSubs: companyIds.size,
           totalSeats,
-          // Canonical (Bret-review rename).
-          pax8MonthlyCost: portfolioMonthlyCost,
-          pax8AnnualCost: portfolioAnnualCost,
-          // DEPRECATED aliases of pax8MonthlyCost / pax8AnnualCost — dual-emitted
-          // for one minor version cycle. Removal in v0.3.0.
-          mrr: portfolioMonthlyCost,
-          arr: portfolioAnnualCost,
+          monthlyCost: { amount: portfolioMonthlyCost, currency: portfolioCurrency },
+          annualCost: { amount: portfolioAnnualCost, currency: portfolioCurrency },
           topCustomers: topCustomers.map((c) => {
             const customerCost = Number(c.cost.toFixed(2));
             return {
               name: c.name,
-              // Canonical (Bret-review rename).
-              pax8MonthlyCost: customerCost,
-              // DEPRECATED alias — removal in v0.3.0.
-              mrr: customerCost,
+              monthlyCost: { amount: customerCost, currency: portfolioCurrency },
               seats: c.seats,
               subscriptions: c.subs,
             };
@@ -311,7 +308,9 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           urgentRenewals: renewals.urgentCount,
           // `mrrRenewing` is the canonical name introduced in #298. The
           // `mrrAtRisk` alias is kept for one minor version cycle so existing
-          // scripts don't break.
+          // scripts don't break. Wire-side fields preserved — not part of the
+          // AmountCurrency reshape (those are partner-side risk-framing
+          // fields on `RenewalReport`, not CLI-aggregated Pax8 cost).
           mrrRenewing: Number(renewals.totalMrrRenewing.toFixed(2)),
           mrrAtRisk: Number(renewals.totalMrrRenewing.toFixed(2)),
           renewals: renewals.items.slice(0, 10).map((r) => {
@@ -325,10 +324,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
             };
           }),
           highPriorityRecs: highRecs.length,
-          // Canonical (Bret-review rename).
-          potentialPax8MonthlyUplift: potentialUplift,
-          // DEPRECATED alias of potentialPax8MonthlyUplift — removal in v0.3.0.
-          potentialMrrUplift: potentialUplift,
+          potentialMonthlyUplift: { amount: potentialUplift, currency: portfolioCurrency },
           activeTrials: trials.length,
           recentOrders: recentOrders.map((o) => ({
             companyName: o.companyName,
@@ -572,25 +568,27 @@ Examples:
   pax8 ${name} --json
 
 JSON output (--json):
+  Pax8-cost figures are emitted as wrapped AmountCurrency envelopes
+  ({ amount, currency }) — the canonical Pax8 wire shape used by the v2
+  quoting API. Currency is sourced from Subscription.currencyCode on the
+  underlying subs (defaults to "USD" when missing).
+
   {
     "totalCompanies": number,
     "activeSubscriptions": number,
     "companiesWithActiveSubs": number,
     "totalSeats": number,
-    "pax8MonthlyCost": number,            // sum of price × quantity (monthly-amortized) for active subs
-    "pax8AnnualCost": number,             // pax8MonthlyCost × 12
-    "mrr": number,                        // DEPRECATED alias of pax8MonthlyCost — removed in v0.3.0
-    "arr": number,                        // DEPRECATED alias of pax8AnnualCost — removed in v0.3.0
+    "monthlyCost": { "amount": number, "currency": string },   // sum of price × quantity (monthly-amortized) for active subs
+    "annualCost": { "amount": number, "currency": string },    // monthlyCost.amount × 12
     "topCustomers": [{
       "name": string,
-      "pax8MonthlyCost": number,
-      "mrr": number,                      // DEPRECATED alias of pax8MonthlyCost — removed in v0.3.0
+      "monthlyCost": { "amount": number, "currency": string },
       "seats": number,
       "subscriptions": number
     }],
     "renewalsNext30Days": number,
     "urgentRenewals": number,             // renewals within 14d
-    "mrrRenewing": number,                // canonical key (#298) — partner-side risk framing, NOT touched by Bret-review rename
+    "mrrRenewing": number,                // canonical key (#298) — wire-side partner-risk framing, preserved flat
     "mrrAtRisk": number,                  // DEPRECATED alias of mrrRenewing — removed in a future minor
     "renewals": [{
       "companyName": string,
@@ -600,8 +598,7 @@ JSON output (--json):
       "mrrAtRisk": number                 // DEPRECATED alias
     }],
     "highPriorityRecs": number,
-    "potentialPax8MonthlyUplift": number, // sum of additional Pax8 monthly cost across high-priority recs
-    "potentialMrrUplift": number,         // DEPRECATED alias of potentialPax8MonthlyUplift — removed in v0.3.0
+    "potentialMonthlyUplift": { "amount": number, "currency": string }, // additional Pax8 monthly cost across high-priority recs
     "activeTrials": number,
     "recentOrders": [{
       "companyName": string,
@@ -611,7 +608,9 @@ JSON output (--json):
       "lineItems": [{ "productName": string, "quantity": number }]
     }],
     "nextActions": [{ "command": string, "description": string }]
-  }`,
+  }
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`,
     )
     .action(async (options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, c: Command) => {
       if (name === "status") {

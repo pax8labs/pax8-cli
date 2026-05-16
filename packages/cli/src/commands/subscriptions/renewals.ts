@@ -105,7 +105,9 @@ JSON output (--json):
   The mrrAtRisk / arrAtRisk aliases are dual-emitted alongside the canonical
   mrrRenewing / arrRenewing fields for one minor version cycle so existing
   scripts don't break. Migrate to the renewing-named fields; the at-risk
-  names will be removed in a future minor version (see #299).`
+  names will be removed in a future minor version (see #299).
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();

@@ -148,7 +148,9 @@ JSON output (--json):
   that are NOT Pax8's canonical STAX taxonomy or Seat Utilization
   metric. See "Metric definitions" in README.md and the module
   docstring at packages/core/src/services/recommendations.ts. Will
-  sunset when OE's first-party /opportunities API ships (ARC-785, #375).`
+  sunset when OE's first-party /opportunities API ships (ARC-785, #375).
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
   .allowExcessArguments(true)
   .action(async (options, cmd) => {

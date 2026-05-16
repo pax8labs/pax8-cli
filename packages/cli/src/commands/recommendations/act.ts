@@ -172,7 +172,9 @@ Examples:
   pax8 recommendations act
   pax8 recommendations act --company "Summit Healthcare"
   pax8 recommendations act --priority high
-  pax8 recommendations act --yes                    # non-interactive: place all`
+  pax8 recommendations act --yes                    # non-interactive: place all
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
