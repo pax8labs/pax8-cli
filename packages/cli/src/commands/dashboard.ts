@@ -16,15 +16,20 @@ import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Internal name `cost` reflects what these numbers actually are: the
+// partner's monthly cost to Pax8 (price × quantity, amortized monthly).
+// Previously framed as partner-side "MRR" — corrected per Bret Pittenger's
+// reporting-domain review. The math is unchanged; the labels and the
+// CLI's own JSON field names are.
 interface CompanyStats {
   name: string;
-  mrr: number;
+  cost: number;
   seats: number;
   subs: number;
 }
 
 function computePortfolioStats(activeSubs: Subscription[]) {
-  let mrr = 0;
+  let cost = 0;
   let totalSeats = 0;
   const companyIds = new Set<string>();
   const companyMap = new Map<string, CompanyStats>();
@@ -33,25 +38,25 @@ function computePortfolioStats(activeSubs: Subscription[]) {
     const price = sub.price ?? 0;
     const qty = sub.quantity ?? 0;
     const term = String(sub.billingTerm ?? "Monthly");
-    const subMrr = calculateMrr(price, qty, term);
+    const subCost = calculateMrr(price, qty, term);
 
-    mrr += subMrr;
+    cost += subCost;
     totalSeats += qty;
     companyIds.add(sub.companyId);
 
     const coId = sub.companyId;
-    const existing = companyMap.get(coId) ?? { name: sub.companyName ?? coId, mrr: 0, seats: 0, subs: 0 };
-    existing.mrr += subMrr;
+    const existing = companyMap.get(coId) ?? { name: sub.companyName ?? coId, cost: 0, seats: 0, subs: 0 };
+    existing.cost += subCost;
     existing.seats += qty;
     existing.subs += 1;
     companyMap.set(coId, existing);
   }
 
   const topCustomers = [...companyMap.values()]
-    .sort((a, b) => b.mrr - a.mrr)
+    .sort((a, b) => b.cost - a.cost)
     .slice(0, 5);
 
-  return { mrr, totalSeats, companyIds, topCustomers };
+  return { cost, totalSeats, companyIds, topCustomers };
 }
 
 function tokenizeCmd(cmd: string): string[] {
@@ -93,22 +98,22 @@ function brailleBar(value: number, max: number, width: number): { bar: string; l
 function renderCustomersSection(
   out: NodeJS.WriteStream,
   topCustomers: CompanyStats[],
-  mrr: number,
+  totalCost: number,
   divider: () => void,
 ): void {
   if (topCustomers.length === 0) return;
   divider();
-  out.write(chalk.bold("  Top Customers\n\n"));
+  out.write(chalk.bold("  Top Customers by Pax8 Monthly Cost\n\n"));
   const maxNameLen = Math.min(Math.max(...topCustomers.map((c) => c.name.length)), 28);
-  const maxMrr = topCustomers[0]?.mrr ?? 0;
+  const maxCost = topCustomers[0]?.cost ?? 0;
   const barWidth = 18;
   for (const c of topCustomers) {
     const name = c.name.length > maxNameLen ? c.name.slice(0, maxNameLen - 1) + "…" : c.name.padEnd(maxNameLen);
-    const pctNum = mrr > 0 ? ((c.mrr / mrr) * 100) : 0;
+    const pctNum = totalCost > 0 ? ((c.cost / totalCost) * 100) : 0;
     const pctStr = `${pctNum.toFixed(0)}%`;
-    const { bar, len } = brailleBar(c.mrr, maxMrr, barWidth);
+    const { bar, len } = brailleBar(c.cost, maxCost, barWidth);
     const pad = barWidth - len;
-    out.write(`  ${chalk.bold(name)}  ${formatCurrency(c.mrr).padStart(10)}/mo  ${chalk.cyan(bar)}${chalk.dim("⠀".repeat(pad))}  ${chalk.dim(pctStr.padStart(4))}\n`);
+    out.write(`  ${chalk.bold(name)}  ${formatCurrency(c.cost).padStart(10)}/mo  ${chalk.cyan(bar)}${chalk.dim("⠀".repeat(pad))}  ${chalk.dim(pctStr.padStart(4))}\n`);
   }
 }
 
@@ -144,7 +149,10 @@ function renderGrowthSection(
   if (highRecs.length === 0) return;
   const uplift = highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0);
   divider();
-  out.write(chalk.bold(`  Growth Opportunities  `) + chalk.green.bold(`${formatCurrency(uplift)}/mo`) + chalk.dim(` potential uplift\n\n`));
+  // Wording note: "uplift" here is the additional Pax8 monthly cost to the
+  // partner if these recs were ordered (unit price × seats). It is not the
+  // partner's resale revenue. See Bret Pittenger's reporting-domain review.
+  out.write(chalk.bold(`  Growth Opportunities  `) + chalk.green.bold(`${formatCurrency(uplift)}/mo`) + chalk.dim(` potential Pax8 cost uplift\n\n`));
   for (const r of highRecs.slice(0, 10)) {
     const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
     out.write(`  ${chalk.green("+")} ${r.companyName} — ${r.title}${upliftStr}\n`);
@@ -218,7 +226,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         }));
 
       const activeSubs = allSubs.filter((s) => s.status === "Active");
-      const { mrr, totalSeats, companyIds, topCustomers } = computePortfolioStats(activeSubs);
+      const { cost, totalSeats, companyIds, topCustomers } = computePortfolioStats(activeSubs);
       const renewals = getUpcomingRenewals(allSubs, 30);
       const recsReport = getRecommendations(activeSubs, productsResult.content);
       const highRecs = recsReport.recommendations.filter((r) => r.priority === "high");
@@ -243,7 +251,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         if (highRecs.length > 0) {
           nextActions.push({
             command: "pax8 recommendations list --json",
-            description: `Explore ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"} (${formatCurrency(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0))}/mo potential)`,
+            description: `Explore ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"} (${formatCurrency(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0))}/mo additional Pax8 cost)`,
           });
         }
 
@@ -262,24 +270,47 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           });
         }
 
+        // JSON field-naming note: the dollar figures here are the partner's
+        // monthly/annual COST to Pax8 (sum of price × quantity across active
+        // subs, amortized monthly). Emitted as wrapped `AmountCurrency`
+        // envelopes ({ amount, currency }) — the canonical Pax8 wire shape
+        // used by the v2 quoting API (`QuoteResponse.totals.initialCost`,
+        // etc., schema at `packages/core/src/api/types.ts`). Surface-
+        // consistent with the upcoming reporting commands (`report renewals`
+        // / `concentration` / `subscriptions`). The previous flat
+        // `pax8MonthlyCost` / `pax8AnnualCost` numbers and the deprecated
+        // `mrr` / `arr` aliases were dropped in this revision — v0.1.0 is
+        // pre-publish so there's no external contract to preserve.
+        // Currency is read from `Subscription.currencyCode` on the underlying
+        // subs (first active sub for aggregates), defaulting to "USD" when
+        // missing. Mixed-currency portfolios are out of scope for v0.x.
+        const portfolioCurrency = activeSubs.find((s) => s.currencyCode)?.currencyCode ?? "USD";
+        const portfolioMonthlyCost = Number(cost.toFixed(2));
+        const portfolioAnnualCost = Number((cost * 12).toFixed(2));
+        const potentialUplift = Number(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0).toFixed(2));
         process.stdout.write(JSON.stringify({
           totalCompanies: companiesResult.page.totalElements,
           activeSubscriptions: activeSubs.length,
           companiesWithActiveSubs: companyIds.size,
           totalSeats,
-          mrr: Number(mrr.toFixed(2)),
-          arr: Number((mrr * 12).toFixed(2)),
-          topCustomers: topCustomers.map((c) => ({
-            name: c.name,
-            mrr: Number(c.mrr.toFixed(2)),
-            seats: c.seats,
-            subscriptions: c.subs,
-          })),
+          monthlyCost: { amount: portfolioMonthlyCost, currency: portfolioCurrency },
+          annualCost: { amount: portfolioAnnualCost, currency: portfolioCurrency },
+          topCustomers: topCustomers.map((c) => {
+            const customerCost = Number(c.cost.toFixed(2));
+            return {
+              name: c.name,
+              monthlyCost: { amount: customerCost, currency: portfolioCurrency },
+              seats: c.seats,
+              subscriptions: c.subs,
+            };
+          }),
           renewalsNext30Days: renewals.items.length,
           urgentRenewals: renewals.urgentCount,
           // `mrrRenewing` is the canonical name introduced in #298. The
           // `mrrAtRisk` alias is kept for one minor version cycle so existing
-          // scripts don't break.
+          // scripts don't break. Wire-side fields preserved — not part of the
+          // AmountCurrency reshape (those are partner-side risk-framing
+          // fields on `RenewalReport`, not CLI-aggregated Pax8 cost).
           mrrRenewing: Number(renewals.totalMrrRenewing.toFixed(2)),
           mrrAtRisk: Number(renewals.totalMrrRenewing.toFixed(2)),
           renewals: renewals.items.slice(0, 10).map((r) => {
@@ -293,7 +324,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
             };
           }),
           highPriorityRecs: highRecs.length,
-          potentialMrrUplift: Number(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0).toFixed(2)),
+          potentialMonthlyUplift: { amount: potentialUplift, currency: portfolioCurrency },
           activeTrials: trials.length,
           recentOrders: recentOrders.map((o) => ({
             companyName: o.companyName,
@@ -323,19 +354,24 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
       const showGrowth = showAll || options.growth;
       const isDefault = !showCustomers && !showRenewals && !showGrowth;
 
-      const arr = mrr * 12;
+      const annualCost = cost * 12;
       const out = process.stdout;
       const divider = () => out.write(`\n  ${chalk.dim("─".repeat(48))}\n\n`);
 
-      // ── Revenue headline ─────────────────────────────────────────
+      // ── Pax8 cost headline ───────────────────────────────────────
+      // These figures are partner cost paid to Pax8 (sum of price ×
+      // quantity across active subs, amortized monthly). They are NOT
+      // partner-side MRR / ARR — that distinction was previously elided
+      // in the headline and got flagged in Bret Pittenger's reporting-
+      // domain review.
       out.write("\n");
       out.write(chalk.bold("  Pax8 Business Snapshot\n\n"));
-      out.write(`  ${chalk.cyan.bold(formatCurrency(mrr))}/mo estimated MRR  ·  ${chalk.cyan.bold(formatCurrency(arr))}/yr ARR\n\n`);
+      out.write(`  ${chalk.cyan.bold(formatCurrency(cost))}/mo Pax8 cost  ·  ${chalk.cyan.bold(formatCurrency(annualCost))}/yr annualized\n\n`);
       out.write(`  ${chalk.dim("Companies:")}     ${companiesResult.page.totalElements}\n`);
       out.write(`  ${chalk.dim("Active subs:")}   ${activeSubs.length} across ${companyIds.size} companies\n`);
       out.write(`  ${chalk.dim("Total seats:")}   ${totalSeats.toLocaleString()}\n`);
       if (companyIds.size > 0) {
-        out.write(`  ${chalk.dim("Avg est. MRR/co:")} ${formatCurrency(mrr / companyIds.size)}\n`);
+        out.write(`  ${chalk.dim("Avg Pax8 cost/co:")} ${formatCurrency(cost / companyIds.size)}\n`);
       }
 
       // ── Recent Activity ──────────────────────────────────────────
@@ -371,7 +407,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
 
         if (highRecs.length > 0) {
           const uplift = highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0);
-          alerts.push(chalk.green(`  + ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"}`) + chalk.green.bold(` — ${formatCurrency(uplift)}/mo potential`));
+          alerts.push(chalk.green(`  + ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"}`) + chalk.green.bold(` — ${formatCurrency(uplift)}/mo potential Pax8 cost`));
         }
 
         if (trials.length > 0) {
@@ -442,7 +478,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
 
       // ── Top Customers (--customers / --all) ──────────────────────
       if (showCustomers) {
-        renderCustomersSection(out, topCustomers, mrr, divider);
+        renderCustomersSection(out, topCustomers, cost, divider);
       }
 
       // ── Renewals (--renewals / --all) ────────────────────────────
@@ -518,7 +554,7 @@ function buildDashboardCommand(name: "dashboard" | "status"): Command {
   const cmd = new Command(name)
     .description("Quick snapshot of your Pax8 business")
     .option("--all", "Show full dashboard with all sections")
-    .option("--customers", "Show top customers by estimated MRR")
+    .option("--customers", "Show top customers by Pax8 monthly cost")
     .option("--renewals", "Show upcoming renewal details")
     .option("--growth", "Show growth opportunities")
     .addHelpText(
@@ -532,22 +568,27 @@ Examples:
   pax8 ${name} --json
 
 JSON output (--json):
+  Pax8-cost figures are emitted as wrapped AmountCurrency envelopes
+  ({ amount, currency }) — the canonical Pax8 wire shape used by the v2
+  quoting API. Currency is sourced from Subscription.currencyCode on the
+  underlying subs (defaults to "USD" when missing).
+
   {
     "totalCompanies": number,
     "activeSubscriptions": number,
     "companiesWithActiveSubs": number,
     "totalSeats": number,
-    "mrr": number,                        // estimated MRR across active subs
-    "arr": number,                        // mrr × 12
+    "monthlyCost": { "amount": number, "currency": string },   // sum of price × quantity (monthly-amortized) for active subs
+    "annualCost": { "amount": number, "currency": string },    // monthlyCost.amount × 12
     "topCustomers": [{
       "name": string,
-      "mrr": number,
+      "monthlyCost": { "amount": number, "currency": string },
       "seats": number,
       "subscriptions": number
     }],
     "renewalsNext30Days": number,
     "urgentRenewals": number,             // renewals within 14d
-    "mrrRenewing": number,                // canonical key (#298)
+    "mrrRenewing": number,                // canonical key (#298) — wire-side partner-risk framing, preserved flat
     "mrrAtRisk": number,                  // DEPRECATED alias of mrrRenewing — removed in a future minor
     "renewals": [{
       "companyName": string,
@@ -557,7 +598,7 @@ JSON output (--json):
       "mrrAtRisk": number                 // DEPRECATED alias
     }],
     "highPriorityRecs": number,
-    "potentialMrrUplift": number,         // sum of estimatedMrrUplift for high-priority recs
+    "potentialMonthlyUplift": { "amount": number, "currency": string }, // additional Pax8 monthly cost across high-priority recs
     "activeTrials": number,
     "recentOrders": [{
       "companyName": string,
@@ -567,7 +608,9 @@ JSON output (--json):
       "lineItems": [{ "productName": string, "quantity": number }]
     }],
     "nextActions": [{ "command": string, "description": string }]
-  }`,
+  }
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`,
     )
     .action(async (options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, c: Command) => {
       if (name === "status") {

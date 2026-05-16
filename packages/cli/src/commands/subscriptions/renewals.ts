@@ -65,18 +65,22 @@ What this measures:
   a predictive score.
 
   In v0.x output the field is named \`mrrRenewing\` (and \`arrRenewing\`).
-  The previous \`mrrAtRisk\` / \`arrAtRisk\` keys are emitted alongside as
-  deprecated aliases and will be removed in a future minor version.
+  These names are preserved on the wire so existing partner-side
+  risk-framing scripts keep working. The previous \`mrrAtRisk\` /
+  \`arrAtRisk\` keys are emitted alongside as deprecated aliases and will
+  be removed in a future minor version.
 
 Metric definitions:
-  MRR (Monthly Recurring Revenue): Monthly recurring revenue from active
-  subscriptions. For monthly billing terms: price × quantity. For annual
-  billing terms: (price × quantity) ÷ 12. Excludes one-time charges and
-  prorated amounts. Equivalent to "Partner Gross MRR" in Pax8's internal
-  metric taxonomy.
+  Pax8 monthly cost (a.k.a. mrrRenewing on the wire): The partner's
+  monthly cost to Pax8 from active subscriptions. For monthly billing
+  terms: price × quantity. For annual billing terms: (price × quantity)
+  ÷ 12. Excludes one-time charges and prorated amounts. This is what
+  the partner pays Pax8, not the partner's resale revenue — internal
+  Pax8 reporting may also refer to it as "Partner Gross MRR" in the
+  Unified Semantic Layer.
 
-  ARR (Annual Recurring Revenue): MRR × 12. The yearly equivalent of MRR,
-  used to measure long-term financial health.
+  Pax8 annual cost (a.k.a. arrRenewing on the wire): Pax8 monthly cost
+  × 12. The yearly equivalent.
 
 JSON output (--json):
   Default: a flat array of Renewal objects. With --with-actions,
@@ -101,7 +105,9 @@ JSON output (--json):
   The mrrAtRisk / arrAtRisk aliases are dual-emitted alongside the canonical
   mrrRenewing / arrRenewing fields for one minor version cycle so existing
   scripts don't break. Migrate to the renewing-named fields; the at-risk
-  names will be removed in a future minor version (see #299).`
+  names will be removed in a future minor version (see #299).
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
@@ -190,17 +196,19 @@ JSON output (--json):
 
       output(report.items, { format: "table", columns });
 
-      // Header keeps MRR primary (Pax8's canonical operational unit per the
-      // Unified Semantic Layer / Voyager Alliance / dwh fact tables), with
-      // ARR as a parallel companion. The per-row table stays MRR-only to
-      // avoid clutter; ARR lives in the JSON for consumers who want it.
-      // See #295 — PFR-86 escalations frame risk as "ARR renewing", so QBR /
-      // strategic conversations get the right unit too. Wording renamed in
-      // #298 from "at risk" → "renewing" to disambiguate from Pax8's
-      // patent-filed Revenue at Risk Predictor (an ML churn-likelihood model).
+      // Header keeps the Pax8 monthly cost figure primary (Pax8's canonical
+      // operational unit per the Unified Semantic Layer / Voyager Alliance /
+      // dwh fact tables, wire-side field name `mrrRenewing`), with the
+      // annualized figure as a parallel companion. The per-row table stays
+      // monthly-only to avoid clutter; the annualized total lives in the
+      // JSON for consumers who want it. See #295 — PFR-86 escalations frame
+      // risk in annualized terms, so QBR / strategic conversations get the
+      // right unit too. Wording renamed in #298 from "at risk" → "renewing"
+      // to disambiguate from Pax8's patent-filed Revenue at Risk Predictor
+      // (an ML churn-likelihood model).
       process.stdout.write(
         chalk.dim(
-          `\n  ${report.items.length} renewals within ${withinDays} days — ${formatCurrency(report.totalMrrRenewing)}/mo MRR · ${formatCurrency(report.totalArrRenewing)}/yr ARR renewing in window\n`
+          `\n  ${report.items.length} renewals within ${withinDays} days — ${formatCurrency(report.totalMrrRenewing)}/mo · ${formatCurrency(report.totalArrRenewing)}/yr Pax8 cost renewing in window\n`
         )
       );
 

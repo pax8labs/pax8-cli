@@ -60,7 +60,7 @@ function daysUntil(dateStr: string | undefined): number | null {
 }
 
 export const companiesMoreCommand = new Command("more")
-  .description("Full client summary — subscriptions, vendors, seats, estimated MRR, and issues")
+  .description("Full client summary — subscriptions, vendors, seats, Pax8 monthly cost, and issues")
   .argument("<name-or-number>", "Client name, ID, or # from companies list")
   .allowExcessArguments(true)
   .addHelpText(
@@ -69,7 +69,15 @@ export const companiesMoreCommand = new Command("more")
 Examples:
   pax8 clients more 1                                  Use # from companies list
   pax8 clients more "Summit Healthcare Partners"
-  pax8 clients more "Summit Healthcare Partners" --json`
+  pax8 clients more "Summit Healthcare Partners" --json
+
+JSON output (--json):
+  summary.monthlyCost and summary.annualCost are emitted as wrapped
+  AmountCurrency envelopes ({ amount, currency }) — the canonical Pax8
+  wire shape used by the v2 quoting API. Currency is sourced from
+  Subscription.currencyCode on the underlying subs (defaults to "USD").
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
   .action(async (idOrName: string, _options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -189,9 +197,31 @@ Examples:
 
       // JSON output
       if (ctx.outputFormat === "json" || ctx.outputFormat === "csv") {
+        // These summary figures are partner-side COST paid to Pax8 (sum of
+        // price × quantity across active subs, amortized monthly). Emitted
+        // as wrapped `AmountCurrency` envelopes ({ amount, currency }) —
+        // the canonical Pax8 wire shape used by the v2 quoting API
+        // (`QuoteResponse.totals.initialCost`, etc.). Surface-consistent
+        // with the upcoming reporting commands (`report renewals` /
+        // `concentration` / `subscriptions`). v0.1.0 is pre-publish so
+        // there's no external contract to preserve via deprecated aliases.
+        // Currency is sourced from Subscription.currencyCode on the
+        // underlying subs (first active sub for the aggregate), defaulting
+        // to "USD" when missing. Mixed-currency is out of scope for v0.x.
+        const currency =
+          subs.content.find((s) => s.status === "Active" && s.currencyCode)?.currencyCode
+          ?? subs.content.find((s) => s.currencyCode)?.currencyCode
+          ?? "USD";
+        const monthlyCostAmount = Number(totalMrr.toFixed(2));
+        const annualCostAmount = Number((totalMrr * 12).toFixed(2));
         const result = {
           company: { name: company.name, id: company.id, status: company.status },
-          summary: { active_subscriptions: activeSubs.length, total_seats: totalSeats, mrr: Number(totalMrr.toFixed(2)), arr: Number((totalMrr * 12).toFixed(2)) },
+          summary: {
+            active_subscriptions: activeSubs.length,
+            total_seats: totalSeats,
+            monthlyCost: { amount: monthlyCostAmount, currency },
+            annualCost: { amount: annualCostAmount, currency },
+          },
           vendors,
           coverage: coverageInfo,
           subscriptions: activeSubs,
@@ -269,7 +299,7 @@ Examples:
         { key: "statusIcon", header: "", format: (v) => String(v) },
         { key: "productName", header: "Product" },
         { key: "quantity", header: "Seats", format: (v) => String(v) },
-        { key: "mrrDisplay", header: "Est. MRR", format: (v) => String(v) },
+        { key: "mrrDisplay", header: "Pax8 Cost", format: (v) => String(v) },
         { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
         { key: "renewsIn", header: "Renews", format: (v) => v ? String(v) : chalk.dim("—") },
       ];

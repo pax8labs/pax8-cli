@@ -744,26 +744,10 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     jsonContract: { skip: { reason: "interactive command" } },
   },
   // ── report ────────────────────────────────────────────────────────────────
-  {
-    command: ["report", "mrr"],
-    group: "report",
-    type: "report",
-    demo: {
-      expectedFragments: [/MRR/],
-      forbiddenFragments: ["undefined"],
-    },
-    jsonContract: { skip: { reason: "report envelope varies" } },
-  },
-  {
-    command: ["report", "growth"],
-    group: "report",
-    type: "report",
-    demo: {
-      expectedFragments: [/growth|MRR/i],
-      forbiddenFragments: ["undefined"],
-    },
-    jsonContract: { skip: { reason: "report envelope varies" } },
-  },
+  // `pax8 report mrr` and `pax8 report growth` were removed in the
+  // Bret Pittenger reporting-domain review — they framed Pax8 cost as
+  // partner-side MRR / growth. The underlying analytics (`computeMrr`,
+  // `computeGrowth`) are preserved in `@pax8/core` for v0.2 reporting reuse.
   // ── usage ─────────────────────────────────────────────────────────────────
   {
     command: ["usage", "list"],

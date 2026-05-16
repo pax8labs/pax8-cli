@@ -8,12 +8,28 @@ const DEPRECATION_NOTICE =
   "warning: `status` is deprecated; use `dashboard`. Will be removed in v1.0.";
 
 describe("pax8 dashboard (canonical)", () => {
-  it("--json returns the portfolio snapshot under the new name", async () => {
+  it("--json returns the portfolio snapshot with wrapped AmountCurrency envelopes", async () => {
     const result = await runCliExpectSuccess(["dashboard", "--json"]);
     const data = JSON.parse(result.stdout);
     expect(data).toHaveProperty("totalCompanies");
     expect(data).toHaveProperty("activeSubscriptions");
-    expect(data).toHaveProperty("mrr");
+    // Pax8-cost figures use the canonical wrapped AmountCurrency shape
+    // ({ amount, currency }) — same envelope the v2 quoting API emits.
+    expect(data).toHaveProperty("monthlyCost");
+    expect(data.monthlyCost).toEqual(
+      expect.objectContaining({ amount: expect.any(Number), currency: expect.any(String) })
+    );
+    expect(data).toHaveProperty("annualCost");
+    expect(data.annualCost).toEqual(
+      expect.objectContaining({ amount: expect.any(Number), currency: expect.any(String) })
+    );
+    // Deprecated flat aliases (mrr/arr/pax8MonthlyCost) were dropped in
+    // this revision — v0.1.0 is pre-publish so no external contract to
+    // preserve.
+    expect(data).not.toHaveProperty("mrr");
+    expect(data).not.toHaveProperty("arr");
+    expect(data).not.toHaveProperty("pax8MonthlyCost");
+    expect(data).not.toHaveProperty("pax8AnnualCost");
     // Deprecation notice MUST NOT fire for the canonical name.
     expect(result.stderr).not.toContain(DEPRECATION_NOTICE);
   });

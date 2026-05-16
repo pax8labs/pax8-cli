@@ -257,7 +257,7 @@ Behavior on committed subscriptions:
             `  ${chalk.bold("Cancel Date")}  ${effectiveCancelDate}${usedSafePath ? chalk.dim(" (commitment term end)") : ""}\n`,
           );
         }
-        process.stdout.write(`  ${chalk.bold("Est. MRR Impact")}   ${chalk.red("-" + formatCurrency(mrr))}\n`);
+        process.stdout.write(`  ${chalk.bold("Est. Pax8 Cost Impact")}   ${chalk.red("-" + formatCurrency(mrr))}/mo\n`);
         process.stdout.write("\n");
       }
 

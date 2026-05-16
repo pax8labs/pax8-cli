@@ -48,7 +48,7 @@ const columns: Column[] = [
   { key: "title", header: "Recommendation" },
   {
     key: "estimatedMrrUplift",
-    header: "Est. MRR+",
+    header: "Pax8 Cost+",
     format: (v) => (v != null ? formatCurrency(v as number) : chalk.dim("—")),
   },
 ];
@@ -107,10 +107,14 @@ Recommendation types:
   when OE's first-party API ships.
 
 Estimate semantics:
-  estimatedMrrUplift is an upper-bound estimate (unit price × seat
-  count). It is NOT equivalent to Pax8's PMRR (Potential MRR) metric,
-  which uses ML-based seat estimation. Use it as a directional ceiling,
-  not a forecast.
+  estimatedMrrUplift is an upper-bound estimate of the additional Pax8
+  monthly cost (unit price × seat count) the partner would pay if they
+  acted on the rec. It is the partner's cost-to-Pax8 increase, not
+  partner-side resale revenue, and is NOT equivalent to Pax8's PMRR
+  (Potential MRR) metric, which uses ML-based seat estimation. Use it
+  as a directional ceiling, not a forecast. Field name preserved as
+  estimatedMrrUplift on the wire-side @pax8/core Recommendation type;
+  the CLI's user-visible label uses Pax8-cost framing.
 
 JSON output (--json):
   Default: a flat array of Recommendation objects. With --with-actions,
@@ -129,8 +133,11 @@ JSON output (--json):
     "orderCommand": string | null,        // ready-to-run "pax8 orders create ..." command;
                                           // null if no orderable product matched in your catalog
     "productAvailable": boolean,          // true when orderCommand resolves to a real product
-    "currentMrr": number,                 // company's current MRR (context)
-    "estimatedMrrUplift": number,         // upper-bound — see Estimate semantics above; NOT Pax8 PMRR
+    "currentMrr": number,                 // company's current Pax8 monthly cost (context). Wire-side
+                                          //   field name preserved on @pax8/core; user-facing labels
+                                          //   use Pax8-cost framing.
+    "estimatedMrrUplift": number,         // upper-bound additional Pax8 monthly cost — see Estimate
+                                          //   semantics above; NOT Pax8 PMRR. Wire-side name preserved.
     "targetSeats": number,
     "estimateType": "upper_bound"
   }
@@ -141,7 +148,9 @@ JSON output (--json):
   that are NOT Pax8's canonical STAX taxonomy or Seat Utilization
   metric. See "Metric definitions" in README.md and the module
   docstring at packages/core/src/services/recommendations.ts. Will
-  sunset when OE's first-party /opportunities API ships (ARC-785, #375).`
+  sunset when OE's first-party /opportunities API ships (ARC-785, #375).
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
   .allowExcessArguments(true)
   .action(async (options, cmd) => {
@@ -294,7 +303,7 @@ JSON output (--json):
 
       if (totalUplift > 0) {
         process.stderr.write(
-          chalk.green(` — ${formatCurrency(totalUplift)}/mo estimated MRR uplift`)
+          chalk.green(` — ${formatCurrency(totalUplift)}/mo additional Pax8 monthly cost`)
         );
       }
 

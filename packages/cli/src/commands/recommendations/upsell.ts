@@ -23,7 +23,7 @@ const columns: Column[] = [
   { key: "fromSeats", header: "Seats" },
   {
     key: "fromMrr",
-    header: "Current MRR",
+    header: "Pax8 Cost/mo",
     format: (v) => (v != null ? formatCurrency(v as number) : chalk.dim("—")),
   },
   {
@@ -63,7 +63,9 @@ Output:
   JSON (default for piped/non-TTY): { fromProduct, toProduct, matches[],
   totalFromSeats, totalFromMrr, alreadyHaveToProduct,
   totalFromProductCompanies }. Each match carries opportunityType="Upsell"
-  per Pax8 Opportunity Explorer's canonical 5-type taxonomy.`
+  per Pax8 Opportunity Explorer's canonical 5-type taxonomy.
+
+Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
   .action(async (options, cmd) => {
     const allOpts = cmd.optsWithGlobals();
