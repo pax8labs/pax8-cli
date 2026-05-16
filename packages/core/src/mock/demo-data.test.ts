@@ -173,11 +173,15 @@ describe("demo-data", () => {
       expect(summit).toHaveLength(3);
     });
 
-    it("Coastline Legal Group has 2 subscriptions", () => {
+    // Coastline now also carries a 2-Year M365 E3 commit renewing in 270d,
+    // added in the feat/reporting-reshape PR so the `pax8 report
+    // subscriptions --by billing-term` view exercises the post-#439
+    // 2-Year normalization fix visibly.
+    it("Coastline Legal Group has 3 subscriptions", () => {
       const coastline = subscriptions.filter(
         (s) => s.companyId === "b2c3d4e5-f6a7-8901-bcde-f12345678901"
       );
-      expect(coastline).toHaveLength(2);
+      expect(coastline).toHaveLength(3);
     });
 
     it("Redwood Manufacturing has 7 subscriptions", () => {
@@ -194,11 +198,57 @@ describe("demo-data", () => {
       expect(bright).toHaveLength(2);
     });
 
-    it("Pinnacle Financial Advisors has 3 subscriptions", () => {
+    // Pinnacle now also carries a 3-Year M365 E5 commit (added in the
+    // feat/reporting-reshape PR — see above).
+    it("Pinnacle Financial Advisors has 4 subscriptions", () => {
       const pinnacle = subscriptions.filter(
         (s) => s.companyId === "e5f6a7b8-c9d0-1234-efab-345678901234"
       );
-      expect(pinnacle).toHaveLength(3);
+      expect(pinnacle).toHaveLength(4);
+    });
+  });
+
+  // feat/reporting-reshape — invariants for the new `pax8 report *`
+  // commands. These guard against future demo-data edits that would
+  // silently regress the variety the commands depend on (multi-year
+  // billing terms, long-tail renewal windows, customer concentration).
+  describe("reporting-reshape demo variety", () => {
+    it("has at least one 2-Year billing term subscription (post-#439 normalization fixture)", () => {
+      expect(
+        subscriptions.some((s) => s.billingTerm === "2-Year" && s.status === "Active"),
+      ).toBe(true);
+    });
+
+    it("has at least one 3-Year billing term subscription (post-#439 normalization fixture)", () => {
+      expect(
+        subscriptions.some((s) => s.billingTerm === "3-Year" && s.status === "Active"),
+      ).toBe(true);
+    });
+
+    it("has at least one renewal in each of the 0-30d / 31-60d / 61-90d / 91-365d windows", () => {
+      const now = Date.now();
+      const day = 86_400_000;
+      const buckets = {
+        "0-30": 0,
+        "31-60": 0,
+        "61-90": 0,
+        "91-365": 0,
+      };
+      for (const s of subscriptions) {
+        if (!s.commitmentTermEndDate) continue;
+        const diffDays = Math.floor(
+          (new Date(s.commitmentTermEndDate).getTime() - now) / day,
+        );
+        if (diffDays < 0 || diffDays > 365) continue;
+        if (diffDays <= 30) buckets["0-30"]++;
+        else if (diffDays <= 60) buckets["31-60"]++;
+        else if (diffDays <= 90) buckets["61-90"]++;
+        else buckets["91-365"]++;
+      }
+      expect(buckets["0-30"]).toBeGreaterThanOrEqual(1);
+      expect(buckets["31-60"]).toBeGreaterThanOrEqual(1);
+      expect(buckets["61-90"]).toBeGreaterThanOrEqual(1);
+      expect(buckets["91-365"]).toBeGreaterThanOrEqual(1);
     });
   });
 
