@@ -2,7 +2,92 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { computeMrr, computeGrowth } from "./analytics.js";
+import { computeMrr, computeGrowth, subscriptionMrr } from "./analytics.js";
+
+describe("subscriptionMrr", () => {
+  // 120 × 5 = 600 makes the normalization math visible for each term.
+  const PRICE = 120;
+  const QTY = 5;
+  const GROSS = PRICE * QTY; // 600
+
+  describe("canonical BillingTerm enum values", () => {
+    it("Monthly returns price × quantity", () => {
+      expect(subscriptionMrr(PRICE, QTY, "Monthly")).toBe(GROSS);
+    });
+
+    it("Annual returns price × quantity / 12", () => {
+      expect(subscriptionMrr(PRICE, QTY, "Annual")).toBe(GROSS / 12); // 50
+    });
+
+    it("2-Year returns price × quantity / 24", () => {
+      // Bug pre-fix: substring matching let "2-Year" fall through to the
+      // monthly default (returned 600). Correct value is 600 / 24 = 25.
+      expect(subscriptionMrr(PRICE, QTY, "2-Year")).toBe(GROSS / 24); // 25
+    });
+
+    it("3-Year returns price × quantity / 36", () => {
+      // Bug pre-fix: same fall-through as 2-Year (returned 600).
+      // Correct value is 600 / 36 ≈ 16.666…
+      expect(subscriptionMrr(PRICE, QTY, "3-Year")).toBeCloseTo(GROSS / 36, 10);
+    });
+
+    it("One-Time falls through to price × quantity (out of scope to re-define)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "One-Time")).toBe(GROSS);
+    });
+
+    it("Trial falls through to price × quantity (out of scope to re-define)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "Trial")).toBe(GROSS);
+    });
+
+    it("Activation falls through to price × quantity (out of scope to re-define)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "Activation")).toBe(GROSS);
+    });
+  });
+
+  describe("case-insensitive match", () => {
+    // The call sites used to lowercase before substring-matching; preserve
+    // tolerance for lowercased input so existing/loose callers keep working.
+    it("monthly (lowercased)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "monthly")).toBe(GROSS);
+    });
+
+    it("annual (lowercased)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "annual")).toBe(GROSS / 12);
+    });
+
+    it("2-year (lowercased)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "2-year")).toBe(GROSS / 24);
+    });
+
+    it("3-year (lowercased)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "3-year")).toBeCloseTo(GROSS / 36, 10);
+    });
+
+    it("ANNUAL (uppercased)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "ANNUAL")).toBe(GROSS / 12);
+    });
+  });
+
+  describe("default behavior for unknown / falsy terms", () => {
+    // `computeMrr` calls `subscriptionMrr(..., sub.billingTerm ?? "monthly")`
+    // — the `?? "monthly"` default plus the function's own tolerance must keep
+    // working so partners with stale or unrecognized term strings aren't
+    // silently zeroed out.
+    it("empty string treats as monthly (price × quantity)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "")).toBe(GROSS);
+    });
+
+    it("undefined (cast through string) treats as monthly", () => {
+      // Mirrors how callers funnel `sub.billingTerm ?? "monthly"` — but also
+      // exercise the function's internal `?? ""` guard against undefined.
+      expect(subscriptionMrr(PRICE, QTY, undefined as unknown as string)).toBe(GROSS);
+    });
+
+    it("unknown future enum value treats as monthly (preserves historical default)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "Quarterly")).toBe(GROSS);
+    });
+  });
+});
 
 describe("computeMrr", () => {
   it("should aggregate MRR by company", () => {
