@@ -41,11 +41,6 @@ export interface GrowthReport {
  * semantics is a separate question (they aren't really "recurring") and is
  * intentionally out of scope here.
  *
- * Historical note: the original implementation used substring matching on
- * `annual` / `yearly`, which let `2-Year` and `3-Year` slide through to the
- * `price × quantity` default — materially over-counting MRR for partners
- * with NCE multi-year commitments. See PR #N (this commit) for context.
- *
  * This is the single source of truth for MRR calculation across the codebase.
  */
 export function subscriptionMrr(price: number, quantity: number, billingTerm: string): number {
