@@ -47,7 +47,8 @@ export async function showWelcomeScreen(): Promise<void> {
   // each line under ~70 chars.
   const blurb = [
     "  Pax8 CLI turns the marketplace API into computed answers —",
-    "  renewals, invoice audits, MRR, and upsell recommendations.",
+    "  renewals, invoice audits, Pax8 cost analytics, and upsell",
+    "  recommendations.",
   ];
 
   const authed = await isAuthenticated();

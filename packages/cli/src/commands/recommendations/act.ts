@@ -229,11 +229,11 @@ Examples:
         return;
       }
 
-      // Recommendations arrive ranked by priority/MRR uplift from
-      // getRecommendations(); preserve that order for the picker.
+      // Recommendations arrive ranked by priority / additional Pax8 monthly
+      // cost from getRecommendations(); preserve that order for the picker.
       const totalUplift = recs.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
       const totalUpliftLabel = totalUplift > 0
-        ? chalk.green(`${formatCurrency(totalUplift)}/mo MRR uplift available`)
+        ? chalk.green(`${formatCurrency(totalUplift)}/mo additional Pax8 cost available`)
         : "";
 
       // Decide which recs to act on. Three paths:
@@ -292,7 +292,7 @@ Examples:
 
         const selectedUplift = selected.reduce((sum, r) => sum + (r.estimatedMrrUplift ?? 0), 0);
         const upliftStr = selectedUplift > 0
-          ? ` for ${chalk.green(formatCurrency(selectedUplift) + "/mo")} MRR uplift`
+          ? ` for ${chalk.green(formatCurrency(selectedUplift) + "/mo")} additional Pax8 cost`
           : "";
 
         const confirmAnswer = await ask({
@@ -331,7 +331,7 @@ Examples:
       process.stderr.write(chalk.dim("\n  ─────────────────────────────\n"));
       process.stderr.write(`  ${chalk.green.bold(`${ordered} ordered`)}`);
       if (skipped > 0) process.stderr.write(chalk.dim(` · ${skipped} skipped`));
-      if (mrrCaptured > 0) process.stderr.write(chalk.green(` · ${formatCurrency(mrrCaptured)}/mo estimated MRR captured`));
+      if (mrrCaptured > 0) process.stderr.write(chalk.green(` · ${formatCurrency(mrrCaptured)}/mo additional Pax8 monthly cost committed`));
       process.stderr.write("\n\n");
 
       // Contribute aggregate counts to the single command_executed event

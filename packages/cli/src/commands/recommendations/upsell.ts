@@ -23,7 +23,7 @@ const columns: Column[] = [
   { key: "fromSeats", header: "Seats" },
   {
     key: "fromMrr",
-    header: "Current MRR",
+    header: "Pax8 Cost/mo",
     format: (v) => (v != null ? formatCurrency(v as number) : chalk.dim("—")),
   },
   {

@@ -60,7 +60,7 @@ function daysUntil(dateStr: string | undefined): number | null {
 }
 
 export const companiesMoreCommand = new Command("more")
-  .description("Full client summary — subscriptions, vendors, seats, estimated MRR, and issues")
+  .description("Full client summary — subscriptions, vendors, seats, Pax8 monthly cost, and issues")
   .argument("<name-or-number>", "Client name, ID, or # from companies list")
   .allowExcessArguments(true)
   .addHelpText(
@@ -189,9 +189,29 @@ Examples:
 
       // JSON output
       if (ctx.outputFormat === "json" || ctx.outputFormat === "csv") {
+        // Bret Pittenger reporting-domain review: these summary figures are
+        // partner-side COST paid to Pax8 (sum of price × quantity across
+        // active subs, amortized monthly), not partner-side MRR / ARR. The
+        // canonical names are `pax8MonthlyCost` / `pax8AnnualCost`. The
+        // legacy `mrr` / `arr` keys are dual-emitted for one minor version
+        // cycle so existing `--json` consumers don't break; removal in
+        // v0.3.0. Same one-cycle alias pattern as `mrrAtRisk` → `mrrRenewing`
+        // (#298) and `createdDate` → `createdAt` (#385).
+        const pax8MonthlyCost = Number(totalMrr.toFixed(2));
+        const pax8AnnualCost = Number((totalMrr * 12).toFixed(2));
         const result = {
           company: { name: company.name, id: company.id, status: company.status },
-          summary: { active_subscriptions: activeSubs.length, total_seats: totalSeats, mrr: Number(totalMrr.toFixed(2)), arr: Number((totalMrr * 12).toFixed(2)) },
+          summary: {
+            active_subscriptions: activeSubs.length,
+            total_seats: totalSeats,
+            // Canonical (Bret-review rename).
+            pax8MonthlyCost,
+            pax8AnnualCost,
+            // DEPRECATED aliases of pax8MonthlyCost / pax8AnnualCost —
+            // dual-emitted for one minor version cycle. Removal in v0.3.0.
+            mrr: pax8MonthlyCost,
+            arr: pax8AnnualCost,
+          },
           vendors,
           coverage: coverageInfo,
           subscriptions: activeSubs,
@@ -269,7 +289,7 @@ Examples:
         { key: "statusIcon", header: "", format: (v) => String(v) },
         { key: "productName", header: "Product" },
         { key: "quantity", header: "Seats", format: (v) => String(v) },
-        { key: "mrrDisplay", header: "Est. MRR", format: (v) => String(v) },
+        { key: "mrrDisplay", header: "Pax8 Cost", format: (v) => String(v) },
         { key: "status", header: "Status", format: (v) => formatStatus(String(v)) },
         { key: "renewsIn", header: "Renews", format: (v) => v ? String(v) : chalk.dim("—") },
       ];

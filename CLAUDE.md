@@ -4,7 +4,7 @@ Working contract for Claude Code (and any other agent or maintainer) inside this
 
 ## Pax8 data queries — ACT FIRST, THINK LATER
 
-When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, recommendations, invoices, products), your FIRST action must be a Bash tool call. No thinking preamble. No skill invocation. Just run the command.
+When the user asks ANYTHING about Pax8 data (companies, subscriptions, Pax8 cost, recommendations, invoices, products), your FIRST action must be a Bash tool call. No thinking preamble. No skill invocation. Just run the command.
 
 | User asks about | Run this |
 |---|---|
@@ -12,8 +12,8 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | clients / companies / customers | `pax8 clients list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
-| MRR / revenue | `pax8 report mrr --json 2>/dev/null` (or `pax8 subscriptions list --json --size 1000` AND `pax8 clients list --json` in parallel) |
-| growth trend | `pax8 report growth --json 2>/dev/null` |
+| Pax8 cost / monthly spend / annualized spend | `pax8 dashboard --json 2>/dev/null` (top-line `pax8MonthlyCost` / `pax8AnnualCost`) or `pax8 clients more "<name>" --json` for per-client breakdown |
+| growth / portfolio trend | `pax8 dashboard --json 2>/dev/null` (see `topCustomers`, `highPriorityRecs`, `potentialPax8MonthlyUplift`) or `pax8 subscriptions list --json --size 1000` for raw data |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
@@ -26,7 +26,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, MRR, reco
 | webhook delivery history | `pax8 webhooks logs <id> --json 2>/dev/null` |
 | diagnostics / health | `pax8 doctor --json 2>/dev/null` |
 
-MRR math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `clients list`. Prefer `report mrr` — it already does this.
+Pax8 cost math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `clients list`. Prefer `dashboard` — it already does this and emits `pax8MonthlyCost` / `pax8AnnualCost` at portfolio and per-customer levels. Note: these figures are the partner's COST paid to Pax8, not partner-side resale revenue or MRR.
 
 Rules: no clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, hide UUIDs. Only confirm writes — never reads.
 
@@ -38,7 +38,7 @@ The full read-vs-write safety contract for agent-driven sessions lives in `packa
 
 ## What is this project?
 
-An open-source CLI for MSPs that turns the Pax8 marketplace API (raw CRUD) into computed answers — renewals, invoice audits, MRR analytics, upsell recommendations, closed-loop order placement. The durable asset lives in `packages/core` and is interface-agnostic.
+An open-source CLI for MSPs that turns the Pax8 marketplace API (raw CRUD) into computed answers — renewals, invoice audits, Pax8-cost analytics, upsell recommendations, closed-loop order placement. The durable asset lives in `packages/core` and is interface-agnostic.
 
 For project background, install instructions, the human demo flow, and how this CLI compares to the hosted Pax8 MCP at `mcp.pax8.com`, see `README.md`. Don't restate that here; link.
 
@@ -59,7 +59,7 @@ When following `docs/BUILD.md`, operate fully autonomously with ZERO human inter
 
 Monorepo with pnpm workspaces:
 
-- `packages/core` — `@pax8/core`. API client, auth, services (renewals, audit, recommendations, MRR), types. Zero CLI dependencies. Embeddable on its own — see `packages/core/README.md`.
+- `packages/core` — `@pax8/core`. API client, auth, services (renewals, audit, recommendations, Pax8-cost analytics), types. Zero CLI dependencies. Embeddable on its own — see `packages/core/README.md`.
 - `packages/cli` — `@pax8/cli`. Commander.js commands, formatting, interactive UX. Imports only from `@pax8/core`.
 - `packages/claude-skill` — `@pax8/claude-skill`. Wraps CLI commands as Claude Code tools and ships the agent-facing safety contract (`packages/claude-skill/skill.md`).
 

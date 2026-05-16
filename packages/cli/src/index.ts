@@ -14,7 +14,6 @@ import { registerInvoicesCommands } from "./commands/invoices/index.js";
 import { registerOrdersCommands } from "./commands/orders/index.js";
 import { registerRecommendationsCommands } from "./commands/recommendations/index.js";
 import { registerTelemetryCommands } from "./commands/telemetry/index.js";
-import { registerReportCommands } from "./commands/report/index.js";
 import { registerUsageCommands } from "./commands/usage/index.js";
 import { registerWebhooksCommands } from "./commands/webhooks/index.js";
 import { registerContactsCommands } from "./commands/contacts/index.js";
@@ -103,7 +102,6 @@ export function createProgram(): Command {
   registerOrdersCommands(program);
   registerRecommendationsCommands(program);
   registerTelemetryCommands(program);
-  registerReportCommands(program);
   registerUsageCommands(program);
   registerWebhooksCommands(program);
   registerContactsCommands(program);

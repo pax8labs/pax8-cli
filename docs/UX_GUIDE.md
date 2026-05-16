@@ -380,7 +380,7 @@ Two delivery modes, depending on the response shape:
 
 | Response shape | Where `nextActions` lives | Flag |
 |---|---|---|
-| Single object (`status`, `report mrr/growth`, `invoices audit`) | Inline as a top-level `nextActions` field | Always emitted |
+| Single object (`dashboard`, `invoices audit`) | Inline as a top-level `nextActions` field | Always emitted |
 | List/array (`companies list`, `subscriptions list`, `subscriptions renewals`, `recommendations list`, `invoices list`, `webhooks list`, `webhooks logs`) | Inside an envelope: `{ <resourceKey>: [...], nextActions: [...] }` | Opt-in via `--with-actions` |
 
 The opt-in flag for list commands exists because the default contract is "list commands return a flat array" — agents that already parse `pax8 ... list --json` as an array of records don't break. If they want hints, they pass `--with-actions` and accept the wrapped envelope.

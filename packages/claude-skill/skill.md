@@ -1,6 +1,6 @@
 ---
 name: pax8
-description: Answer Pax8 marketplace questions — renewals, invoice audits, MRR, growth recommendations — and place orders. Computed locally from public Pax8 API data.
+description: Answer Pax8 marketplace questions — renewals, invoice audits, Pax8 cost analytics, growth recommendations — and place orders. Computed locally from public Pax8 API data.
 ---
 
 You have access to the `pax8` CLI on PATH. Run it directly via Bash — never `node packages/cli/dist/index.js` or `pnpm dev`. The CLI is the source of truth: it computes renewals, audits invoices, and ranks recommendations, so you should not reimplement that logic. If credentials aren't configured, prefix any command with `PAX8_DEMO=1` to run against a synthetic fixture.
@@ -16,7 +16,6 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 *list` — `clients list`, `subscriptions list`, `invoices list`, `orders list`, `recommendations list`, `products list`, `quotes list`, `webhooks list`, `usage list`, `contacts list`
 - `pax8 *show <id>` — every show command across every resource
 - `pax8 *search` — `products search`
-- `pax8 report *` — `report mrr`, `report growth`
 - `pax8 clients more <name>` — rich read-only summary
 - `pax8 subscriptions renewals` — computes renewals from existing data
 - `pax8 invoices items --invoice-id <id>` — line items for an invoice
@@ -30,7 +29,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 
 For every write command below:
 
-1. **Show the user exactly what will change** — the command you're about to run, the affected resource(s), and the expected effect (price, quantity, estimated MRR delta, etc. when applicable).
+1. **Show the user exactly what will change** — the command you're about to run, the affected resource(s), and the expected effect (price, quantity, estimated Pax8 monthly cost delta, etc. when applicable).
 2. **Wait for explicit approval** — a clear "yes / go ahead / do it." Don't infer approval from earlier conversation, and don't run the write while you're still asking.
 3. **Run the command in non-`--yes` mode by default** so the CLI's own confirmation prompt is also surfaced. Pass `--yes` only when the user has already approved this exact action.
 
@@ -54,8 +53,8 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 - **No clarifying questions.** Use sensible defaults: all companies, current month, 30-day renewal window, top 10 results.
 - **Parallel fetches.** When you need two independent calls (e.g. subs + companies), run them in parallel.
 - **Resolve names, hide UUIDs.** Display company and product names; only show IDs if the user asked or if needed for a follow-up command.
-- **Order previews are mandatory.** Run `orders create` without `--yes` so the user sees price/total/estimated MRR before confirming. Pass `--yes` only when the user has already approved this specific order.
-- **Lead with the number.** Total estimated MRR, count of renewals, dollar impact — top of the response. Top 3-5 rows, not every row.
+- **Order previews are mandatory.** Run `orders create` without `--yes` so the user sees price/total/estimated Pax8 cost impact before confirming. Pass `--yes` only when the user has already approved this specific order.
+- **Lead with the number.** Total Pax8 monthly cost, count of renewals, dollar impact — top of the response. Top 3-5 rows, not every row.
 
 (Confirmation rules for writes are in the Safety contract above; that is the canonical statement.)
 
@@ -67,9 +66,9 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 | `--csv` | User asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
-| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `report mrr/growth`, `invoices audit`) always include `nextActions` inline. |
+| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `invoices audit`) always include `nextActions` inline. |
 
-Result size: list commands default to `--size 25`. For portfolio-wide analysis (MRR, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
+Result size: list commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost rollups, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 
 ## Commands
 
@@ -91,14 +90,12 @@ pax8 recommendations act [--company <id|name>] [--product <name>] [--yes]    # m
 pax8 orders list --json
 pax8 orders create --company <id|name> --product <id|name> --quantity <n> [--billing-term Monthly|Annual]
 pax8 cost sim --company <id|name> --product <id|name> --quantity <n> [--from <id|name>] [--billing-term Monthly|Annual] --json
-pax8 report mrr --json
-pax8 report growth --json
 pax8 doctor                                                  # diagnostics, not for data
 ```
 
-## MRR math
+## Pax8 cost math
 
-The CLI computes MRR for you in `pax8 dashboard`, `pax8 report mrr`, and `pax8 clients more`. Prefer those over hand-rolling it. If you must compute from `subscriptions list`:
+The CLI computes the partner's Pax8 monthly / annual cost for you in `pax8 dashboard` (portfolio-wide, top customers) and `pax8 clients more` (per-client). Prefer those over hand-rolling it. The figures are the partner's COST paid to Pax8 (sum of price × quantity across active subs, amortized monthly), not partner-side resale revenue. If you must compute from `subscriptions list`:
 
 - Monthly billing term → `price × quantity`
 - Annual billing term → `price × quantity ÷ 12`
@@ -110,7 +107,7 @@ The CLI computes MRR for you in `pax8 dashboard`, `pax8 report mrr`, and `pax8 c
 ```
 pax8 subscriptions renewals --json --within 30d
 ```
-Sort by `daysUntilRenewal` ascending. Lead with count + total estimated MRR at risk. Show top 5 (company, product, days, estimated MRR). Offer to drill into any one with `pax8 subscriptions show <id> --json`.
+Sort by `daysUntilRenewal` ascending. Lead with count + total Pax8 monthly cost renewing in the window (wire-side field name: `totalMrrRenewing`). Show top 5 (company, product, days, Pax8 monthly cost). Offer to drill into any one with `pax8 subscriptions show <id> --json`.
 
 ### Invoice audit → action
 ```
@@ -124,17 +121,15 @@ Run in parallel:
 pax8 recommendations list --json --priority high
 pax8 clients list --json
 ```
-For each rec, show: company, missing product, estimated MRR uplift. The JSON output includes an `orderCommand` field — that's the exact `pax8 orders create …` to run. **Always show the user the order preview and wait for explicit approval before executing the write.**
+For each rec, show: company, missing product, additional Pax8 monthly cost if acted on (wire-side field name: `estimatedMrrUplift`). The JSON output includes an `orderCommand` field — that's the exact `pax8 orders create …` to run. **Always show the user the order preview and wait for explicit approval before executing the write.**
 
 For an interactive batch flow, hand the human `pax8 recommendations act` (with `--company` / `--product` / `--priority` filters as needed) — it presents a multi-select picker and a single batch confirmation rather than a per-rec y/s/q walk. The agent should not pass `--yes` unless the user has approved the entire matching set.
 
-### Portfolio MRR
-Run in parallel:
+### Portfolio Pax8 cost
 ```
-pax8 report mrr --json
-pax8 clients list --json
+pax8 dashboard --json
 ```
-`report mrr` already breaks down by company. Lead with total estimated MRR and top 5 customers; offer per-vendor or per-product breakdown if the user asks.
+`dashboard --json` already emits portfolio-wide `pax8MonthlyCost` / `pax8AnnualCost` plus a `topCustomers` array (each with its own `pax8MonthlyCost`). Lead with total Pax8 monthly cost and top 5 customers from `topCustomers`. For a per-vendor or deeper per-product breakdown, drill in with `pax8 clients more "<name>" --json` (vendor rollups in `vendors[]`) or fall back to `pax8 subscriptions list --json --size 1000` and group by `productId` yourself. Note: these figures are partner-side COST paid to Pax8, not partner-side resale revenue.
 
 ### "What if?" — cost simulation
 ```
@@ -158,7 +153,7 @@ pax8 invoices list --json
 pax8 clients list --json
 ```
 
-Don't reimplement what's already a first-class command (renewals, audit, recommendations, MRR) — those exist precisely because they're hard to get right from the raw shape.
+Don't reimplement what's already a first-class command (renewals, audit, recommendations, Pax8 cost rollups via `dashboard`) — those exist precisely because they're hard to get right from the raw shape.
 
 ## Error and edge cases
 

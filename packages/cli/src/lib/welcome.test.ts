@@ -73,7 +73,7 @@ describe("showWelcomeScreen", () => {
 
     // Value-prop blurb is present and PAX8 art is preserved.
     expect(captured).toContain("Pax8 CLI turns the marketplace API");
-    expect(captured).toContain("renewals, invoice audits, MRR");
+    expect(captured).toContain("renewals, invoice audits, Pax8 cost analytics");
     expect(captured).toContain("██████╗");
   });
 

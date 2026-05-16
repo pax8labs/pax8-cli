@@ -10,7 +10,7 @@ This is an early-stage open-source experiment. We're using engagement signals (i
 
 ## Highlights
 
-- **Answers the API doesn't** — renewals, invoice audit, upsell recommendations, MRR analytics computed locally from raw Pax8 data
+- **Answers the API doesn't** — renewals, invoice audit, upsell recommendations, Pax8 cost analytics computed locally from raw Pax8 data
 - **Closes the loop** — `pax8 recommendations act` walks portfolio gaps and places the orders, so insight and action live in the same tool
 - **Works for humans and agents identically** — every command emits structured JSON, so a Claude Code skill, a shell pipeline, or a person at a terminal all use the same surface
 - **Demo mode** — `PAX8_DEMO=1` runs every command against an in-memory fixture, no credentials required
@@ -21,16 +21,16 @@ The Pax8 API is a CRUD layer — it returns raw subscriptions, invoices, and pro
 
 This CLI computes what the API doesn't:
 
-- **Renewal tracking** — no renewals endpoint exists; the CLI parses commitment dates, calculates the estimated MRR renewing in window (a temporal filter, not a churn-risk prediction — see Metric definitions), and sorts by urgency
+- **Renewal tracking** — no renewals endpoint exists; the CLI parses commitment dates, calculates the Pax8 monthly cost renewing in window (a temporal filter, not a churn-risk prediction — see Metric definitions), and sorts by urgency
 - **Invoice auditing** — cross-references invoice line items against active subscriptions to flag overcharges and undercharges with dollar impact
-- **Upsell recommendations** — analyzes each customer's stack, identifies gaps, estimates MRR uplift, and returns ready-to-execute order commands (note: uplift estimates are computed locally from price × quantity, not partner-billed revenue)
-- **MRR analytics** — aggregation by company/product/vendor with annual-to-monthly amortization
+- **Upsell recommendations** — analyzes each customer's stack, identifies gaps, estimates the additional Pax8 monthly cost if acted on, and returns ready-to-execute order commands (note: estimates are computed locally from price × quantity — the partner's cost-to-Pax8, not partner-side resale revenue)
+- **Pax8 cost analytics** — aggregation by company/product/vendor with annual-to-monthly amortization. Reports the partner's monthly / annualized cost to Pax8, not partner-side resale revenue
 
 Every command supports `--json`, so humans and AI agents use the same tool.
 
 ## When to use this CLI vs the Pax8 MCP
 
-Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see the [Pax8 MCP docs](https://devx.pax8.com/docs/mcp-server). Use this CLI when you want a richer command surface (recommendations, invoice audit, MRR analytics, demo mode) or when you're scripting against a stable, versioned interface. Use the Pax8 MCP when you want zero-install access via Claude, Cursor, Copilot, or VS Code and you don't need the CLI-specific capabilities.
+Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see the [Pax8 MCP docs](https://devx.pax8.com/docs/mcp-server). Use this CLI when you want a richer command surface (recommendations, invoice audit, Pax8 cost analytics, demo mode) or when you're scripting against a stable, versioned interface. Use the Pax8 MCP when you want zero-install access via Claude, Cursor, Copilot, or VS Code and you don't need the CLI-specific capabilities.
 
 ## Quick Start
 
@@ -78,7 +78,7 @@ PAX8_DEMO=1 pax8 dashboard
 ## Demo Flow (90 seconds)
 
 ```bash
-pax8 dashboard                           # estimated MRR, renewals, growth opportunities
+pax8 dashboard                           # Pax8 monthly cost, renewals, growth opportunities
 pax8 recommendations list                # Cross-sell and seat gap opportunities
 pax8 recommendations act                 # Multi-select picker → batch order
 pax8 clients list                        # Browse customers (type # to drill in)
@@ -90,7 +90,7 @@ pax8 clients more "Acme Corp"            # Full customer summary
 ### Dashboard
 
 ```bash
-pax8 dashboard                 # Quick snapshot: estimated MRR, renewals, recs, trials
+pax8 dashboard                 # Quick snapshot: Pax8 monthly cost, renewals, recs, trials
 pax8 dashboard --all           # Full dashboard with top customers and details
 pax8 dashboard --renewals      # Focus on upcoming renewals
 pax8 dashboard --growth        # Focus on growth opportunities
@@ -102,7 +102,7 @@ pax8 dashboard --growth        # Focus on growth opportunities
 pax8 clients list                              # List all (type # to drill in)
 pax8 clients list --status Active              # Filter by status
 pax8 clients show "Acme Corp"                  # Customer details
-pax8 clients more "Acme Corp"                  # Full summary: subs, vendors, estimated MRR, issues
+pax8 clients more "Acme Corp"                  # Full summary: subs, vendors, Pax8 monthly cost, issues
 ```
 
 > `pax8 companies *` works as an indefinite deprecated alias of `pax8 clients *` — both invocations route through the same command graph, so partner scripts written against the old name keep working. The data surface (`companyId`, `companyName`, `--company` flag, etc.) stays aligned with the wire until Pax8's API renames the field.
@@ -140,7 +140,7 @@ pax8 orders create --company "Acme" --product "M365 Business Premium" --quantity
 pax8 orders show <id>                                  # Check order status
 ```
 
-The order preview shows unit price, total, and estimated MRR impact before you confirm.
+The order preview shows unit price, total, and estimated Pax8 monthly cost impact before you confirm.
 
 ### Cost Simulation
 
@@ -260,7 +260,7 @@ The CLI ships with a Claude Code skill, so AI agents get the same computed intel
 
 An agent asking "Am I being overbilled?" doesn't need to make 13+ API calls, join invoice line items against subscriptions, and compute deltas. It runs `pax8 invoices audit --json` and gets categorized discrepancies with dollar impact in one call.
 
-Available tools: clients, subscriptions, renewals, invoices, invoice audits, recommendations, MRR reports, and product search — all returning structured JSON.
+Available tools: clients, subscriptions, renewals, invoices, invoice audits, recommendations, Pax8 cost rollups, and product search — all returning structured JSON.
 
 ### Setup (Claude Code)
 
@@ -269,9 +269,10 @@ The skill wraps CLI commands with behavioral rules (act first, no clarifying que
 ### Example
 
 ```
-You: "Which customers are missing backup and what's the revenue opportunity?"
+You: "Which customers are missing backup, and how much would adding it cost?"
 Claude: runs pax8 recommendations list --json, returns prioritized gaps
-        with estimated MRR uplift and ready-to-execute order commands
+        with the estimated additional Pax8 monthly cost per gap and
+        ready-to-execute order commands
 ```
 
 Works with Claude Code, Cursor, Copilot, and any agent framework that can run shell commands.
@@ -280,7 +281,7 @@ For non-Claude agent runtimes, see [`AGENTS.md`](AGENTS.md) at the repo root.
 
 ## Core library
 
-All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and MRR analytics are all importable from a portal feature, a Lambda, a dashboard, or your own tool. The CLI is one consumer; the durable asset is the domain knowledge in `core`. See [`packages/core/README.md`](packages/core/README.md) for the install, import example, and capability list.
+All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and Pax8 cost analytics are all importable from a portal feature, a Lambda, a dashboard, or your own tool. The CLI is one consumer; the durable asset is the domain knowledge in `core`. See [`packages/core/README.md`](packages/core/README.md) for the install, import example, and capability list.
 
 ## Performance
 
@@ -403,7 +404,7 @@ No other network egress. The CLI does not contact npm, the Pax8 portal, the mark
 
 ### Using @pax8/core as a standalone library
 
-All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and MRR analytics are all importable. See [`packages/core/README.md`](packages/core/README.md) for the full API; here is a minimal end-to-end example:
+All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependencies — the renewal tracker, invoice auditor, recommendation engine, and Pax8 cost analytics (`computeMrr`, `computeGrowth`) are all importable. See [`packages/core/README.md`](packages/core/README.md) for the full API; here is a minimal end-to-end example:
 
 ```ts
 import {
@@ -431,7 +432,7 @@ for (const r of report.items.slice(0, 5)) {
 }
 ```
 
-The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface.
+The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface. `computeMrr` / `computeGrowth` are retained in `@pax8/core` for embeddable reuse (v0.2 reporting work will rebuild a CLI-side reporting surface on top of them with Pax8-cost framing); only the previous `pax8 report mrr` / `pax8 report growth` CLI commands were removed.
 
 ## Known Limitations
 
@@ -455,25 +456,27 @@ These are tracked, prioritized for v0.1.x, and not blockers for v0.1.0. Each lin
 
 ## Metric definitions
 
-The CLI surfaces MRR and ARR figures across `pax8 subscriptions renewals`, `pax8 report mrr`, and `pax8 report growth`. Definitions mirror Pax8's internal Unified Semantic Layer so partner-facing usage stays aligned with the dwh / Voyager Alliance / AMER Recurring Net Bookings methodology that internal teams rely on.
+The CLI surfaces partner-side Pax8 cost figures across `pax8 dashboard`, `pax8 clients more`, and `pax8 subscriptions renewals`. These reflect the partner's monthly / annualized cost to Pax8 (sum of price × quantity across active subs, amortized monthly) — not partner-side resale revenue or partner-billed MRR. Internal Pax8 reporting may also call this "Partner Gross MRR" in the Unified Semantic Layer; the CLI's user-facing labels frame it as cost to disambiguate.
 
-MRR (Monthly Recurring Revenue): Monthly recurring revenue from active
+Pax8 monthly cost: The partner's monthly cost to Pax8 from active
 subscriptions. For monthly billing terms: price × quantity. For annual
 billing terms: (price × quantity) ÷ 12. Excludes one-time charges and
-prorated amounts. Equivalent to "Partner Gross MRR" in Pax8's internal
-metric taxonomy.
+prorated amounts. Emitted on `dashboard --json` as `pax8MonthlyCost`
+(canonical) with `mrr` as a deprecated alias for one minor version cycle.
 
-ARR (Annual Recurring Revenue): MRR × 12. The yearly equivalent of MRR,
-used to measure long-term financial health.
+Pax8 annual cost: Pax8 monthly cost × 12. The yearly equivalent.
+Emitted as `pax8AnnualCost` (canonical) with `arr` as a deprecated alias.
 
 ### Renewal exposure vs. churn risk (`mrrRenewing`)
 
 `pax8 subscriptions renewals` emits `mrrRenewing` (and `arrRenewing`) on each
-row and a `totalMrrRenewing` / `totalArrRenewing` aggregate. These are
-**temporal filters** — the MRR/ARR attached to subscriptions whose commitment
-ends within the requested window — not churn-risk predictions. Pax8's
-patent-filed Revenue at Risk Predictor is a separate ML-based product that
-scores the probability of churn; the CLI does not expose that signal.
+row and a `totalMrrRenewing` / `totalArrRenewing` aggregate. The field names
+are preserved on the wire so existing partner-side risk-framing scripts keep
+working; the values are the partner's Pax8 monthly / annual cost from
+subscriptions whose commitment ends within the requested window. These are
+**temporal filters**, not churn-risk predictions. Pax8's patent-filed
+Revenue at Risk Predictor is a separate ML-based product that scores the
+probability of churn; the CLI does not expose that signal.
 
 The previous field names (`mrrAtRisk`, `arrAtRisk`, `totalMrrAtRisk`,
 `totalArrAtRisk`) silently conflated with that ML model's name. They are

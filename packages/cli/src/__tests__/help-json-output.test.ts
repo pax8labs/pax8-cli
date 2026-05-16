@@ -94,29 +94,10 @@ describe("JSON output shape documented in --help (#396)", () => {
     });
   });
 
-  describe("pax8 report mrr --help", () => {
-    it("documents the totalMrr / companies shape", async () => {
-      const { stdout } = await runCliExpectSuccess(["report", "mrr", "--help"]);
-      expect(stdout).toContain("JSON output");
-      expect(stdout).toContain("totalMrr");
-      expect(stdout).toContain("projectedArr");
-      expect(stdout).toContain("companies");
-      expect(stdout).toContain("pctOfTotal");
-    });
-  });
-
-  describe("pax8 report growth --help", () => {
-    it("documents the months / growth shape", async () => {
-      const { stdout } = await runCliExpectSuccess([
-        "report",
-        "growth",
-        "--help",
-      ]);
-      expect(stdout).toContain("JSON output");
-      expect(stdout).toContain("months");
-      expect(stdout).toContain("growthPercent");
-      expect(stdout).toContain("averageGrowthPercent");
-      expect(stdout).toContain("overallGrowthPercent");
-    });
-  });
+  // The `pax8 report mrr` / `pax8 report growth` --help blocks were
+  // removed when those commands themselves were removed — they were
+  // framed as partner-side MRR / growth but actually surfaced Pax8 cost
+  // to the partner. The underlying analytics in @pax8/core
+  // (`computeMrr`, `computeGrowth`) are preserved for v0.2 reporting
+  // work that will reframe the vocabulary correctly.
 });

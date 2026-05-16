@@ -301,15 +301,18 @@ describe("pax8 subscriptions renewals", () => {
     }
   });
 
-  it("renewals --help shows canonical MRR/ARR definitions", async () => {
+  it("renewals --help shows canonical Pax8-cost metric definitions", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "renewals",
       "--help",
     ]);
     expect(result.stdout).toContain("Metric definitions:");
-    expect(result.stdout).toContain("MRR (Monthly Recurring Revenue)");
-    expect(result.stdout).toContain("ARR (Annual Recurring Revenue): MRR × 12");
+    // Bret Pittenger reporting-domain review: the figures here are the
+    // partner's cost paid to Pax8, not partner-side MRR/ARR. Wire-side
+    // field names (mrrRenewing / arrRenewing) are preserved for back-compat.
+    expect(result.stdout).toContain("Pax8 monthly cost");
+    expect(result.stdout).toContain("Pax8 annual cost");
     expect(result.stdout).toContain("Partner Gross MRR");
   });
 

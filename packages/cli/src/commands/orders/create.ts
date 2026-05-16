@@ -608,14 +608,14 @@ Examples:
         });
       }
 
-      // ── Totals (sum across lines, normalized to monthly for MRR) ──
+      // ── Totals (sum across lines, normalized to monthly Pax8 cost) ──
       const totalMonthly = resolvedLines.reduce((acc, l) => {
         if (!l.unitPrice) return acc;
         return acc + calculateMrr(l.unitPrice, l.quantity, l.billingTerm);
       }, 0);
       const allPriced = resolvedLines.every((l) => l.unitPrice !== null);
       if (allPriced && totalMonthly > 0) {
-        process.stderr.write(`\n  ${chalk.dim("Est. MRR Impact:".padEnd(18))}${chalk.green.bold("+" + formatCurrency(totalMonthly) + "/mo")}\n`);
+        process.stderr.write(`\n  ${chalk.dim("Pax8 Cost Impact:".padEnd(20))}${chalk.green.bold("+" + formatCurrency(totalMonthly) + "/mo")}\n`);
       }
 
       // ── Aggregated warnings ──
