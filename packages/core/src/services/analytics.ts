@@ -28,16 +28,44 @@ export interface GrowthReport {
 
 /**
  * Calculate the Monthly Recurring Revenue for a single subscription.
- * Annual/yearly terms are divided by 12 to normalize to monthly.
+ *
+ * Pax8's `Subscription.billingTerm` is a closed enum (`BillingTermSchema`):
+ * `Monthly`, `Annual`, `2-Year`, `3-Year`, `One-Time`, `Trial`, `Activation`.
+ * Each multi-period term is divided down to its monthly equivalent. The match
+ * is case-insensitive against the canonical enum value so callers may pass
+ * lowercased / loosely-typed strings (the call sites in `computeMrr`,
+ * `cost-simulator`, etc. do this).
+ *
+ * `One-Time`, `Trial`, `Activation`, and unknown / falsy values fall through
+ * to `price × quantity` — preserving the pre-fix default. Reworking those
+ * semantics is a separate question (they aren't really "recurring") and is
+ * intentionally out of scope here.
  *
  * This is the single source of truth for MRR calculation across the codebase.
  */
 export function subscriptionMrr(price: number, quantity: number, billingTerm: string): number {
-  const normalizedTerm = billingTerm.toLowerCase();
-  if (normalizedTerm.includes("annual") || normalizedTerm.includes("yearly")) {
-    return (price * quantity) / 12;
+  const gross = price * quantity;
+  const normalizedTerm = (billingTerm ?? "").toLowerCase();
+
+  switch (normalizedTerm) {
+    case "monthly":
+      return gross;
+    case "annual":
+      return gross / 12;
+    case "2-year":
+      return gross / 24;
+    case "3-year":
+      return gross / 36;
+    case "one-time":
+    case "trial":
+    case "activation":
+      return gross;
+    default:
+      // Unknown / falsy billingTerm: preserve historical behavior (treat as
+      // monthly) so callers passing `undefined`, `""`, or future enum values
+      // we don't yet recognize don't suddenly start under-reporting MRR.
+      return gross;
   }
-  return price * quantity;
 }
 
 export function computeMrr(subscriptions: AnalyticsSubscriptionInput[]): MrrReport {
