@@ -92,7 +92,19 @@ export interface Subscription {
    * least one non-USD record so the table-display branch is exercised.
    */
   currencyCode?: string;
-  billingTerm: "Monthly" | "Annual";
+  // Mirrors the public `BillingTermSchema` enum. The 2-Year / 3-Year values
+  // are seeded into the demo fixture so the `pax8 report subscriptions
+  // --by billing-term` view visibly exercises the post-#439 normalization
+  // fix (divide by 24 / 36) — previously these fell through to the unknown-
+  // term default and were over-counted.
+  billingTerm:
+    | "Monthly"
+    | "Annual"
+    | "2-Year"
+    | "3-Year"
+    | "One-Time"
+    | "Trial"
+    | "Activation";
   commitment?: { id: string; term: string; endDate: string };
   commitmentTermEndDate: string | null;
   provisioningStatus: "Provisioned" | "Pending" | "Error";
@@ -1198,6 +1210,92 @@ export const subscriptions: Subscription[] = [
     provisioningStatus: "Provisioned",
     companyName: "Acme Corp",
   },
+
+  // ── Reporting-reshape demo variety (feat/reporting-reshape) ─────────────
+  // Adds the renewal-window distribution + multi-year billing-term variety
+  // the three new `pax8 report *` commands rely on for meaningful demo
+  // output. Specifically:
+  //   * one 2-Year and one 3-Year commitment so `report subscriptions
+  //     --by billing-term` exercises the post-#439 normalization fix
+  //     (divide by 24 / 36) and the user can SEE that the monthly cost
+  //     for those tiers is not 24x / 36x overstated.
+  //   * extra 61-90d and 91-365d renewals so `report renewals --within
+  //     180 / --within 365` returns 2-3 rows in each window (per the
+  //     PR spec's variety asks). The existing fixture only had 1 sub
+  //     past 90 days.
+
+  // Coastline Legal — adds a 2-Year M365 E3 commitment renewing in 270d.
+  // Pushes Coastline into the 91-365d renewal window.
+  // 2-Year cost: 40 seats * 36/seat / 24 = $60/mo (post-#439 fix divides by 24).
+  {
+    id: "sub-coastline-e3-2yr-003",
+    companyId: COASTLINE_ID,
+    productId: "prod-m365-e3-0003",
+    productName: "Microsoft 365 E3 [New Commerce Experience]",
+    quantity: 40,
+    startDate: "2025-08-15",
+    createdDate: "2025-08-10",
+    createdAt: "2025-08-10",
+    billingStart: "2025-08-15",
+    status: "Active",
+    price: 36.0,
+    currencyCode: "EUR",
+    billingTerm: "2-Year",
+    commitment: { id: "cterm-0002-0001-0001-000000000003", term: "2-Year", endDate: daysFromNow(270) },
+    commitmentTermEndDate: daysFromNow(270),
+    provisioningStatus: "Provisioned",
+    companyName: "Coastline Legal Group",
+  },
+
+  // Pinnacle Financial — adds a 3-Year M365 E5 commitment renewing in 200d.
+  // Locks in the 3-Year term for the billing-term breakdown.
+  // 3-Year cost: 15 seats * 57/seat / 36 = $23.75/mo (post-#439 fix divides by 36).
+  {
+    id: "sub-pinnacle-e5-3yr-004",
+    companyId: PINNACLE_ID,
+    productId: "prod-m365-e5-0004",
+    productName: "Microsoft 365 E5 [New Commerce Experience]",
+    quantity: 15,
+    startDate: "2025-06-01",
+    createdDate: "2025-05-28",
+    createdAt: "2025-05-28",
+    billingStart: "2025-06-01",
+    status: "Active",
+    price: 57.0,
+    billingTerm: "3-Year",
+    commitment: { id: "cterm-0005-0001-0001-000000000004", term: "3-Year", endDate: daysFromNow(200) },
+    commitmentTermEndDate: daysFromNow(200),
+    provisioningStatus: "Provisioned",
+    companyName: "Pinnacle Financial Advisors",
+  },
+
+  // Acme Corp — adds a third 61-90d-window sub (Exchange Online Plan 1) so
+  // the `--within 90` / `--within 180` ranges return multiple rows for
+  // Acme as well, not just Redwood.
+  {
+    id: "sub-acme-exo1-004",
+    companyId: ACME_ID,
+    productId: "prod-exo-plan1-0005",
+    productName: "Exchange Online (Plan 1) [New Commerce Experience]",
+    quantity: 25,
+    startDate: "2025-05-20",
+    createdDate: "2025-05-18",
+    createdAt: "2025-05-18",
+    billingStart: "2025-05-20",
+    status: "Active",
+    price: 4.0,
+    billingTerm: "Annual",
+    commitment: { id: "cterm-0006-0001-0001-000000000004", term: "1-Year", endDate: daysFromNow(75) },
+    commitmentTermEndDate: daysFromNow(75),
+    provisioningStatus: "Provisioned",
+    companyName: "Acme Corp",
+  },
+
+  // (We deliberately do NOT add a Bright Minds Entra ID P1 active sub here —
+  // the "invoiced Entra ID P1 but no active subscription" invariant is the
+  // anchor for the auditor's "unexpected line" demo case. The long-tail
+  // 91-365d variety is covered by Coastline's 2-Year and Pinnacle's 3-Year
+  // commits above.)
 ];
 
 // ─── Invoices ────────────────────────────────────────────────────────────────
