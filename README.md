@@ -460,12 +460,15 @@ The CLI surfaces partner-side Pax8 cost figures across `pax8 dashboard`, `pax8 c
 
 Pax8 monthly cost: The partner's monthly cost to Pax8 from active
 subscriptions. For monthly billing terms: price × quantity. For annual
-billing terms: (price × quantity) ÷ 12. Excludes one-time charges and
-prorated amounts. Emitted on `dashboard --json` as `pax8MonthlyCost`
-(canonical) with `mrr` as a deprecated alias for one minor version cycle.
+billing terms: (price × quantity) ÷ 12. For 2-Year: ÷ 24. For 3-Year: ÷ 36.
+Excludes one-time charges and prorated amounts. Emitted on `dashboard --json`,
+`clients more --json`, and the `report subscriptions / renewals / concentration`
+commands as a wrapped `AmountCurrency` object: `{ "amount": number,
+"currency": string }`. The wrapped shape matches the canonical Pax8 wire
+envelope (`AmountCurrency` from `@pax8/core`).
 
-Pax8 annual cost: Pax8 monthly cost × 12. The yearly equivalent.
-Emitted as `pax8AnnualCost` (canonical) with `arr` as a deprecated alias.
+Pax8 annual cost: Pax8 monthly cost × 12. The yearly equivalent. Emitted
+as `annualCost` with the same `{ amount, currency }` shape.
 
 ### Renewal exposure vs. churn risk (`mrrRenewing`)
 
