@@ -12,7 +12,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, Pax8 cost
 | clients / companies / customers | `pax8 clients list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
-| Pax8 cost / monthly spend / annualized spend | `pax8 dashboard --json 2>/dev/null` (top-line `pax8MonthlyCost` / `pax8AnnualCost`) or `pax8 clients more "<name>" --json` for per-client breakdown |
+| Pax8 cost / monthly spend / annualized spend | `pax8 dashboard --json 2>/dev/null` (top-line `monthlyCost.amount` / `annualCost.amount`) or `pax8 clients more "<name>" --json` for per-client breakdown. `pax8 report subscriptions --by vendor --json` for grouped Pax8 cost. |
 | growth / portfolio trend | `pax8 dashboard --json 2>/dev/null` (see `topCustomers`, `highPriorityRecs`, `potentialPax8MonthlyUplift`) or `pax8 subscriptions list --json --size 1000` for raw data |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
@@ -26,7 +26,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, Pax8 cost
 | webhook delivery history | `pax8 webhooks logs <id> --json 2>/dev/null` |
 | diagnostics / health | `pax8 doctor --json 2>/dev/null` |
 
-Pax8 cost math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `clients list`. Prefer `dashboard` — it already does this and emits `pax8MonthlyCost` / `pax8AnnualCost` at portfolio and per-customer levels. Note: these figures are the partner's COST paid to Pax8, not partner-side resale revenue or MRR.
+Pax8 cost math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`; 2-Year = `price × quantity ÷ 24`; 3-Year = `price × quantity ÷ 36`. Group by `companyId`, resolve names from `clients list`. Prefer `dashboard` or `report subscriptions` — they already do this and emit wrapped `monthlyCost` / `annualCost` objects (`{ amount, currency }`) at portfolio, per-customer, and per-group levels. Note: these figures are the partner's COST paid to Pax8, not partner-side resale revenue.
 
 Rules: no clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, hide UUIDs. Only confirm writes — never reads.
 
