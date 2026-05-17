@@ -159,7 +159,7 @@ function recLabel(rec: Recommendation): string {
 }
 
 export const recommendationsActCommand = new Command("act")
-  .description("Pick recommendations from a multi-select picker and place orders in a batch")
+  .description("Pick recommendations from a multi-select picker and place orders in a batch (uses CLI-side heuristics; see Notes below)")
   .option("--company <id|name>", "Filter to a specific company")
   .option("--product <name>", "Filter to a specific product (e.g. 'AvePoint', 'Entra')")
   .option("--priority <level>", "Filter by priority (high, medium, low)")
@@ -173,6 +173,32 @@ Examples:
   pax8 recommendations act --company "Summit Healthcare"
   pax8 recommendations act --priority high
   pax8 recommendations act --yes                    # non-interactive: place all
+
+Notes — what this command acts on:
+  The recommendations this command places orders against come from the
+  CLI's LOCAL recommendation engine, not Pax8's canonical Opportunity
+  Explorer (OE). The engine is provisional — it uses a CLI-local 7-category
+  product taxonomy (productivity, email, security, endpoint_protection,
+  identity, backup, cloud_infrastructure) and a "seat_gap" heuristic that
+  are NOT Pax8's canonical STAX taxonomy or Seat Utilization metric. See
+  the "Note on STAX divergence" section in 'pax8 recommendations list
+  --help' for the full breakdown of what's CLI-invented vs canonical.
+
+  estimatedMrrUplift on each recommendation is an upper-bound estimate
+  (unit price × seat count) and is NOT equivalent to Pax8's PMRR
+  (Potential MRR) metric. Treat order-placement decisions accordingly.
+
+  This local engine will be retired or remapped when OE's first-party
+  /opportunities API ships (ARC-785, #375).
+
+What this command does:
+  Bulk action submits REAL orders to Pax8 via the orders API — one POST
+  per recommendation in the selected set. In interactive (TTY) mode you
+  pick from a multi-select picker and confirm before submission. With
+  '--yes' or in non-interactive mode you opt in to skipping that gate;
+  every matching recommendation in the filtered set is ordered without
+  further prompting. Use the filter flags (--company, --product,
+  --priority) to constrain the set before passing '--yes'.
 
 Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
