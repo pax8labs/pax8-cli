@@ -1207,7 +1207,7 @@ Create `packages/claude-skill/src/tools.ts` with tool definitions for:
 - `pax8_invoices_list` — wraps `pax8 invoices list --json [--month <month>]`
 - `pax8_invoices_audit` — wraps `pax8 invoices audit --json [--month <month>]`
 - `pax8_products_search` — wraps `pax8 products search <query> --json`
-- `pax8_report_mrr` — wraps `pax8 report mrr --json` (if implemented, else subscriptions list and compute)
+- `pax8_report_subscriptions` — fetches `pax8 subscriptions list --json` (+ `companies list`) and computes a Pax8-cost rollup by company; returns wrapped `AmountCurrency` envelopes and the standard partner-revenue disclaimer.
 
 Each tool: name, description, JSON Schema parameters, `execute` function that spawns the CLI as a child process and returns parsed JSON.
 
