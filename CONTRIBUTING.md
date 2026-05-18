@@ -20,11 +20,11 @@ Run any command without API credentials:
 
 ```bash
 # macOS / Linux
-PAX8_DEMO=1 pnpm dev -- companies list
+PAX8_DEMO=1 pnpm dev -- clients list
 PAX8_DEMO=1 pnpm dev -- subscriptions renewals --within 14d
 
 # PowerShell
-$env:PAX8_DEMO="1"; pnpm dev -- companies list
+$env:PAX8_DEMO="1"; pnpm dev -- clients list
 $env:PAX8_DEMO="1"; pnpm dev -- subscriptions renewals --within 14d
 ```
 

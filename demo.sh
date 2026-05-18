@@ -77,7 +77,7 @@ echo -e "${DIM}  # First, let's see how the business is doing${RESET}"
 echo ""
 sleep 1
 
-run_cmd "pax8 status"
+run_cmd "pax8 dashboard"
 
 section
 
@@ -86,7 +86,7 @@ echo -e "${DIM}  # Let's see our customers${RESET}"
 echo ""
 sleep 1
 
-run_cmd "pax8 companies list"
+run_cmd "pax8 clients list"
 
 section
 
@@ -95,7 +95,7 @@ echo -e "${DIM}  # Let's look at a specific customer in detail${RESET}"
 echo ""
 sleep 1
 
-typo_then_fix "Sumit" "Summit Healthcare Partners\"" "pax8 companies more \""
+typo_then_fix "Sumit" "Summit Healthcare Partners\"" "pax8 clients more \""
 
 section
 
