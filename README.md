@@ -57,23 +57,10 @@ PAX8_DEMO=1 pax8 dashboard
 
 For watch mode, tests, and the rest of the contributor workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+<!-- TODO: once v0.1.0 publishes to npm, restore the "From npm" section as the primary install path -->
 ### From npm (coming soon)
 
-Once v0.1.0 ships, the documented path will be:
-
-```bash
-# Install (not yet published — tracked in repo Status section above)
-npm install -g @pax8/cli
-
-# Authenticate
-pax8 auth login
-
-# See how your business is doing
-pax8 dashboard
-
-# Or try with demo data (no credentials needed)
-PAX8_DEMO=1 pax8 dashboard
-```
+*Not yet available.* `@pax8/cli` has not been published to npm — `npm install -g @pax8/cli` will 404 until v0.1.0 ships. Use [Running from source](#running-from-source) above in the meantime; once v0.1.0 lands on npm, this section will document the `npm install -g @pax8/cli` → `pax8 auth login` → `pax8 dashboard` flow as the primary install path.
 
 ## Demo Flow (90 seconds)
 
