@@ -225,7 +225,12 @@ async function main(): Promise<void> {
   }
 
   if (process.argv.length <= 2) {
-    if (process.stdin.isTTY) {
+    // PAX8_REPL_FORCE is an internal test seam: the REPL integration test
+    // (repl.integration.test.ts) needs to drive the prompt over a stdin pipe,
+    // which means stdin is not a TTY. Without this override there is no way
+    // to exercise REPL child-spawn from a subprocess test, and the
+    // MODULE_NOT_FOUND class of bug (#226 / #227) would ship invisibly again.
+    if (process.stdin.isTTY || process.env.PAX8_REPL_FORCE === "1") {
       await startRepl(createProgram);
     } else {
       await showWelcomeScreen();
