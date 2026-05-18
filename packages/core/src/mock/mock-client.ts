@@ -368,23 +368,29 @@ class ProductsResource {
 
   async getProvisioningDetails(
     id: string
-  ): Promise<ProvisioningDetailType> {
+  ): Promise<ProvisioningDetailType[]> {
     await randomDelay();
     const product = products.find((p) => p.id === id);
     if (!product) throw notFound("Product", id);
-    const isMicrosoft = product.vendorName === "Microsoft";
-    return {
-      productId: product.id,
-      vendorPrerequisites: isMicrosoft
-        ? "Customer must have a Microsoft tenant and a verified domain."
-        : undefined,
-      fields: isMicrosoft
-        ? [
-            { name: "domain", label: "Tenant Domain", type: "string", required: true },
-            { name: "tenantId", label: "Microsoft Tenant ID", type: "string", required: true },
-          ]
-        : [],
-    };
+    if (product.vendorName === "Microsoft") {
+      return [
+        {
+          key: "domain",
+          label: "Tenant Domain",
+          description: "Customer's verified Microsoft tenant domain (e.g. contoso.onmicrosoft.com).",
+          valueType: "Input",
+          possibleValues: null,
+        },
+        {
+          key: "tenantId",
+          label: "Microsoft Tenant ID",
+          description: "GUID identifying the customer's Microsoft Entra tenant.",
+          valueType: "Input",
+          possibleValues: null,
+        },
+      ];
+    }
+    return [];
   }
 
   async getDependencies(_id: string): Promise<ProductDependencyType[]> {

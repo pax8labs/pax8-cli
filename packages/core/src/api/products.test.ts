@@ -41,11 +41,27 @@ const samplePricingResponse = {
   ],
 };
 
-const sampleProvisioningDetail = {
-  productId: PRODUCT_ID,
-  vendorPrerequisites: "Must have tenant",
-  fields: [
-    { name: "domain", label: "Domain", type: "string", required: true },
+// Spec-shaped envelope per `findProvisionDetailsByProductId` in
+// partner-endpoints.json: `{ content: ProvisioningDetail[] }` where each
+// detail carries `{ key, label?, description?, valueType?, possibleValues?,
+// values? }`. The pre-fix shape (`{ productId, vendorPrerequisites, fields }`)
+// was hallucinated; see Candidate H in docs/triage/v0.1.0-candidates.md.
+const sampleProvisioningResponse = {
+  content: [
+    {
+      key: "domain",
+      label: "Tenant Domain",
+      description: "Customer's verified Microsoft tenant domain.",
+      valueType: "Input",
+      possibleValues: null,
+    },
+    {
+      key: "plan",
+      label: "Plan",
+      description: "Select the partner plan tier.",
+      valueType: "Single-Value",
+      possibleValues: ["basic", "standard"],
+    },
   ],
 };
 
@@ -93,13 +109,34 @@ describe("ProductsApi", () => {
     expect(result[0].rates[0].partnerBuyRate).toBe(22.0);
   });
 
-  it("getProvisioningDetails returns provisioning info", async () => {
-    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleProvisioningDetail);
+  it("getProvisioningDetails returns spec-shaped provisioning fields", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleProvisioningResponse);
 
     const result = await api.getProvisioningDetails(PRODUCT_ID);
 
-    expect(client.get).toHaveBeenCalledWith(`/products/${PRODUCT_ID}/provisioning-details`);
-    expect(result.productId).toBe(PRODUCT_ID);
+    // Path regression: spec is `/provision-details` (singular). The pre-fix
+    // path was `/provisioning-details` (plural-with-hyphen) and 404'd against
+    // the real API — see Candidate H.
+    expect(client.get).toHaveBeenCalledWith(`/products/${PRODUCT_ID}/provision-details`);
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
+    expect(result[0].key).toBe("domain");
+    expect(result[0].valueType).toBe("Input");
+    expect(result[0].possibleValues).toBeNull();
+    expect(result[1].key).toBe("plan");
+    expect(result[1].valueType).toBe("Single-Value");
+    expect(result[1].possibleValues).toEqual(["basic", "standard"]);
+  });
+
+  it("getProvisioningDetails calls the spec'd path /provision-details", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue({ content: [] });
+
+    await api.getProvisioningDetails(PRODUCT_ID);
+
+    const calls = (client.get as ReturnType<typeof vi.fn>).mock.calls;
+    const path = calls[0][0] as string;
+    expect(path).toBe(`/products/${PRODUCT_ID}/provision-details`);
+    expect(path).not.toContain("provisioning-details");
   });
 
   it("getDependencies returns dependency array", async () => {

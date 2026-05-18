@@ -117,12 +117,16 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   describe("products.getProvisioningDetails()", () => {
-    it("returns provisioning details for Microsoft product", async () => {
+    it("returns spec-shaped ProvisioningDetail[] for a Microsoft product", async () => {
       const msProduct = (await client.products.list({ vendorName: "Microsoft", size: 1 })).content[0];
       const details = await client.products.getProvisioningDetails(msProduct.id);
-      expect(details.productId).toBe(msProduct.id);
-      expect(details.vendorPrerequisites).toMatch(/tenant/i);
-      expect(details.fields?.map((f) => f.name)).toContain("domain");
+      expect(Array.isArray(details)).toBe(true);
+      expect(details.length).toBeGreaterThan(0);
+      const keys = details.map((d) => d.key);
+      expect(keys).toContain("domain");
+      const domain = details.find((d) => d.key === "domain")!;
+      expect(domain.valueType).toBe("Input");
+      expect(domain.possibleValues).toBeNull();
     });
 
     it("throws NotFoundError for unknown product", async () => {

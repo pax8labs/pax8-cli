@@ -354,21 +354,50 @@ export type ProductPricing = ProductPricingPlan[];
 
 // ─── Provisioning Detail ─────────────────────────────────────────────────────
 
-export const ProvisioningFieldSchema = z.object({
-  name: z.string(),
-  label: z.string().optional(),
-  type: z.string().optional(),
-  required: z.boolean().optional(),
-  options: z.array(z.string()).optional(),
-});
-export type ProvisioningField = z.infer<typeof ProvisioningFieldSchema>;
+/**
+ * Per the public Pax8 OpenAPI spec's `ProvisioningDetail` component, the same
+ * schema is used on three surfaces with read/write field directionality:
+ *
+ *   - GET /products/{productId}/provision-details — discovery (read)
+ *   - POST /orders (CreateLineItem.provisioningDetails) — write
+ *   - PUT /subscriptions/{subscriptionId}.provisioningDetails — write
+ *
+ * `key` is the field key (e.g. `userEmailAddress`). `values` is writeOnly —
+ * partner-supplied values. The rest are readOnly metadata returned by the
+ * discovery endpoint: `label`, `description`, `valueType`
+ * (`Input` | `Single-Value` | `Multi-Value`), and `possibleValues` (the allowed
+ * set when `valueType` is `Single-Value` or `Multi-Value`, null when `Input`).
+ *
+ * Prior to this fix the schema hallucinated a `{ productId, vendorPrerequisites,
+ * fields: [{ name, label, type, required, options }] }` shape — none of which
+ * exists in the spec.
+ */
+export const ProvisioningDetailValueTypeSchema = z.enum([
+  "Input",
+  "Single-Value",
+  "Multi-Value",
+]);
+export type ProvisioningDetailValueType = z.infer<typeof ProvisioningDetailValueTypeSchema>;
 
 export const ProvisioningDetailSchema = z.object({
-  productId: z.string(),
-  vendorPrerequisites: z.string().optional(),
-  fields: z.array(ProvisioningFieldSchema).optional(),
+  key: z.string().optional(),
+  label: z.string().optional(),
+  description: z.string().optional(),
+  valueType: ProvisioningDetailValueTypeSchema.optional(),
+  possibleValues: z.array(z.string()).nullable().optional(),
+  values: z.array(z.string()).optional(),
 });
 export type ProvisioningDetail = z.infer<typeof ProvisioningDetailSchema>;
+
+/**
+ * Wire envelope for `GET /products/{productId}/provision-details`. Per the
+ * spec the response is wrapped in `{ content: ProvisioningDetail[] }` (no
+ * `page` block on this endpoint — it's not paginated).
+ */
+export const ProvisioningDetailResponseSchema = z.object({
+  content: z.array(ProvisioningDetailSchema),
+});
+export type ProvisioningDetailResponse = z.infer<typeof ProvisioningDetailResponseSchema>;
 
 // ─── Line-item provisioning (shared by Orders + Quotes) ─────────────────────
 

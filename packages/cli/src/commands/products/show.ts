@@ -108,24 +108,36 @@ Examples:
         process.stdout.write(
           `\n  ${chalk.cyan.bold("Provisioning Requirements")}\n`
         );
-        const fields = provisioning.fields ?? [];
-        const requiresDomain = fields.some((f) => f.name === "domain");
-        const requiresTenant = fields.some((f) => f.name === "tenantId");
-        process.stdout.write(
-          `  ${chalk.dim("Requires Domain:")} ${requiresDomain ? "Yes" : "No"}\n`
-        );
-        process.stdout.write(
-          `  ${chalk.dim("Requires Tenant:")} ${requiresTenant ? "Yes" : "No"}\n`
-        );
-        if (provisioning.vendorPrerequisites) {
+        if (provisioning.length === 0) {
           process.stdout.write(
-            `  ${chalk.dim("Prerequisites:")} ${provisioning.vendorPrerequisites}\n`
+            `  ${chalk.dim("This product has no published provisioning fields.")}\n`
           );
-        }
-        if (fields.length > 0) {
-          process.stdout.write(
-            `  ${chalk.dim("Fields:")} ${fields.map((f) => f.name).join(", ")}\n`
-          );
+        } else {
+          const rows = provisioning.map((p) => ({
+            key: p.key ?? "",
+            label: p.label ?? "",
+            valueType: p.valueType ?? "",
+            possibleValues:
+              p.valueType === "Input" || !p.possibleValues
+                ? ""
+                : p.possibleValues.join(", "),
+          }));
+          output(rows, {
+            format: "table",
+            columns: [
+              { key: "key", header: "Key", width: 22 },
+              { key: "label", header: "Label", width: 22 },
+              { key: "valueType", header: "Type", width: 14 },
+              { key: "possibleValues", header: "Possible Values", width: 28 },
+            ],
+          });
+          for (const p of provisioning) {
+            if (p.description) {
+              process.stdout.write(
+                `  ${chalk.dim(`${p.key ?? ""}:`)} ${p.description}\n`
+              );
+            }
+          }
         }
       }
 
