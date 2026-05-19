@@ -25,7 +25,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 // Resolve the repo root by walking up from this test file. We can't rely
 // on `process.cwd()` because vitest can be invoked from a subdirectory.
@@ -76,9 +76,18 @@ function listMatchingFiles(pattern: string, paths: string[]): string[] {
   // `git grep -l` is fast and respects .gitignore. The grep is run from
   // the repo root so paths in the output are repo-relative — which is
   // the form we want for the exception sets.
+  //
+  // Use execFileSync (no shell) instead of execSync (with shell). On
+  // Windows cmd.exe, the shell mangles regex backslash escapes inside
+  // single-quoted patterns (cmd.exe doesn't honor POSIX single quoting),
+  // so a regex like `fs\.writeFile\(` becomes `fs.writeFile(` minus the
+  // escapes — or worse, the parser treats `\` as an escape character and
+  // truncates the pattern. execFileSync passes argv straight to git, no
+  // shell parsing, identical behavior across platforms.
   try {
-    const out = execSync(
-      `git grep -l --extended-regexp '${pattern}' -- ${paths.map((p) => `'${p}'`).join(" ")}`,
+    const out = execFileSync(
+      "git",
+      ["grep", "-l", "--extended-regexp", pattern, "--", ...paths],
       { cwd: REPO_ROOT, encoding: "utf-8" },
     );
     return out
