@@ -99,7 +99,8 @@ Adding a new command? Lives at `packages/cli/src/commands/<resource>/<action>.ts
 - `PAX8_CLIENT_ID`, `PAX8_CLIENT_SECRET` — credentials (file fallback: `~/.pax8/credentials.json`)
 - `PAX8_API_BASE` — override API + token base URL (e.g. staging); honored by both `@pax8/core` and the OAuth client
 - `PAX8_TIMEOUT_MS` — per-request HTTP timeout in milliseconds (default `30000`, max `300000`); extend for slow endpoints like `/orders` on large portfolios (#199)
-- `PAX8_DEMO=1` — run against `MockPax8Client` with synthetic data
+- `PAX8_DEMO=1` — run against `MockPax8Client` with synthetic data. Defaults to the hand-curated small fixture (~12 companies, dozens of subs/orders) suitable for screenshots and golden-path tests.
+- `PAX8_DEMO_SCALE=large` — when combined with `PAX8_DEMO=1`, swaps in the generated large-portfolio fixture (#484): 1,000 companies, 5,000 subscriptions, 45,000 orders dating back to 2013, mixed currencies (USD/EUR/GBP/CAD), every `BillingTerm` value, plus shell-meta-hostile customer names for `orderCommand` regression-testing. Pay ~400ms at process start; intended for scale-matrix testing, not daily use.
 - `PAX8_YES=1` — auto-confirm write prompts
 - `PAX8_QUIET=1` — disable spinners
 - `PAX8_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1` — opt out of telemetry (already opt-in by default)
