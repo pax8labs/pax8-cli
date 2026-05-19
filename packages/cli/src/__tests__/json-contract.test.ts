@@ -122,6 +122,7 @@ describe("JSON contract — stdout is data, stderr is everything else", () => {
           `'pax8 ${label}' produced non-JSON stdout (this is the #470/#471 class of bug):\n` +
             `---stdout (first 400 chars)---\n${result.stdout.slice(0, 400)}\n` +
             `---parse error---\n${err instanceof Error ? err.message : String(err)}`,
+          { cause: err },
         );
       }
 
