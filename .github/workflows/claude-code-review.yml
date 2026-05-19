@@ -1,0 +1,48 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          prompt: |
+            Review this pull request. Ground findings in the repo's
+            conventions — CLAUDE.md, docs/UX_GUIDE.md (§13 checklist),
+            and packages/claude-skill/skill.md for the agent-facing
+            read/write contract.
+
+            Focus on: correctness, security, agent-facing safety
+            (write commands must prompt, idempotency keys honored,
+            error codes from packages/core/src/errors/codes.ts),
+            stdout/stderr discipline (no console.log in command
+            code; output() only), and demo-mode behavior.
+
+            Skip generic praise. Cite file:line for every concrete
+            issue. If the change is small or routine, say so briefly
+            and move on.
+          claude_args: "--model opus"
