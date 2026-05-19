@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { CommandContext } from "./context.js";
+import { debugLog } from "./debug.js";
 
 /** Minimal shape needed by enrichProductNames — any object with productId and optional productName. */
 interface EnrichableByProduct {
@@ -60,7 +61,7 @@ export async function enrichProductNames(
           const product = await ctx.api.products.get(pid);
           if (product?.name) nameMap.set(pid, product.name);
         } catch (err) {
-          if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] product lookup failed for ${pid}: ${err}\n`);
+          debugLog(`product lookup failed for ${pid}`, err);
         }
       })
     );
@@ -74,7 +75,7 @@ export async function enrichProductNames(
         }
       }
     } catch (err) {
-      if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] bulk product fetch failed: ${err}\n`);
+      debugLog("bulk product fetch failed", err);
     }
 
     const stillMissing = [...missing].filter((pid) => !nameMap.has(pid));

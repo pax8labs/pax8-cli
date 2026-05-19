@@ -7,6 +7,7 @@ import * as path from "node:path";
 import { createHash } from "node:crypto";
 import { getConfigDir, safeWriteFileSync } from "@pax8/core";
 import { CliError } from "./errors.js";
+import { debugLog } from "./debug.js";
 
 /**
  * Idempotency cache for write commands.
@@ -219,9 +220,7 @@ export async function withIdempotency<T>(
   try {
     cached = await loadEntry(commandName, idempotencyKey);
   } catch (err) {
-    if (process.env.PAX8_DEBUG) {
-      process.stderr.write(`[debug] idempotency cache read failed: ${err}\n`);
-    }
+    debugLog("idempotency cache read failed", err);
   }
   if (cached) {
     if (cached.argsHash !== argsHash) {
@@ -274,9 +273,7 @@ export async function withIdempotency<T>(
           createdAt: new Date().toISOString(),
         });
       } catch (err) {
-        if (process.env.PAX8_DEBUG) {
-          process.stderr.write(`[debug] idempotency cache write failed: ${err}\n`);
-        }
+        debugLog("idempotency cache write failed", err);
       }
     }
     return value;
