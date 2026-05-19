@@ -28,6 +28,27 @@ $env:PAX8_DEMO="1"; pnpm dev -- clients list
 $env:PAX8_DEMO="1"; pnpm dev -- subscriptions renewals --within 14d
 ```
 
+#### Large-portfolio fixture for scale testing
+
+Demo mode defaults to a small hand-curated fixture (~12 companies). For UX
+bugs that only manifest at portfolio scale — invisible pagination, 200-cap
+name enrichment, currency rendering, BillingTerm normalization, shell-meta
+in customer names — set `PAX8_DEMO_SCALE=large` alongside `PAX8_DEMO=1`:
+
+```bash
+PAX8_DEMO=1 PAX8_DEMO_SCALE=large pnpm dev -- orders list
+PAX8_DEMO=1 PAX8_DEMO_SCALE=large pnpm dev -- dashboard --json
+```
+
+You get 1,000 companies, 5,000 subscriptions, 45,000 orders dating back to
+2013, mixed currencies (USD/EUR/GBP/CAD), every `BillingTerm` value, and a
+handful of deliberately-hostile customer names. The fixture is generated
+deterministically from a fixed seed, so two runs produce identical data.
+
+Don't replace the small fixture with the large one — both serve different
+purposes. The small fixture is the screenshot target and golden-path test
+data; the large fixture is the scale-matrix regression gate (#484).
+
 ## Project Structure
 
 ```
