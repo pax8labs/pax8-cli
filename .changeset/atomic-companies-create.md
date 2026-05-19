@@ -11,4 +11,4 @@ Opt-out via `--company-only` produces an Inactive company. The command prints a 
 
 `@pax8/core` schema: new `CreateCompanyContactInputSchema` for the inline contact payload; `CreateCompanyInputSchema` gains an optional `contacts` field. The inline shape mirrors `CreateContactInputSchema` but omits `companyId` (the company doesn't exist yet).
 
-Closes #330. Addresses Franco Aurieme's domain-review finding that the v0.1.0 CLI was creating Inactive companies that partners couldn't use until they discovered the contact requirement.
+Closes #330. Addresses pre-publish review feedback that the v0.1.0 CLI was creating Inactive companies that partners couldn't use until they discovered the contact requirement.
