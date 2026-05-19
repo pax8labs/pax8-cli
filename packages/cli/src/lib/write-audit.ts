@@ -30,6 +30,15 @@ import { getConfigDir } from "@pax8/core";
  * Best-effort: any I/O failure (full disk, read-only fs, sandboxed env)
  * is swallowed. The audit log must never break a write that otherwise
  * succeeded.
+ *
+ * Platform note: the `O_NOFOLLOW` symlink protection and `0o600` mode
+ * assertion are POSIX guarantees. Windows silently ignores both flags
+ * when opening a file. On Windows the log's confidentiality and
+ * symlink-resistance fall back to whatever ACL the parent
+ * `~/.pax8/` directory has — the convention being user-only access
+ * established at `pax8 auth login` time. Production-grade Windows
+ * hardening would use `CreateFileW` with `FILE_FLAG_OPEN_REPARSE_POINT`
+ * and explicit ACL set; that's a separate follow-up.
  */
 
 const FILENAME = "write-audit.log";

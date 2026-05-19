@@ -46,8 +46,16 @@ describe("recordWriteAudit", () => {
     const filepath = join(tmpDir, "write-audit.log");
     expect(fs.existsSync(filepath)).toBe(true);
 
-    const stat = fs.statSync(filepath);
-    expect(stat.mode & 0o777).toBe(0o600);
+    // POSIX-only assertion: Windows doesn't honor POSIX mode bits on
+    // file creation — `fs.openSync(..., 0o600)` falls back to the
+    // platform default. The audit log's confidentiality on Windows
+    // depends on the parent directory's ACL (the `.pax8` config dir
+    // inherits user-only by convention). See the Windows note in
+    // write-audit.ts for the deliberate limitation.
+    if (process.platform !== "win32") {
+      const stat = fs.statSync(filepath);
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
 
     const entries = readLog();
     expect(entries).toHaveLength(1);
@@ -88,7 +96,13 @@ describe("recordWriteAudit", () => {
     expect(entry.command).not.toContain("Real Customer Inc");
   });
 
-  it("refuses to follow a symlink at the audit-log path (O_NOFOLLOW)", () => {
+  it("refuses to follow a symlink at the audit-log path (O_NOFOLLOW, POSIX-only)", () => {
+    // Windows' fs.openSync silently ignores O_NOFOLLOW and resolves
+    // the symlink — the protection here is genuinely POSIX-only.
+    // The Windows audit log inherits ACL protection from the parent
+    // .pax8 dir instead. Documented in write-audit.ts.
+    if (process.platform === "win32") return;
+
     const filepath = join(tmpDir, "write-audit.log");
     const decoy = join(tmpDir, "decoy.txt");
     fs.writeFileSync(decoy, "untouched");
