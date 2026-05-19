@@ -59,14 +59,14 @@ const SEED = 0x504158_38; // "PAX8" as hex — easy to spot if it ever leaks int
 function makeRng(): {
   next: () => number;
   pick: <T>(arr: readonly T[]) => T;
-  pickWeighted: <T>(arr: readonly [T, number][]) => T;
+  pickWeighted: <T>(arr: readonly (readonly [T, number])[]) => T;
   intBetween: (lo: number, hi: number) => number;
   uuid: (prefix: string, index: number) => string;
   dateBetween: (startMs: number, endMs: number) => string;
 } {
   const rng = mulberry32(SEED);
   const pick = <T,>(arr: readonly T[]) => arr[Math.floor(rng() * arr.length)];
-  const pickWeighted = <T,>(arr: readonly [T, number][]) => {
+  const pickWeighted = <T,>(arr: readonly (readonly [T, number])[]) => {
     const total = arr.reduce((s, [, w]) => s + w, 0);
     let r = rng() * total;
     for (const [v, w] of arr) {
