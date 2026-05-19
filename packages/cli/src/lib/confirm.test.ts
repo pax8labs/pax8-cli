@@ -59,30 +59,90 @@ describe("confirm", () => {
   });
 });
 
-describe("confirmDestructive", () => {
+describe("confirmDestructive — keyword challenge is not bypassable", () => {
+  // H-5: pre-fix, --yes / PAX8_YES short-circuited the keyword check
+  // and returned true. That defeated the typed-keyword gate's whole
+  // purpose for destructive ops. The tests below pin the new
+  // contract: under --yes / PAX8_YES on a non-TTY stdin (CI, agent
+  // subprocess, piped input), confirmDestructive refuses with a
+  // stderr message and returns false. The keyword can still be
+  // satisfied — but only interactively, by typing it.
   const originalEnv = { ...process.env };
   const originalArgv = [...process.argv];
+  let stderrWrite: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     delete process.env.PAX8_YES;
     process.argv = ["node", "test"];
+    answerQueue.length = 0;
+    // Default test env is non-TTY for stdin. Each test that needs the
+    // interactive path overrides this locally.
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: false,
+      configurable: true,
+    });
+    stderrWrite = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
     process.argv = originalArgv;
+    answerQueue.length = 0;
+    stderrWrite.mockRestore();
   });
 
-  it("returns true when PAX8_YES=1", async () => {
+  it("PAX8_YES=1 does NOT bypass the keyword challenge — returns false on non-TTY stdin", async () => {
     process.env.PAX8_YES = "1";
     const result = await confirmDestructive("Delete?", "DELETE");
-    expect(result).toBe(true);
+    expect(result).toBe(false);
+    const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
+    expect(written).toContain("Destructive operation requires");
+    expect(written).toContain("DELETE");
   });
 
-  it("returns true when --yes flag is present", async () => {
+  it("--yes flag does NOT bypass the keyword challenge — returns false on non-TTY stdin", async () => {
     process.argv = ["node", "test", "--yes"];
     const result = await confirmDestructive("Delete?", "DELETE");
+    expect(result).toBe(false);
+    const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
+    expect(written).toContain("Destructive operation requires");
+  });
+
+  it("non-TTY stdin without --yes still refuses (no auto-confirm path at all)", async () => {
+    const result = await confirmDestructive("Delete?", "DELETE");
+    expect(result).toBe(false);
+  });
+
+  it("on a TTY, --yes still prompts for the keyword — the user must type it", async () => {
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: true,
+      configurable: true,
+    });
+    process.argv = ["node", "test", "--yes"];
+    answerQueue.push("DELETE");
+    const result = await confirmDestructive("Delete?", "DELETE");
     expect(result).toBe(true);
+    // No stderr refusal — we reached the interactive prompt.
+    const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
+    expect(written).not.toContain("Destructive operation requires");
+  });
+
+  it("PAX8_CONFIRM_DESTRUCTIVE=<correct keyword> satisfies the gate without a TTY", async () => {
+    process.env.PAX8_CONFIRM_DESTRUCTIVE = "DELETE";
+    const result = await confirmDestructive("Delete?", "DELETE");
+    expect(result).toBe(true);
+    const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
+    // No stderr refusal — the env override bypassed the no-TTY refusal.
+    expect(written).not.toContain("Destructive operation requires");
+  });
+
+  it("PAX8_CONFIRM_DESTRUCTIVE=<wrong keyword> still refuses", async () => {
+    process.env.PAX8_CONFIRM_DESTRUCTIVE = "WRONG_KEYWORD";
+    const result = await confirmDestructive("Delete?", "DELETE");
+    expect(result).toBe(false);
+    // The mismatch is a silent "no" — the function returns false and
+    // the caller treats it as "user declined." No stderr refusal here
+    // (that's reserved for the no-TTY no-override case).
   });
 });
 
@@ -251,6 +311,12 @@ describe("confirmDestructive interactive prompt", () => {
     delete process.env.PAX8_YES;
     process.argv = ["node", "test"];
     answerQueue.length = 0;
+    // The interactive prompt path requires a TTY (H-5). Default test
+    // env is non-TTY; opt in here.
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: true,
+      configurable: true,
+    });
   });
 
   afterEach(() => {
