@@ -359,7 +359,7 @@ export const ordersCreateCommand = new Command("create")
   .option("-y, --yes", "Skip confirmation prompt")
   .option(
     "--idempotency-key <uuid>",
-    "Replay-safe key for retries (24h TTL). Accepts UUIDs or 8–128 char identifiers (letters, digits, '-', '_', '.')",
+    "Host-local replay cache key (24h TTL). Same-host re-runs return the cached response. NOTE: not yet sent on the wire — cross-host / cross-process retries are NOT deduped (#474). Accepts UUIDs or 8–128 char identifiers (letters, digits, '-', '_', '.')",
   )
   .addHelpText(
     "after",
@@ -682,11 +682,14 @@ Examples:
         lineItems,
       };
 
-      // TODO: When the Pax8 API adds support for an `Idempotency-Key` request
-      // header on POST /orders (not currently documented in the existing
-      // `OrdersApi.create` shape — see packages/core/src/api/orders.ts), pass
-      // `idempotencyKey` through here so the server dedupes natively. Until
-      // then, deduplication is purely local via the file cache below.
+      // v0.2 plan (#474): once the Pax8 API honors an `Idempotency-Key`
+      // request header on POST /orders, forward `idempotencyKey` through
+      // OrdersApi.create so the server dedupes natively. Until then,
+      // deduplication is purely host-local via the file cache below —
+      // cross-host / cross-process retries with the same key are NOT
+      // deduped. The CLI help text and docs/UX_GUIDE.md are explicit about
+      // this limitation; don't reintroduce the "replay-safe" wording
+      // without first wiring the wire-level header.
       const doneWrite = markWriteInFlight("orders", undefined, idempotencyKey);
       let order;
       try {

@@ -52,7 +52,7 @@ Initial public release.
 - **Demo mode** (`PAX8_DEMO=1`) — every command runs against an in-memory fixture, so partners can evaluate the tool with no credentials and CI runs end-to-end against the same surface.
 - **OAuth 2.0 client-credentials flow** — secure local credential storage at `~/.pax8/credentials.json` with mode `0600`, tokens cached in memory only and never persisted, automatic refresh at 23h.
 - **Structured `--json` output with `nextActions`** — `status`, `report mrr/growth`, and `invoices audit` always include contextual next-step hints; list commands opt in via `--with-actions` to ride a `{ data, nextActions }` envelope alongside the flat JSON array (#97).
-- **Idempotency keys on write commands** — `--idempotency-key <uuid>` is accepted on every mutation command (#91).
+- **Host-local replay cache for write commands** — `--idempotency-key <uuid>` is accepted on every mutation command (#91). Same-host re-runs return the cached response. Note: the key is not currently sent on the wire (Pax8 API doesn't yet honor an Idempotency-Key header), so cross-host / cross-process retries are not deduped; the local cache is the v0.1 protection. Server-side dedup is planned in v0.2 (#474).
 - **Machine-readable error codes** — every `CliError` carries a stable `code` (one of the `ERROR_*` constants from `@pax8/core`) so agents and scripts can branch on outcome without parsing strings (#90).
 - **Output formats** — `--json`, `--csv`, `--quiet`, plus `--with-actions` (envelope mode) and `--ids-only` (one ID per line, for piping into the next command's `--company` filter).
 - **`PAX8_API_BASE` env var** — point the CLI at sandbox / staging environments without rebuilding (#135).

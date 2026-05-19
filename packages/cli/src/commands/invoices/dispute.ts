@@ -233,7 +233,7 @@ export const invoicesDisputeCommand = new Command("dispute")
   .option("-y, --yes", "Skip the confirmation prompt")
   .option(
     "--idempotency-key <uuid>",
-    "Replay-safe key for retries (24h TTL). Accepts UUIDs or 8–128 char identifiers (letters, digits, '-', '_', '.')",
+    "Host-local replay cache key (24h TTL). Same-host re-runs return the cached draft. Cross-host / cross-process retries are NOT deduped — see #474. Accepts UUIDs or 8–128 char identifiers (letters, digits, '-', '_', '.')",
   )
   .addHelpText(
     "after",
@@ -251,7 +251,8 @@ Examples:
 
 Note: The Pax8 v1 API does not expose a public dispute endpoint, so this
 command files a local draft and produces a support ticket template you can
-paste into the Pax8 portal. The draft is replay-safe via --idempotency-key.`,
+paste into the Pax8 portal. Same-host re-runs with --idempotency-key
+return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
   )
   .action(async (_options, command: Command) => {
     const allOpts = command.optsWithGlobals();

@@ -322,16 +322,24 @@ When `--json` is set, the error serializes to stderr as a structured object inst
 
 Codes live in `packages/core/src/errors/codes.ts` and are append-only — never repurpose an existing code, even for a "near-match" failure mode. If you need a new code, add a new constant.
 
-### Idempotency keys for writes — (implemented)
+### Idempotency keys for writes — (implemented, local-only in v0.1)
 
-Write commands accept `--idempotency-key <uuid>` for replay-safe retries. The agent passes a key, retries on transient failure, and the CLI dedupes — you get either the original result or a cached "already processed" response, never a double-write. Today this is wired into `orders create` and `invoices dispute`; new write commands should follow the same pattern.
+Write commands accept `--idempotency-key <uuid>` to mark retry intent. Today the **Pax8 API does not honor an `Idempotency-Key` request header** on `POST /orders` or other write endpoints, so the key is **not sent over the wire**. The CLI maintains a host-local replay cache: when you re-run the same command on the same host with the same key, the CLI returns the cached response instead of issuing a second API call.
 
 ```bash
 pax8 orders create --company c1 --product p1 --quantity 5 \
   --idempotency-key 9f3b...e1
 ```
 
-Local cache: 24h TTL, keyed on `{command, key, args-hash}`. When a key matches a cached call, the command writes `(idempotent replay)` to stderr (dim) and returns the cached response. Exit code is unchanged. Prefer server-side idempotency tokens when the Pax8 API supports them; the local cache is a fallback for endpoints that don't.
+Local cache: 24h TTL, keyed on `{command, key, args-hash}`, stored under `~/.pax8/idempotency/`. When a key matches a cached call, the command writes `(idempotent replay)` to stderr (dim) and returns the cached response. Exit code is unchanged.
+
+**Limitations to be honest about**:
+
+- **Cross-process and cross-host retries are not deduped.** Two concurrent CLI invocations on different machines (or different `~/.pax8/` directories) with the same key both hit the API and both write. The local cache only protects same-host post-success replay.
+- **Connection drops mid-write are not protected** — if the response is lost after the server processed the request but before the client cached the result, a retry creates a duplicate. Pair `--idempotency-key` with `pax8 orders show` / `pax8 subscriptions list --company` to verify state before retrying after any timeout/network failure.
+- **v0.2 plan**: once Pax8 ships an `Idempotency-Key` header on write endpoints, the CLI will forward the key on the wire and the server will own deduplication. The local cache will downgrade to a fast-path response replay. Tracked in [#474](https://github.com/pax8labs/pax8-cli/issues/474).
+
+New write commands should accept `--idempotency-key` for forward-compatibility and follow the `orders create` / `invoices dispute` pattern.
 
 Reads never need a key.
 
@@ -346,7 +354,7 @@ The flow:
 3. The partner reviews the *exact* payload (company, product, quantity, price) and approves or denies it.
 4. On approval, the agent receives a token cryptographically scoped to that payload and submits the order with it. Mutating any field after sign-off invalidates the token — the agent cannot bait-and-switch.
 
-Composes with idempotency keys: the approval token is one-shot (single submission), but the submission itself is retried with the same `--idempotency-key` if the network drops. Together they give "approved exactly once, submitted at-least-once, deduped to exactly-once."
+Composes with idempotency keys: the approval token is one-shot (single submission). Same-host network-drop retries with the same `--idempotency-key` are deduped by the local replay cache (see above). Once the Pax8 API honors the `Idempotency-Key` header server-side ([#474](https://github.com/pax8labs/pax8-cli/issues/474)), the pair will give "approved exactly once, submitted at-least-once, deduped to exactly-once" across processes and hosts — until then, dedup is host-local.
 
 Expect an **approval threshold** pattern: orders under a configurable dollar amount auto-approve via the standard `-y` / `--yes` flag; orders above the threshold require CIBA sign-off regardless of `--yes`. The threshold is partner-configured, not agent-configured.
 
