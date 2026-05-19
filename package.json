@@ -17,7 +17,8 @@
     "lint": "eslint packages/*/src/**/*.ts",
     "format": "prettier --write .",
     "dev": "pnpm --filter @pax8/cli dev",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:scale": "vitest run packages/cli/src/__tests__/scale-matrix.test.ts"
   },
   "engines": {
     "node": ">=20.0.0"
