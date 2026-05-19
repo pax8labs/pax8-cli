@@ -3,8 +3,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Track spawn calls so we can assert on cache-warmer invocations without
-// actually spawning detached child processes during tests.
+// Track spawn calls so we can assert on subprocess invocations from
+// `buildContext()`. After #466 there should be zero — the detached
+// `spawnCacheWarmer` is gone and on-disk cache populates organically
+// from real user reads.
 const spawnCalls: Array<{ cmd: string; args: string[] }> = [];
 
 vi.mock("node:child_process", async (importActual) => {
@@ -201,12 +203,10 @@ describe("buildContext", () => {
 
   // PAX8_DEMO=false / =0 must force demo OFF even when config has demo:true,
   // so users can keep `demo: true` in `~/.pax8/config.yaml` as a safety default
-  // and opt out per-invocation. Cache warming is disabled in these tests to
-  // avoid spawning detached child processes.
+  // and opt out per-invocation.
   for (const falsyValue of ["false", "0"]) {
     it(`PAX8_DEMO='${falsyValue}' overrides config 'demo: true'`, async () => {
       process.env.PAX8_DEMO = falsyValue;
-      process.env.PAX8_CACHE_WARMING = "1";
 
       const core = await import("@pax8/core");
       const cfg = {
@@ -233,7 +233,6 @@ describe("buildContext", () => {
       } finally {
         loadSpy.mockRestore();
         getCredSpy.mockRestore();
-        delete process.env.PAX8_CACHE_WARMING;
       }
     });
   }
@@ -248,8 +247,6 @@ describe("buildContext", () => {
 
   it("non-demo path constructs a real api client when credentials are present", async () => {
     delete process.env.PAX8_DEMO;
-    // Skip the cache warmer so the test doesn't spawn detached child procs.
-    process.env.PAX8_CACHE_WARMING = "1";
 
     const core = await import("@pax8/core");
     const getCredSpy = vi
@@ -274,13 +271,15 @@ describe("buildContext", () => {
       expect("webhooks" in ctx.api).toBe(true);
     } finally {
       getCredSpy.mockRestore();
-      delete process.env.PAX8_CACHE_WARMING;
     }
   });
 
-  it("non-demo path spawns three cache warmers when not already warming", async () => {
+  // Regression guard for #466: the detached `spawnCacheWarmer` has been removed.
+  // `buildContext()` must NOT spawn any subprocesses — neither in demo mode nor
+  // on the real-API path. The on-disk cache populates organically from user
+  // reads instead.
+  it("non-demo buildContext does not spawn any subprocesses (#466)", async () => {
     delete process.env.PAX8_DEMO;
-    delete process.env.PAX8_CACHE_WARMING;
     spawnCalls.length = 0;
 
     const core = await import("@pax8/core");
@@ -290,18 +289,77 @@ describe("buildContext", () => {
 
     try {
       await buildContext({ json: true });
-      expect(spawnCalls).toHaveLength(3);
-      // The warmers list companies, subscriptions, products in parallel.
-      const resources = spawnCalls.map((c) => c.args[0]).sort();
-      expect(resources).toEqual(["companies", "products", "subscriptions"]);
-      // Each should pass --quiet --json so they never write to a real terminal.
-      for (const c of spawnCalls) {
-        expect(c.args).toContain("--json");
-        expect(c.args).toContain("--quiet");
-      }
+      expect(spawnCalls).toEqual([]);
     } finally {
       getCredSpy.mockRestore();
     }
+  });
+
+  it("demo buildContext does not spawn any subprocesses (#466)", async () => {
+    process.env.PAX8_DEMO = "1";
+    spawnCalls.length = 0;
+    await buildContext({ json: true });
+    expect(spawnCalls).toEqual([]);
+  });
+
+  // #253: the schema documents `cache.enabled` and `cache.ttl_hours`. Before
+  // this change those values were silently ignored — `Pax8Client` got its
+  // 1h hardcoded default regardless of config. These tests pin that the
+  // values now flow through to the constructor.
+  describe("cache config plumbing (#253)", () => {
+    it("passes cacheTtlMs derived from config.cache.ttl_hours when enabled", async () => {
+      delete process.env.PAX8_DEMO;
+      const core = await import("@pax8/core");
+      const loadSpy = vi.spyOn(core, "loadConfig").mockResolvedValue({
+        version: "1.0",
+        defaults: { output_format: "table", page_size: 50, confirm_destructive: true },
+        cache: { enabled: true, ttl_hours: 6 },
+        telemetry: { enabled: false },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial config for tests
+      } as any);
+      const getCredSpy = vi
+        .spyOn(core.CredentialStore.prototype, "getCredentials")
+        .mockResolvedValue({ clientId: "id-x", clientSecret: "secret-y" });
+      const ctorSpy = vi.spyOn(core, "Pax8Client");
+
+      try {
+        await buildContext({ json: true });
+        expect(ctorSpy).toHaveBeenCalledTimes(1);
+        const opts = ctorSpy.mock.calls[0][0];
+        expect(opts.cacheTtlMs).toBe(6 * 3_600_000);
+      } finally {
+        loadSpy.mockRestore();
+        getCredSpy.mockRestore();
+        ctorSpy.mockRestore();
+      }
+    });
+
+    it("passes cacheTtlMs=0 when config.cache.enabled is false", async () => {
+      delete process.env.PAX8_DEMO;
+      const core = await import("@pax8/core");
+      const loadSpy = vi.spyOn(core, "loadConfig").mockResolvedValue({
+        version: "1.0",
+        defaults: { output_format: "table", page_size: 50, confirm_destructive: true },
+        cache: { enabled: false, ttl_hours: 24 },
+        telemetry: { enabled: false },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial config for tests
+      } as any);
+      const getCredSpy = vi
+        .spyOn(core.CredentialStore.prototype, "getCredentials")
+        .mockResolvedValue({ clientId: "id-x", clientSecret: "secret-y" });
+      const ctorSpy = vi.spyOn(core, "Pax8Client");
+
+      try {
+        await buildContext({ json: true });
+        expect(ctorSpy).toHaveBeenCalledTimes(1);
+        const opts = ctorSpy.mock.calls[0][0];
+        expect(opts.cacheTtlMs).toBe(0);
+      } finally {
+        loadSpy.mockRestore();
+        getCredSpy.mockRestore();
+        ctorSpy.mockRestore();
+      }
+    });
   });
 
   it("loadConfig failure is recovered with sane defaults", async () => {
