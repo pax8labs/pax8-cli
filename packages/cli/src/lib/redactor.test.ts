@@ -349,15 +349,30 @@ describe("redactEnvelope with argTokens (#170)", () => {
     expect(out.flags).toEqual(["--json"]);
   });
 
-  it("default (no argTokens) preserves prior behavior — non-pattern names slip through", () => {
-    // Documents the pre-fix behavior so a future regression that *removes*
-    // the argTokens param doesn't silently start reverting #170.
+  it("default (no argTokens) still scrubs quoted upstream-resolved names (#473)", () => {
+    // #473: even without an explicit argTokens pass, a quoted string in the
+    // message is now harvested as an argToken-equivalent so upstream-resolved
+    // names that only appear in `message`/`causes` get redacted.
     const env: BugReportEnvelope = {
       message: 'Company not found: "Acme Corp"',
     };
     const out = redactEnvelope(env);
-    // No argTokens → "Acme Corp" survives (it doesn't match any other rule).
-    expect(out.message).toContain("Acme Corp");
+    expect(out.message).not.toContain("Acme Corp");
+    expect(out.message).toContain("<REDACTED:ARG>");
+  });
+
+  it("default (no argTokens) leaves unquoted English text untouched", () => {
+    // Documents the floor: free-form prose with no UUID/email/path/token/
+    // quoted-string pattern stays unredacted. This is intentional — we don't
+    // want to over-redact normal error copy. Quoting is the load-bearing
+    // signal; CliError sites that want a value scrubbed must quote it (the
+    // canonical `Foo not found: "${input}"` pattern), or the catch site
+    // must pass the value in argTokens.
+    const env: BugReportEnvelope = {
+      message: "The Pax8 API returned an unexpected response.",
+    };
+    const out = redactEnvelope(env);
+    expect(out.message).toBe("The Pax8 API returned an unexpected response.");
   });
 
   it("argTokens does not break the existing UUID / path / token rules", () => {
@@ -371,5 +386,86 @@ describe("redactEnvelope with argTokens (#170)", () => {
     expect(out.message).toContain("<REDACTED:ARG>");
     expect(out.message).not.toContain("Acme");
     expect(out.message).not.toContain("jdoe");
+  });
+});
+
+// #473: a partner name that exists only in causes[] — never in argv — must
+// still be redacted. Pre-fix, the argTokens augmentation only covered names
+// the user typed at the CLI; API-resolved names interpolated into a
+// CliError.cause string slipped through to a public GitHub issue body via
+// `pax8 report-bug`.
+describe("redactEnvelope with upstream-resolved names (#473)", () => {
+  it("scrubs a partner name that appears only in causes[0] (not in argv)", () => {
+    // Simulate the leak path: the user typed a UUID at the CLI (so argTokens
+    // for this run is empty of names), but the failure recovery hint
+    // interpolated the API-resolved customer display name into the cause.
+    // The malicious-name fixture proves the redactor wins against a name
+    // chosen to break out of shell quoting — same fixture used by the
+    // recommendations `orderArgs` shell-injection test (#462).
+    const partnerName = 'Acme" $(echo PWNED) "';
+    const env: BugReportEnvelope = {
+      code: "ERROR_SUBSCRIPTION_NOT_FOUND",
+      message: "Subscription not found",
+      causes: [
+        `Tried to look up subscription for company "${partnerName}" — got 404`,
+      ],
+      recoverySteps: ["Check the subscription ID and try again"],
+      command: "subscriptions show <REDACTED:ARG>",
+      flags: ["--json"],
+    };
+    // Note: argTokens is empty — this reproduces the leak path where the
+    // name was *not* in argv (e.g. the user passed a UUID, the API resolved
+    // it to the display name, that name landed in the cause).
+    const out = redactEnvelope(env, []);
+    const all = JSON.stringify(out);
+    expect(all).not.toContain(partnerName);
+    expect(all).not.toContain("Acme");
+    expect(all).not.toContain("PWNED");
+    expect(out.causes?.[0]).toContain("<REDACTED:ARG>");
+    // Closed-registry fields and flag *names* still pass through.
+    expect(out.code).toBe("ERROR_SUBSCRIPTION_NOT_FOUND");
+    expect(out.flags).toEqual(["--json"]);
+  });
+
+  it("scrubs a contact/product display name harvested from a quoted cause", () => {
+    const env: BugReportEnvelope = {
+      code: "ERROR_PRODUCT_NOT_FOUND",
+      message: "Product not orderable",
+      causes: ['No active SKU matched "Microsoft 365 Business Premium [NCE]" in your catalog'],
+    };
+    const out = redactEnvelope(env, []);
+    expect(out.causes?.[0]).not.toContain("Microsoft 365 Business Premium");
+    expect(out.causes?.[0]).toContain("<REDACTED:ARG>");
+  });
+
+  it("harvests quoted strings from recoverySteps too", () => {
+    const env: BugReportEnvelope = {
+      message: "Something failed",
+      recoverySteps: ['Verify "Real Customer Inc" exists in your portfolio'],
+    };
+    const out = redactEnvelope(env, []);
+    expect(out.recoverySteps?.[0]).not.toContain("Real Customer Inc");
+    expect(out.recoverySteps?.[0]).toContain("<REDACTED:ARG>");
+  });
+
+  it("treats single-quoted strings as harvestable too", () => {
+    const env: BugReportEnvelope = {
+      message: "Company not found: 'Pinnacle Financial Group'",
+    };
+    const out = redactEnvelope(env, []);
+    expect(out.message).not.toContain("Pinnacle Financial Group");
+    expect(out.message).toContain("<REDACTED:ARG>");
+  });
+
+  it("dedupes harvested tokens against explicit argTokens (no double-redaction surprise)", () => {
+    // When the same name shows up in argv AND in quotes inside the cause,
+    // we should still get a clean redaction, not a partial replacement.
+    const env: BugReportEnvelope = {
+      message: 'Company not found: "Acme Corp"',
+      causes: ['Tried "Acme Corp" from the API'],
+    };
+    const out = redactEnvelope(env, ["Acme Corp"]);
+    expect(out.message).not.toContain("Acme Corp");
+    expect(out.causes?.[0]).not.toContain("Acme Corp");
   });
 });

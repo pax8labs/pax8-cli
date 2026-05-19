@@ -157,6 +157,37 @@ function redactStringArray(
   return arr.map((s) => redactString(s, argTokens));
 }
 
+// #473: harvest "quoted-string" substrings from message / causes /
+// recoverySteps and treat them as additional argTokens. This closes the
+// upstream-resolved-name leak: when a CliError site interpolates an
+// API-resolved company / contact / product name into its error text via the
+// canonical `Foo not found: "${name}"` pattern, the name is *not* in argv
+// (so `extractCommandAndFlags` doesn't pick it up) but it IS inside double
+// or single quotes in the cause text. Treating those quoted strings as
+// argTokens fan-out lets the existing positional-arg redaction strip them
+// uniformly.
+//
+// Caveats:
+//   - We harvest from the same strings the redactor is about to scrub.
+//   - We respect the existing 2-char floor; very short quoted strings
+//     (`""`, `"x"`) are skipped to avoid runaway over-redaction.
+//   - This is best-effort. CliError sites that interpolate a name *without*
+//     quoting it (e.g. `"Subscription Acme Corp — not found"`) still slip
+//     through this specific extractor. Such sites should be migrated to
+//     quote their interpolated values; until then they need an explicit
+//     argToken pass at the catch site.
+const QUOTED_RE = /"([^"\n]{2,})"|'([^'\n]{2,})'/g;
+
+function extractQuotedTokens(input: string | undefined): string[] {
+  if (!input) return [];
+  const found: string[] = [];
+  for (const m of input.matchAll(QUOTED_RE)) {
+    const tok = m[1] ?? m[2];
+    if (tok && tok.trim().length >= 2) found.push(tok);
+  }
+  return found;
+}
+
 /**
  * Redact every string-typed field of an envelope. Numeric / structural fields
  * pass through untouched.
@@ -169,27 +200,48 @@ function redactStringArray(
  * `Company not found: "${input}"`). Without this, a normal company name
  * doesn't match any of the existing UUID / email / path / token patterns
  * and would slip through to the report. See #170.
+ *
+ * In addition to the caller-supplied `argTokens`, we now auto-augment the
+ * token list with any quoted substrings found in `message` / `causes` /
+ * `recoverySteps`. This catches upstream-resolved names (company /
+ * contact / product names returned by the Pax8 API and threaded into a
+ * `CliError.causes[]` entry via the canonical `… "${name}"` pattern) that
+ * are not in argv. See #473.
  */
 export function redactEnvelope(
   env: BugReportEnvelope,
   argTokens: string[] = [],
 ): BugReportEnvelope {
+  // #473: combine caller-supplied argTokens with quoted-string tokens
+  // harvested from the envelope's own message / causes / recoverySteps.
+  // The harvested tokens cover the upstream-resolved-name path that the
+  // argv-derived tokens cannot see.
+  const harvested: string[] = [
+    ...extractQuotedTokens(env.message),
+    ...(env.causes ?? []).flatMap(extractQuotedTokens),
+    ...(env.recoverySteps ?? []).flatMap(extractQuotedTokens),
+  ];
+  // Dedupe — same string showing up in argv and inside quotes in the
+  // message is the common case (the user typed "Acme Corp", we interpolated
+  // it back into the error). One pass is enough.
+  const allTokens = [...new Set([...argTokens, ...harvested])];
+
   const out: BugReportEnvelope = { ...env };
-  out.message = redactString(env.message ?? "", argTokens);
+  out.message = redactString(env.message ?? "", allTokens);
   if (env.code !== undefined) out.code = env.code; // codes are a closed registry — safe.
-  if (env.causes !== undefined) out.causes = redactStringArray(env.causes, argTokens);
+  if (env.causes !== undefined) out.causes = redactStringArray(env.causes, allTokens);
   if (env.recoverySteps !== undefined) {
-    out.recoverySteps = redactStringArray(env.recoverySteps, argTokens);
+    out.recoverySteps = redactStringArray(env.recoverySteps, allTokens);
   }
-  if (env.docsUrl !== undefined) out.docsUrl = redactString(env.docsUrl, argTokens);
+  if (env.docsUrl !== undefined) out.docsUrl = redactString(env.docsUrl, allTokens);
   // `command` is constructed at envelope-write time as `<subcmd path>
   // <REDACTED:ARG> ...`, so the raw arg values shouldn't be present here —
   // but pass argTokens defensively in case a caller hands us a pre-built
   // command string.
-  if (env.command !== undefined) out.command = redactString(env.command, argTokens);
+  if (env.command !== undefined) out.command = redactString(env.command, allTokens);
   // Flags are flag *names* only by construction; redact defensively in case
   // a future code path puts a value here.
-  if (env.flags !== undefined) out.flags = redactStringArray(env.flags, argTokens);
+  if (env.flags !== undefined) out.flags = redactStringArray(env.flags, allTokens);
   // Versions and OS are non-PII metadata; pass through.
   if (env.cli_version !== undefined) out.cli_version = env.cli_version;
   if (env.node_version !== undefined) out.node_version = env.node_version;
