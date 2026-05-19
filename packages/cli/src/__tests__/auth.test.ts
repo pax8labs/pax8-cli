@@ -6,10 +6,14 @@ import { runCli, runCliExpectSuccess } from "./test-utils.js";
 
 describe("pax8 auth", () => {
   describe("auth login", () => {
-    it("succeeds in demo mode", async () => {
+    // Subprocess stdout is non-TTY, so per the agent-first default in
+    // getOutputFormat() the format resolves to "json" — `auth login` emits
+    // a structured envelope (#471). The human banner now lands on stderr.
+    it("emits authenticated envelope on stdout in demo mode (non-TTY default)", async () => {
       const result = await runCliExpectSuccess(["auth", "login"]);
-      expect(result.stdout).toContain("Authenticated");
-      expect(result.stdout).toContain("demo mode");
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.status).toBe("authenticated");
+      expect(parsed.mode).toBe("demo");
     });
 
     it("shows help text with examples", async () => {
@@ -30,7 +34,23 @@ describe("pax8 auth", () => {
         "--client-secret",
         "test-secret",
       ]);
-      expect(result.stdout).toContain("Authenticated");
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.status).toBe("authenticated");
+    });
+
+    // Regression for #471: human banner ("✓ Authenticated (demo mode)") must
+    // not pollute stdout. The agent contract is stdout-is-data; banners are
+    // status and belong on stderr. We force table mode via
+    // PAX8_OUTPUT_FORMAT=table so the human path is exercised even from a
+    // piped subprocess.
+    it("routes the success banner to stderr in human mode (#471)", async () => {
+      const result = await runCliExpectSuccess(["auth", "login"], {
+        PAX8_OUTPUT_FORMAT: "table",
+      });
+      expect(result.stderr).toContain("Authenticated");
+      expect(result.stderr).toContain("demo mode");
+      // Stdout in human mode must be empty (no banner, no JSON).
+      expect(result.stdout.trim()).toBe("");
     });
 
     it("errors cleanly when stdin is non-TTY and no credentials are supplied", async () => {

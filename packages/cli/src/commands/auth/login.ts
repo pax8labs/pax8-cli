@@ -9,6 +9,7 @@ import { ask } from "../../lib/prompts.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
+import { getOutputFormat } from "../../lib/context.js";
 
 function authMissingError(): CliError {
   return new CliError(
@@ -32,6 +33,7 @@ export const authLoginCommand = new Command("login")
     `
 Examples:
   pax8 auth login --client-id abc123 --client-secret s3cret
+  pax8 auth login --json
 
   # macOS / Linux
   PAX8_CLIENT_ID=abc123 PAX8_CLIENT_SECRET=s3cret pax8 auth login
@@ -39,11 +41,37 @@ Examples:
   # PowerShell
   $env:PAX8_CLIENT_ID="abc123"; $env:PAX8_CLIENT_SECRET="s3cret"; pax8 auth login`
   )
-  .action(async (options) => {
+  .action(async (options, command: Command) => {
+    const allOpts = command.optsWithGlobals();
+    const outputFormat = getOutputFormat(allOpts);
+    const jsonMode = outputFormat === "json";
     const isDemo = process.env.PAX8_DEMO === "1";
 
     if (isDemo) {
-      process.stdout.write(
+      // #471: success banner must not pollute stdout — `pax8 auth login --json | jq`
+      // previously got ANSI text and parsing failed. Human banner goes to stderr;
+      // `--json` mode emits a structured envelope on stdout.
+      if (jsonMode) {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              status: "authenticated",
+              mode: "demo",
+              nextActions: [
+                {
+                  command: "pax8 dashboard --json",
+                  description: "Run a portfolio summary against the demo data set",
+                },
+              ],
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        return;
+      }
+
+      process.stderr.write(
         chalk.green("\n  ✓ Authenticated (demo mode)\n\n")
       );
       return;
@@ -104,8 +132,39 @@ Examples:
           ? clientId.slice(0, 4) + "…" + clientId.slice(-4)
           : "****";
 
+      // #471: spinner.succeed and the saved-credentials banner are both
+      // status — they belong on stderr. spinner.succeed already writes to
+      // stderr via ora; the saved-credentials banner did not. In `--json`
+      // mode, stop the spinner cleanly (no "Authenticated" affordance,
+      // which is human-facing) and emit a structured envelope on stdout.
+      if (jsonMode) {
+        spinner.stop();
+        process.stdout.write(
+          JSON.stringify(
+            {
+              status: "authenticated",
+              mode: "real",
+              clientIdMasked: masked,
+              nextActions: [
+                {
+                  command: "pax8 auth status --json",
+                  description: "Confirm credentials are persisted and live",
+                },
+                {
+                  command: "pax8 doctor --json",
+                  description: "Run diagnostics to verify end-to-end API reachability",
+                },
+              ],
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        return;
+      }
+
       spinner.succeed("Authenticated");
-      process.stdout.write(
+      process.stderr.write(
         chalk.green(`\n  ✓ Credentials saved for ${masked}\n\n`)
       );
     } catch (error) {

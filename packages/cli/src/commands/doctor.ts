@@ -7,7 +7,13 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { replCmd } from "../lib/confirm.js";
 import { CredentialStore, getConfigDir, getDefaultBaseUrl } from "@pax8/core";
-import { resolveDemoModeAsync } from "../lib/context.js";
+import { getOutputFormat, resolveDemoModeAsync } from "../lib/context.js";
+
+// Build-time injected by tsup (see packages/cli/tsup.config.ts). At runtime
+// inside `pax8 doctor --json` we surface this in the structured envelope so
+// agents can echo it back in bug reports without a second `pax8 --version`
+// round-trip.
+declare const __CLI_VERSION__: string;
 
 // Honor PAX8_CONFIG_DIR (set in CI / tests / non-default installs) instead
 // of hardcoding `~/.pax8`. Same env contract as every other read of the
@@ -335,6 +341,7 @@ export const doctorCommand = new Command("doctor")
     `
 Examples:
   pax8 doctor
+  pax8 doctor --json
 
   # macOS / Linux
   PAX8_DEMO=1 pax8 doctor
@@ -342,8 +349,18 @@ Examples:
   # PowerShell
   $env:PAX8_DEMO="1"; pax8 doctor`
   )
-  .action(async () => {
-    process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));
+  .action(async (_options, command: Command) => {
+    // Honor --json (#470). Reading globals via optsWithGlobals lets a piped
+    // agent invocation (`pax8 doctor --json | jq`) get structured output
+    // rather than the ANSI banner that previously went to stdout
+    // unconditionally. The human branch below is unchanged.
+    const allOpts = command.optsWithGlobals();
+    const outputFormat = getOutputFormat(allOpts);
+    const jsonMode = outputFormat === "json";
+
+    if (!jsonMode) {
+      process.stdout.write(chalk.bold("\n  Pax8 CLI — Diagnostics\n\n"));
+    }
 
     // Run all checks in parallel for speed
     const [nodeV, apiBase, configF, authC, credPerms, tokenC, apiCs, cacheC, telC, mcpC] = await Promise.all([
@@ -362,10 +379,72 @@ Examples:
 
     let allPassed = true;
     for (const check of checks) {
+      if (!check.passed) allPassed = false;
+    }
+
+    if (jsonMode) {
+      const version =
+        typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0";
+      const summary = {
+        total: checks.length,
+        passed: checks.filter((c) => c.passed).length,
+        failed: checks.filter((c) => !c.passed).length,
+        allPassed,
+      };
+
+      // Per-§12 "Next-action hints": single-object summaries carry
+      // `nextActions` inline. Surface only the most useful follow-ups based
+      // on what failed; cap at five.
+      const nextActions: { command: string; description: string }[] = [];
+      const authFailed = checks.find(
+        (c) => c.name === "Authentication configured" && !c.passed,
+      );
+      if (authFailed) {
+        nextActions.push({
+          command: "pax8 auth login --client-id <id> --client-secret <secret>",
+          description: "Authenticate so subsequent commands can reach the Pax8 API",
+        });
+      }
+      const configFailed = checks.find(
+        (c) => c.name === "Config file" && !c.passed,
+      );
+      if (configFailed) {
+        nextActions.push({
+          command: "pax8 config init",
+          description: "Create the local config file at ~/.pax8/config.yaml",
+        });
+      }
+      const tokenFailed = checks.find(
+        (c) => c.name === "Token fetch" && !c.passed,
+      );
+      if (tokenFailed) {
+        nextActions.push({
+          command: "pax8 auth login",
+          description: "Re-authenticate — current credentials are not exchangeable for a token",
+        });
+      }
+      if (allPassed) {
+        nextActions.push({
+          command: "pax8 dashboard --json",
+          description: "Diagnostics clean — pull a portfolio summary to confirm end-to-end",
+        });
+      }
+
+      process.stdout.write(
+        JSON.stringify(
+          { checks, summary, version, nextActions },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    // Human path — unchanged. Banner already emitted above.
+    for (const check of checks) {
       const icon = check.passed ? chalk.green("✓") : chalk.red("✗");
       const detail = check.detail ? chalk.dim(` (${check.detail})`) : "";
       process.stdout.write(`  ${icon} ${check.name}${detail}\n`);
-      if (!check.passed) allPassed = false;
     }
 
     process.stdout.write("\n");
