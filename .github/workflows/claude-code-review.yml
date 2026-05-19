@@ -31,18 +31,34 @@ jobs:
           additional_permissions: |
             actions: read
           prompt: |
-            Review this pull request. Ground findings in the repo's
-            conventions — CLAUDE.md, docs/UX_GUIDE.md (§13 checklist),
-            and packages/claude-skill/skill.md for the agent-facing
-            read/write contract.
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Focus on: correctness, security, agent-facing safety
-            (write commands must prompt, idempotency keys honored,
-            error codes from packages/core/src/errors/codes.ts),
-            stdout/stderr discipline (no console.log in command
-            code; output() only), and demo-mode behavior.
+            **Tone**: Encouraging but concise. Limit emojis to section headers only (max 1 per section). Direct and actionable.
 
-            Skip generic praise. Cite file:line for every concrete
-            issue. If the change is small or routine, say so briefly
-            and move on.
-          claude_args: "--model opus"
+            FIRST: Before reviewing, run `gh pr view ${{ github.event.pull_request.number }} --comments` to read prior comments (including your previous reviews). Use it to stay consistent with points you've already raised, acknowledge issues that have been addressed, and avoid repeating yourself.
+
+            Also check CI status: `gh pr checks ${{ github.event.pull_request.number }}`.
+
+            Then review the PR. Ground findings in the repo's conventions — CLAUDE.md, docs/UX_GUIDE.md (§13 checklist), and packages/claude-skill/skill.md for the agent-facing read/write contract.
+
+            Focus on:
+            - Correctness and potential bugs
+            - Security concerns
+            - Agent-facing safety: write commands must prompt, idempotency keys honored, error codes from packages/core/src/errors/codes.ts
+            - Stdout/stderr discipline (no console.log in command code; output() only)
+            - Demo-mode behavior (PAX8_DEMO=1 must work end-to-end)
+            - Test coverage
+
+            IMPORTANT FORMATTING RULES:
+            - Keep visible review BRIEF — no more than 5–10 lines of immediately visible text.
+            - Use HTML `<details><summary>Section Title</summary><p>detailed content</p></details>` AGGRESSIVELY.
+            - Put all detailed explanations, code examples, and lengthy analysis inside collapsed details sections.
+            - The summary line is one short description; details go inside the collapsed section.
+            - Reference specific files and lines (e.g., `packages/cli/src/commands/foo.ts:42`) so feedback is actionable.
+            - Skip generic praise. If the change is small or routine, say so briefly and move on.
+
+            Before posting your new review, run `gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "_This review is outdated. See latest review below._"` to mark any previous review outdated (ignore failure if there was no previous review).
+
+            Then post your new review with `gh pr comment ${{ github.event.pull_request.number }} --body-file <path>` where <path> is a markdown file you've written. The review MUST be posted — analysis without a posted comment is a failed run.
+          claude_args: '--model opus --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr checks:*)"'
