@@ -369,6 +369,20 @@ export class Pax8Client {
       init.body = JSON.stringify(body);
     }
 
+    // #463 — only retry on transient failures (5xx, timeout, network error) for
+    // HTTP methods that are idempotent by REST convention. Otherwise a POST
+    // /orders that succeeded server-side but dropped its response on the way
+    // back gets retried and creates a duplicate order. 429 is always retried
+    // regardless of method — rate-limit responses by definition mean the
+    // request was REJECTED before processing, so a retry is safe.
+    //
+    // DELETE is included as idempotent per REST convention: a second DELETE
+    // on a missing resource returns 404 with no side-effect. PUT is included
+    // because the spec says PUT is idempotent (same body → same final state).
+    // PATCH and POST are NOT — they can have side-effects on retry.
+    const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "DELETE", "PUT"]);
+    const canRetryTransient = IDEMPOTENT_METHODS.has(method.toUpperCase());
+
     let lastError: Error | undefined;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -407,7 +421,11 @@ export class Pax8Client {
 
           if (response.status >= 500) {
             clearTimeout(timeoutId);
-            if (attempt === MAX_RETRIES) {
+            // #463 — non-idempotent methods (POST, PATCH) MUST NOT retry on
+            // 5xx: the server may have processed the request before the error
+            // was returned. Surface the error immediately so the caller
+            // decides whether to retry with a fresh idempotency strategy.
+            if (!canRetryTransient || attempt === MAX_RETRIES) {
               const errorBody = await safeJson(response);
               throw new ApiError(
                 `Server error: ${response.status} ${response.statusText}`,
@@ -455,7 +473,12 @@ export class Pax8Client {
             throw error;
           }
           if (error instanceof DOMException && error.name === "AbortError") {
-            if (attempt === MAX_RETRIES) {
+            // #463 — timeout on a non-idempotent write is the worst possible
+            // case: the server may have completed the write before the
+            // client gave up reading the response. Never retry; surface
+            // the timeout so the caller can verify state (e.g., `pax8 orders
+            // show <id>` or list by company) before deciding what to do.
+            if (!canRetryTransient || attempt === MAX_RETRIES) {
               throw new ApiError(`Request timed out after ${this.timeout}ms`, 0, path, method);
             }
             lastError = error as Error;
@@ -464,7 +487,11 @@ export class Pax8Client {
             continue;
           }
           lastError = error as Error;
-          if (attempt === MAX_RETRIES) {
+          // #463 — same logic for generic network errors: retrying a POST
+          // whose response was dropped between the server and the client is
+          // the canonical duplicate-charge bug. Surface the network error
+          // for non-idempotent methods.
+          if (!canRetryTransient || attempt === MAX_RETRIES) {
             throw new ApiError(
               `Network error: ${(error as Error).message}`,
               0,

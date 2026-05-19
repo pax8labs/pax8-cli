@@ -80,7 +80,7 @@ describe("E2E: Webhooks workflow — list, create, test, logs, delete", () => {
     const list = await runCliExpectSuccess(["webhooks", "list"]);
     const id = JSON.parse(list.stdout)[0].id;
 
-    const result = await runCliExpectSuccess(["webhooks", "test", id, "--json"]);
+    const result = await runCliExpectSuccess(["webhooks", "test", id, "--yes", "--json"]);
     const data = JSON.parse(result.stdout);
     expect(data.id).toBe(id);
     expect(data).toHaveProperty("result");
