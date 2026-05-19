@@ -3,7 +3,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { getConfigDir } from "@pax8/core";
+import { getConfigDir, safeWriteFileSync } from "@pax8/core";
 
 interface LastListEntry {
   index: number;
@@ -17,11 +17,17 @@ function filePath(): string {
 
 /**
  * Save a numbered list of resources so subsequent commands can reference by number.
+ *
+ * #469: routed through `safeWriteFileSync` so the file is created with mode
+ * `0o600` atomically and refuses to follow a symlink at the destination.
+ * Partner-tenant business data (company names + IDs) lives in this cache; on
+ * a shared host or CI runner the default umask would otherwise leave it
+ * world-readable.
  */
 export async function saveLastList(items: LastListEntry[]): Promise<void> {
   try {
     await fs.mkdir(path.dirname(filePath()), { recursive: true });
-    await fs.writeFile(filePath(), JSON.stringify(items), "utf-8");
+    safeWriteFileSync(filePath(), JSON.stringify(items));
   } catch {
     // Non-fatal — don't break the CLI if cache write fails
   }

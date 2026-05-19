@@ -3,7 +3,13 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation } from "@pax8/core";
+import {
+  ALL_SUBS_PAGE_SIZE,
+  getConfigDir,
+  getRecommendations,
+  safeWriteFileSync,
+  type Recommendation,
+} from "@pax8/core";
 import { buildContext, warnIfTruncated, type CommandContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -340,19 +346,24 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       // Suggest recommendations act
       process.stderr.write(chalk.dim(`  Walk through all: `) + chalk.cyan(replCmd("pax8 recommendations act")) + "\n");
 
-      // Save pending actions for REPL mode
+      // Save pending actions for REPL mode.
+      // #458/#469: route through getConfigDir() (so PAX8_CONFIG_DIR is honored)
+      // and safeWriteFileSync (mode 0o600, O_NOFOLLOW) — partner-tenant data
+      // shouldn't land in ~/.pax8 with the default umask.
       try {
-        const { writeFileSync, mkdirSync } = await import("fs");
-        const { homedir } = await import("os");
+        const { mkdirSync } = await import("fs");
         const { join } = await import("path");
-        const dir = join(homedir(), ".pax8");
+        const dir = getConfigDir();
         mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(
-          displayRecs.map((r, i) => ({
-            key: String(i + 1),
-            rec: { companyId: r.companyId, companyName: r.companyName, title: r.title, orderCommand: r.orderCommand, suggestedProducts: r.suggestedProducts, targetSeats: r.targetSeats },
-          }))
-        ));
+        safeWriteFileSync(
+          join(dir, "pending-actions.json"),
+          JSON.stringify(
+            displayRecs.map((r, i) => ({
+              key: String(i + 1),
+              rec: { companyId: r.companyId, companyName: r.companyName, title: r.title, orderCommand: r.orderCommand, suggestedProducts: r.suggestedProducts, targetSeats: r.targetSeats },
+            })),
+          ),
+        );
       } catch { /* best effort */ }
 
       // Interactive prompt — use shared promptNextSteps

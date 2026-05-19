@@ -6,7 +6,8 @@
 
 import * as nodeFs from "node:fs";
 import * as nodePath from "node:path";
-import { homedir as nodeHomedir } from "node:os";
+import { getConfigDir } from "../config/loader.js";
+import { safeWriteFileSync } from "../security/safe-write.js";
 // Import entity arrays via the fixture selector (#484): defaults to the
 // hand-curated small fixture; switches to the generated large fixture
 // when `PAX8_DEMO_SCALE=large` is set. Types continue to come from
@@ -591,7 +592,15 @@ class InvoicesResource {
   }
 }
 
-const DEMO_ORDERS_FILE = nodePath.join(nodeHomedir(), ".pax8", "demo-orders.json");
+// #458 / #475: resolve lazily each call so `PAX8_CONFIG_DIR` overrides set by
+// vitest's per-test isolation (or by a developer between commands) are
+// honored. A module-level constant captured at load time would freeze the
+// path to whatever the env was at first import, which means writes leak
+// into the contributor's real `~/.pax8/` whenever a downstream test clears
+// or rebinds the variable.
+function demoOrdersFile(): string {
+  return nodePath.join(getConfigDir(), "demo-orders.json");
+}
 
 class OrdersResource {
   private createdOrders: Order[] | null = null;
@@ -599,7 +608,7 @@ class OrdersResource {
   private loadCreated(): Order[] {
     if (this.createdOrders !== null) return this.createdOrders;
     try {
-      this.createdOrders = JSON.parse(nodeFs.readFileSync(DEMO_ORDERS_FILE, "utf-8"));
+      this.createdOrders = JSON.parse(nodeFs.readFileSync(demoOrdersFile(), "utf-8"));
     } catch {
       this.createdOrders = [];
     }
@@ -608,8 +617,11 @@ class OrdersResource {
 
   private saveCreated(): void {
     try {
-      nodeFs.mkdirSync(nodePath.dirname(DEMO_ORDERS_FILE), { recursive: true });
-      nodeFs.writeFileSync(DEMO_ORDERS_FILE, JSON.stringify(this.createdOrders));
+      const fp = demoOrdersFile();
+      nodeFs.mkdirSync(nodePath.dirname(fp), { recursive: true });
+      // #469: route through safeWriteFileSync so the demo-state file is
+      // 0o600 + O_NOFOLLOW like the rest of the CLI's local writes.
+      safeWriteFileSync(fp, JSON.stringify(this.createdOrders));
     } catch { /* best effort */ }
   }
 

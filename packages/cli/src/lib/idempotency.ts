@@ -4,8 +4,8 @@
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { homedir } from "node:os";
 import { createHash } from "node:crypto";
+import { getConfigDir, safeWriteFileSync } from "@pax8/core";
 import { CliError } from "./errors.js";
 
 /**
@@ -35,8 +35,11 @@ export interface IdempotencyEntry {
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 function dirPath(): string {
+  // #458: route through getConfigDir() so PAX8_CONFIG_DIR is honored.
+  // PAX8_IDEMPOTENCY_DIR retains precedence as the explicit per-feature
+  // escape hatch used in tests.
   return process.env.PAX8_IDEMPOTENCY_DIR
-    ?? path.join(homedir(), ".pax8", "idempotency");
+    ?? path.join(getConfigDir(), "idempotency");
 }
 
 function entryFilePath(command: string, key: string): string {
@@ -146,7 +149,10 @@ export async function saveEntry(entry: IdempotencyEntry): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   const fp = entryFilePath(entry.command, entry.key);
   const tmp = fp + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(entry), { encoding: "utf-8", mode: 0o600 });
+  // #458: write via safeWriteFileSync so the tmp file is created with
+  // mode 0o600 atomically (no chmod race) and an attacker-placed symlink
+  // at the tmp path can't redirect the write.
+  safeWriteFileSync(tmp, JSON.stringify(entry));
   await fs.rename(tmp, fp);
 }
 

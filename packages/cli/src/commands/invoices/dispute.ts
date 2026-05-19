@@ -5,9 +5,16 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
-import { ALL_SUBS_PAGE_SIZE, auditInvoices, ERROR_INVALID_INPUT, ERROR_INTERNAL, type Pax8ErrorCode } from "@pax8/core";
+import {
+  ALL_SUBS_PAGE_SIZE,
+  auditInvoices,
+  ERROR_INVALID_INPUT,
+  ERROR_INTERNAL,
+  getConfigDir,
+  safeWriteFileSync,
+  type Pax8ErrorCode,
+} from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
@@ -35,7 +42,10 @@ import { hashArgs, isValidKey, withIdempotency } from "../../lib/idempotency.js"
 const DISPUTES_DIR_ENV = "PAX8_DISPUTES_DIR";
 
 function disputesDir(): string {
-  return process.env[DISPUTES_DIR_ENV] ?? path.join(homedir(), ".pax8", "disputes");
+  // #458: route through getConfigDir() so PAX8_CONFIG_DIR is honored.
+  // PAX8_DISPUTES_DIR retains precedence as the explicit per-feature
+  // escape hatch used in tests.
+  return process.env[DISPUTES_DIR_ENV] ?? path.join(getConfigDir(), "disputes");
 }
 
 /**
@@ -111,7 +121,10 @@ async function writeDraft(draft: DisputeDraft): Promise<string> {
   await fs.mkdir(dir, { recursive: true });
   const fp = path.join(dir, `${draft.id}.json`);
   const tmp = fp + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(draft, null, 2), { encoding: "utf-8", mode: 0o600 });
+  // #458: write via safeWriteFileSync so the tmp file is created with
+  // mode 0o600 atomically (no chmod race) and a symlink at the tmp path
+  // can't redirect the write.
+  safeWriteFileSync(tmp, JSON.stringify(draft, null, 2));
   await fs.rename(tmp, fp);
   return fp;
 }
@@ -240,7 +253,9 @@ export const invoicesDisputeCommand = new Command("dispute")
     `
 Closed loop with 'pax8 invoices audit':
   audit identifies the discrepancy → dispute records the draft and renders a
-  portal-ready support template. Drafts are stored under ~/.pax8/disputes/.
+  portal-ready support template. Drafts are stored under the CLI config
+  directory (see PAX8_CONFIG_DIR; defaults to ~/.pax8/disputes/), or
+  PAX8_DISPUTES_DIR if set explicitly.
 
 Examples:
   pax8 invoices audit                                              # find discrepancies first
