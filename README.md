@@ -442,7 +442,7 @@ The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrow
 These are tracked, prioritized for v0.1.x, and not blockers for v0.1.0. Each links to a GitHub issue with repro and fix shape.
 
 **Real-API surfaces (depend on Pax8 backend):**
-- `pax8 orders list` against busy tenants can hit the 30s default timeout — workaround: `--size 25` or smaller. A `--timeout <ms>` flag and `PAX8_API_TIMEOUT` env override are planned ([#199](https://github.com/pax8labs/pax8-cli/issues/199)).
+- `pax8 orders list` against busy tenants can hit the 30s default timeout. Extend it by setting `PAX8_TIMEOUT_MS=<ms>` (default 30000, max 300000). Workaround for very large portfolios: `--size 25` or smaller.
 - `pax8 usage list` returns 404 against the live Pax8 sandbox tenant — likely a path-version mismatch in the client; demo mode works ([#212](https://github.com/pax8labs/pax8-cli/issues/212)).
 - `pax8 doctor` marks the `~/.pax8/config` file as ✗ (and exits 1) when credentials are configured purely via env vars or `PAX8_DEMO=1` ([#220](https://github.com/pax8labs/pax8-cli/issues/220)).
 
