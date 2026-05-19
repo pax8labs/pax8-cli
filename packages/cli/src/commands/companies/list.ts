@@ -7,6 +7,8 @@ import {
   getRecommendations,
   getPortfolioCoverage,
   CompanyStatusSchema,
+  getConfigDir,
+  safeWriteFileSync,
   type CompanyStatus,
 } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
@@ -255,19 +257,25 @@ Examples:
         }))
       );
 
-      // Save pending actions for REPL number input (typing "3" drills into company #3)
+      // Save pending actions for REPL number input (typing "3" drills into company #3).
+      // #458/#469: route through getConfigDir() (so PAX8_CONFIG_DIR is honored)
+      // and safeWriteFileSync (mode 0o600, O_NOFOLLOW) — this file contains
+      // partner-tenant business data (company IDs + names) and previously
+      // landed in ~/.pax8 with the default umask.
       try {
-        const { writeFileSync, mkdirSync } = await import("fs");
-        const { homedir } = await import("os");
+        const { mkdirSync } = await import("fs");
         const { join } = await import("path");
-        const dir = join(homedir(), ".pax8");
+        const dir = getConfigDir();
         mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(
-          result.content.map((_c, i) => ({
-            key: String(startNum + i + 1),
-            command: `clients more ${startNum + i + 1}`,
-          }))
-        ));
+        safeWriteFileSync(
+          join(dir, "pending-actions.json"),
+          JSON.stringify(
+            result.content.map((_c, i) => ({
+              key: String(startNum + i + 1),
+              command: `clients more ${startNum + i + 1}`,
+            })),
+          ),
+        );
       } catch { /* best effort */ }
 
       const columns = coverageMap ? coverageColumns : baseColumns;

@@ -1,7 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { getConfigDir, ensureConfigDir } from "./loader.js";
 import {
   Pax8SecurityError,
@@ -16,26 +16,56 @@ describe("config/loader — extended coverage", () => {
   // The vitest config sets PAX8_ALLOW_NON_HOME_CONFIG=1 globally so tests
   // can use os.tmpdir() for isolation. These specific tests need the
   // strict default to verify the validation, so they delete it locally.
+  //
+  // #475: stubbing `os.homedir()` to a tmp directory keeps the "default
+  // path" test (PAX8_CONFIG_DIR unset) hermetic — exercising the
+  // home-default code path without ever creating the contributor's real
+  // ~/.pax8 directory. `loader.ts` reads `homedir()` at module-load time
+  // for DEFAULT_CONFIG_DIR, but getConfigDir() resolves at call time
+  // through validateConfigDir, which itself re-reads os.homedir() — so the
+  // stub is observed where it matters (the PAX8_CONFIG_DIR=unset case
+  // returns the cached DEFAULT_CONFIG_DIR, which we compare against the
+  // real (unstubbed) homedir for that specific call).
   const originalAllow = process.env.PAX8_ALLOW_NON_HOME_CONFIG;
   const originalConfigDir = process.env.PAX8_CONFIG_DIR;
+  let fakeHome: string;
+
+  beforeEach(() => {
+    fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "pax8-loader-home-"));
+  });
 
   afterEach(() => {
     if (originalAllow === undefined) delete process.env.PAX8_ALLOW_NON_HOME_CONFIG;
     else process.env.PAX8_ALLOW_NON_HOME_CONFIG = originalAllow;
     if (originalConfigDir === undefined) delete process.env.PAX8_CONFIG_DIR;
     else process.env.PAX8_CONFIG_DIR = originalConfigDir;
+    vi.restoreAllMocks();
+    try {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   });
 
   it("getConfigDir returns path under home directory by default", () => {
+    // `loader.ts` snapshots `homedir()` at module load into
+    // DEFAULT_CONFIG_DIR, so we compare against the real homedir() here.
+    // No filesystem side effects in this test — we only read the path.
     delete process.env.PAX8_CONFIG_DIR;
     const dir = getConfigDir();
     expect(dir).toBe(path.join(os.homedir(), ".pax8"));
   });
 
-  it("ensureConfigDir creates and returns config dir", async () => {
-    delete process.env.PAX8_CONFIG_DIR;
+  it("ensureConfigDir resolves to PAX8_CONFIG_DIR when set", async () => {
+    // #475: previously this test deleted PAX8_CONFIG_DIR and called
+    // `ensureConfigDir()` against the real home — leaking `~/.pax8` onto
+    // the contributor's disk. Exercise the override path instead; the
+    // home-default path-resolution is covered by the test above without
+    // touching the filesystem.
+    process.env.PAX8_CONFIG_DIR = fakeHome;
     const dir = await ensureConfigDir();
-    expect(dir).toBe(path.join(os.homedir(), ".pax8"));
+    expect(dir).toBe(fakeHome);
+    expect(fs.existsSync(fakeHome)).toBe(true);
   });
 });
 

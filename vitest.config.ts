@@ -32,6 +32,11 @@ export default defineConfig({
     // globalSetup order matters when scripts touch process.env: each runs
     // in declaration order in the parent process, before workers fork.
     globalSetup: [
+      // #475: snapshot `~/.pax8` first so the post-test comparison sees
+      // the pre-test baseline, before the isolation setup mutates env.
+      // Teardown runs in reverse declaration order, so the guard's
+      // comparison fires after the isolation setup's cleanup.
+      "./vitest.real-home-guard-setup.ts",
       "./vitest.test-isolation-setup.ts",
       "./vitest.coverage-setup.ts",
     ],

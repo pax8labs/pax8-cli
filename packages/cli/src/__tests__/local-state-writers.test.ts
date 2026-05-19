@@ -1,0 +1,136 @@
+// Copyright 2026 Pax8, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * Repo-wide policy gate for local-state writes (#458 / #469).
+ *
+ * Two rules:
+ *
+ *   1. Command and command-helper code under `packages/cli/src/` must never
+ *      call `os.homedir()` directly. All path resolution for CLI-owned
+ *      state goes through `getConfigDir()`, which honors `PAX8_CONFIG_DIR`.
+ *      An exception list below covers files that have a documented reason
+ *      (e.g. core internals snapshotting the home at module load).
+ *
+ *   2. CLI code that writes JSON state files goes through
+ *      `safeWriteFileSync` (mode 0o600, O_NOFOLLOW). A grep heuristic
+ *      flags raw `writeFileSync(...)` and `fs.writeFile(...)` calls in
+ *      `packages/cli/src/` outside the exception list; if you have a
+ *      legitimate reason (e.g. config YAML written via `loader.saveConfig`
+ *      in core), add the file to ALLOWED_RAW_WRITERS with a comment.
+ *
+ * This is intentionally a string-search regression test — fast, deterministic,
+ * and PR-reviewable. A future static-analysis pass could replace it.
+ */
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { execSync } from "node:child_process";
+
+// Resolve the repo root by walking up from this test file. We can't rely
+// on `process.cwd()` because vitest can be invoked from a subdirectory.
+const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..");
+
+/**
+ * Files under `packages/cli/src/` that are allowed to call `os.homedir()`
+ * directly. Keep this list short and comment each entry.
+ */
+const HOMEDIR_EXCEPTIONS = new Set<string>([
+  // Test fixtures that legitimately need to reference the real home dir
+  // for assertions (e.g. doctor-style "is the user's config readable?").
+  "packages/cli/src/__tests__/security.test.ts",
+  // This file — the regression test itself doesn't call homedir(), but
+  // it references the string in comments, so the grep would false-flag.
+  "packages/cli/src/__tests__/local-state-writers.test.ts",
+]);
+
+/**
+ * Files under `packages/cli/src/` that are allowed to use raw
+ * `writeFileSync` / `fs.writeFile`. Document each entry.
+ */
+const ALLOWED_RAW_WRITERS = new Set<string>([
+  // Idempotency cache: writes tmp file then renames. The tmp write goes
+  // through safeWriteFileSync; the rename uses fs.rename which doesn't
+  // need O_NOFOLLOW (rename is atomic and doesn't follow links).
+  "packages/cli/src/lib/idempotency.ts",
+  // Dispute drafts: same tmp + rename pattern, tmp write via safeWriteFileSync.
+  "packages/cli/src/commands/invoices/dispute.ts",
+  // last-list.ts: routed through safeWriteFileSync (#469).
+  "packages/cli/src/lib/last-list.ts",
+  // config init/set: writes config.yaml via async fs.writeFile with mode 0o600.
+  // Distinct from state-file writes — these are user-edited config and the
+  // YAML formatting flow doesn't fit the binary buffer shape of safeWriteFileSync.
+  // Out of scope for #458/#469; tracked separately if hardened later.
+  "packages/cli/src/commands/config/init.ts",
+  "packages/cli/src/commands/config/set.ts",
+  // errors.ts: last-error envelope is already routed through safeWriteFileSync
+  // (see grep — the file references it). The match here is a comment string.
+  "packages/cli/src/lib/errors.ts",
+  // doctor.ts: probes cache-dir writability with a write+unlink. Not a
+  // state file — the test marker is deleted immediately. Routed through
+  // getConfigDir() already.
+  "packages/cli/src/commands/doctor.ts",
+]);
+
+function listMatchingFiles(pattern: string, paths: string[]): string[] {
+  // `git grep -l` is fast and respects .gitignore. The grep is run from
+  // the repo root so paths in the output are repo-relative — which is
+  // the form we want for the exception sets.
+  try {
+    const out = execSync(
+      `git grep -l --extended-regexp '${pattern}' -- ${paths.map((p) => `'${p}'`).join(" ")}`,
+      { cwd: REPO_ROOT, encoding: "utf-8" },
+    );
+    return out
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch (err: unknown) {
+    // `git grep -l` exits 1 when nothing matches. Treat that as "no
+    // violations" rather than a test infrastructure failure.
+    const e = err as { status?: number; stderr?: Buffer | string };
+    if (e.status === 1) return [];
+    const stderr = e.stderr ? e.stderr.toString() : "";
+    throw new Error(`git grep failed: ${stderr}`, { cause: err });
+  }
+}
+
+describe("local-state writer policy (#458 / #469)", () => {
+  it("CLI command code does not call os.homedir() directly", () => {
+    // Match `homedir()` and `os.homedir()` and the dynamic-import form
+    // (`const { homedir } = await import("os")`). The third pattern is
+    // the one that bit us in #469 — the lazy import dodges a naive
+    // top-level grep.
+    const violators = listMatchingFiles(
+      "homedir\\(\\)|from .node:os.|from .os.|require\\(.os.\\)|require\\(.node:os.\\)",
+      ["packages/cli/src"],
+    )
+      // Only keep files that actually call homedir() — the import filter
+      // alone catches imports for unrelated reasons (e.g. tmpdir()).
+      .filter((f) => {
+        const text = readFileSync(join(REPO_ROOT, f), "utf-8");
+        return /\bhomedir\s*\(/.test(text);
+      })
+      .filter((f) => !HOMEDIR_EXCEPTIONS.has(f));
+
+    expect(violators, "CLI files calling os.homedir() outside the exception list").toEqual([]);
+  });
+
+  it("CLI state-file writers go through safeWriteFileSync", () => {
+    // `writeFileSync(` is the sync form; `fs.writeFile(` and
+    // `await fs.writeFile(` are async forms. Both can drop a file at
+    // a path without O_NOFOLLOW / 0o600 unless wrapped.
+    const violators = listMatchingFiles(
+      "writeFileSync\\(|fs\\.writeFile\\(",
+      ["packages/cli/src"],
+    )
+      // Exclude tests — they're allowed to write fixtures into tmpdirs.
+      .filter((f) => !f.includes("/__tests__/") && !f.endsWith(".test.ts"))
+      .filter((f) => !ALLOWED_RAW_WRITERS.has(f));
+
+    expect(
+      violators,
+      "CLI files writing local state without safeWriteFileSync (add to ALLOWED_RAW_WRITERS if intentional)",
+    ).toEqual([]);
+  });
+});

@@ -64,7 +64,9 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
   const { spawn } = await import("node:child_process");
   const { join: pathJoin } = await import("node:path");
   const fs = await import("node:fs");
-  const { homedir } = await import("node:os");
+  // #458/#469: read pending-actions.json from the same getConfigDir() the
+  // writers use so PAX8_CONFIG_DIR overrides keep readers + writers aligned.
+  const { getConfigDir } = await import("@pax8/core");
 
   const cliPath = resolveCliPath(process.argv[1]);
 
@@ -109,7 +111,7 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
     // Handle bare number input — check for pending actions from last list/recommendations
     if (args.length === 1 && /^\d+$/.test(args[0])) {
       try {
-        const actionsPath = pathJoin(homedir(), ".pax8", "pending-actions.json");
+        const actionsPath = pathJoin(getConfigDir(), "pending-actions.json");
         const raw = JSON.parse(fs.readFileSync(actionsPath, "utf-8"));
         // Validate shape before trusting — prevent command injection via file tampering
         const actions = Array.isArray(raw) ? raw.filter(
