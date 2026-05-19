@@ -1239,3 +1239,154 @@ describe("isApiTimeoutError (#199)", () => {
     expect(isApiTimeoutError(null)).toBe(false);
   });
 });
+
+// #463 — write retry gating. Non-idempotent methods (POST, PATCH) must NOT
+// retry on transient failures (5xx, timeout, network error) — only 429.
+// Idempotent methods (GET, HEAD, OPTIONS, DELETE, PUT) retry as before.
+describe("Pax8Client write-retry gating (#463)", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    mockTokenManager.getToken.mockResolvedValue("test-token");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("POST does NOT retry on 5xx (would create duplicate writes)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: new Headers(),
+      json: () => Promise.resolve({ error: "server error" }),
+    });
+    globalThis.fetch = fetchMock;
+    const client = createClient();
+
+    await expect(client.post("/orders", { product: "p1" })).rejects.toThrow();
+    // Exactly one call — no retry on POST/5xx.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("POST does NOT retry on AbortError timeout (server may have processed)", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => {
+      // Simulate an AbortError after the timeout fires.
+      return Promise.reject(
+        new DOMException("The operation was aborted.", "AbortError"),
+      );
+    });
+    globalThis.fetch = fetchMock;
+    const client = createClient({ timeout: 50 });
+
+    await expect(client.post("/orders", { product: "p1" })).rejects.toThrow(
+      /timed out/i,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("POST does NOT retry on generic network error", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(new TypeError("fetch failed: ECONNRESET"));
+    globalThis.fetch = fetchMock;
+    const client = createClient();
+
+    await expect(client.post("/orders", { product: "p1" })).rejects.toThrow(
+      /Network error/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("POST DOES retry on 429 (rate limit means the request was rejected before processing)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: new Headers({ "Retry-After": "0" }),
+        json: () => Promise.resolve({ message: "rate limited" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        json: () => Promise.resolve({ id: "order-1" }),
+      });
+    globalThis.fetch = fetchMock;
+    const client = createClient();
+
+    const result = await client.post<{ id: string }>("/orders", { product: "p1" });
+    expect(result.id).toBe("order-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("PATCH does NOT retry on 5xx (same rationale as POST)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      statusText: "Bad Gateway",
+      headers: new Headers(),
+      json: () => Promise.resolve({ error: "upstream" }),
+    });
+    globalThis.fetch = fetchMock;
+    const client = createClient();
+
+    await expect(client.patch("/subscriptions/sub-1", { qty: 10 })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("GET still retries on 5xx (reads are idempotent and safe to retry)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        headers: new Headers(),
+        json: () => Promise.resolve({ error: "server error" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        json: () => Promise.resolve({ data: "ok" }),
+      });
+    globalThis.fetch = fetchMock;
+    const client = createClient();
+
+    const result = await client.get<{ data: string }>("/whatever");
+    expect(result.data).toBe("ok");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("DELETE retries on 5xx (idempotent by REST convention)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        headers: new Headers(),
+        json: () => Promise.resolve({ error: "server error" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+        statusText: "No Content",
+        headers: new Headers(),
+        json: () => Promise.resolve(undefined),
+      });
+    globalThis.fetch = fetchMock;
+    const client = createClient();
+
+    await client.delete("/webhooks/wh-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

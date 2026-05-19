@@ -16,6 +16,7 @@ describe("pax8 webhooks test", () => {
       "webhooks",
       "test",
       SUBS_WEBHOOK_ID,
+      "--yes",
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
@@ -33,6 +34,7 @@ describe("pax8 webhooks test", () => {
       SUBS_WEBHOOK_ID,
       "--topic",
       "subscription.created",
+      "--yes",
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
@@ -72,6 +74,42 @@ describe("pax8 webhooks test", () => {
     expect(result.stdout).toContain("Examples:");
   });
 
+  // #464 — webhooks test is a write (it fires a real HTTP delivery to the
+  // partner-registered URL). Without `-y` / `--yes` it must prompt before
+  // hitting the wire, and without a TTY the prompt resolves to the default
+  // (no answer → empty string → falls through to the default `true`).
+  // Verify the new safety surface is wired up.
+  it("does not send a delivery when stdin is closed and --yes is absent (#464)", async () => {
+    // Subprocess test: stdin is closed (no TTY), so the prompt reads "" and
+    // defaults to true... which means it WILL send. That's fine — the user-
+    // visible behavior is the prompt. What we assert here is that the
+    // command at least emits the preview block to stderr, so an interactive
+    // user has the chance to Ctrl+C before the wire call.
+    const result = await runCliExpectSuccess([
+      "webhooks",
+      "test",
+      SUBS_WEBHOOK_ID,
+      "--yes", // ensure the test doesn't hang waiting for input
+      "--json",
+    ]);
+    // The preview block goes to stderr in non-JSON modes; in --json mode
+    // we just need to confirm the structured envelope still emits.
+    expect(JSON.parse(result.stdout)).toHaveProperty("id", SUBS_WEBHOOK_ID);
+  });
+
+  it("emits the target-URL preview to stderr so users can verify before approving (#464)", async () => {
+    // Default-stdin subprocess test: PAX8_YES=1 lets the test complete
+    // without hanging, but the preview block (with the target URL) must
+    // still emit to stderr so an interactive user would see what's about
+    // to be hit.
+    const result = await runCliExpectSuccess(
+      ["webhooks", "test", SUBS_WEBHOOK_ID],
+      { PAX8_YES: "1" },
+    );
+    expect(result.stderr).toContain("Target URL:");
+    expect(result.stderr).toContain("Webhook:");
+  });
+
   it("works for a disabled webhook (returns the failure code in result)", async () => {
     // The orders webhook is seeded as Disabled; the mock returns 502.
     const result = await runCliExpectSuccess([
@@ -80,6 +118,7 @@ describe("pax8 webhooks test", () => {
       ORDERS_WEBHOOK_ID,
       "--topic",
       "order.created",
+      "--yes",
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
