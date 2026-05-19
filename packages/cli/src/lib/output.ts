@@ -92,6 +92,52 @@ export function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "");
 }
 
+// C0 controls (`\x00`-`\x08`, `\x0b`-`\x1f`, `\x7f`) excluding `\t` (`\x09`)
+// and `\n`/`\r` (`\x0a`/`\x0d`) — those are normal text and the table writer
+// handles them safely. `\x1b` is the ESC byte; we strip it here to neutralize
+// CSI (`ESC [ … cmd`) and OSC (`ESC ] … BEL`) sequences in display values.
+// eslint-disable-next-line no-control-regex
+const C0_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+// CSI sequences: ESC [ <params> <intermediates> <final>.
+// eslint-disable-next-line no-control-regex
+const CSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+// OSC sequences: ESC ] <body> (BEL | ESC \). The body can be arbitrary text
+// including the "set window title" payload we want to neutralize.
+// eslint-disable-next-line no-control-regex
+const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+// Any remaining lone ESC bytes (e.g. malformed sequences).
+// eslint-disable-next-line no-control-regex
+const LONE_ESC_RE = /\x1b/g;
+
+/**
+ * Strip dangerous terminal control sequences and C0 controls from a
+ * user-or-API-supplied display string. Use this on every value that flows
+ * from the wire (a product name, company name, invoice note, etc.) into a
+ * human-rendered table cell or CSV cell, where the terminal would otherwise
+ * execute the embedded control bytes — e.g. an attacker who can set a
+ * tenant-side display name to `Acme\x1b]0;owned\x07` rewriting the
+ * partner's terminal window title, or `Acme\x1b[2J\x1b[H` clearing the
+ * screen and overwriting a previously-printed confirmation prompt.
+ *
+ * Scope: terminal-render paths only. JSON output is unaffected because
+ * `JSON.stringify` escapes control bytes as `\u00XX` in the emitted JSON
+ * text; downstream consumers see the escapes literally and aren't
+ * vulnerable to the terminal interpretation. If a future code path
+ * writes raw JSON values to stdout, it must run them through this
+ * helper too.
+ */
+export function stripDangerousControls(str: string): string {
+  if (typeof str !== "string" || str.length === 0) return str;
+  // Order matters: OSC and CSI swallow their delimiters and parameters;
+  // C0 then cleans up any stray bytes the structured strippers missed.
+  // Finally LONE_ESC_RE catches any half-formed sequence (e.g. ESC at EOL).
+  return str
+    .replace(OSC_RE, "")
+    .replace(CSI_RE, "")
+    .replace(C0_RE, "")
+    .replace(LONE_ESC_RE, "");
+}
+
 /**
  * Get the effective terminal width, accounting for the 2-char indent we add.
  * Returns Infinity when not running in a TTY (no wrapping needed).
@@ -139,7 +185,14 @@ function formatTable(data: readonly Record<string, unknown>[], columns: Column[]
       columns.map((col) => {
         const raw = row[col.key];
         const value = raw === undefined || raw === null ? "" : raw;
-        return col.format ? col.format(value, row) : String(value);
+        const rendered = col.format ? col.format(value, row) : String(value);
+        // Strip terminal control bytes from API-supplied display values
+        // before handing them to cli-table3. A wire-side attacker can't
+        // rewrite the user's terminal title or scroll back over a prior
+        // confirmation prompt by stuffing escape sequences into a product
+        // or company name. See stripDangerousControls's docstring for the
+        // threat model.
+        return stripDangerousControls(rendered);
       })
     );
   }
@@ -166,7 +219,11 @@ function formatCSV(data: readonly Record<string, unknown>[], columns: Column[]):
       .map((col) => {
         const raw = row[col.key];
         const value = raw === undefined || raw === null ? "" : String(raw);
-        return escapeCSV(value);
+        // Strip control bytes before CSV escaping — a CSV consumed by `cat`,
+        // a terminal-rendered spreadsheet preview, or any pipeline that
+        // displays a row would otherwise execute the embedded escape
+        // sequences.
+        return escapeCSV(stripDangerousControls(value));
       })
       .join(",");
     process.stdout.write(line + "\n");
