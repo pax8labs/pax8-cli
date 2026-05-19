@@ -171,12 +171,26 @@ function redactStringArray(
 //   - We harvest from the same strings the redactor is about to scrub.
 //   - We respect the existing 2-char floor; very short quoted strings
 //     (`""`, `"x"`) are skipped to avoid runaway over-redaction.
+//   - The character class is `[^\n]` (not `[^"\n]` / `[^'\n]`) so the greedy
+//     quantifier extends from the *first* quote to the *last* matching quote
+//     on a logical line. This is deliberate — a partner name like
+//     `Acme" $(echo PWNED) "` produces a cause string with multiple `"`s
+//     inside the same logical span (`"Acme" $(echo PWNED) ""`), and a
+//     character-class-restricted regex would only harvest the inner
+//     `"Acme"` chunk, leaving `$(echo PWNED)` naked in the report. By
+//     allowing inner quotes in the captured run, the whole hostile span
+//     becomes one argToken and the existing redactString pass scrubs it
+//     atomically. Trade-off: a legitimate cause with two unrelated quoted
+//     terms on the same line (e.g. `Matched "Foo" against "Bar"`) collapses
+//     into a single `<REDACTED:ARG>` covering everything between the
+//     outermost quotes — acceptable over-redaction for a bug-report
+//     pipeline whose default posture is "scrub more than less."
 //   - This is best-effort. CliError sites that interpolate a name *without*
 //     quoting it (e.g. `"Subscription Acme Corp — not found"`) still slip
 //     through this specific extractor. Such sites should be migrated to
 //     quote their interpolated values; until then they need an explicit
 //     argToken pass at the catch site.
-const QUOTED_RE = /"([^"\n]{2,})"|'([^'\n]{2,})'/g;
+const QUOTED_RE = /"([^\n]{2,})"|'([^\n]{2,})'/g;
 
 function extractQuotedTokens(input: string | undefined): string[] {
   if (!input) return [];
