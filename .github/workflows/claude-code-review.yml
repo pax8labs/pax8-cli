@@ -31,7 +31,8 @@ jobs:
           additional_permissions: |
             actions: read
           prompt: |
-            Review this pull request. Ground findings in the repo's
+            Review pull request #${{ github.event.pull_request.number }}
+            in ${{ github.repository }}. Ground findings in the repo's
             conventions — CLAUDE.md, docs/UX_GUIDE.md (§13 checklist),
             and packages/claude-skill/skill.md for the agent-facing
             read/write contract.
@@ -45,4 +46,10 @@ jobs:
             Skip generic praise. Cite file:line for every concrete
             issue. If the change is small or routine, say so briefly
             and move on.
+
+            When done, post your review as a single PR comment by
+            running: `gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file <path>`
+            where <path> is a markdown file you've written with the
+            review. The review MUST be posted — analysis without a
+            posted comment is a failed run.
           claude_args: "--model opus"
