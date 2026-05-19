@@ -127,7 +127,7 @@ const HOSTILE_NAMES = [
   `Café del Mar SARL`,
   `北京科技 Tech Co`,
   `<script>alert(1)</script> Holdings`,
-  `\$ENV_VAR Industries`,
+  `$ENV_VAR Industries`,
   `\`backtick\` Capital`,
   `Tab\there\tCorp`,
   `Newline\nCo`,

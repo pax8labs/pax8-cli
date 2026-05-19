@@ -35,6 +35,7 @@ function parseJson<T = unknown>(stdout: string): T {
   } catch (err) {
     throw new Error(
       `Failed to parse CLI JSON output. First 500 chars:\n${stdout.slice(0, 500)}\n\nOriginal error: ${err}`,
+      { cause: err },
     );
   }
 }
