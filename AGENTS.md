@@ -1,6 +1,6 @@
 # AGENTS.md — pax8-cli
 
-`pax8` is an open-source CLI that turns the Pax8 marketplace API (raw CRUD) into computed answers — renewals, invoice audits, MRR analytics, upsell recommendations, and closed-loop ordering — with structured `--json` on every command.
+`pax8` is an open-source CLI that turns the Pax8 marketplace API (raw CRUD) into computed answers — renewals, invoice audits, Pax8-cost analytics, upsell recommendations, and closed-loop ordering — with structured `--json` on every command.
 
 This file is for any AI agent or automation runtime that wants to use the `pax8` CLI: Cursor, aider, OpenCode, Continue, scripted Anthropic / OpenAI-API agents, CI bots, anything that can run a shell command. Claude Code users can also load `packages/claude-skill/skill.md` directly — it carries the same contract with Claude-specific framing.
 
@@ -16,8 +16,8 @@ When asked anything about Pax8 data, your first action should be a shell call. N
 | clients / companies / customers | `pax8 clients list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
-| MRR / revenue | `pax8 report mrr --json 2>/dev/null` (or `pax8 subscriptions list --json --size 1000` AND `pax8 clients list --json` in parallel) |
-| growth trend | `pax8 report growth --json 2>/dev/null` |
+| Pax8 cost / monthly spend / annualized spend | `pax8 dashboard --json 2>/dev/null` (top-line `monthlyCost.amount` / `annualCost.amount`) or `pax8 clients more "<name>" --json` for per-client breakdown. `pax8 report subscriptions --by vendor --json` for grouped Pax8 cost. |
+| growth / portfolio trend | `pax8 dashboard --json 2>/dev/null` (see `topCustomers`, `highPriorityRecs`, `potentialPax8MonthlyUplift`) or `pax8 subscriptions list --json --size 1000` for raw data |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
@@ -30,14 +30,14 @@ When asked anything about Pax8 data, your first action should be a shell call. N
 | webhook delivery history | `pax8 webhooks logs <id> --json 2>/dev/null` |
 | diagnostics / health | `pax8 doctor --json 2>/dev/null` |
 
-MRR math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`. Group by `companyId`, resolve names from `clients list`. Prefer `report mrr` — it already does this.
+Pax8 cost math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`; 2-Year = `price × quantity ÷ 24`; 3-Year = `price × quantity ÷ 36`. Group by `companyId`, resolve names from `clients list`. Prefer `dashboard` or `report subscriptions` — they already do this and emit wrapped `monthlyCost` / `annualCost` objects (`{ amount, currency }`) at portfolio, per-customer, and per-group levels. Note: these figures are the partner's COST paid to Pax8, not partner-side resale revenue.
 
 Operating principles:
 
 - **No clarifying questions.** Use sensible defaults: all companies, current month, 30-day renewal window, top 10 results.
 - **Parallel fetches.** When you need two independent calls (e.g. subs + companies), run them in parallel.
 - **Resolve names, hide UUIDs.** Display company and product names; only show IDs if asked or if needed for a follow-up command.
-- **Lead with the number.** Total MRR, count of renewals, dollar impact — at the top. Top 3-5 rows, not every row.
+- **Lead with the number.** Total Pax8 cost, count of renewals, dollar impact — at the top. Top 3-5 rows, not every row.
 - **Only confirm writes — never reads.**
 
 ## Safety contract: read-only vs. write commands
@@ -51,7 +51,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 *list` — `clients list`, `subscriptions list`, `invoices list`, `orders list`, `recommendations list`, `products list`, `quotes list`, `webhooks list`, `usage list`, `contacts list`
 - `pax8 *show <id>` — every show command across every resource
 - `pax8 products search`
-- `pax8 report mrr`, `pax8 report growth`
+- `pax8 report renewals`, `pax8 report concentration`, `pax8 report subscriptions` — Pax8-cost reporting surface
 - `pax8 clients more <name>` — rich read-only summary
 - `pax8 subscriptions renewals` — computes renewals from existing data
 - `pax8 invoices items` — line items for an invoice
@@ -93,11 +93,11 @@ If unsure whether a command counts as a write, default to confirming. Better one
 | `--csv` | When the operator asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
-| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `report mrr/growth`, `invoices audit`) always include `nextActions` inline. |
+| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `invoices audit`) always include `nextActions` inline. |
 
 ## Result size
 
-List commands default to `--size 25`. For portfolio-wide analysis (MRR, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the operator asked for "top 5."
+List commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the operator asked for "top 5."
 
 ## Workflow recipes
 
@@ -105,7 +105,7 @@ List commands default to `--size 25`. For portfolio-wide analysis (MRR, audits, 
 ```
 pax8 subscriptions renewals --json --within 30d
 ```
-Sort by `daysUntilRenewal` ascending. Lead with count + total MRR at risk. Show top 5 (company, product, days, MRR). Offer to drill into any one with `pax8 subscriptions show <id> --json`.
+Sort by `daysUntilRenewal` ascending. Lead with count + total Pax8 cost at risk. Show top 5 (company, product, days, monthly Pax8 cost). Offer to drill into any one with `pax8 subscriptions show <id> --json`.
 
 ### Invoice audit → action
 ```
@@ -119,15 +119,15 @@ Run in parallel:
 pax8 recommendations list --json --priority high
 pax8 clients list --json
 ```
-For each rec, show: company, missing product, estimated MRR uplift. The JSON output includes an `orderCommand` field — that's the exact `pax8 orders create …` to run. **Always show the order preview and wait for explicit approval before executing the write.**
+For each rec, show: company, missing product, estimated monthly Pax8-cost uplift. The JSON output includes an `orderCommand` field — that's the exact `pax8 orders create …` to run. **Always show the order preview and wait for explicit approval before executing the write.**
 
-### Portfolio MRR
+### Portfolio Pax8 cost
 Run in parallel:
 ```
-pax8 report mrr --json
+pax8 dashboard --json
 pax8 clients list --json
 ```
-`report mrr` already breaks down by company. Lead with total MRR and top 5 customers; offer per-vendor or per-product breakdown if asked.
+`dashboard` already breaks down top customers by Pax8 cost and emits portfolio-level `monthlyCost` / `annualCost` envelopes. Lead with total Pax8 cost and top 5 customers; for per-vendor / per-product / per-billing-term breakdowns run `pax8 report subscriptions --by vendor --json` (or `--by product`, `--by billingTerm`).
 
 ### "What if?" — cost simulation
 ```
@@ -151,7 +151,7 @@ pax8 invoices list --json
 pax8 clients list --json
 ```
 
-Don't reimplement what's already a first-class command (renewals, audit, recommendations, MRR) — those exist precisely because they're hard to get right from the raw shape.
+Don't reimplement what's already a first-class command (renewals, audit, recommendations, dashboard, report subscriptions) — those exist precisely because they're hard to get right from the raw shape.
 
 ## Error and edge cases
 
@@ -172,6 +172,6 @@ The CLI is self-describing — agents that want to enumerate their own surface s
 - `pax8 --help` — top-level resource and command listing.
 - `pax8 <resource> --help` and `pax8 <resource> <action> --help` — per-command flag and argument detail.
 - `pax8 doctor --json` — environment, auth, API reachability, cache, and telemetry state in a single structured payload. Use it as a one-shot health check, not a per-call probe.
-- `pax8 dashboard --json` — portfolio snapshot (MRR, renewals, recs, trials) with `nextActions` inline.
+- `pax8 dashboard --json` — portfolio snapshot (Pax8 cost, renewals, recs, trials) with `nextActions` inline.
 
 A first-class `pax8 agents` command — emitting a machine-readable inventory of every command, flag, error code, and read/write classification — is planned for v0.2.x as part of the canonical-source-of-truth refactor (#164). Until that lands, parse `--help` output or read this file.
