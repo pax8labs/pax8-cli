@@ -1296,6 +1296,83 @@ export const subscriptions: Subscription[] = [
   // anchor for the auditor's "unexpected line" demo case. The long-tail
   // 91-365d variety is covered by Coastline's 2-Year and Pinnacle's 3-Year
   // commits above.)
+
+  // ── Money-correctness fixtures (#465 / #472) ───────────────────────────
+  // These exercise the long-tail billing-term + currency paths that the
+  // pre-#465 / pre-#472 code mishandled. Pre-fix behavior over-counted the
+  // One-Time and Trial subs at full gross and rendered every non-USD price
+  // with a "$" prefix in dashboard / recommendations / cost-sim output.
+  //
+  // After the fixes:
+  //   - One-Time onboarding fee contributes 0 to monthly cost (correct).
+  //   - Trial sub contributes 0 to monthly cost (correct).
+  //   - GBP sub renders with "£" via Intl.NumberFormat (correct).
+
+  // Coastline Legal — one-time onboarding fee. Contributes 0 to MRR.
+  {
+    id: "sub-coastline-onboarding-004",
+    companyId: COASTLINE_ID,
+    productId: "prod-m365-e3-0003",
+    productName: "M365 onboarding & migration (one-time)",
+    quantity: 1,
+    startDate: "2025-04-07",
+    createdDate: "2025-04-01",
+    createdAt: "2025-04-01",
+    billingStart: "2025-04-07",
+    status: "Active",
+    price: 5000,
+    currencyCode: "EUR",
+    billingTerm: "One-Time",
+    commitmentTermEndDate: null,
+    provisioningStatus: "Provisioned",
+    companyName: "Coastline Legal Group",
+  },
+
+  // Bright Minds — Trial Defender seat. Status remains Active in the demo
+  // fixture so the subscription is picked up by computeMrr's "active" filter
+  // (computeMrr only sums `status === "Active"` subs, but subscriptionMrr is
+  // the choke point — Trial billingTerm must zero out regardless of status).
+  {
+    id: "sub-bright-defender-trial-003",
+    companyId: BRIGHT_ID,
+    productId: "prod-defender-biz-0007",
+    productName: "Microsoft Defender for Office 365 (Plan 1) — trial",
+    quantity: 5,
+    startDate: "2025-05-10",
+    createdDate: "2025-05-08",
+    createdAt: "2025-05-08",
+    billingStart: "2025-05-10",
+    status: "Active",
+    price: 3.0,
+    currencyCode: "USD",
+    billingTerm: "Trial",
+    commitmentTermEndDate: daysFromNow(20),
+    provisioningStatus: "Provisioned",
+    companyName: "Bright Minds Academy",
+  },
+
+  // Acme Corp — GBP-priced Entra ID P2. Exercises Intl.NumberFormat's "£"
+  // rendering across dashboard / top-customers / subscriptions list / cost
+  // sim (#472). Annual term so it also contributes a sane MRR figure.
+  {
+    id: "sub-acme-aad-p2-gbp-004",
+    companyId: ACME_ID,
+    productId: "prod-aad-p1-0008",
+    productName: "Microsoft Entra ID P2 [New Commerce Experience]",
+    quantity: 25,
+    startDate: "2025-02-15",
+    createdDate: "2025-02-10",
+    createdAt: "2025-02-10",
+    billingStart: "2025-02-15",
+    status: "Active",
+    price: 9.0,
+    currencyCode: "GBP",
+    billingTerm: "Annual",
+    commitment: { id: "cterm-0006-0001-0001-000000000005", term: "1-Year", endDate: daysFromNow(120) },
+    commitmentTermEndDate: daysFromNow(120),
+    provisioningStatus: "Provisioned",
+    companyName: "Acme Corp",
+  },
 ];
 
 // ─── Invoices ────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { computeMrr, computeGrowth, subscriptionMrr } from "./analytics.js";
 
 describe("subscriptionMrr", () => {
@@ -31,16 +31,34 @@ describe("subscriptionMrr", () => {
       expect(subscriptionMrr(PRICE, QTY, "3-Year")).toBeCloseTo(GROSS / 36, 10);
     });
 
-    it("One-Time falls through to price × quantity (out of scope to re-define)", () => {
-      expect(subscriptionMrr(PRICE, QTY, "One-Time")).toBe(GROSS);
+    // #465 — One-Time, Trial, Activation are NOT recurring revenue. The
+    // pre-fix behavior returned gross, which inflated every dashboard and
+    // recommendation that aggregated MRR (a $5,000 one-time onboarding fee
+    // would appear as $5,000/mo recurring, i.e. $60k/yr).
+    it("One-Time contributes 0 to MRR (not recurring)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "One-Time")).toBe(0);
     });
 
-    it("Trial falls through to price × quantity (out of scope to re-define)", () => {
-      expect(subscriptionMrr(PRICE, QTY, "Trial")).toBe(GROSS);
+    it("Trial contributes 0 to MRR (not recurring)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "Trial")).toBe(0);
     });
 
-    it("Activation falls through to price × quantity (out of scope to re-define)", () => {
-      expect(subscriptionMrr(PRICE, QTY, "Activation")).toBe(GROSS);
+    it("Activation contributes 0 to MRR (not recurring)", () => {
+      expect(subscriptionMrr(PRICE, QTY, "Activation")).toBe(0);
+    });
+  });
+
+  describe("commitment-style aliases (defensive)", () => {
+    // `BillingTermSchema` proper doesn't include "1-Year" — Pax8 uses that on
+    // `commitment.term`, not `Subscription.billingTerm`. Treating it as an
+    // annual term anyway keeps us robust if the API ever surfaces it on
+    // `billingTerm` (#465).
+    it("1-Year treats as Annual", () => {
+      expect(subscriptionMrr(PRICE, QTY, "1-Year")).toBe(GROSS / 12); // 50
+    });
+
+    it("1-year (lowercased) treats as Annual", () => {
+      expect(subscriptionMrr(PRICE, QTY, "1-year")).toBe(GROSS / 12);
     });
   });
 
@@ -68,23 +86,60 @@ describe("subscriptionMrr", () => {
     });
   });
 
-  describe("default behavior for unknown / falsy terms", () => {
-    // `computeMrr` calls `subscriptionMrr(..., sub.billingTerm ?? "monthly")`
-    // — the `?? "monthly"` default plus the function's own tolerance must keep
-    // working so partners with stale or unrecognized term strings aren't
-    // silently zeroed out.
-    it("empty string treats as monthly (price × quantity)", () => {
-      expect(subscriptionMrr(PRICE, QTY, "")).toBe(GROSS);
+  describe("unknown / falsy terms (#465 — warn and zero, not silent gross)", () => {
+    // Pre-fix: unknown terms fell through to `price × quantity`, which was
+    // dangerous because a future Pax8 enum value (e.g. "Quarterly") would
+    // be silently counted at 4× its true monthly contribution. New behavior:
+    // contribute 0 + emit a one-shot `stderr` warning per unknown value.
+    //
+    // Note: `computeMrr` still uses `sub.billingTerm ?? "monthly"` so subs
+    // with a literally absent billingTerm continue to count as Monthly —
+    // the warn-and-zero path is for unrecognized strings that survive past
+    // the call site's default.
+    it("empty string contributes 0 (caller default kicks in upstream)", () => {
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        expect(subscriptionMrr(PRICE, QTY, "")).toBe(0);
+      } finally {
+        stderrSpy.mockRestore();
+      }
     });
 
-    it("undefined (cast through string) treats as monthly", () => {
-      // Mirrors how callers funnel `sub.billingTerm ?? "monthly"` — but also
-      // exercise the function's internal `?? ""` guard against undefined.
-      expect(subscriptionMrr(PRICE, QTY, undefined as unknown as string)).toBe(GROSS);
+    it("undefined (cast through string) contributes 0", () => {
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        expect(subscriptionMrr(PRICE, QTY, undefined as unknown as string)).toBe(0);
+      } finally {
+        stderrSpy.mockRestore();
+      }
     });
 
-    it("unknown future enum value treats as monthly (preserves historical default)", () => {
-      expect(subscriptionMrr(PRICE, QTY, "Quarterly")).toBe(GROSS);
+    it("unknown future enum value contributes 0", () => {
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        // Use a unique string per test so the one-shot-per-process dedup
+        // doesn't suppress the warning we want to observe.
+        expect(subscriptionMrr(PRICE, QTY, "Quarterly_test_unique_a")).toBe(0);
+        expect(stderrSpy).toHaveBeenCalled();
+      } finally {
+        stderrSpy.mockRestore();
+      }
+    });
+
+    it("warns at most once per unknown billingTerm value", () => {
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        subscriptionMrr(PRICE, QTY, "Septennial_test_unique_b");
+        subscriptionMrr(PRICE, QTY, "Septennial_test_unique_b");
+        subscriptionMrr(PRICE, QTY, "Septennial_test_unique_b");
+        // Should emit exactly one warning across the three calls.
+        const calls = stderrSpy.mock.calls.filter((c) =>
+          String(c[0]).includes("Septennial_test_unique_b"),
+        );
+        expect(calls).toHaveLength(1);
+      } finally {
+        stderrSpy.mockRestore();
+      }
     });
   });
 });

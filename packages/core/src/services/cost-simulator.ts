@@ -77,15 +77,14 @@ function round2(n: number): number {
  */
 function normalizeTerm(term: string): string {
   const lower = term.toLowerCase();
+  if (lower.includes("month")) return "Monthly";
   if (lower.includes("annual") || lower.includes("yearly") || lower.includes("year")) {
-    if (lower === "monthly") return "Monthly";
     if (lower.includes("year") && !lower.includes("annual") && !lower.includes("yearly")) {
-      // Preserve commitment-style labels like "1-Year" verbatim.
+      // Preserve commitment-style labels like "1-Year" / "2-Year" verbatim.
       return term;
     }
     return "Annual";
   }
-  if (lower.includes("month")) return "Monthly";
   return term;
 }
 
