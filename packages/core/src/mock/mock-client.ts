@@ -7,6 +7,10 @@
 import * as nodeFs from "node:fs";
 import * as nodePath from "node:path";
 import { homedir as nodeHomedir } from "node:os";
+// Import entity arrays via the fixture selector (#484): defaults to the
+// hand-curated small fixture; switches to the generated large fixture
+// when `PAX8_DEMO_SCALE=large` is set. Types continue to come from
+// `./demo-data.js` because they're canonical and shared by both fixtures.
 import {
   companies,
   subscriptions,
@@ -21,19 +25,21 @@ import {
   webhooks,
   webhookLogs,
   webhookTopicDefinitions,
-  type Company,
-  type Subscription,
-  type Product,
-  type Invoice,
-  type InvoiceItem,
-  type Order,
-  type Contact,
-  type UsageSummary,
-  type UsageLine,
-  type Quote as DemoQuote,
-  type Webhook,
-  type WebhookLog,
-  type WebhookTopicDefinition,
+} from "./fixture.js";
+import type {
+  Company,
+  Subscription,
+  Product,
+  Invoice,
+  InvoiceItem,
+  Order,
+  Contact,
+  UsageSummary,
+  UsageLine,
+  Quote as DemoQuote,
+  Webhook,
+  WebhookLog,
+  WebhookTopicDefinition,
 } from "./demo-data.js";
 import { ApiError, NotFoundError } from "../api/errors.js";
 import {
