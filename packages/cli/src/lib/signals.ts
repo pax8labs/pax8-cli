@@ -4,6 +4,7 @@
 import chalk from "chalk";
 import { getTelemetry } from "@pax8/core";
 import { stopAllActiveSpinners } from "./spinner.js";
+import { recordWriteAudit } from "./write-audit.js";
 
 /**
  * In-flight write tracking for SIGINT cleanup.
@@ -57,6 +58,17 @@ export function markWriteInFlight(
     // Only clear if we're still the active entry — guards against a later
     // write that registered after us getting wiped by our late `done()`.
     if (currentWrite === entry) {
+      // H-5: append a "completed" line to ~/.pax8/write-audit.log so the
+      // operator has a local trail of every write the CLI attempted,
+      // independent of telemetry opt-in. Best-effort — recordWriteAudit
+      // swallows I/O failures so a full disk can't break a successful
+      // write. The cancelled-via-SIGINT counterpart is logged in the
+      // SIGINT handler below.
+      recordWriteAudit({
+        resource: entry.resource,
+        outcome: "completed",
+        idempotencyKey: entry.idempotencyKey,
+      });
       currentWrite = null;
     }
   };
@@ -112,6 +124,14 @@ export function installSigintHandler(): void {
 
     const write = currentWrite;
     if (write) {
+      // H-5: log the cancellation to ~/.pax8/write-audit.log before the
+      // stderr hint, so even if the partner Ctrl+C-spams past the hint
+      // they have an after-the-fact trail of what was in flight.
+      recordWriteAudit({
+        resource: write.resource,
+        outcome: "cancelled",
+        idempotencyKey: write.idempotencyKey,
+      });
       const showCmd = `pax8 ${write.resource} show ...`;
       const extra = write.hint ? ` ${write.hint}` : "";
       const lines = [
