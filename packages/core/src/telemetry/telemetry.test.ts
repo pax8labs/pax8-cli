@@ -4,9 +4,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- accessing private members for testing */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
+import * as fsSync from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { Telemetry, resetTelemetry, type TelemetryEvent } from "./telemetry.js";
+import {
+  Telemetry,
+  resetTelemetry,
+  bucketDollars,
+  bucketSeats,
+  bucketLineCount,
+  type TelemetryEvent,
+} from "./telemetry.js";
 import { ERROR_COMPANY_NOT_FOUND } from "../errors/codes.js";
 
 function makeTmpDir(): string {
@@ -241,6 +249,232 @@ describe("Telemetry", () => {
     ];
     for (const key of keys) {
       expect(allowedKeys).toContain(key);
+    }
+  });
+});
+
+describe("Telemetry — revenue bucketing (M-2)", () => {
+  // The security review flagged raw revenue values as a partner fingerprint
+  // when combined with the distinct_id. These tests pin the cuts so anyone
+  // editing the buckets has to acknowledge they're changing a security
+  // boundary, not just an arithmetic detail.
+
+  describe("bucketDollars", () => {
+    it("maps 0 to '<10'", () => expect(bucketDollars(0)).toBe("<10"));
+    it("maps negative to '<10'", () => expect(bucketDollars(-50)).toBe("<10"));
+    it("maps boundary 9.99 to '<10'", () => expect(bucketDollars(9.99)).toBe("<10"));
+    it("maps boundary 10 to '10-50'", () => expect(bucketDollars(10)).toBe("10-50"));
+    it("maps mid-range 40 to '10-50'", () => expect(bucketDollars(40)).toBe("10-50"));
+    it("maps boundary 50 to '50-200'", () => expect(bucketDollars(50)).toBe("50-200"));
+    it("maps 199.99 to '50-200'", () => expect(bucketDollars(199.99)).toBe("50-200"));
+    it("maps boundary 200 to '200-1000'", () => expect(bucketDollars(200)).toBe("200-1000"));
+    it("maps 999.99 to '200-1000'", () => expect(bucketDollars(999.99)).toBe("200-1000"));
+    it("maps boundary 1000 to '>1000'", () => expect(bucketDollars(1000)).toBe(">1000"));
+    it("maps very large to '>1000'", () => expect(bucketDollars(1_000_000)).toBe(">1000"));
+    it("maps NaN to '<10' (defensive: never let NaN ship as a bucket)", () =>
+      expect(bucketDollars(NaN)).toBe("<10"));
+    it("maps Infinity to '<10' (defensive: non-finite is never a real revenue value)", () =>
+      expect(bucketDollars(Infinity)).toBe("<10"));
+  });
+
+  describe("bucketSeats", () => {
+    it("maps 0 to '<10'", () => expect(bucketSeats(0)).toBe("<10"));
+    it("maps 9 to '<10'", () => expect(bucketSeats(9)).toBe("<10"));
+    it("maps boundary 10 to '10-50'", () => expect(bucketSeats(10)).toBe("10-50"));
+    it("maps boundary 50 to '10-50'", () => expect(bucketSeats(50)).toBe("10-50"));
+    it("maps 51 to '>50'", () => expect(bucketSeats(51)).toBe(">50"));
+    it("maps very large to '>50'", () => expect(bucketSeats(10_000)).toBe(">50"));
+  });
+
+  describe("bucketLineCount", () => {
+    it("maps 0 to '1'", () => expect(bucketLineCount(0)).toBe("1"));
+    it("maps 1 to '1'", () => expect(bucketLineCount(1)).toBe("1"));
+    it("maps 2 to '2-5'", () => expect(bucketLineCount(2)).toBe("2-5"));
+    it("maps 5 to '2-5'", () => expect(bucketLineCount(5)).toBe("2-5"));
+    it("maps 6 to '>5'", () => expect(bucketLineCount(6)).toBe(">5"));
+    it("maps 100 to '>5'", () => expect(bucketLineCount(100)).toBe(">5"));
+  });
+
+  it("flush ships *_bucket properties to PostHog, not raw revenue numbers", async () => {
+    const t = new Telemetry();
+    (t as any).enabled = true;
+    (t as any).storageDir = path.join(
+      os.tmpdir(),
+      `pax8-tel-buck-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+
+    const captures: Array<{ properties: Record<string, unknown> }> = [];
+    (t as any).posthog = {
+      capture: (payload: { properties: Record<string, unknown> }) => {
+        captures.push(payload);
+      },
+      flush: async () => {},
+      shutdown: async () => {},
+    };
+
+    t.track({
+      event: "command_executed",
+      command: "orders.create",
+      flags: [],
+      duration_ms: 100,
+      success: true,
+      cli_version: "0.1.0",
+      node_version: process.version,
+      os: process.platform,
+      demo_mode: false,
+      order_total_dollars: 4242,
+      order_mrr_impact: 175,
+      order_seats: 8,
+      order_line_count: 3,
+      recs_mrr_captured: 999.99,
+    });
+
+    await t.flush();
+
+    expect(captures).toHaveLength(1);
+    const props = captures[0].properties;
+
+    // Raw fields MUST be gone from the PostHog payload.
+    expect(props).not.toHaveProperty("order_total_dollars");
+    expect(props).not.toHaveProperty("order_mrr_impact");
+    expect(props).not.toHaveProperty("order_seats");
+    expect(props).not.toHaveProperty("order_line_count");
+    expect(props).not.toHaveProperty("recs_mrr_captured");
+
+    // Buckets present with the expected string values.
+    expect(props.order_total_bucket).toBe(">1000");
+    expect(props.order_mrr_bucket).toBe("50-200");
+    expect(props.order_seats_bucket).toBe("<10");
+    expect(props.order_line_count_bucket).toBe("2-5");
+    expect(props.recs_mrr_captured_bucket).toBe("200-1000");
+
+    await fs.rm((t as any).storageDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("flush ships the cancelled flag through to PostHog", async () => {
+    const t = new Telemetry();
+    (t as any).enabled = true;
+    (t as any).storageDir = path.join(
+      os.tmpdir(),
+      `pax8-tel-canc-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+
+    const captures: Array<{ properties: Record<string, unknown> }> = [];
+    (t as any).posthog = {
+      capture: (payload: { properties: Record<string, unknown> }) => captures.push(payload),
+      flush: async () => {},
+      shutdown: async () => {},
+    };
+
+    t.track({
+      event: "command_executed",
+      command: "sigint",
+      flags: [],
+      duration_ms: 0,
+      success: false,
+      cancelled: true,
+      error_code: "ERROR_CANCELLED",
+      cli_version: "0.1.0",
+      node_version: process.version,
+      os: process.platform,
+      demo_mode: false,
+    });
+
+    await t.flush();
+
+    expect(captures[0].properties.cancelled).toBe(true);
+    expect(captures[0].properties.success).toBe(false);
+    expect(captures[0].properties.error_code).toBe("ERROR_CANCELLED");
+
+    await fs.rm((t as any).storageDir, { recursive: true, force: true }).catch(() => {});
+  });
+});
+
+describe("Telemetry — salted distinct_id (M-2)", () => {
+  let isolatedDir: string;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    resetTelemetry();
+    isolatedDir = path.join(
+      os.tmpdir(),
+      `pax8-tel-id-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    process.env.PAX8_CONFIG_DIR = isolatedDir;
+  });
+
+  afterEach(async () => {
+    process.env = { ...originalEnv };
+    await fs.rm(isolatedDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("on first init creates ~/.pax8/telemetry-id with mode 0o600", () => {
+    const t = new Telemetry();
+    const id = (t as any).anonymousId as string;
+    const filePath = path.join(isolatedDir, "telemetry-id");
+
+    expect(id).toBeTruthy();
+    expect(fsSync.existsSync(filePath)).toBe(true);
+    const onDisk = fsSync.readFileSync(filePath, "utf-8").trim();
+    expect(onDisk).toBe(id);
+
+    if (process.platform !== "win32") {
+      const stat = fsSync.statSync(filePath);
+      // mode 0o600 means u=rw, g=, o= — mask off the file-type bits.
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it("on subsequent init reads the existing id and does NOT rewrite", () => {
+    const t1 = new Telemetry();
+    const id1 = (t1 as any).anonymousId as string;
+    const filePath = path.join(isolatedDir, "telemetry-id");
+    const mtime1 = fsSync.statSync(filePath).mtimeMs;
+
+    // Force a different mtime granularity tick on fast filesystems.
+    const wait = 25;
+    const start = Date.now();
+    while (Date.now() - start < wait) {
+      // busy-wait — short, deterministic across runners
+    }
+
+    resetTelemetry();
+    const t2 = new Telemetry();
+    const id2 = (t2 as any).anonymousId as string;
+    const mtime2 = fsSync.statSync(filePath).mtimeMs;
+
+    expect(id2).toBe(id1);
+    // The file shouldn't have been rewritten; mtime should match exactly.
+    expect(mtime2).toBe(mtime1);
+  });
+
+  it("is not derivable from hostname + username (no sha256-of-hostname pattern)", () => {
+    const t = new Telemetry();
+    const id = (t as any).anonymousId as string;
+    // UUIDs look like 8-4-4-4-12 hex with hyphens. The legacy ID was a
+    // 16-char hex slice with no hyphens — assert we've moved off that.
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  it("falls back to ephemeral UUID when the file write fails", () => {
+    // Point the config dir at a file (not a directory) so mkdirSync will
+    // throw ENOTDIR — the constructor must degrade gracefully rather than
+    // bubbling the error. NOTE: do NOT use a /proc path here; mkdirSync on
+    // Linux can deadlock on procfs targets (see #509 / earlier fix).
+    const blocker = path.join(
+      os.tmpdir(),
+      `pax8-tel-id-blocker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    fsSync.writeFileSync(blocker, "not-a-directory", { mode: 0o600 });
+    process.env.PAX8_CONFIG_DIR = path.join(blocker, "child");
+
+    try {
+      // Must not throw.
+      const t = new Telemetry();
+      const id = (t as any).anonymousId as string;
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    } finally {
+      fsSync.unlinkSync(blocker);
     }
   });
 });
