@@ -115,7 +115,7 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
         const raw = JSON.parse(fs.readFileSync(actionsPath, "utf-8"));
         // Validate shape before trusting — prevent command injection via file tampering
         const actions = Array.isArray(raw) ? raw.filter(
-          (a: unknown): a is { key: string; command?: string; rec?: { orderCommand?: string; suggestedProducts?: string[] } } =>
+          (a: unknown): a is { key: string; command?: string; rec?: { orderArgs?: string[]; orderCommand?: string; suggestedProducts?: string[] } } =>
             typeof a === "object" && a !== null &&
             typeof (a as Record<string, unknown>).key === "string" &&
             ((a as Record<string, unknown>).command === undefined || typeof (a as Record<string, unknown>).command === "string") &&
@@ -127,9 +127,30 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
             // Generic command template (e.g. from companies list) — must start with "pax8 <subcommand>"
             args = tokenize(picked.command.replace(/^pax8\s+/, ""));
           } else if (picked.rec) {
-            // Recommendation action
-            if (picked.rec.orderCommand && /^pax8\s+orders\s+create\b/.test(picked.rec.orderCommand)) {
-              // Only allow order create commands from recommendations
+            // #509: prefer the structured argv form (`orderArgs`) over
+            // tokenizing the display string. Each element of `orderArgs` is
+            // a separate argv slot, so a customer name with shell
+            // metacharacters (`AT&T`, `Acme & Sons`, an apostrophe, etc.)
+            // lands as a single argv element verbatim — no quoting, no
+            // tokenizer round-trip, no risk of breakout. The `orderArgs[0]`
+            // is always `"pax8"` so we slice it off; we also defensively
+            // verify the second element is `"orders"` (don't let a
+            // tampered pending-actions.json kick off a non-order command).
+            if (
+              Array.isArray(picked.rec.orderArgs) &&
+              picked.rec.orderArgs.length >= 3 &&
+              picked.rec.orderArgs[0] === "pax8" &&
+              picked.rec.orderArgs[1] === "orders" &&
+              picked.rec.orderArgs[2] === "create" &&
+              picked.rec.orderArgs.every((a: unknown) => typeof a === "string")
+            ) {
+              args = picked.rec.orderArgs.slice(1);
+            } else if (picked.rec.orderCommand && /^pax8\s+orders\s+create\b/.test(picked.rec.orderCommand)) {
+              // Backward compat: a pending-actions.json written before
+              // #509's `orderArgs` persistence (or one where orderArgs
+              // failed shape validation). The string-tokenize path is
+              // still gated by #506's SAFE_ID_RE / isSafeDisplayName at
+              // construction time — load-bearing here as defense in depth.
               args = tokenize(picked.rec.orderCommand.replace(/^pax8\s+/, ""));
             } else {
               const searchTerm = picked.rec.suggestedProducts?.[0] ?? "product";

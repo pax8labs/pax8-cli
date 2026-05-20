@@ -360,7 +360,21 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
           JSON.stringify(
             displayRecs.map((r, i) => ({
               key: String(i + 1),
-              rec: { companyId: r.companyId, companyName: r.companyName, title: r.title, orderCommand: r.orderCommand, suggestedProducts: r.suggestedProducts, targetSeats: r.targetSeats },
+              // #509: persist `orderArgs` (argv-style array) alongside the
+              // display-only `orderCommand` string. The REPL drill-in
+              // (`packages/cli/src/lib/repl.ts`) and `recommendations act`
+              // both prefer `orderArgs` — it carries names with shell
+              // metacharacters (AT&T, "O'Brien & Sons", etc.) safely as
+              // single argv elements without any tokenizer round-trip.
+              rec: {
+                companyId: r.companyId,
+                companyName: r.companyName,
+                title: r.title,
+                orderArgs: r.orderArgs,
+                orderCommand: r.orderCommand,
+                suggestedProducts: r.suggestedProducts,
+                targetSeats: r.targetSeats,
+              },
             })),
           ),
         );
@@ -368,8 +382,19 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       // Interactive prompt — use shared promptNextSteps
       const steps: NextStep[] = displayRecs.map((r, i) => {
+        // #509: prefer `orderArgs.slice(1)` (drops the "pax8" argv0) over
+        // re-tokenizing the display string. The argv form survives names
+        // with shell metacharacters intact; the string form's tokenizer
+        // remains as a belt-and-suspenders fallback for older
+        // Recommendation rows from a pre-#498 build of `@pax8/core`.
+        if (r.orderArgs && r.orderArgs[0] === "pax8") {
+          return {
+            key: String(i + 1),
+            label: `${r.suggestedProducts?.[0] ?? "product"} for ${r.companyName}`,
+            command: r.orderArgs.slice(1),
+          };
+        }
         if (r.orderCommand) {
-          // Tokenize orderCommand, strip leading "pax8" if present
           const tokens = (r.orderCommand.match(/"[^"]*"|\S+/g) ?? []).map(
             (t) => t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t
           );

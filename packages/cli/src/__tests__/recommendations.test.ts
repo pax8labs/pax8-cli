@@ -177,6 +177,36 @@ describe("pax8 recommendations", () => {
       ).toBe(true);
     });
 
+    // #509: every actionable recommendation carries `orderArgs` alongside
+    // `orderCommand`. The argv form is the spawn-safe path that consumers
+    // (REPL, recommendations act, dashboard) prefer; the string is
+    // display-only. Pinning the shape here so a future regression that
+    // drops `orderArgs` from JSON output gets caught.
+    it("--json carries orderArgs[] argv-style array alongside orderCommand", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+      const data = JSON.parse(result.stdout) as Array<{
+        orderCommand: string | null;
+        orderArgs: string[] | null;
+      }>;
+      const actionable = data.filter((r) => r.orderCommand);
+      expect(actionable.length).toBeGreaterThan(0);
+      for (const rec of actionable) {
+        expect(Array.isArray(rec.orderArgs)).toBe(true);
+        // Fixed argv0 + subcommand path so the REPL drill-in
+        // (`packages/cli/src/lib/repl.ts`) can verify shape before
+        // dispatching.
+        expect(rec.orderArgs!.slice(0, 3)).toEqual(["pax8", "orders", "create"]);
+        // Each element is a single argv slot — no embedded shell
+        // quoting / metacharacters / tokenization required.
+        expect(rec.orderArgs!.every((a) => typeof a === "string")).toBe(true);
+        // Product flag is present in the argv (parallel guarantee to
+        // the orderCommand contract above).
+        const productIdx = rec.orderArgs!.indexOf("--product");
+        expect(productIdx).toBeGreaterThan(0);
+        expect(rec.orderArgs![productIdx + 1]).toMatch(/\S/);
+      }
+    });
+
     // Path B (#375 precursor): every recommendation carries the additive
     // `opportunityType` axis alongside the legacy `type`, using OE's
     // canonical 5-type taxonomy. The legacy `type` is unchanged.

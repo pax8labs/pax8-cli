@@ -33,24 +33,39 @@ interface PlacementResult {
 async function placeOrder(rec: Recommendation, ctx: CommandContext): Promise<PlacementResult> {
   const product = rec.suggestedProducts?.[0] ?? "product";
 
-  if (!rec.orderCommand) {
+  if (!rec.orderCommand && !rec.orderArgs) {
     process.stderr.write(chalk.dim(`  No orderable product available for ${rec.companyName} — skipping.\n`));
     return { ordered: false, mrrCaptured: 0 };
   }
 
-  // Parse the existing orderCommand for company/product/quantity hints.
-  const productMatch = rec.orderCommand.match(/--product\s+"([^"]+)"|--product\s+(\S+)/);
-  const qtyMatch = rec.orderCommand.match(/--quantity\s+(\S+)/);
-  if (!productMatch) {
+  // #509: extract product / quantity from `orderArgs` (#498's structured
+  // form) when present. Each argv element is a fixed slot — no string
+  // tokenization, no regex parse, no need to survive shell metacharacters
+  // in companyName. Fall back to the orderCommand regex parse for older
+  // Recommendation rows from a pre-#498 build.
+  let matchedProduct: string | undefined;
+  let quantityStr: string | undefined;
+  if (rec.orderArgs) {
+    const productIdx = rec.orderArgs.indexOf("--product");
+    const quantityIdx = rec.orderArgs.indexOf("--quantity");
+    matchedProduct = productIdx >= 0 ? rec.orderArgs[productIdx + 1] : undefined;
+    quantityStr = quantityIdx >= 0 ? rec.orderArgs[quantityIdx + 1] : undefined;
+  } else if (rec.orderCommand) {
+    const productMatch = rec.orderCommand.match(/--product\s+"([^"]+)"|--product\s+(\S+)/);
+    const qtyMatch = rec.orderCommand.match(/--quantity\s+(\S+)/);
+    matchedProduct = productMatch?.[1] ?? productMatch?.[2];
+    quantityStr = qtyMatch?.[1];
+  }
+
+  if (!matchedProduct) {
     process.stderr.write(chalk.red(`  Could not parse order for ${rec.companyName}.\n`));
     return { ordered: false, mrrCaptured: 0 };
   }
 
-  const quantity = parseInt(qtyMatch?.[1] ?? String(rec.targetSeats ?? 1), 10);
+  const quantity = parseInt(quantityStr ?? String(rec.targetSeats ?? 1), 10);
 
   // Resolve product: try the matched value as a product ID first, fall back
   // to a name search.
-  const matchedProduct = productMatch[1] ?? productMatch[2];
   let productId = matchedProduct;
   if (matchedProduct && !/^[0-9a-f-]{8,}$/i.test(matchedProduct) && !matchedProduct.startsWith("prod-")) {
     try {
