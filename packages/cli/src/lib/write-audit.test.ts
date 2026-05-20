@@ -117,9 +117,16 @@ describe("recordWriteAudit", () => {
   });
 
   it("swallows I/O failures — never throws", () => {
-    // Point to an unwritable target directory by setting an invalid
-    // config dir. The recordWriteAudit call must not throw.
-    process.env.PAX8_CONFIG_DIR = "/proc/cannot-write-here-on-purpose";
+    // Point to a path whose parent is a regular file, not a directory.
+    // `mkdirSync({recursive:true})` walks the path and hits ENOTDIR on the
+    // file segment — fast, deterministic, portable across Linux / macOS /
+    // Windows. (Earlier this used `/proc/cannot-write-here-on-purpose`,
+    // which deadlocks on Ubuntu GH Actions runners: the procfs mkdir
+    // doesn't return quickly there. The hang was specific to those
+    // runners and didn't reproduce locally — see the bisect on PR #508.)
+    const blocker = join(tmpDir, "blocker.txt");
+    fs.writeFileSync(blocker, "blocker");
+    process.env.PAX8_CONFIG_DIR = join(blocker, "child");
     expect(() => {
       recordWriteAudit({ resource: "orders", outcome: "completed" });
     }).not.toThrow();
