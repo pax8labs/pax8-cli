@@ -128,6 +128,23 @@ describe("redactString", () => {
       expect(s.length).toBe(31);
       expect(redactString(`x=${s} y`)).toBe(`x=${s} y`);
     });
+
+    it("L-4: redacts a pure-lowercase ≥32-char opaque token", () => {
+      // Prior regex required uppercase + lowercase + digit, so a 40-char
+      // pure-lowercase nanoid-style / slugged API key slipped through.
+      // Defense-in-depth bug-report redactor should scrub these.
+      const tok = "abcdefghijklmnopqrstuvwxyzabcdefghijklmn"; // 40 chars, all lowercase
+      expect(tok.length).toBe(40);
+      const out = redactString(`secret=${tok} done`);
+      expect(out).toBe("secret=<REDACTED:TOKEN> done");
+    });
+
+    it("L-4: redacts a pure-lowercase 32-char token at the floor", () => {
+      // Exactly at the 32-char floor.
+      const tok = "abcdefghijklmnopqrstuvwxyzabcdef"; // 32 chars, all lowercase
+      expect(tok.length).toBe(32);
+      expect(redactString(`key=${tok}!`)).toBe("key=<REDACTED:TOKEN>!");
+    });
   });
 
   describe("idempotency", () => {
@@ -467,5 +484,69 @@ describe("redactEnvelope with upstream-resolved names (#473)", () => {
     const out = redactEnvelope(env, ["Acme Corp"]);
     expect(out.message).not.toContain("Acme Corp");
     expect(out.causes?.[0]).not.toContain("Acme Corp");
+  });
+});
+
+// L-5: defense-in-depth deep walk. The envelope's named-field pass only
+// scrubs declared keys. Any future code path that attaches a nested object
+// (e.g. `details = { partnerEmail: "..." }`) must still be redacted by the
+// generic deep walker.
+describe("redactEnvelope deep walk (L-5)", () => {
+  it("redacts strings inside an unknown nested object attached to the envelope", () => {
+    // Simulate a future code path putting structured detail under an
+    // unknown key. The redactor should NOT trust the closed BugReportEnvelope
+    // type — it should walk the actual object shape.
+    const env = {
+      message: "Something failed",
+      details: {
+        partnerEmail: "partner@example.com",
+        cachedPath: "/Users/jdoe/.pax8/cache/x.json",
+        clientId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      },
+    } as unknown as BugReportEnvelope;
+    const out = redactEnvelope(env) as unknown as {
+      details: { partnerEmail: string; cachedPath: string; clientId: string };
+    };
+    expect(out.details.partnerEmail).toBe("<REDACTED:EMAIL>");
+    expect(out.details.cachedPath).toContain("<REDACTED:PATH>");
+    expect(out.details.cachedPath).not.toContain("jdoe");
+    expect(out.details.clientId).toBe("<REDACTED:UUID>");
+  });
+
+  it("redacts strings inside a nested array attached to the envelope", () => {
+    const env = {
+      message: "Multi-failure",
+      failures: [
+        { who: "user@example.com" },
+        { who: "/Users/alice/.pax8/cred.json" },
+      ],
+    } as unknown as BugReportEnvelope;
+    const out = redactEnvelope(env) as unknown as {
+      failures: { who: string }[];
+    };
+    expect(out.failures[0].who).toBe("<REDACTED:EMAIL>");
+    expect(out.failures[1].who).toContain("<REDACTED:PATH>");
+    expect(out.failures[1].who).not.toContain("alice");
+  });
+
+  it("non-string primitives in nested objects pass through unchanged", () => {
+    const env = {
+      message: "ok",
+      meta: { count: 42, ok: true, missing: null },
+    } as unknown as BugReportEnvelope;
+    const out = redactEnvelope(env) as unknown as {
+      meta: { count: number; ok: boolean; missing: null };
+    };
+    expect(out.meta.count).toBe(42);
+    expect(out.meta.ok).toBe(true);
+    expect(out.meta.missing).toBeNull();
+  });
+
+  it("caps recursion at 8 levels (no stack blow-up on pathological input)", () => {
+    // Build a 12-deep nested object — the walker must not throw.
+    let inner: Record<string, unknown> = { tail: "user@example.com" };
+    for (let i = 0; i < 12; i++) inner = { nested: inner };
+    const env = { message: "deep", weird: inner } as unknown as BugReportEnvelope;
+    expect(() => redactEnvelope(env)).not.toThrow();
   });
 });
