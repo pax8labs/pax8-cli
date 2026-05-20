@@ -125,8 +125,14 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
 
     it("pax8 recommendations list --json", async () => {
       const result = await runCliExpectSuccess(["recommendations", "list", "--json"], LARGE);
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      // #521: list output is now an envelope { recommendations, totalAvailable }
+      // even without --with-actions. Default cap is 10; under the large
+      // fixture totalAvailable should be substantially larger.
+      const data = parseJson<{ recommendations: unknown[]; totalAvailable: number }>(result.stdout);
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(data.recommendations.length).toBeLessThanOrEqual(10);
+      expect(typeof data.totalAvailable).toBe("number");
+      expect(data.totalAvailable).toBeGreaterThanOrEqual(data.recommendations.length);
     });
 
     it("pax8 doctor (non-crash; --json shape contract verified separately in #470)", async () => {

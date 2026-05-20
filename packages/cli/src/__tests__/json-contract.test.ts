@@ -100,9 +100,16 @@ const COMMANDS: CommandCase[] = [
     },
   },
   {
+    // #521: `recommendations list --json` is now always a wrapped envelope
+    // { recommendations, totalAvailable }. The pre-#521 contract was a flat
+    // array; the change is pre-publish and called out as breaking in the
+    // changeset. We pin the new shape here so a future regression that
+    // drops the envelope (or silently re-flattens it) gets caught.
     args: ["recommendations", "list", "--json"],
     shape: (parsed) => {
-      expect(Array.isArray(parsed)).toBe(true);
+      const data = parsed as { recommendations?: unknown; totalAvailable?: unknown };
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(typeof data.totalAvailable).toBe("number");
     },
   },
 ];

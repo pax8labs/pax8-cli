@@ -59,6 +59,46 @@ const columns: Column[] = [
   },
 ];
 
+// `--top` is intentionally a string-typed option (Commander parses to string
+// by default) so we can preserve "0 = unlimited" semantics without a NaN /
+// undefined ambiguity. A non-positive non-zero value falls back to the
+// default 10 — partners typo'ing `--top -5` shouldn't get an empty list.
+function parseTopFlag(raw: unknown): number {
+  if (raw === undefined || raw === null) return 10;
+  const n = parseInt(String(raw), 10);
+  if (Number.isNaN(n)) return 10;
+  if (n < 0) return 10;
+  return n; // 0 = unlimited; positive = cap
+}
+
+const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+// Cassie's locked sort (#521): estimatedMrrUplift DESC first, priority as
+// tiebreaker (high > medium > low), nulls last. The reasoning is that
+// priority tags are heuristic ("missing security = high") while uplift is
+// concrete dollars — a $5k/mo medium opportunity outranks a $500/mo high
+// one for a partner trying to grow MRR. Pure function; no in-place mutation
+// of the input so callers can still hold the original reference if they
+// need to.
+function sortRecommendations<T extends { estimatedMrrUplift?: number | null; priority?: string }>(
+  recs: T[],
+): T[] {
+  return [...recs].sort((a, b) => {
+    const aUplift = a.estimatedMrrUplift;
+    const bUplift = b.estimatedMrrUplift;
+    const aNull = aUplift == null;
+    const bNull = bUplift == null;
+    // Nulls last
+    if (aNull && !bNull) return 1;
+    if (!aNull && bNull) return -1;
+    if (!aNull && !bNull && aUplift !== bUplift) return (bUplift as number) - (aUplift as number);
+    // Tiebreaker: priority rank ascending (high=0 sorts first)
+    const aRank = PRIORITY_RANK[a.priority ?? "low"] ?? 3;
+    const bRank = PRIORITY_RANK[b.priority ?? "low"] ?? 3;
+    return aRank - bRank;
+  });
+}
+
 async function promptLine(question: string): Promise<string> {
   const { createInterface } = await import("readline");
   const rl = createInterface({ input: process.stdin, output: process.stderr });
@@ -77,7 +117,8 @@ export const recommendationsListCommand = new Command("list")
   .option("--type <type>", "Filter by type (seat_gap or cross_sell)")
   .option("--product <name>", "Filter by product name (e.g. 'AvePoint', 'Entra')")
   .option("--include-all", "Show all recommendations including ones without orderable products")
-  .option("--with-actions", "Wrap JSON output as { recommendations, nextActions, unmatchedProducts } instead of a flat array")
+  .option("--with-actions", "Extend the JSON envelope with nextActions + unmatchedProducts (recommendations + totalAvailable are always present)")
+  .option("--top <number>", "Cap the number of recommendations returned/displayed (default 10; 0 = unlimited)", "10")
   .option("--limit <number>", "Max rows to show in table (default 10)")
   .addHelpText(
     "after",
@@ -123,8 +164,17 @@ Estimate semantics:
   the CLI's user-visible label uses Pax8-cost framing.
 
 JSON output (--json):
-  Default: a flat array of Recommendation objects. With --with-actions,
-  wrapped as { recommendations, nextActions, unmatchedProducts }.
+  Always wrapped as { recommendations: Recommendation[], totalAvailable: number }.
+  With --with-actions, the envelope is extended with nextActions and
+  unmatchedProducts: { recommendations, totalAvailable, nextActions,
+  unmatchedProducts }. totalAvailable is the count of recommendations the
+  engine produced before --top capping, so agents can decide whether to
+  re-query with --top 0 (unlimited) when triaging at portfolio scale.
+
+  Sort order: estimatedMrrUplift DESC (concrete dollars first), then
+  priority (high > medium > low) as tiebreaker. Recommendations with a
+  null estimatedMrrUplift sort last. Cap defaults to --top 10; pass
+  --top 0 to disable.
 
   Recommendation = {
     "companyId": string,
@@ -224,21 +274,59 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       recs = filterRecommendations(recs, options);
 
+      // Sort by estimatedMrrUplift DESC (concrete dollars beat heuristic
+      // priority tags); tiebreak by priority (high > medium > low). Recs
+      // with a null uplift sort LAST so the top of the list is always the
+      // partner's highest-dollar opportunities (Cassie / #521).
+      recs = sortRecommendations(recs);
+
+      // Cap the count. `--top 0` opts out (unlimited); any positive int
+      // caps; default is 10. We capture `totalAvailable` BEFORE capping so
+      // the envelope can honestly report "you're seeing N of M" — capping
+      // by default but silently hiding 298 of 308 recs is exactly the
+      // anti-pattern #483 is fixing elsewhere (#521).
+      const totalAvailable = recs.length;
+      const topCap = parseTopFlag(options.top);
+      const capped = topCap === 0 ? recs : recs.slice(0, topCap);
+
       if (ctx.outputFormat === "json") {
         if (options.withActions) {
-          const nextActions = recs
+          const nextActions = capped
             .filter((r) => r.orderCommand)
             .slice(0, 5)
             .map((r) => ({
               command: r.orderCommand!,
               description: `${r.title} for ${r.companyName}`,
             }));
-          process.stdout.write(JSON.stringify({ recommendations: recs, nextActions, unmatchedProducts: report.unmatchedProducts }, null, 2) + "\n");
+          process.stdout.write(
+            JSON.stringify(
+              {
+                recommendations: capped,
+                totalAvailable,
+                nextActions,
+                unmatchedProducts: report.unmatchedProducts,
+              },
+              null,
+              2,
+            ) + "\n",
+          );
         } else {
-          process.stdout.write(JSON.stringify(recs, null, 2) + "\n");
+          // #521: JSON shape change (pre-publish, no deprecation needed).
+          // Previously a flat Recommendation[]; now always wrapped as
+          // { recommendations, totalAvailable } so the cap is visible to
+          // agents instead of silently hidden. --with-actions still adds
+          // nextActions / unmatchedProducts on top of the same envelope.
+          process.stdout.write(
+            JSON.stringify({ recommendations: capped, totalAvailable }, null, 2) + "\n",
+          );
         }
         return;
       }
+
+      // From this point we operate on the capped set for human render too,
+      // so the count of items the user sees in the table matches the
+      // count the agent saw in the JSON envelope.
+      recs = capped;
 
       // In table mode, hide unavailable recs unless --include-all
       // Count hidden items BEFORE filtering so we can show "N hidden" message
@@ -294,6 +382,19 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       if (recs.length > limit) {
         process.stderr.write(chalk.dim(`\n  Showing top ${limit} of ${recs.length} recommendations`) + chalk.dim(` · use --limit ${recs.length} to see all\n`));
+      }
+
+      // #521: when the engine produced more recs than the --top cap let
+      // through, surface that count so the partner knows there's more to
+      // see. `totalAvailable` is pre-cap; `recs` is post-cap-and-visibility-
+      // filter. We only print this hint when the cap (not the catalog-
+      // availability filter) is what's hiding rows.
+      if (topCap > 0 && totalAvailable > capped.length) {
+        process.stderr.write(
+          chalk.dim(
+            `\n  Showing top ${capped.length} of ${totalAvailable} recommendations. Use --top 50 or --top 0 to see more.\n`,
+          ),
+        );
       }
 
       const visibleCompanyCount = new Set(recs.map((r) => r.companyId)).size;

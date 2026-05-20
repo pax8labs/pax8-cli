@@ -64,11 +64,11 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 
 | Flag | When to use |
 |---|---|
-| `--json` | Default. You parse it. List commands return flat arrays. |
+| `--json` | Default. You parse it. List commands return flat arrays, except `recommendations list` which returns a wrapped `{ recommendations, totalAvailable }` envelope (#521 — see Commands section). |
 | `--csv` | User asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
-| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `invoices audit`) always include `nextActions` inline. |
+| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `invoices audit`) always include `nextActions` inline. `recommendations list` always wraps (#521); `--with-actions` adds `nextActions` + `unmatchedProducts` on top. |
 
 Result size: list commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost rollups, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 
@@ -87,7 +87,10 @@ pax8 subscriptions renewals --json --within 7d|30d|90d [--company <id|name>]
 pax8 invoices list --json [--company <id|name>] [--status Paid|Unpaid]
 pax8 invoices audit --json [--month YYYY-MM] [--company <id|name>]
 pax8 products search "<query>" --json
-pax8 recommendations list --json [--priority high|medium|low] [--company <id|name>] [--product <name>]
+pax8 recommendations list --json [--priority high|medium|low] [--company <id|name>] [--product <name>] [--top <n>|--top 0]
+  # Wrapped envelope (#521): { recommendations, totalAvailable }
+  # — sorted by estimatedMrrUplift DESC, priority tiebreaker, nulls last.
+  # Capped at 10 by default; pass --top 0 for the full set.
 pax8 recommendations act [--company <id|name>] [--product <name>] [--yes]    # multi-select picker; --yes places all without prompting
 pax8 orders list --json
 pax8 orders create --company <id|name> --product <id|name> --quantity <n> [--billing-term Monthly|Annual]
@@ -123,7 +126,7 @@ Run in parallel:
 pax8 recommendations list --json --priority high
 pax8 clients list --json
 ```
-For each rec, show: company, missing product, additional Pax8 monthly cost if acted on (wire-side field name: `estimatedMrrUplift`). The JSON output includes an `orderCommand` field — that's the exact `pax8 orders create …` to run. **Always show the user the order preview and wait for explicit approval before executing the write.**
+The recommendations call returns `{ recommendations, totalAvailable }` — capped at 10 by default and sorted by `estimatedMrrUplift` DESC (priority breaks ties; nulls sort last). If `totalAvailable` exceeds `recommendations.length`, more opportunities exist behind the cap; re-run with `--top 50` or `--top 0` (unlimited) to widen. For each rec, show: company, missing product, additional Pax8 monthly cost if acted on (wire-side field name: `estimatedMrrUplift`). The JSON output includes an `orderCommand` field — that's the exact `pax8 orders create …` to run. **Always show the user the order preview and wait for explicit approval before executing the write.**
 
 For an interactive batch flow, hand the human `pax8 recommendations act` (with `--company` / `--product` / `--priority` filters as needed) — it presents a multi-select picker and a single batch confirmation rather than a per-rec y/s/q walk. The agent should not pass `--yes` unless the user has approved the entire matching set.
 

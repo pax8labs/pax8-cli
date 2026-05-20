@@ -14,7 +14,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, Pax8 cost
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
 | Pax8 cost / monthly spend / annualized spend | `pax8 dashboard --json 2>/dev/null` (top-line `monthlyCost.amount` / `annualCost.amount`) or `pax8 clients more "<name>" --json` for per-client breakdown. `pax8 report subscriptions --by vendor --json` for grouped Pax8 cost. |
 | growth / portfolio trend | `pax8 dashboard --json 2>/dev/null` (see `topCustomers`, `highPriorityRecs`, `potentialPax8MonthlyUplift`) or `pax8 subscriptions list --json --size 1000` for raw data |
-| recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
+| recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` — returns `{ recommendations, totalAvailable }` (wrapped envelope, #521). Default cap is `--top 10`, sorted by `estimatedMrrUplift` DESC with `priority` as tiebreaker (nulls last). Compare `recommendations.length` to `totalAvailable` to know whether the cap fired; pass `--top 0` for the unbounded set. |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
 | invoice line items | `pax8 invoices items --invoice-id <invoice-id> --json 2>/dev/null` |

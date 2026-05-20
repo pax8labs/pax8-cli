@@ -186,8 +186,12 @@ describe("table output — TTY-aware rendering", () => {
       const result = await runTable(["recommendations", "list", "--json"]);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain("\x1b[");
+      // #521: list output is now wrapped { recommendations, totalAvailable }.
+      // The cleanliness assertion still passes — we're checking that the
+      // wrapped JSON is parseable and ANSI-free.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(typeof data.totalAvailable).toBe("number");
     });
 
     it("CSV output has no ANSI codes", async () => {

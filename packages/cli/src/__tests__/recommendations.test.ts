@@ -10,25 +10,112 @@ import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.j
 
 describe("pax8 recommendations", () => {
   describe("recommendations list", () => {
-    it("returns a flat array of recommendations in JSON by default", async () => {
+    // #521: JSON output is now ALWAYS a wrapped envelope
+    // `{ recommendations: [...], totalAvailable: number }`, even without
+    // `--with-actions`. The previous flat-array shape was a footgun on
+    // large portfolios — capping by default but emitting a bare array
+    // silently hid 298 of 308 recs (same anti-pattern #483 fixed
+    // elsewhere). Pre-publish, so OK to break.
+    it("returns a wrapped envelope { recommendations, totalAvailable } in JSON by default", async () => {
       const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("companyId");
-      expect(data[0]).toHaveProperty("companyName");
-      expect(data[0]).toHaveProperty("type");
-      expect(data[0]).toHaveProperty("priority");
+      expect(data).toHaveProperty("recommendations");
+      expect(data).toHaveProperty("totalAvailable");
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(typeof data.totalAvailable).toBe("number");
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      // Default cap = 10
+      expect(data.recommendations.length).toBeLessThanOrEqual(10);
+      // totalAvailable is the pre-cap count and must be >= what was returned.
+      expect(data.totalAvailable).toBeGreaterThanOrEqual(data.recommendations.length);
+      expect(data.recommendations[0]).toHaveProperty("companyId");
+      expect(data.recommendations[0]).toHaveProperty("companyName");
+      expect(data.recommendations[0]).toHaveProperty("type");
+      expect(data.recommendations[0]).toHaveProperty("priority");
     });
 
-    it("--with-actions wraps in { recommendations, nextActions, unmatchedProducts }", async () => {
+    it("--top <n> caps recommendations to N", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "list", "--json", "--top", "5",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(data.recommendations.length).toBeLessThanOrEqual(5);
+      expect(data.totalAvailable).toBeGreaterThanOrEqual(data.recommendations.length);
+    });
+
+    // `--top 0` is the agent escape hatch — opt out of the cap entirely
+    // and stream every rec the engine produced. Cassie's spec is clear
+    // that this is the documented way to recover the pre-#521 unbounded
+    // shape for downstream tooling that wants it.
+    it("--top 0 returns all recommendations (unlimited)", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "list", "--json", "--top", "0",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      // When uncapped, totalAvailable === recommendations.length (no rows hidden).
+      expect(data.totalAvailable).toBe(data.recommendations.length);
+    });
+
+    it("sorts by estimatedMrrUplift DESC with nulls last; priority breaks ties", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "list", "--json", "--top", "0",
+      ]);
+      const data = JSON.parse(result.stdout) as {
+        recommendations: Array<{
+          estimatedMrrUplift: number | null;
+          priority: "high" | "medium" | "low";
+        }>;
+      };
+      const recs = data.recommendations;
+      expect(recs.length).toBeGreaterThan(1);
+
+      // No non-null uplift appears AFTER a null uplift (nulls-last
+      // invariant). Once we cross into the null run, every subsequent
+      // entry must also be null.
+      let sawNull = false;
+      for (const rec of recs) {
+        if (rec.estimatedMrrUplift == null) {
+          sawNull = true;
+        } else {
+          expect(sawNull).toBe(false);
+        }
+      }
+
+      // First item is either the max non-null uplift OR (if every rec
+      // has null uplift) is null.
+      const nonNull = recs.filter((r) => r.estimatedMrrUplift != null);
+      if (nonNull.length > 0) {
+        const maxUplift = Math.max(...nonNull.map((r) => r.estimatedMrrUplift as number));
+        expect(recs[0].estimatedMrrUplift).toBe(maxUplift);
+      }
+
+      // Within a same-uplift run, priority order is high > medium > low.
+      // Walk adjacent pairs with identical non-null uplifts and assert the
+      // priority rank is non-decreasing (lower index → better priority).
+      const rank = { high: 0, medium: 1, low: 2 } as const;
+      for (let i = 1; i < recs.length; i++) {
+        const a = recs[i - 1];
+        const b = recs[i];
+        if (a.estimatedMrrUplift != null && a.estimatedMrrUplift === b.estimatedMrrUplift) {
+          expect(rank[a.priority]).toBeLessThanOrEqual(rank[b.priority]);
+        }
+      }
+    });
+
+    it("--with-actions extends the envelope with nextActions + unmatchedProducts (and totalAvailable)", async () => {
       const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--with-actions"]);
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("recommendations");
+      expect(data).toHaveProperty("totalAvailable");
       expect(data).toHaveProperty("nextActions");
       expect(data).toHaveProperty("unmatchedProducts");
       expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(typeof data.totalAvailable).toBe("number");
       expect(Array.isArray(data.nextActions)).toBe(true);
+      // Default cap still applies under --with-actions.
+      expect(data.recommendations.length).toBeLessThanOrEqual(10);
       expect(data.nextActions.length).toBeLessThanOrEqual(5);
       if (data.nextActions.length > 0) {
         expect(data.nextActions[0]).toHaveProperty("command");
@@ -38,22 +125,22 @@ describe("pax8 recommendations", () => {
 
     it("filters by exact company name", async () => {
       const result = await runCliExpectSuccess([
-        "recommendations", "list", "--company", "Bright Minds Academy", "--json",
+        "recommendations", "list", "--company", "Bright Minds Academy", "--json", "--top", "0",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const rec of data) {
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
         expect(rec.companyName).toBe("Bright Minds Academy");
       }
     });
 
     it("filters by partial company name (contains match)", async () => {
       const result = await runCliExpectSuccess([
-        "recommendations", "list", "--company", "Bright", "--json",
+        "recommendations", "list", "--company", "Bright", "--json", "--top", "0",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const rec of data) {
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
         expect(rec.companyName.toLowerCase()).toContain("bright");
       }
     });
@@ -62,22 +149,22 @@ describe("pax8 recommendations", () => {
       // Simulates: --company Bright Minds Academy (no quotes)
       // Commander captures "Bright", "Minds" and "Academy" become excess args
       const result = await runCliExpectSuccess([
-        "recommendations", "list", "--company", "Bright", "Minds", "Academy", "--json",
+        "recommendations", "list", "--company", "Bright", "Minds", "Academy", "--json", "--top", "0",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const rec of data) {
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
         expect(rec.companyName).toBe("Bright Minds Academy");
       }
     });
 
     it("filters by priority", async () => {
       const result = await runCliExpectSuccess([
-        "recommendations", "list", "--priority", "high", "--json",
+        "recommendations", "list", "--priority", "high", "--json", "--top", "0",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const rec of data) {
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
         expect(rec.priority).toBe("high");
       }
     });
@@ -87,12 +174,14 @@ describe("pax8 recommendations", () => {
         "recommendations", "list", "--company", "NonExistentCorp99999", "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data).toEqual([]);
+      expect(data.recommendations).toEqual([]);
+      expect(data.totalAvailable).toBe(0);
     });
 
     it("JSON output includes both available and unavailable recs for downstream filtering", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
-      const allRecs = JSON.parse(result.stdout);
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
+      const parsed = JSON.parse(result.stdout);
+      const allRecs = parsed.recommendations;
 
       // Some recs should have productAvailable: true, some false
       const available = allRecs.filter((r: { productAvailable: boolean }) => r.productAvailable);
@@ -109,15 +198,29 @@ describe("pax8 recommendations", () => {
     });
 
     it("--include-all shows unavailable recs in JSON output", async () => {
-      const withAll = await runCliExpectSuccess(["recommendations", "list", "--include-all", "--json"]);
-      const withoutAll = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+      const withAll = await runCliExpectSuccess(["recommendations", "list", "--include-all", "--json", "--top", "0"]);
+      const withoutAll = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
 
-      const allRecs = JSON.parse(withAll.stdout);
-      const defaultRecs = JSON.parse(withoutAll.stdout);
+      const allRecs = JSON.parse(withAll.stdout).recommendations;
+      const defaultRecs = JSON.parse(withoutAll.stdout).recommendations;
 
       // Both should return the same set since JSON output is pre-filter
       // (JSON returns all recs; filtering only affects table mode)
       expect(allRecs.length).toBe(defaultRecs.length);
+    });
+
+    // #521 footer hint: when the cap fires, table mode must tell the
+    // partner that there's more behind the curtain and how to widen it.
+    // Forcing table mode via PAX8_OUTPUT_FORMAT because a non-TTY stdout
+    // (the test subprocess) otherwise auto-falls back to JSON.
+    it("table mode shows 'Showing top N of M' footer when --top caps the list", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list", "--top", "2"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      // The footer is on stderr (hints/banners are never on stdout).
+      expect(result.stderr).toMatch(/Showing top \d+ of \d+/);
+      expect(result.stderr).toMatch(/--top 0/);
     });
 
     // Issue #195: human render leaked product UUIDs in a "Quick actions"
@@ -163,8 +266,8 @@ describe("pax8 recommendations", () => {
     });
 
     it("--json output still carries the full orderCommand with product id (agent contract)", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
-      const data = JSON.parse(result.stdout) as Array<{ orderCommand: string | null }>;
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
+      const data = (JSON.parse(result.stdout) as { recommendations: Array<{ orderCommand: string | null }> }).recommendations;
       const withCommand = data.filter((r) => r.orderCommand);
       expect(withCommand.length).toBeGreaterThan(0);
       // The JSON `orderCommand` MUST still include `--product <id>` so
@@ -183,11 +286,13 @@ describe("pax8 recommendations", () => {
     // display-only. Pinning the shape here so a future regression that
     // drops `orderArgs` from JSON output gets caught.
     it("--json carries orderArgs[] argv-style array alongside orderCommand", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
-      const data = JSON.parse(result.stdout) as Array<{
-        orderCommand: string | null;
-        orderArgs: string[] | null;
-      }>;
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
+      const data = (JSON.parse(result.stdout) as {
+        recommendations: Array<{
+          orderCommand: string | null;
+          orderArgs: string[] | null;
+        }>;
+      }).recommendations;
       const actionable = data.filter((r) => r.orderCommand);
       expect(actionable.length).toBeGreaterThan(0);
       for (const rec of actionable) {
@@ -211,11 +316,13 @@ describe("pax8 recommendations", () => {
     // `opportunityType` axis alongside the legacy `type`, using OE's
     // canonical 5-type taxonomy. The legacy `type` is unchanged.
     it("--json carries both legacy type and additive opportunityType (OE 5-type taxonomy)", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
-      const data = JSON.parse(result.stdout) as Array<{
-        type: string;
-        opportunityType: string;
-      }>;
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
+      const data = (JSON.parse(result.stdout) as {
+        recommendations: Array<{
+          type: string;
+          opportunityType: string;
+        }>;
+      }).recommendations;
       expect(data.length).toBeGreaterThan(0);
       const allowed = new Set(["Upsell", "Cross-sell", "Add-on", "Upgrade", "Net-new"]);
       for (const rec of data) {
