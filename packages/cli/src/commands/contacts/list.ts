@@ -11,12 +11,13 @@ import { handleCommandError, CliError } from "../../lib/errors.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { clampListSize, LIST_SIZE_CAP, warnSizeClamped } from "../../lib/validate.js";
 
 export const contactsListCommand = new Command("list")
   .description("List contacts for a company")
   .option("--company <id|name>", "Company ID or name (required)")
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "50")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "50")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
@@ -50,9 +51,14 @@ Examples:
       spinner.start();
       const company = await resolveCompany(ctx, allOpts.company);
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
+      // #518: clamp `--size` at LIST_SIZE_CAP (1000).
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 50);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
       const result = await ctx.api.contacts.list(company.id, {
         page: apiPage,
-        size: parseInt(allOpts.size, 10),
+        size: sizeResult.size,
       });
       spinner.stop();
 

@@ -11,6 +11,7 @@ import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
+import { clampListSize, LIST_SIZE_CAP, warnSizeClamped } from "../../lib/validate.js";
 
 export const usageListCommand = new Command("list")
   .description("List usage summaries")
@@ -18,7 +19,7 @@ export const usageListCommand = new Command("list")
   .option("--company <id|name>", "List usage across every subscription owned by a company")
   .option("--month <YYYY-MM>", "Filter by usage month (e.g. 2026-04)")
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "50")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "50")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
@@ -44,7 +45,12 @@ Notes:
     try {
       spinner.start();
       const apiPage = Math.max(parseInt(options.page, 10) - 1, 0);
-      const apiSize = parseInt(options.size, 10);
+      // #518: clamp `--size` at LIST_SIZE_CAP (1000).
+      const sizeResult = clampListSize(parseInt(options.size, 10), 50);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: globalOpts.quiet });
+      }
+      const apiSize = sizeResult.size;
 
       // Resolve the set of subscription IDs to query. Three modes:
       //   --subscription <id>   → query exactly that subscription

@@ -153,6 +153,70 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
     });
   });
 
+  describe("#518 — list commands clamp --size to LIST_SIZE_CAP (1000)", () => {
+    // Issue #518: list commands previously honored arbitrarily-large
+    // `--size` values (`orders list --size 50000` returned ~34 MB of
+    // JSON). The fix caps every list command at the LIST_SIZE_CAP
+    // (1000) ceiling and emits a stderr warning when clamping.
+
+    it("orders list --size 50000 returns at most LIST_SIZE_CAP rows", async () => {
+      const result = await runCliExpectSuccess(
+        ["orders", "list", "--json", "--size", "50000"],
+        LARGE,
+      );
+      const data = parseJson<unknown[]>(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBeLessThanOrEqual(1000);
+    });
+
+    it("orders list --size 50000 emits the clamp warning on stderr", async () => {
+      const result = await runCliExpectSuccess(
+        ["orders", "list", "--json", "--size", "50000"],
+        LARGE,
+      );
+      expect(result.stderr).toContain("--size 50000 clamped to 1000");
+    });
+
+    it("subscriptions list --size 5000 caps at LIST_SIZE_CAP rows", async () => {
+      const result = await runCliExpectSuccess(
+        ["subscriptions", "list", "--json", "--size", "5000"],
+        LARGE,
+      );
+      const data = parseJson<unknown[]>(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBeLessThanOrEqual(1000);
+      expect(result.stderr).toContain("--size 5000 clamped to 1000");
+    });
+
+    it("clients list --size 10000 caps and warns", async () => {
+      const result = await runCliExpectSuccess(
+        ["clients", "list", "--json", "--size", "10000"],
+        LARGE,
+      );
+      const data = parseJson<unknown[]>(result.stdout);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBeLessThanOrEqual(1000);
+      expect(result.stderr).toContain("--size 10000 clamped to 1000");
+    });
+
+    it("a sub-cap --size value does NOT emit the warning", async () => {
+      // Regression guard: clamp + warn must only fire above LIST_SIZE_CAP.
+      const result = await runCliExpectSuccess(
+        ["orders", "list", "--json", "--size", "500"],
+        LARGE,
+      );
+      expect(result.stderr).not.toContain("clamped to 1000");
+    });
+
+    it("exactly LIST_SIZE_CAP does NOT emit the warning (boundary)", async () => {
+      const result = await runCliExpectSuccess(
+        ["orders", "list", "--json", "--size", "1000"],
+        LARGE,
+      );
+      expect(result.stderr).not.toContain("clamped to 1000");
+    });
+  });
+
   describe("hostile-name robustness", () => {
     // The large fixture seeds 12 deliberately-hostile customer names
     // (shell-meta, Unicode, embedded quotes/backticks/newlines). The

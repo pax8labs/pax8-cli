@@ -11,6 +11,7 @@ import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { output, type Column } from "../../lib/output.js";
 import { formatDate } from "../../lib/formatters.js";
 import { enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import { clampListSize, LIST_SIZE_CAP, warnSizeClamped } from "../../lib/validate.js";
 
 // #385: timestamp column references the canonical `createdAt`. The legacy
 // `createdDate` alias is still emitted on every row in `--json` output for
@@ -41,7 +42,7 @@ export const ordersListCommand = new Command("list")
     "No-op: server ignores filter; field not in public OpenAPI (see #369)"
   )
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "25")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
@@ -62,9 +63,17 @@ Examples:
     try {
       const ctx = await buildContext(allOpts);
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
+      // #518: cap `--size` at LIST_SIZE_CAP (1000). The orders endpoint
+      // returns ~34 MB of JSON for size=50000 — a context-window-killer
+      // for agents and an OOM risk for CI runners. Clamp and warn on
+      // stderr so the user can switch to `--page N --size 1000` paging.
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 25);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
       const params: { page: number; size: number; companyId?: string; status?: string } = {
         page: apiPage,
-        size: parseInt(allOpts.size, 10),
+        size: sizeResult.size,
       };
       if (allOpts.company) {
         params.companyId = await resolveCompanyId(ctx, allOpts.company);

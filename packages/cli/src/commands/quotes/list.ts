@@ -10,7 +10,7 @@ import { handleCommandError } from "../../lib/errors.js";
 import { formatDate, formatCurrency } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
-import { validateEnum } from "../../lib/validate.js";
+import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
 import type { Quote } from "@pax8/core";
 
 // Lowercase enum from `quoting-endpoints.json` → `GET /v2/quotes`. The
@@ -45,7 +45,7 @@ export const quotesListCommand = new Command("list")
     "Filter by status (draft, assigned, sent, closed, declined, accepted, changes_requested, expired, pending)"
   )
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "50")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "50")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
@@ -84,11 +84,16 @@ Examples:
         ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
+      // #518: clamp `--size` at LIST_SIZE_CAP (1000).
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 50);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
       const result = await ctx.api.quotes.list({
         companyId,
         status,
         page: apiPage,
-        size: parseInt(allOpts.size, 10),
+        size: sizeResult.size,
       });
       spinner.stop();
 
