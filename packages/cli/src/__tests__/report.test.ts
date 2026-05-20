@@ -209,7 +209,7 @@ describe("pax8 report renewals", () => {
 });
 
 describe("pax8 report concentration", () => {
-  for (const groupBy of ["customer", "vendor", "product"] as const) {
+  for (const groupBy of ["client", "vendor", "product"] as const) {
     it(`--by ${groupBy} returns the canonical JSON shape`, async () => {
       const { stdout } = await runCliExpectSuccess([
         "report",
@@ -246,7 +246,7 @@ describe("pax8 report concentration", () => {
       "report",
       "concentration",
       "--by",
-      "customer",
+      "client",
       "--top",
       "5",
       "--json",
@@ -260,7 +260,7 @@ describe("pax8 report concentration", () => {
       "report",
       "concentration",
       "--by",
-      "customer",
+      "client",
       "--threshold",
       "10",
       "--json",
@@ -294,7 +294,7 @@ describe("pax8 report concentration", () => {
       "report",
       "concentration",
       "--by",
-      "customer",
+      "client",
       "--json",
     ]);
     const data = JSON.parse(stdout);
@@ -336,11 +336,30 @@ describe("pax8 report concentration", () => {
     ]);
     expect(result.stderr.toLowerCase()).toContain("--by");
   });
+
+  // #516: `client` is the canonical noun (per #317). `customer` and
+  // `company` are accepted as deprecated aliases with a one-line stderr
+  // warning, and the response payload normalizes to `client`.
+  for (const alias of ["customer", "company"] as const) {
+    it(`accepts --by ${alias} as a deprecated alias for client (warns on stderr)`, async () => {
+      const { stdout, stderr } = await runCliExpectSuccess([
+        "report",
+        "concentration",
+        "--by",
+        alias,
+        "--json",
+      ]);
+      const data = JSON.parse(stdout);
+      expect(data.groupBy).toBe("client");
+      expect(stderr.toLowerCase()).toContain("deprecated");
+      expect(stderr).toContain(alias);
+    });
+  }
 });
 
 describe("pax8 report subscriptions", () => {
   for (const groupBy of [
-    "customer",
+    "client",
     "vendor",
     "product",
     "billing-term",
@@ -493,6 +512,25 @@ describe("pax8 report subscriptions", () => {
     ]);
     expect(result.stderr.toLowerCase()).toContain("--by");
   });
+
+  // #516: `client` is the canonical noun (per #317). `customer` and
+  // `company` are accepted as deprecated aliases with a one-line stderr
+  // warning, and the response payload normalizes to `client`.
+  for (const alias of ["customer", "company"] as const) {
+    it(`accepts --by ${alias} as a deprecated alias for client (warns on stderr)`, async () => {
+      const { stdout, stderr } = await runCliExpectSuccess([
+        "report",
+        "subscriptions",
+        "--by",
+        alias,
+        "--json",
+      ]);
+      const data = JSON.parse(stdout);
+      expect(data.groupBy).toBe("client");
+      expect(stderr.toLowerCase()).toContain("deprecated");
+      expect(stderr).toContain(alias);
+    });
+  }
 });
 
 describe("standardized Pax8-cost disclaimer footer", () => {
