@@ -25,7 +25,7 @@ import {
   type Pax8ErrorCode,
 } from "@pax8/core";
 import { replCmd } from "./confirm.js";
-import { redactEnvelope } from "./redactor.js";
+import { redactEnvelope, redactString } from "./redactor.js";
 
 declare const __CLI_VERSION__: string;
 
@@ -389,9 +389,31 @@ export async function handleCommandError(
   const envelope = buildErrorEnvelope(error, context);
   writeLastErrorEnvelope(envelope);
 
+  // Redact every user-visible string before any stderr write. The on-disk
+  // envelope is already redacted by writeLastErrorEnvelope; this closes the
+  // parallel gap where `--json` stderr and the human-readable branches were
+  // emitting raw UUIDs, emails, home-dir paths, and the upstream API's echo
+  // of user input (`extractErrorDetail(error.responseBody)`) verbatim — the
+  // README/SECURITY.md commitments imply these are sanitized but they were
+  // not.
+  //
+  // We deliberately do NOT pass `argTokens` here, unlike the on-disk
+  // envelope. The on-disk file is what `pax8 report-bug` uploads, and the
+  // contract there is "the reviewer sees structure, not values" — full
+  // positional-arg scrub. The live stderr is what the user who just typed
+  // the command sees in their own terminal; redacting their own typed
+  // flag value back at them (e.g. `Invalid value: <REDACTED:ARG>` for a
+  // typo like `--billing-term Quarterly`) destroys the error's
+  // actionability without any privacy benefit — they already know what
+  // they typed. The generic rules (UUID, email, home path, JWT, Bearer,
+  // opaque token) still apply, which is where the actual leak risk lives.
+  const safe = (s: string | undefined): string =>
+    s === undefined ? "" : redactString(s);
+
   // Machine-readable JSON envelope when --json is set
   if (isJsonOutputRequested()) {
-    process.stderr.write(JSON.stringify(envelope, null, 2) + "\n");
+    const redactedEnvelope = redactEnvelope(envelope);
+    process.stderr.write(JSON.stringify(redactedEnvelope, null, 2) + "\n");
     // Flush telemetry before exit (#145) so failure events actually reach
     // PostHog. Bounded by a 2s timeout in flushAndShutdown.
     await flushTelemetryBeforeExit();
@@ -405,26 +427,29 @@ export async function handleCommandError(
 
   if (error instanceof CliError || error instanceof Pax8SecurityError) {
     process.stderr.write(
-      chalk.red.bold(`\n  ✗ ${prefix}  ${error.message}\n`)
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe(error.message)}\n`)
     );
 
     if (error.causes && error.causes.length > 0) {
       process.stderr.write(chalk.dim("\n  Causes:\n"));
       for (const cause of error.causes) {
-        process.stderr.write(chalk.dim(`    • ${cause}\n`));
+        process.stderr.write(chalk.dim(`    • ${safe(cause)}\n`));
       }
     }
 
     if (error.recoverySteps && error.recoverySteps.length > 0) {
       process.stderr.write(chalk.yellow("\n  Recovery steps:\n"));
       for (const step of error.recoverySteps) {
-        process.stderr.write(chalk.yellow(`    → ${step}\n`));
+        process.stderr.write(chalk.yellow(`    → ${safe(step)}\n`));
       }
     }
 
     if (error.docsUrl) {
+      // docsUrl is a closed-set of pax8-controlled URLs; redacting is
+      // defense-in-depth in case a future code path puts a user-derived
+      // value here.
       process.stderr.write(
-        chalk.dim(`\n  Docs: ${error.docsUrl}\n`)
+        chalk.dim(`\n  Docs: ${safe(error.docsUrl)}\n`)
       );
     }
 
@@ -438,17 +463,18 @@ export async function handleCommandError(
 
     process.stderr.write("\n");
   } else if (error instanceof ZodError) {
-    // Zod validation errors mean the API returned an unexpected shape
+    // Zod validation errors mean the API returned an unexpected shape.
+    // formatZodError can echo back response field values, so redact too.
     process.stderr.write(
       chalk.red.bold(`\n  ✗ ${prefix}`) +
       chalk.red(`  The Pax8 API returned an unexpected response.\n`) +
-      chalk.dim(`    ${formatZodError(error)}\n\n`) +
+      chalk.dim(`    ${safe(formatZodError(error))}\n\n`) +
       chalk.yellow(`    → This usually means no data was found, or the API format has changed.\n`) +
       chalk.yellow(`    → Try a different query, or run ${chalk.cyan(replCmd("pax8 doctor"))} to check your setup.\n\n`)
     );
   } else if (error instanceof ApiError) {
     process.stderr.write(
-      chalk.red.bold(`\n  ✗ ${prefix}  ${error.message}\n\n`)
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe(error.message)}\n\n`)
     );
     if (isApiTimeoutError(error)) {
       // #199: surface the same recovery steps the JSON envelope carries.
@@ -457,7 +483,7 @@ export async function handleCommandError(
       // (which renders through the branch above with their richer hint).
       for (const step of timeoutRecoverySteps()) {
         process.stderr.write(
-          chalk.yellow(`    → ${step}\n`)
+          chalk.yellow(`    → ${safe(step)}\n`)
         );
       }
       process.stderr.write("\n");
@@ -468,7 +494,7 @@ export async function handleCommandError(
     } else if (error.statusCode === 404) {
       const detail = extractErrorDetail(error.responseBody);
       if (detail) {
-        process.stderr.write(chalk.yellow(`    → ${detail}\n\n`));
+        process.stderr.write(chalk.yellow(`    → ${safe(detail)}\n\n`));
       } else {
         process.stderr.write(
           chalk.yellow(`    → The resource was not found. Check the ID or name and try again.\n\n`)
@@ -477,7 +503,7 @@ export async function handleCommandError(
     }
   } else if (error instanceof Error) {
     process.stderr.write(
-      chalk.red.bold(`\n  ✗ ${prefix}  ${error.message}\n\n`)
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe(error.message)}\n\n`)
     );
   } else {
     process.stderr.write(

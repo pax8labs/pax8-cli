@@ -10,6 +10,7 @@ import { confirm, confirmWithChange, replCmd } from "../../lib/confirm.js";
 import { formatStatus, formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
+import { debugLog } from "../../lib/debug.js";
 import {
   ApiError,
   BillingTermSchema,
@@ -284,7 +285,7 @@ async function resolveLine(
       }
     }
   } catch (err) {
-    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] order pre-check failed: ${err}\n`);
+    debugLog("order pre-check failed", err);
   }
 
   if (!commitmentTermId && (commitmentTerm || requiresCommitment)) {

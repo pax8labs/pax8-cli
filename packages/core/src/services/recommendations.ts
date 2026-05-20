@@ -36,6 +36,62 @@
 import type { Subscription } from "../api/types.js";
 import { subscriptionMrr } from "./analytics.js";
 
+// ─── orderCommand safety ────────────────────────────────────────────────────
+// The `orderCommand` string is the agent-facing handle to a recommendation —
+// CLAUDE.md and skill.md both document the "extract orderCommand from
+// recommendations list --json and run it" pattern, so the agent ends up
+// being the unintentional executor of whatever value we interpolate here.
+//
+// Previously the constructed string was:
+//   `pax8 orders create --company "${companyName}" --product ${productId} --quantity ${qty}`
+//
+// A `companyName` containing a literal `"` (or a name an upstream attacker
+// or a compromised tenant directory entry could set) broke out of the
+// double-quoted frame. The REPL tokenizer (`packages/cli/src/lib/repl.ts`)
+// then re-parses the string into argv and `spawn`s `node` with the
+// resulting array, which Commander dispatches with the *attacker-controlled*
+// `--product` / `--quantity` overrides. The internal spawn is array-form
+// (safe from OS shell injection) — what's at risk is Commander argument
+// injection at the agent → REPL → orders create boundary.
+//
+// Fix: interpolate the `companyId` (a stable identifier with a strict
+// character set) instead of the display name. We then validate every
+// interpolated field as a "safe identifier" before composing the string;
+// any field that fails validation produces `orderCommand: null` so an
+// agent never gets a string it can't trust verbatim. Safe-identifier
+// covers both Pax8 UUIDs (`a1b2c3d4-…`) and the `prod-…` test/demo IDs
+// without admitting whitespace, quotes, or shell metacharacters.
+const SAFE_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+function isSafeId(value: string | null | undefined): value is string {
+  return typeof value === "string" && SAFE_ID_RE.test(value);
+}
+
+// Display names can contain spaces, apostrophes, periods, ampersands —
+// legitimate fixtures like `Acme Corp` or `O'Brien & Sons`. What they MUST
+// NOT contain is anything that breaks out of a double-quoted argument in
+// the REPL tokenizer (`packages/cli/src/lib/repl.ts`) or in a downstream
+// shell. #498's `buildOrderArtifacts` falls back to interpolating
+// `companyName` into the display string when `companyId` is not
+// UUID-shaped (demo / legacy partner IDs), and that fallback would be a
+// regression of H-2 if a hostile API-supplied name slipped through. Gate
+// the call site on this check so any name containing `"`, backtick, `$`,
+// `\`, `;`, `|`, `&`, `<`, `>`, newlines, or NUL collapses the order
+// artifacts to null.
+// eslint-disable-next-line no-control-regex -- \x00 is the intentional target: NUL in a display name should collapse to null.
+const UNSAFE_DISPLAY_CHARS_RE = /["\\`$;|&<>\n\r\x00]/;
+
+function isSafeDisplayName(value: string | null | undefined): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length < 256
+    && !UNSAFE_DISPLAY_CHARS_RE.test(value);
+}
+
+function isSafeQuantity(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 && value < 1_000_000;
+}
+
 // ─── Product Categories ─────────────────────────────────────────────────────
 // Maps keyword patterns in product names to categories.
 // A product can belong to multiple categories.
@@ -594,13 +650,30 @@ export function getRecommendations(
         if (!productAvailable && suggestedName) {
           unmatchedProducts.add(suggestedName);
         }
-        // #462: emit both an informational display string and a safe argv
-        // array. Callers (REPL, recommendations act, Claude skill) must
-        // execute via `orderArgs` so an upstream-controlled customer name
-        // can never break out into a shell substitution.
-        const artifacts = matchedProductId
-          ? buildOrderArtifacts(companyId, companyName, matchedProductId, primaryQty)
-          : null;
+        // #462 + H-2: emit both an informational display string and a
+        // safe argv array (#498's buildOrderArtifacts). Callers (REPL,
+        // recommendations act, Claude skill) must execute via `orderArgs`
+        // so an upstream-controlled customer name can never break out
+        // into a shell substitution.
+        //
+        // We additionally gate the call on SAFE_ID_RE / isSafeQuantity
+        // (#506) so that hostile values for `companyId`, `matchedProductId`,
+        // or `primaryQty` collapse both forms to null. This is the
+        // load-bearing control until `repl.ts`, `recommendations/list.ts`,
+        // `recommendations/act.ts`, and `dashboard.ts` migrate from
+        // tokenizing `orderCommand` to consuming `orderArgs` directly —
+        // tracked as a follow-up. Until then, `buildOrderArtifacts` may
+        // fall back to `--company "${companyName}"` (when companyId is
+        // not UUID-shaped), and a hostile name inside that quote frame
+        // would break the REPL tokenizer.
+        const artifacts =
+          matchedProductId &&
+          isSafeId(companyId) &&
+          isSafeId(matchedProductId) &&
+          isSafeQuantity(primaryQty) &&
+          isSafeDisplayName(companyName)
+            ? buildOrderArtifacts(companyId, companyName, matchedProductId, primaryQty)
+            : null;
         const orderCommand = artifacts?.orderCommand ?? null;
         const orderArgs = artifacts?.orderArgs ?? null;
 
@@ -646,10 +719,17 @@ export function getRecommendations(
       const estimatedMrrUplift = price ? price * gap.missingSeats : null;
 
       // For seat gaps, use the product ID directly from the subscription.
-      // See buildOrderArtifacts for the shell-injection rationale (#462).
-      const seatArtifacts = gap.gapProductId
-        ? buildOrderArtifacts(companyId, companyName, gap.gapProductId, gap.missingSeats)
-        : null;
+      // See buildOrderArtifacts (#462) for the shell-injection rationale
+      // and the cross-sell branch above for the SAFE_ID_RE gate (#506).
+      // Same gate applied here for symmetry.
+      const seatArtifacts =
+        gap.gapProductId &&
+        isSafeId(companyId) &&
+        isSafeId(gap.gapProductId) &&
+        isSafeQuantity(gap.missingSeats) &&
+        isSafeDisplayName(companyName)
+          ? buildOrderArtifacts(companyId, companyName, gap.gapProductId, gap.missingSeats)
+          : null;
       const orderCommand = seatArtifacts?.orderCommand ?? null;
       const orderArgs = seatArtifacts?.orderArgs ?? null;
 
