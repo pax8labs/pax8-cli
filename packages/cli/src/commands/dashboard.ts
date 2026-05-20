@@ -452,16 +452,25 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           });
         }
 
-        // Growth recs — link directly to order when available
+        // Growth recs — link directly to order when available.
+        // #509: prefer the structured `orderArgs.slice(1)` over re-tokenizing
+        // the display `orderCommand` string. Names with shell metacharacters
+        // (AT&T, "O'Brien & Sons", etc.) survive intact as single argv
+        // elements; the tokenizer round-trip is avoided.
         for (const r of highRecs.slice(0, 2)) {
           const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
-          const cmd = r.orderCommand
-            ? r.orderCommand.replace(/^pax8\s+/, "")
-            : `recommendations list --company "${r.companyName}"`;
+          let command: string[];
+          if (r.orderArgs && r.orderArgs[0] === "pax8") {
+            command = r.orderArgs.slice(1);
+          } else if (r.orderCommand) {
+            command = tokenizeCmd(r.orderCommand.replace(/^pax8\s+/, ""));
+          } else {
+            command = tokenizeCmd(`recommendations list --company "${r.companyName}"`);
+          }
           quickActions.push({
             key: String(quickActions.length + 1),
             label: `${chalk.green("+")} ${r.companyName} — ${r.suggestedProducts?.[0] ?? r.title}${upliftStr}`,
-            command: tokenizeCmd(cmd),
+            command,
           });
         }
 
