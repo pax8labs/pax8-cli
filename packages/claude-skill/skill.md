@@ -32,6 +32,8 @@ For every write command below:
 1. **Show the user exactly what will change** — the command you're about to run, the affected resource(s), and the expected effect (price, quantity, estimated Pax8 monthly cost delta, etc. when applicable).
 2. **Wait for explicit approval** — a clear "yes / go ahead / do it." Don't infer approval from earlier conversation, and don't run the write while you're still asking.
 3. **Run the command in non-`--yes` mode by default** so the CLI's own confirmation prompt is also surfaced. Pass `--yes` only when the user has already approved this exact action.
+4. **Destructive commands need a second acknowledgment.** `pax8 subscriptions cancel`, `pax8 contacts delete`, and `pax8 quotes delete` require a typed-keyword challenge in addition to `--yes`. `--yes` alone is intentionally not enough (H-5). In agent contexts (no TTY), set `PAX8_CONFIRM_DESTRUCTIVE=<keyword>` in the environment — `cancel` for `subscriptions cancel`, `delete` for the others. Only set this when the user has explicitly named the destructive action they want.
+5. **Local write audit log.** Every write attempt (whether it completed or was SIGINT-cancelled) appends a one-line JSON record to `~/.pax8/write-audit.log` (mode 0600). Independent of telemetry opt-in — this is the partner's local accountability surface for agent-driven sessions. Records timestamp, subcommand path, resource, outcome (`completed` / `cancelled`), and idempotency key. No user-supplied values or names.
 
 Write commands:
 

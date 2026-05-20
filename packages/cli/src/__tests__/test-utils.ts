@@ -19,13 +19,44 @@ export interface CliResult {
   exitCode: number;
 }
 
+/**
+ * Per the H-5 contract, destructive commands refuse to proceed without
+ * either an interactive TTY or `PAX8_CONFIRM_DESTRUCTIVE=<keyword>` in
+ * env. Subprocess tests have neither by default, so unit tests of
+ * destructive command *logic* (e.g. `subscriptions cancel` schedules
+ * the right date) would all break on the gate that's not what they're
+ * verifying. This map auto-injects the right keyword for known
+ * destructive command paths so each test stays focused on its own
+ * subject. The gate itself is verified in `confirm.test.ts` and the
+ * integration test in `destructive-gate.test.ts`.
+ *
+ * When a test explicitly sets `PAX8_CONFIRM_DESTRUCTIVE`, that wins —
+ * a test asserting the gate refuses with the wrong keyword still works.
+ */
+const DESTRUCTIVE_KEYWORDS: Record<string, string> = {
+  "subscriptions cancel": "cancel",
+  "contacts delete": "delete",
+  "quotes delete": "delete",
+};
+
+function autoConfirmDestructive(args: string[], env?: Record<string, string>): string | undefined {
+  if (env?.PAX8_CONFIRM_DESTRUCTIVE !== undefined) return undefined;
+  const positional = args.filter((a) => !a.startsWith("-")).slice(0, 2).join(" ");
+  return DESTRUCTIVE_KEYWORDS[positional];
+}
+
 export async function runCli(
   args: string[],
   env?: Record<string, string>
 ): Promise<CliResult> {
+  const autoKeyword = autoConfirmDestructive(args, env);
+  const finalEnv: Record<string, string> = {
+    ...env,
+    ...(autoKeyword !== undefined ? { PAX8_CONFIRM_DESTRUCTIVE: autoKeyword } : {}),
+  };
   try {
     const result = await exec("node", [CLI_PATH, ...args], {
-      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...env },
+      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...finalEnv },
       timeout: 15000,
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
