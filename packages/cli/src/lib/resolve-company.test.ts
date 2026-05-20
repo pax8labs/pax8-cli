@@ -76,6 +76,56 @@ describe("resolveCompany", () => {
     await expect(resolveCompany(ctx, "Summit")).rejects.toThrow(/Multiple companies match/);
   });
 
+  it("lists all matches inline when fuzzy match count is ≤10 (#520)", async () => {
+    // 8 matches — under the 10 cap, so every name should appear with no
+    // "and N more" tail.
+    const companies = Array.from({ length: 8 }, (_, i) =>
+      makeCompany({ id: `id-${i}`, name: `Acme ${i}` })
+    );
+    const ctx = makeMockCtx(companies);
+
+    let caught: unknown;
+    try {
+      await resolveCompany(ctx, "Acme");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    const e = caught as { causes?: string[] };
+    expect(e.causes).toBeDefined();
+    const matchesLine = e.causes![0];
+    // All 8 names must surface; no truncation tail.
+    for (let i = 0; i < 8; i++) {
+      expect(matchesLine).toContain(`Acme ${i}`);
+    }
+    expect(matchesLine).not.toMatch(/and \d+ more/);
+  });
+
+  it("truncates at 10 with 'and N more' hint when fuzzy match count >10 (#520)", async () => {
+    // 15 matches — over the cap. First 10 should surface, last 5 collapse
+    // into the "and 5 more" tail with a grep recovery hint.
+    const companies = Array.from({ length: 15 }, (_, i) =>
+      makeCompany({ id: `id-${i}`, name: `Acme ${String(i).padStart(2, "0")}` })
+    );
+    const ctx = makeMockCtx(companies);
+
+    let caught: unknown;
+    try {
+      await resolveCompany(ctx, "Acme");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    const e = caught as { causes?: string[] };
+    const matchesLine = e.causes![0];
+    expect(matchesLine).toMatch(/… and 5 more/);
+    expect(matchesLine).toContain('grep "Acme"');
+    // First and tenth should be present; eleventh must NOT appear inline.
+    expect(matchesLine).toContain("Acme 00");
+    expect(matchesLine).toContain("Acme 09");
+    expect(matchesLine).not.toMatch(/Acme 10[,\b]|Acme 10$/);
+  });
+
   it("throws descriptive error when name not found", async () => {
     const ctx = makeMockCtx([makeCompany()]);
 
