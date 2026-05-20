@@ -159,3 +159,125 @@ describe("--idempotency-key", () => {
     expect(result.stdout).not.toContain("--idempotency-key");
   });
 });
+
+// #M-5: PAX8_IDEMPOTENCY_DIR sidestepped the home-dir guard that already
+// applies to PAX8_CONFIG_DIR. A CI/sandboxed environment that controls this
+// env var could point it anywhere — `/etc/...`, a sibling user's home, etc.
+// Route both that var and PAX8_DISPUTES_DIR through `validateConfigDir()` so
+// the same allow-list semantics apply uniformly.
+describe("PAX8_IDEMPOTENCY_DIR home-dir guard (#M-5)", () => {
+  const NON_HOME_PATH = "/tmp/pax8-m5-guard-test";
+  const KEY = "9f3b2c1e-7d4f-4a8b-9c2d-1e2f3a4b5c6d";
+  // Use a fresh in-$HOME dir per test run so we don't pollute the
+  // contributor's home and so afterAll can clean up cleanly. This sidesteps
+  // the test-isolation setup's tmpdir (which is under /var/folders and
+  // would itself trip the home-dir guard when we unset the opt-out).
+  let inHomeConfigDir: string;
+  beforeEach(async () => {
+    inHomeConfigDir = await fs.mkdtemp(path.join(os.homedir(), ".pax8-m5-cfg-"));
+  });
+  afterEach(async () => {
+    await fs.rm(inHomeConfigDir, { recursive: true, force: true });
+  });
+
+  it("rejects non-home PAX8_IDEMPOTENCY_DIR without PAX8_ALLOW_NON_HOME_CONFIG", async () => {
+    // Default test env sets PAX8_ALLOW_NON_HOME_CONFIG=1 globally
+    // (vitest.config.ts). To exercise the guard we have to *unset* it for
+    // this single subprocess. runCli's env-merge means setting it to ""
+    // doesn't unset, so we pass an explicit override; the guard treats
+    // anything not literally "1" as opt-out.
+    //
+    // We also point PAX8_CONFIG_DIR at a sub-path of $HOME so the *outer*
+    // config-dir guard (which would otherwise see the vitest-injected
+    // tmpdir under /var/folders) passes, leaving only the
+    // PAX8_IDEMPOTENCY_DIR guard to trip. Without this, the parent
+    // PAX8_CONFIG_DIR=/var/folders/... fails first and we measure the
+    // wrong thing.
+    const result = await runCliExpectFailure(
+      [
+        "orders", "create",
+        "--company", COMPANY_ID,
+        "--product", PRODUCT_ID,
+        "--quantity", "5",
+        "--yes", "--json",
+        "--idempotency-key", KEY,
+      ],
+      {
+        PAX8_CONFIG_DIR: inHomeConfigDir,
+        PAX8_IDEMPOTENCY_DIR: NON_HOME_PATH,
+        PAX8_ALLOW_NON_HOME_CONFIG: "",
+      },
+    );
+    expect(result.stderr).toMatch(/Refusing to use config directory outside of \$HOME/i);
+    const envelope = JSON.parse(extractJsonEnvelope(result.stderr));
+    expect(envelope.code).toBe("ERROR_INVALID_INPUT");
+  });
+
+  it("accepts non-home PAX8_IDEMPOTENCY_DIR when PAX8_ALLOW_NON_HOME_CONFIG=1", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-m5-allow-"));
+    try {
+      // Inherit PAX8_ALLOW_NON_HOME_CONFIG=1 from the vitest env. The
+      // command should succeed exactly as in the existing idempotency tests.
+      const result = await runCliExpectSuccess(
+        [
+          "orders", "create",
+          "--company", COMPANY_ID,
+          "--product", PRODUCT_ID,
+          "--quantity", "5",
+          "--yes", "--json",
+          "--idempotency-key", KEY,
+        ],
+        { PAX8_IDEMPOTENCY_DIR: tmpDir },
+      );
+      const json = JSON.parse(result.stdout);
+      expect(json).toHaveProperty("id");
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("PAX8_DISPUTES_DIR home-dir guard (#M-5)", () => {
+  const NON_HOME_PATH = "/tmp/pax8-m5-disputes-test";
+  let inHomeConfigDir: string;
+  beforeEach(async () => {
+    inHomeConfigDir = await fs.mkdtemp(path.join(os.homedir(), ".pax8-m5-disp-cfg-"));
+  });
+  afterEach(async () => {
+    await fs.rm(inHomeConfigDir, { recursive: true, force: true });
+  });
+
+  it("rejects non-home PAX8_DISPUTES_DIR without PAX8_ALLOW_NON_HOME_CONFIG", async () => {
+    // Same setup as the idempotency-dir test above: pin PAX8_CONFIG_DIR
+    // inside $HOME so the outer guard passes, then assert that
+    // PAX8_DISPUTES_DIR (pointing outside $HOME) trips the same guard.
+    const result = await runCliExpectFailure(
+      [
+        "invoices", "dispute",
+        "--company", "Summit Healthcare",
+        "--product", "Microsoft 365",
+        "--yes",
+        "--json",
+      ],
+      {
+        PAX8_CONFIG_DIR: inHomeConfigDir,
+        PAX8_DISPUTES_DIR: NON_HOME_PATH,
+        PAX8_ALLOW_NON_HOME_CONFIG: "",
+      },
+    );
+    expect(result.stderr).toMatch(/Refusing to use config directory outside of \$HOME/i);
+    const envelope = JSON.parse(extractJsonEnvelope(result.stderr));
+    expect(envelope.code).toBe("ERROR_INVALID_INPUT");
+  });
+});
+
+/**
+ * Pull the JSON error envelope out of stderr. Demo mode prints a banner and
+ * spinner-fail glyph before the envelope when `--json` is set, so we can't
+ * `JSON.parse(stderr)` directly.
+ */
+function extractJsonEnvelope(stderr: string): string {
+  const start = stderr.indexOf("{");
+  if (start < 0) throw new Error("no JSON envelope in stderr: " + stderr);
+  return stderr.slice(start);
+}

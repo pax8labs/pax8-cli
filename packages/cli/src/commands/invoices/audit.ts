@@ -13,6 +13,7 @@ import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { discrepancyId } from "./dispute.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { validateMonth } from "../../lib/validate.js";
 
 export const invoicesAuditCommand = new Command("audit")
   .description("Audit invoices against active subscriptions")
@@ -59,6 +60,12 @@ JSON output (--json):
     const spinner = createSpinner("Fetching invoices...");
 
     try {
+      // #M-1: `options.month` is interpolated into `nextActions[].command`
+      // strings on stdout that agents may extract and exec. Validate the
+      // shape at the parse boundary so shell metacharacters can't ride a
+      // `--month "2026-01; …"` value out through that channel.
+      validateMonth(options.month);
+
       spinner.start();
 
       const companyId = options.company

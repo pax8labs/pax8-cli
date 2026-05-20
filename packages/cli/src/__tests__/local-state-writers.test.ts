@@ -42,6 +42,11 @@ const HOMEDIR_EXCEPTIONS = new Set<string>([
   // This file — the regression test itself doesn't call homedir(), but
   // it references the string in comments, so the grep would false-flag.
   "packages/cli/src/__tests__/local-state-writers.test.ts",
+  // M-5 home-dir-guard tests: need to create a tmpdir *inside* $HOME so
+  // the subprocess validates PAX8_CONFIG_DIR=under-home and only the
+  // per-feature *_DIR env trips the guard. mkdtemp+rm cleanup means no
+  // leftover state.
+  "packages/cli/src/__tests__/idempotency.test.ts",
 ]);
 
 /**
