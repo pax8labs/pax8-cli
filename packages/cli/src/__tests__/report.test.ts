@@ -314,6 +314,19 @@ describe("pax8 report concentration", () => {
     expect(result.stderr.toLowerCase()).toContain("--by");
   });
 
+  // #517: missing --by is enforced by Commander at parse time, BEFORE
+  // buildContext() / the subscriptions fetch runs. We verify the spinner
+  // never fired by asserting "Fetching subscriptions" appears nowhere in
+  // the combined output. If we ever regress to the throw-from-action
+  // form, this catches it.
+  it("rejects missing --by at parse time (no spinner / fetch)", async () => {
+    const result = await runCliExpectFailure(["report", "concentration"]);
+    const combined = result.stdout + result.stderr;
+    expect(combined).not.toContain("Fetching subscriptions");
+    // Commander's required-option error format.
+    expect(result.stderr.toLowerCase()).toMatch(/required option.*--by/);
+  });
+
   it("errors on invalid --by value", async () => {
     const result = await runCliExpectFailure([
       "report",

@@ -36,6 +36,9 @@ interface ConcentrationRow {
 }
 
 function parseGroupBy(raw: string | undefined): GroupBy {
+  // Commander enforces --by required at parse time via .requiredOption(),
+  // so a missing value here would be a programming error rather than a
+  // user error. We still guard defensively.
   if (!raw) {
     throw new CliError(
       "--by is required for `pax8 report concentration`.",
@@ -119,7 +122,10 @@ export const reportConcentrationCommand = new Command("concentration")
   .description(
     "Pax8 spend concentration analysis. Shows where your Pax8 cost is concentrated across customers, vendors, or products — useful for risk modeling and capacity planning.",
   )
-  .option("--by <customer|vendor|product>", "Concentration axis (required)")
+  // .requiredOption() lets Commander reject `pax8 report concentration`
+  // with no `--by` at parse time — no spinner, no fetch, no fallback to
+  // the deferred CliError throw in parseGroupBy() (#517).
+  .requiredOption("--by <customer|vendor|product>", "Concentration axis (required)")
   .option("--top <n>", "Limit to the top N entities", "10")
   .option(
     "--threshold <pct>",
