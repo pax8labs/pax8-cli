@@ -86,6 +86,18 @@ const MAX_TIMEOUT_MS = 300_000;
 const MAX_RETRIES = 3;
 
 /**
+ * L-7 defense-in-depth: cap upstream response body size before `response.json()`
+ * buffers the entire payload. 10 MB is well above any legitimate Pax8 response
+ * (the heaviest known endpoint, paginated orders at `size=200`, returns roughly
+ * 100 KB per page). A misbehaving or compromised upstream returning a multi-GB
+ * body would otherwise exhaust Node's heap. We check `Content-Length` before
+ * `.json()` — for chunked responses (no `Content-Length`) the existing
+ * AbortController timeout (`PAX8_TIMEOUT_MS`, default 30s) bounds the worst
+ * case: a slow-loris-style stream can't outlast the timeout.
+ */
+const MAX_RESPONSE_BYTES = 10_000_000;
+
+/**
  * Substitute the trailing version segment of a base URL.
  *
  * The Pax8 partner API splits its surface across version prefixes — most
@@ -107,6 +119,9 @@ const MAX_RETRIES = 3;
  */
 export function applyApiVersion(baseUrl: string, apiVersion?: string): string {
   if (!apiVersion) return baseUrl;
+  // Anchored to end-of-string and uses a simple `\d+` run optionally followed
+  // by `.\d+`; no nested quantifiers that could backtrack catastrophically.
+  // eslint-disable-next-line security/detect-unsafe-regex
   const versionTail = /\/v\d+(?:\.\d+)?$/;
   if (versionTail.test(baseUrl)) {
     return baseUrl.replace(versionTail, `/${apiVersion}`);
@@ -539,6 +554,30 @@ export class Pax8Client {
           // DELETE returns no body
           if (response.status === 204 || method === "DELETE") {
             return undefined as T;
+          }
+
+          // L-7: cap upstream response body size before parsing. A misbehaving
+          // or compromised upstream returning a multi-GB JSON body would
+          // otherwise buffer the entire payload through Node's fetch and
+          // exhaust memory. We check `Content-Length` (when present) against
+          // a 10 MB ceiling — well above any legitimate Pax8 response
+          // (the largest known endpoint, paginated orders, returns ~100 KB
+          // per page). For chunked responses (no `Content-Length` header)
+          // we rely on the existing AbortController timeout (`this.timeout`,
+          // default 30s) to bound the worst case: a slow-loris-style stream
+          // can't outlast the timeout.
+          const contentLength = response.headers.get("content-length");
+          if (contentLength !== null) {
+            const len = Number(contentLength);
+            if (Number.isFinite(len) && len > MAX_RESPONSE_BYTES) {
+              clearTimeout(timeoutId);
+              throw new ApiError(
+                `Response body too large: ${len} bytes (limit ${MAX_RESPONSE_BYTES})`,
+                response.status,
+                path,
+                method,
+              );
+            }
           }
 
           const data = await response.json();

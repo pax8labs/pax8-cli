@@ -50,6 +50,49 @@ const HOMEDIR_EXCEPTIONS = new Set<string>([
 ]);
 
 /**
+ * Files under `packages/core/src/` that are allowed to call `os.homedir()`
+ * directly. Core owns the canonical `~/.pax8` directory resolution (loader
+ * and credential store), so it legitimately reads the home dir; the CLI is
+ * the layer that must never bypass core. Keep this list short and comment
+ * each entry. L-8 / #504 — adding core coverage to catch homedir leaks in
+ * a future core service.
+ */
+const CORE_HOMEDIR_EXCEPTIONS = new Set<string>([
+  // loader.ts: resolves the default `~/.pax8` config dir. This is the
+  // canonical site — every other module routes through this loader.
+  "packages/core/src/config/loader.ts",
+  // credential-store.ts: writes ~/.pax8/credentials.json with O_NOFOLLOW
+  // and mode 0o600. The home-dir reference is intrinsic to its job.
+  "packages/core/src/auth/credential-store.ts",
+  // validate-env.ts: implements the home-anchored path validator that
+  // refuses to read credentials from outside $HOME. It MUST resolve the
+  // real home dir to perform the comparison.
+  "packages/core/src/security/validate-env.ts",
+  // Test fixtures legitimately reference homedir() for assertions.
+  "packages/core/src/auth/credential-store.test.ts",
+  "packages/core/src/config/loader-extended.test.ts",
+]);
+
+/**
+ * Files under `packages/core/src/` that are allowed to use raw
+ * `writeFileSync` / `fs.writeFile`. Core owns the lower-level write paths
+ * (config YAML, on-disk cache) and uses explicit `mode: 0o600`. The CLI is
+ * the layer that must funnel through `safeWriteFileSync`.
+ */
+const CORE_ALLOWED_RAW_WRITERS = new Set<string>([
+  // loader.ts: writes the user-edited config.yaml with mode 0o600. Async
+  // fs.writeFile is the canonical surface; not state-file-shaped.
+  "packages/core/src/config/loader.ts",
+  // cache.ts: writes a tmp file with mode 0o600 then renames atomically.
+  // The rename step doesn't need O_NOFOLLOW (rename doesn't follow links).
+  "packages/core/src/services/cache.ts",
+  // Tests legitimately write fixtures into tmpdirs.
+  "packages/core/src/config/loader-extended.test.ts",
+  "packages/core/src/config/loader.test.ts",
+  "packages/core/src/telemetry/telemetry.test.ts",
+]);
+
+/**
  * Files under `packages/cli/src/` that are allowed to use raw
  * `writeFileSync` / `fs.writeFile`. Document each entry.
  */
@@ -145,6 +188,41 @@ describe("local-state writer policy (#458 / #469)", () => {
     expect(
       violators,
       "CLI files writing local state without safeWriteFileSync (add to ALLOWED_RAW_WRITERS if intentional)",
+    ).toEqual([]);
+  });
+
+  // L-8 / #504 — extend the same shape to packages/core/src so a future
+  // core service introducing a homedir-resolving or raw-writeFile leak is
+  // caught at PR time. Core legitimately owns the canonical ~/.pax8 paths,
+  // so the exception lists are explicit (see CORE_HOMEDIR_EXCEPTIONS /
+  // CORE_ALLOWED_RAW_WRITERS at the top of this file).
+  it("core code does not call os.homedir() outside the documented exception list", () => {
+    const violators = listMatchingFiles(
+      "homedir\\(\\)|from .node:os.|from .os.|require\\(.os.\\)|require\\(.node:os.\\)",
+      ["packages/core/src"],
+    )
+      .filter((f) => {
+        const text = readFileSync(join(REPO_ROOT, f), "utf-8");
+        return /\bhomedir\s*\(/.test(text);
+      })
+      .filter((f) => !CORE_HOMEDIR_EXCEPTIONS.has(f));
+
+    expect(
+      violators,
+      "core files calling os.homedir() outside the exception list (add to CORE_HOMEDIR_EXCEPTIONS with a comment if intentional)",
+    ).toEqual([]);
+  });
+
+  it("core state-file writers route through documented sites", () => {
+    const violators = listMatchingFiles(
+      "writeFileSync\\(|fs\\.writeFile\\(",
+      ["packages/core/src"],
+    )
+      .filter((f) => !CORE_ALLOWED_RAW_WRITERS.has(f));
+
+    expect(
+      violators,
+      "core files writing without going through a documented write site (add to CORE_ALLOWED_RAW_WRITERS if intentional)",
     ).toEqual([]);
   });
 });
