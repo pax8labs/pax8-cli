@@ -61,8 +61,11 @@ const CORE_HOMEDIR_EXCEPTIONS = new Set<string>([
   // loader.ts: resolves the default `~/.pax8` config dir. This is the
   // canonical site — every other module routes through this loader.
   "packages/core/src/config/loader.ts",
-  // credential-store.ts: writes ~/.pax8/credentials.json with O_NOFOLLOW
-  // and mode 0o600. The home-dir reference is intrinsic to its job.
+  // credential-store.ts: after #504, production path resolution goes
+  // through `getConfigDir()` (PAX8_CONFIG_DIR-honoring). The remaining
+  // `os.homedir()` calls are only inside the Windows ACL fallback path,
+  // which compares the credentials file location against the user
+  // profile directory.
   "packages/core/src/auth/credential-store.ts",
   // validate-env.ts: implements the home-anchored path validator that
   // refuses to read credentials from outside $HOME. It MUST resolve the

@@ -8,11 +8,23 @@ import * as os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { safeWriteFileSync } from "../security/safe-write.js";
+import { getConfigDir } from "../config/loader.js";
 
 const execFileAsync = promisify(execFile);
 
-const CONFIG_DIR = path.join(os.homedir(), ".pax8");
-const CREDENTIALS_FILE = path.join(CONFIG_DIR, "credentials.json");
+// #504: do NOT cache the config dir or credentials path at module load.
+// `getConfigDir()` resolves `PAX8_CONFIG_DIR` lazily and validates it via
+// `validateConfigDir` — capturing the home-dir-derived path at import
+// time bypassed that env override silently (every other state writer in
+// the CLI honored it; only credentials landed in the real `~/.pax8`).
+// The single-file/dir helpers below resolve fresh on each call.
+function configDir(): string {
+  return getConfigDir();
+}
+
+function credentialsFile(): string {
+  return path.join(configDir(), "credentials.json");
+}
 
 const isWindows = process.platform === "win32";
 
@@ -31,14 +43,14 @@ export class CredentialStore {
    * Returns the path to the credentials file.
    */
   static get credentialsFilePath(): string {
-    return CREDENTIALS_FILE;
+    return credentialsFile();
   }
 
   /**
    * Returns the path to the config directory.
    */
   static get configDirPath(): string {
-    return CONFIG_DIR;
+    return configDir();
   }
 
   /**
@@ -65,7 +77,7 @@ export class CredentialStore {
   async hasCredentials(): Promise<boolean> {
     if (this.getFromEnv() !== null) return true;
     try {
-      await fs.access(CREDENTIALS_FILE, constants.F_OK);
+      await fs.access(credentialsFile(), constants.F_OK);
       return true;
     } catch {
       return false;
@@ -78,25 +90,27 @@ export class CredentialStore {
    * On Windows: restrict ACLs to the current user via icacls.
    */
   async saveCredentials(clientId: string, clientSecret: string): Promise<void> {
-    await fs.mkdir(CONFIG_DIR, { recursive: true });
+    const dir = configDir();
+    const file = credentialsFile();
+    await fs.mkdir(dir, { recursive: true });
 
     if (isWindows) {
-      await this.secureDirectoryWindows(CONFIG_DIR);
+      await this.secureDirectoryWindows(dir);
     } else {
       // Secure the directory: owner-only access
-      await fs.chmod(CONFIG_DIR, 0o700);
+      await fs.chmod(dir, 0o700);
     }
 
     const data = JSON.stringify({ clientId, clientSecret }, null, 2);
-    // #262: use the safe-write helper so an existing symlink at
-    // CREDENTIALS_FILE causes the write to fail (ELOOP) rather than
+    // #262: use the safe-write helper so an existing symlink at the
+    // credentials path causes the write to fail (ELOOP) rather than
     // landing the credentials at the symlink's target. The 0o600 mode is
     // applied atomically at file-creation time, eliminating the small
     // window where an old `writeFile + chmod` flow had default perms.
-    safeWriteFileSync(CREDENTIALS_FILE, data);
+    safeWriteFileSync(file, data);
 
     if (isWindows) {
-      await this.secureFileWindows(CREDENTIALS_FILE);
+      await this.secureFileWindows(file);
     }
   }
 
@@ -105,7 +119,7 @@ export class CredentialStore {
    */
   async clearCredentials(): Promise<void> {
     try {
-      await fs.unlink(CREDENTIALS_FILE);
+      await fs.unlink(credentialsFile());
     } catch (err) {
       // Ignore ENOENT — file doesn't exist, nothing to clear
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -120,7 +134,7 @@ export class CredentialStore {
    */
   async checkPermissions(): Promise<PermissionCheckResult> {
     try {
-      await fs.access(CREDENTIALS_FILE, constants.F_OK);
+      await fs.access(credentialsFile(), constants.F_OK);
     } catch {
       return { secure: true, detail: "No credentials file (using env vars or not configured)" };
     }
@@ -132,8 +146,9 @@ export class CredentialStore {
   }
 
   private async checkPermissionsUnix(): Promise<PermissionCheckResult> {
+    const file = credentialsFile();
     try {
-      const stat = await fs.stat(CREDENTIALS_FILE);
+      const stat = await fs.stat(file);
       // mode & 0o777 gives the permission bits
       const perms = stat.mode & 0o777;
       if (perms === 0o600) {
@@ -144,7 +159,7 @@ export class CredentialStore {
       if (groupOther !== 0) {
         return {
           secure: false,
-          detail: `Permissions ${perms.toString(8)} — group/other have access. Run: chmod 600 ${CREDENTIALS_FILE}`,
+          detail: `Permissions ${perms.toString(8)} — group/other have access. Run: chmod 600 ${file}`,
         };
       }
       // Owner has execute but no group/other access — acceptable but not ideal
@@ -158,12 +173,13 @@ export class CredentialStore {
   }
 
   private async checkPermissionsWindows(): Promise<PermissionCheckResult> {
+    const file = credentialsFile();
     try {
       // Use icacls to inspect ACLs
-      const { stdout } = await execFileAsync("icacls", [CREDENTIALS_FILE]);
+      const { stdout } = await execFileAsync("icacls", [file]);
       // Check that the file is in a user-profile directory
       const homeDir = os.homedir();
-      const inUserDir = CREDENTIALS_FILE.toLowerCase().startsWith(homeDir.toLowerCase());
+      const inUserDir = file.toLowerCase().startsWith(homeDir.toLowerCase());
       if (!inUserDir) {
         return {
           secure: false,
@@ -178,14 +194,14 @@ export class CredentialStore {
       if (hasInsecureAcl) {
         return {
           secure: false,
-          detail: `File may be readable by other users. Run: icacls "${CREDENTIALS_FILE}" /inheritance:r /grant:r "%USERNAME%:F"`,
+          detail: `File may be readable by other users. Run: icacls "${file}" /inheritance:r /grant:r "%USERNAME%:F"`,
         };
       }
       return { secure: true, detail: "File ACLs restrict access (Windows)" };
     } catch {
       // icacls not available or errored — fall back to directory check
       const homeDir = os.homedir();
-      const inUserDir = CREDENTIALS_FILE.toLowerCase().startsWith(homeDir.toLowerCase());
+      const inUserDir = file.toLowerCase().startsWith(homeDir.toLowerCase());
       if (inUserDir) {
         return {
           secure: true,
@@ -245,20 +261,21 @@ export class CredentialStore {
   }
 
   private async getFromFile(): Promise<Credentials | null> {
+    const file = credentialsFile();
     // Refuse to load credentials from a world-/group-readable file. Bumping
     // checkPermissions() from "warn via doctor" to "refuse at load time"
     // closes the window where a tampered or accidentally-loosened
-    // ~/.pax8/credentials.json silently keeps working. Windows has no POSIX
+    // credentials file silently keeps working. Windows has no POSIX
     // mode bits, so skip the gate there — `checkPermissionsWindows` still
     // surfaces ACL issues via `pax8 doctor`.
     if (!isWindows) {
       try {
-        const stat = await fs.stat(CREDENTIALS_FILE);
+        const stat = await fs.stat(file);
         if ((stat.mode & 0o077) !== 0) {
           const perms = (stat.mode & 0o777).toString(8);
           throw new Error(
-            `Refusing to load credentials: ${CREDENTIALS_FILE} has mode ${perms} ` +
-              `(group/other have access). Run: chmod 600 ${CREDENTIALS_FILE}`,
+            `Refusing to load credentials: ${file} has mode ${perms} ` +
+              `(group/other have access). Run: chmod 600 ${file}`,
           );
         }
       } catch (err) {
@@ -275,7 +292,7 @@ export class CredentialStore {
     }
 
     try {
-      const content = await fs.readFile(CREDENTIALS_FILE, "utf-8");
+      const content = await fs.readFile(file, "utf-8");
       const data = JSON.parse(content) as Record<string, unknown>;
       if (typeof data.clientId === "string" && typeof data.clientSecret === "string") {
         return { clientId: data.clientId, clientSecret: data.clientSecret };
