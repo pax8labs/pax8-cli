@@ -29,11 +29,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      # SHA-pinned per security review (H-4). Dependabot bumps SHA pins
+      # that carry a trailing `# <tag>` comment — see .github/dependabot.yml.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
           cache: "pnpm"
@@ -47,7 +49,7 @@ jobs:
       # for OSS projects — broader coverage than `security-and-quality` minus
       # the noisier code-quality rules.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@458d36d7d4f47d0dd16ca424c1d3cda0060f1360 # v3.35.5
         with:
           languages: javascript-typescript
           queries: security-extended
@@ -67,7 +69,7 @@ jobs:
       # `continue-on-error` once that's done so a future regression in the
       # scan surfaces as a hard failure. Tracked in #138.
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@458d36d7d4f47d0dd16ca424c1d3cda0060f1360 # v3.35.5
         continue-on-error: true
         with:
           category: "/language:javascript-typescript"
