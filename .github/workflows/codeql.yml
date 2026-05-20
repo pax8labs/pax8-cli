@@ -49,7 +49,7 @@ jobs:
       # for OSS projects — broader coverage than `security-and-quality` minus
       # the noisier code-quality rules.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@458d36d7d4f47d0dd16ca424c1d3cda0060f1360 # v3.35.5
+        uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
         with:
           languages: javascript-typescript
           queries: security-extended
@@ -69,7 +69,7 @@ jobs:
       # `continue-on-error` once that's done so a future regression in the
       # scan surfaces as a hard failure. Tracked in #138.
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@458d36d7d4f47d0dd16ca424c1d3cda0060f1360 # v3.35.5
+        uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
         continue-on-error: true
         with:
           category: "/language:javascript-typescript"
