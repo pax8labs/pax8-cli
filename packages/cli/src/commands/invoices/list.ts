@@ -9,7 +9,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
-import { validateEnum } from "../../lib/validate.js";
+import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
 
 // Help text mirrors the public OpenAPI enum for `GET /invoices`'s
 // `status` query parameter (#250). The wire emits a narrower 4-value
@@ -73,7 +73,7 @@ export const invoicesListCommand = new Command("list")
     "Sort by field (invoice-date, due-date, status, partner-name, total, balance, carried-balance)"
   )
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "25")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .option("--with-actions", "Wrap JSON output as { invoices, nextActions } instead of a flat array")
   .addHelpText(
@@ -118,6 +118,13 @@ Examples:
       // case) onto the spec-canonical query-parameter names.
       const sortRaw = allOpts.sort ? String(allOpts.sort).toLowerCase() : undefined;
       const sort = sortRaw ? INVOICE_SORT_ALIASES[sortRaw] : undefined;
+      // #518: clamp `--size` at LIST_SIZE_CAP (1000) to keep `jq`
+      // pipelines and agent contexts from getting blown out by an
+      // unbounded request.
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 25);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
       const result = await ctx.api.invoices.list({
         month: allOpts.month,
         companyId,
@@ -126,7 +133,7 @@ Examples:
         invoiceDateRangeEnd: allOpts.to,
         sort,
         page: apiPage,
-        size: parseInt(allOpts.size, 10),
+        size: sizeResult.size,
       });
       spinner.stop();
 

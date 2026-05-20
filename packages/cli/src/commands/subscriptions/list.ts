@@ -15,7 +15,7 @@ import {
 } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
-import { validateEnum } from "../../lib/validate.js";
+import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
 
 // Single source of truth for `--status` accepted values. Mirrors the
 // public OpenAPI enum for `GET /subscriptions`'s `status` query parameter
@@ -67,7 +67,7 @@ export const subscriptionsListCommand = new Command("list")
     `Filter by status (${SUBSCRIPTION_STATUS_HELP})`
   )
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "25")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .option("--with-actions", "Wrap JSON output as { subscriptions, nextActions } instead of a flat array")
   .addHelpText(
@@ -105,11 +105,18 @@ Examples:
         ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
+      // #518: cap `--size` at LIST_SIZE_CAP (1000) — a 50k-row pull
+      // returns multiple megabytes of JSON and is hostile to agents,
+      // CI runners, and `jq` consumers. Clamp + warn instead.
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 25);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
       const result = await ctx.api.subscriptions.list({
         companyId,
         status: allOpts.status,
         page: apiPage,
-        size: parseInt(allOpts.size, 10),
+        size: sizeResult.size,
       });
 
       const subs = result.content as Record<string, unknown>[];

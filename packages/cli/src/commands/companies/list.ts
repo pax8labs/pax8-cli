@@ -21,7 +21,7 @@ import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/forma
 import { saveLastList } from "../../lib/last-list.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
-import { validateEnum } from "../../lib/validate.js";
+import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
 
 const COMPANY_STATUS_VALUES = CompanyStatusSchema.options as readonly CompanyStatus[];
 
@@ -96,7 +96,7 @@ export const companiesListCommand = new Command("list")
     "Sort by field (name, city, country, state, zip)"
   )
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "25")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .option("--coverage", "Include portfolio coverage analysis")
   .option("--with-actions", "Wrap JSON output as { companies, nextActions } instead of a flat array")
@@ -136,7 +136,16 @@ Examples:
     try {
       const ctx = await buildContext(allOpts);
       const userPage = parseInt(allOpts.page, 10);
-      const pageSize = parseInt(allOpts.size, 10);
+      // #518: clamp `--size` to LIST_SIZE_CAP (1000) before issuing the
+      // request. Without this, `clients list --size 50000` paired with a
+      // large portfolio drags multiple megabytes through `output()` and
+      // the post-list saveLastList write — and pushes way past the
+      // documented 1000-row server-side page anyway.
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 25);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
+      const pageSize = sizeResult.size;
       const apiPage = Math.max(userPage - 1, 0); // User sees 1-based, API is 0-based
       // #388: map CLI vocabulary (`--state`, `--zip`, `--self-service`, ...)
       // onto the spec-canonical query-parameter names that `CompaniesApi.list`
