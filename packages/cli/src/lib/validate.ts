@@ -57,6 +57,58 @@ export function validateEnum<T extends string>(
 }
 
 /**
+ * Validate a `--month <YYYY-MM>` flag value.
+ *
+ * The string is interpolated verbatim into machine-readable
+ * `nextActions[].command` strings emitted on stdout — which agents
+ * (Claude Code's skill, scripts) are explicitly invited to extract and
+ * execute. An unvalidated `--month "2026-01; rm -rf ~"` would round-trip
+ * through that channel and turn a read command into a shell injection
+ * vector. Validating at the parse boundary keeps the danger contained:
+ * if the input isn't shaped like `YYYY-MM`, the command never runs.
+ *
+ * Contract:
+ *   - `undefined` passes through (the user didn't supply the flag).
+ *   - A string matching `/^\d{4}-\d{2}$/` with a month in 01–12 returns
+ *     the value unchanged.
+ *   - Anything else throws `CliError(ERROR_INVALID_INPUT)`.
+ *
+ * The year range is intentionally permissive (any 4-digit year) — we
+ * don't want to reject the partner's legitimate 2019 invoice query
+ * three years from now. The injection-risk-relevant check is the
+ * shape: only digits and a single hyphen, no shell metacharacters.
+ */
+export function validateMonth(
+  value: string | undefined,
+  flagName = "--month",
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d{4}-\d{2}$/.test(value)) {
+    throw new CliError(
+      `Invalid value for ${flagName}: "${value}"`,
+      [`${flagName} must be in YYYY-MM format (e.g. 2026-03).`],
+      [
+        `Example: ${flagName} 2026-03`,
+        "Use four-digit year, hyphen, two-digit month — no other characters.",
+      ],
+      undefined,
+      ERROR_INVALID_INPUT,
+    );
+  }
+  const month = parseInt(value.slice(5, 7), 10);
+  if (month < 1 || month > 12) {
+    throw new CliError(
+      `Invalid value for ${flagName}: "${value}"`,
+      [`Month component must be 01–12; got "${value.slice(5, 7)}".`],
+      [`Example: ${flagName} 2026-03`],
+      undefined,
+      ERROR_INVALID_INPUT,
+    );
+  }
+  return value;
+}
+
+/**
  * Comma-separated list variant of `validateEnum`. Returns the parsed
  * canonical values (deduplicated, original order). Empty / all-whitespace
  * input throws `ERROR_INVALID_INPUT` so the caller doesn't have to

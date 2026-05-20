@@ -13,6 +13,7 @@ import {
   ERROR_INTERNAL,
   getConfigDir,
   safeWriteFileSync,
+  validateConfigDir,
   type Pax8ErrorCode,
 } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
@@ -23,6 +24,7 @@ import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import { hashArgs, isValidKey, withIdempotency } from "../../lib/idempotency.js";
+import { validateMonth } from "../../lib/validate.js";
 
 /**
  * NOTE: The Pax8 v1 API does not expose a public dispute / write-off / credit
@@ -45,7 +47,17 @@ function disputesDir(): string {
   // #458: route through getConfigDir() so PAX8_CONFIG_DIR is honored.
   // PAX8_DISPUTES_DIR retains precedence as the explicit per-feature
   // escape hatch used in tests.
-  return process.env[DISPUTES_DIR_ENV] ?? path.join(getConfigDir(), "disputes");
+  //
+  // #M-5: PAX8_DISPUTES_DIR also goes through validateConfigDir() so a
+  // sandboxed/CI environment that controls this var can't redirect dispute
+  // drafts to an arbitrary location. The same PAX8_ALLOW_NON_HOME_CONFIG=1
+  // escape hatch applies — vitest.config.ts already sets it for the test
+  // workers, so existing tests continue to use tmpdir-based isolation.
+  const override = process.env[DISPUTES_DIR_ENV];
+  if (override && override.length > 0) {
+    return validateConfigDir(override);
+  }
+  return path.join(getConfigDir(), "disputes");
 }
 
 /**
@@ -271,6 +283,24 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
   )
   .action(async (_options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+
+    // #M-1: `allOpts.month` is interpolated into `nextActions[].command`
+    // strings on stdout that agents may extract and exec. Validate shape
+    // (YYYY-MM only) at the parse boundary before any side effects so a
+    // value like `2026-01; rm -rf ~` can't slip through that channel.
+    //
+    // #M-5: eagerly probe disputesDir() so PAX8_DISPUTES_DIR is run
+    // through validateConfigDir() at parse time. The actual write
+    // (writeDraft) is deep in the action flow behind a confirm prompt and
+    // an audit network call; surfacing the security error at the top
+    // means the user / agent sees it immediately rather than after a
+    // multi-second roundtrip.
+    try {
+      validateMonth(allOpts.month);
+      disputesDir();
+    } catch (error) {
+      await handleCommandError(error, createSpinner(""));
+    }
 
     // ── Idempotency handling ────────────────────────────────────────────────
     const idempotencyKey: string | undefined = allOpts.idempotencyKey;

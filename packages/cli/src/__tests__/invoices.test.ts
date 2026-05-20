@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 invoices", () => {
   describe("invoices list", () => {
@@ -214,6 +214,70 @@ describe("pax8 invoices", () => {
       expect(disc).toHaveProperty("dollarImpact");
       expect(disc).toHaveProperty("type");
     });
+
+    // #M-1: `--month` is interpolated into `nextActions[].command` strings on
+    // stdout. Agents (the Claude skill, scripts) extract that field and exec
+    // it, so a value like "2026-01; rm -rf ~" would turn the read into shell
+    // injection. The validator rejects at the parse boundary with
+    // ERROR_INVALID_INPUT before any side effects.
+    it("rejects --month with shell metacharacters (#M-1)", async () => {
+      const result = await runCliExpectFailure([
+        "invoices",
+        "audit",
+        "--month",
+        "2026-01; rm -rf",
+        "--json",
+      ]);
+      expect(result.stderr).toMatch(/Invalid value for --month/i);
+      // JSON error envelope carries the structured code. stderr also has a
+      // demo banner and spinner-fail glyph before the envelope; grab the
+      // first `{`-bracketed payload to parse.
+      const envelope = JSON.parse(extractJsonEnvelope(result.stderr));
+      expect(envelope.code).toBe("ERROR_INVALID_INPUT");
+    });
+
+    it("rejects --month with garbage shape (#M-1)", async () => {
+      const result = await runCliExpectFailure([
+        "invoices",
+        "audit",
+        "--month",
+        "not-a-month",
+        "--json",
+      ]);
+      expect(result.stderr).toMatch(/Invalid value for --month/i);
+    });
+
+    it("rejects --month with out-of-range month (#M-1)", async () => {
+      const result = await runCliExpectFailure([
+        "invoices",
+        "audit",
+        "--month",
+        "2026-13",
+        "--json",
+      ]);
+      expect(result.stderr).toMatch(/Invalid value for --month/i);
+    });
+  });
+
+  // #M-1: same validator runs on `pax8 invoices dispute --month` — that
+  // command also emits a `nextActions[].command` string that interpolates
+  // the user-supplied value (line ~417 in dispute.ts).
+  describe("invoices dispute --month validation (#M-1)", () => {
+    it("rejects --month with shell metacharacters", async () => {
+      const result = await runCliExpectFailure([
+        "invoices",
+        "dispute",
+        "--discrepancy",
+        "disc-deadbeef0000",
+        "--month",
+        "2026-01; echo pwned",
+        "--json",
+        "-y",
+      ]);
+      expect(result.stderr).toMatch(/Invalid value for --month/i);
+      const envelope = JSON.parse(extractJsonEnvelope(result.stderr));
+      expect(envelope.code).toBe("ERROR_INVALID_INPUT");
+    });
   });
 
   describe("invoices --help", () => {
@@ -280,3 +344,15 @@ describe("pax8 invoices", () => {
     });
   });
 });
+
+/**
+ * Pull the JSON error envelope out of stderr. Demo mode prints a banner and
+ * spinner-fail glyph before the envelope when `--json` is set, so we can't
+ * `JSON.parse(stderr)` directly. The envelope is the JSON object that
+ * starts at the first `{` in stderr.
+ */
+function extractJsonEnvelope(stderr: string): string {
+  const start = stderr.indexOf("{");
+  if (start < 0) throw new Error("no JSON envelope in stderr: " + stderr);
+  return stderr.slice(start);
+}

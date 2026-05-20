@@ -5,7 +5,7 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { getConfigDir, safeWriteFileSync } from "@pax8/core";
+import { getConfigDir, safeWriteFileSync, validateConfigDir } from "@pax8/core";
 import { CliError } from "./errors.js";
 import { debugLog } from "./debug.js";
 
@@ -39,8 +39,18 @@ function dirPath(): string {
   // #458: route through getConfigDir() so PAX8_CONFIG_DIR is honored.
   // PAX8_IDEMPOTENCY_DIR retains precedence as the explicit per-feature
   // escape hatch used in tests.
-  return process.env.PAX8_IDEMPOTENCY_DIR
-    ?? path.join(getConfigDir(), "idempotency");
+  //
+  // #M-5: PAX8_IDEMPOTENCY_DIR also goes through validateConfigDir() so a
+  // sandboxed/CI environment that controls this var can't redirect the
+  // cache to an arbitrary location (e.g. `/etc/...`). The same
+  // PAX8_ALLOW_NON_HOME_CONFIG=1 escape hatch applies — vitest.config.ts
+  // already sets it for the test workers, so existing tests continue to
+  // use tmpdir-based isolation unchanged.
+  const override = process.env.PAX8_IDEMPOTENCY_DIR;
+  if (override && override.length > 0) {
+    return validateConfigDir(override);
+  }
+  return path.join(getConfigDir(), "idempotency");
 }
 
 function entryFilePath(command: string, key: string): string {
@@ -210,6 +220,16 @@ export async function withIdempotency<T>(
   if (idempotencyKey === undefined) {
     return action();
   }
+
+  // #M-5: eagerly validate the cache dir env-var so a hostile
+  // PAX8_IDEMPOTENCY_DIR (e.g. /etc/...) is rejected by the home-dir
+  // guard with a propagating CliError. The downstream loadEntry/saveEntry
+  // calls are deliberately fail-open for transient cache problems
+  // (read-only fs, full disk) — which would otherwise swallow the
+  // security error and silently fall back to running the action. By
+  // probing dirPath() here, validateConfigDir() runs in a context that
+  // can throw cleanly through to handleCommandError.
+  dirPath();
 
   // Cache hit branch. `loadEntry` itself is wrapped so that a transient
   // read failure leaves us in fail-open mode (we run the action). The
