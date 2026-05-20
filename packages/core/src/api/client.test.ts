@@ -1390,3 +1390,70 @@ describe("Pax8Client write-retry gating (#463)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+// L-7 — cap upstream response body size before `response.json()` buffers
+// the entire payload. A 50 MB Content-Length advertisement must trip the
+// guard before parsing; a normal-sized response must pass through.
+describe("Pax8Client response size cap (L-7)", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    mockTokenManager.getToken.mockResolvedValue("test-token");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("throws ApiError before parsing when Content-Length exceeds the 10 MB cap", async () => {
+    // Track whether the body was ever read. The guard must fire BEFORE
+    // `.json()` is invoked — that's the whole point of the check.
+    const jsonSpy = vi.fn(() => Promise.resolve({ huge: "payload" }));
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers({ "content-length": "50000000" }),
+      json: jsonSpy,
+      text: () => Promise.resolve(""),
+    });
+    const client = createClient();
+
+    await expect(client.get("/companies")).rejects.toThrow(ApiError);
+    await expect(client.get("/companies")).rejects.toThrow(/Response body too large/);
+    // The guard short-circuits before `.json()`.
+    expect(jsonSpy).not.toHaveBeenCalled();
+  });
+
+  it("passes through when Content-Length is under the cap", async () => {
+    const responseData = { ok: true };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers({ "content-length": "42" }),
+      json: () => Promise.resolve(responseData),
+      text: () => Promise.resolve(""),
+    });
+    const client = createClient();
+    const result = await client.get("/companies");
+    expect(result).toEqual(responseData);
+  });
+
+  it("passes through when Content-Length is absent (chunked responses fall back to timeout bound)", async () => {
+    const responseData = { ok: true };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers(),
+      json: () => Promise.resolve(responseData),
+      text: () => Promise.resolve(""),
+    });
+    const client = createClient();
+    const result = await client.get("/companies");
+    expect(result).toEqual(responseData);
+  });
+});
