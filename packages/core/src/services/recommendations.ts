@@ -67,19 +67,43 @@ function isSafeId(value: string | null | undefined): value is string {
   return typeof value === "string" && SAFE_ID_RE.test(value);
 }
 
-// Display names can contain spaces, apostrophes, periods, ampersands —
-// legitimate fixtures like `Acme Corp` or `O'Brien & Sons`. What they MUST
-// NOT contain is anything that breaks out of a double-quoted argument in
-// the REPL tokenizer (`packages/cli/src/lib/repl.ts`) or in a downstream
-// shell. #498's `buildOrderArtifacts` falls back to interpolating
-// `companyName` into the display string when `companyId` is not
-// UUID-shaped (demo / legacy partner IDs), and that fallback would be a
-// regression of H-2 if a hostile API-supplied name slipped through. Gate
-// the call site on this check so any name containing `"`, backtick, `$`,
-// `\`, `;`, `|`, `&`, `<`, `>`, newlines, or NUL collapses the order
-// artifacts to null.
+// Display names contain real-world punctuation: spaces, apostrophes,
+// periods, ampersands (`AT&T`, `Procter & Gamble`, `Johnson & Johnson`),
+// and occasionally `;` / `|` / `<` / `>` (rare but legitimate). What they
+// MUST NOT contain is any character that breaks out of `--company
+// "${companyName}"` in `buildOrderArtifacts`'s display string — that
+// frame, plus a `bash -c '<orderCommand>'` evaluation, is what shell
+// consumers see.
+//
+// Inside double-quoted shell strings, the only chars that break out are:
+//   `"`        closes the double-quoted span
+//   `\`        backslash escapes — could neutralize the closing quote
+//   `` ` ``    backtick command substitution
+//   `$`        `$VAR` / `$(...)` substitution
+//   `\n` / `\r` literal newline ends the line
+//   `\x00`     NUL (defensive)
+//
+// `;` `|` `&` `<` `>` are NOT special inside double quotes — they're
+// literal text. The original H-2 gate also blocked those, but #509
+// migrated the in-process consumers (REPL, recommendations act,
+// recommendations list, dashboard) off the string form onto the
+// spawn-safe `orderArgs` argv array, so the only remaining string-form
+// consumer is an external agent shell-pasting `orderCommand` from
+// `--json` output. That use case is shell-safe as long as the
+// double-quote frame survives, so the gate can be narrowed to the chars
+// that actually break the frame.
+//
+// Net effect: partners with legitimate `&`-containing display names
+// (`AT&T` and friends) now produce non-null `orderCommand` /
+// `orderArgs`, where before they collapsed to null. The argv form was
+// always safe; the string form is now safe too.
+//
+// If you ever need to widen this: weigh the consumer audience. An
+// internal consumer that re-tokenizes via a non-shell tokenizer (an
+// agent that splits on whitespace ignoring quotes) is not the shell's
+// problem to defend — that consumer should switch to `orderArgs`.
 // eslint-disable-next-line no-control-regex -- \x00 is the intentional target: NUL in a display name should collapse to null.
-const UNSAFE_DISPLAY_CHARS_RE = /["\\`$;|&<>\n\r\x00]/;
+const UNSAFE_DISPLAY_CHARS_RE = /["\\`$\n\r\x00]/;
 
 function isSafeDisplayName(value: string | null | undefined): value is string {
   return typeof value === "string"
