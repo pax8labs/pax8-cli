@@ -19,7 +19,6 @@ import {
   ERROR_AUTH_MISSING,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
-import { spawn } from "node:child_process";
 import { CliError } from "./errors.js";
 import { replCmd } from "./confirm.js";
 
@@ -214,9 +213,20 @@ export async function buildContext(
       clientSecret: credentials.clientSecret,
     });
 
+    // Plumb the documented `cache.enabled` / `cache.ttl_hours` config fields
+    // through to `Pax8Client` so they actually take effect (#253). Previously
+    // these were defined in the schema but never read here, so a user setting
+    // `cache.enabled: false` in `~/.pax8/config.yaml` still got caching with
+    // the constructor's hard-coded 1h default. `cacheTtlMs: 0` disables the
+    // FileCache entirely inside `Pax8Client`.
+    const cacheEnabled = config.cache?.enabled ?? true;
+    const cacheTtlHours = config.cache?.ttl_hours ?? 24;
+    const cacheTtlMs = cacheEnabled ? cacheTtlHours * 3_600_000 : 0;
+
     const client = new Pax8Client({
       tokenManager,
       debug: verbose,
+      cacheTtlMs,
       // Per-API base URL overrides (#321). The Webhooks API lives at
       // `https://api.pax8.com/api/v2/webhooks/...` per the public webhooks
       // OpenAPI spec — a different *prefix* than the project-wide `/v1`
@@ -241,36 +251,5 @@ export async function buildContext(
     };
   }
 
-  // Spawn a detached background process to warm the cache.
-  // Skip if we're already a warmer child (prevents infinite recursion).
-  if (!isDemo && !process.env.PAX8_CACHE_WARMING) {
-    spawnCacheWarmer();
-  }
-
   return { api, outputFormat, config, isDemo, verbose };
-}
-
-/**
- * Spawn a detached child process that runs common pax8 queries to warm the file cache.
- * The child is fully detached (stdio ignored, unref'd) so the parent exits immediately.
- */
-function spawnCacheWarmer(): void {
-  const env = { ...process.env, PAX8_CACHE_WARMING: "1" };
-
-  spawnCacheWarm(["companies", "list", "--json", "--size", "200", "--quiet"], env, "companies");
-  spawnCacheWarm(["subscriptions", "list", "--json", "--size", "1000", "--quiet"], env, "subscriptions");
-  spawnCacheWarm(["products", "list", "--json", "--size", "500", "--quiet"], env, "products");
-}
-
-/**
- * Spawn a single detached `pax8 ...` cache-warm child. Errors are best-effort
- * and only surfaced under `PAX8_DEBUG`. Caller is responsible for passing the
- * env that already has `PAX8_CACHE_WARMING=1` set so the child doesn't recurse.
- */
-function spawnCacheWarm(args: string[], env: NodeJS.ProcessEnv, label: string): void {
-  const child = spawn("pax8", args, { detached: true, stdio: "ignore", env });
-  child.on("error", (err) => {
-    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (${label}) failed: ${err}\n`);
-  });
-  child.unref();
 }

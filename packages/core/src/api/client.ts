@@ -1,6 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { createHash } from "node:crypto";
 import { type ZodType } from "zod";
 import { ApiError, RateLimitError } from "./errors.js";
 import { PageSchema } from "./types.js";
@@ -211,6 +212,85 @@ export function isApiTimeoutError(error: unknown): boolean {
   return /timed out/i.test(error.message);
 }
 
+/**
+ * Inputs to {@link buildCacheKey}. All fields except `path` are optional; the
+ * helper degrades gracefully when a caller can't supply (for example) the
+ * tenant identity. The fields that ARE supplied are folded into the resulting
+ * key so changing any of them produces a distinct cache entry.
+ */
+export interface BuildCacheKeyInput {
+  path: string;
+  params?: Record<string, string | number | undefined>;
+  apiVersion?: string;
+  api?: string;
+  /** Resolved project-wide base URL the request will be issued against. */
+  baseUrl?: string;
+  /** Per-API base URL overrides registered on the client. */
+  apiBaseOverrides?: Record<string, string>;
+  /** Tenant identity, typically `process.env.PAX8_CLIENT_ID`. */
+  clientId?: string;
+  /** Raw `PAX8_API_BASE` env var, kept in the key so prod/staging/sandbox don't bleed. */
+  apiBaseEnv?: string;
+}
+
+/**
+ * Build a stable cache key for a request. Exported so the partitioning rule is
+ * unit-testable independent of the surrounding request plumbing.
+ *
+ * #455: cache entries must be partitioned by tenant identity (`PAX8_CLIENT_ID`)
+ * and base URL (`PAX8_API_BASE`) so a user who switches credentials or flips
+ * between prod/staging/sandbox is never served the previous identity or
+ * environment's cached responses. Default TTL is non-trivial (24h) and the
+ * cache lives on disk, so without these key components a credential rotation
+ * silently serves stale tenant-A data into a tenant-B session.
+ *
+ * Tenant/baseUrl bytes are SHA-256-hashed and truncated so the resulting
+ * filename stays short and never echoes raw credentials on disk. Filenames
+ * already go through `FileCache`'s safe-character filter, but hashing keeps
+ * the key length predictable regardless of how long a partner's clientId or
+ * custom base URL is.
+ */
+export function buildCacheKey(input: BuildCacheKeyInput): string {
+  const { path, params, apiVersion, api, baseUrl, apiBaseOverrides, clientId, apiBaseEnv } = input;
+
+  const normalized = path.replace(/^\/+/, "");
+  const paramStr = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`)
+        .join("&")
+    : "";
+
+  // Per-API base and per-call apiVersion both shift the resolved wire URL,
+  // so cache entries must be partitioned by both — otherwise a `/v1/foo`
+  // response could be served to a `/v2/foo` or `/api/v2/foo` caller (#321).
+  const apiPrefix = api ? `${api}:` : "";
+  const versionPrefix = apiVersion ? `${apiVersion}:` : "";
+
+  // Tenant/base-URL identity bytes. Hash so the on-disk filename stays short
+  // and doesn't carry raw credentials. The per-API override map is included
+  // because a downstream embedder that points the webhooks API at a different
+  // host should not share cache entries with one that doesn't.
+  const overrideStr = apiBaseOverrides
+    ? Object.entries(apiBaseOverrides)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`)
+        .join("&")
+    : "";
+  const identity = [
+    clientId ?? "",
+    apiBaseEnv ?? "",
+    baseUrl ?? "",
+    overrideStr,
+  ].join("|");
+  const tenantPrefix = identity === "|||"
+    ? ""
+    : `t${createHash("sha256").update(identity).digest("hex").slice(0, 16)}:`;
+
+  return `${tenantPrefix}${apiPrefix}${versionPrefix}${normalized}${paramStr ? "_" + paramStr : ""}`;
+}
+
 export class Pax8Client {
   private readonly tokenManager: { getToken(): Promise<string> };
   private readonly baseUrl: string;
@@ -278,20 +358,16 @@ export class Pax8Client {
     apiVersion?: string,
     api?: string,
   ): string {
-    const normalized = path.replace(/^\/+/, "");
-    const paramStr = params
-      ? Object.entries(params)
-          .filter(([, v]) => v !== undefined)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([k, v]) => `${k}=${v}`)
-          .join("&")
-      : "";
-    // Per-API base and per-call apiVersion both shift the resolved wire URL,
-    // so cache entries must be partitioned by both — otherwise a `/v1/foo`
-    // response could be served to a `/v2/foo` or `/api/v2/foo` caller (#321).
-    const apiPrefix = api ? `${api}:` : "";
-    const versionPrefix = apiVersion ? `${apiVersion}:` : "";
-    return `${apiPrefix}${versionPrefix}${normalized}${paramStr ? "_" + paramStr : ""}`;
+    return buildCacheKey({
+      path,
+      params,
+      apiVersion,
+      api,
+      baseUrl: this.baseUrl,
+      apiBaseOverrides: this.apiBaseOverrides,
+      clientId: process.env.PAX8_CLIENT_ID,
+      apiBaseEnv: process.env.PAX8_API_BASE,
+    });
   }
 
   async post<T>(path: string, body: unknown, opts?: RequestOpts): Promise<T> {
