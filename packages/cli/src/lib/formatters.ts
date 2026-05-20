@@ -23,13 +23,44 @@ export function formatTimeAgo(date: Date | string): string {
   return `${diffYears}y ago`;
 }
 
-export function formatCurrency(dollars: number): string {
-  const abs = Math.abs(dollars);
-  const formatted = abs.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  return dollars < 0 ? `-$${formatted}` : `$${formatted}`;
+/**
+ * Render a money amount with the correct currency unit.
+ *
+ * Pre-#472 this hard-coded `"$"`, which mislabeled every EUR / GBP / CAD
+ * partner's subscriptions in the dashboard, top-customers table, cost
+ * simulator, and recommendations view. The `subscriptions list` table had a
+ * workaround that appended `" EUR"` per row; that suffix is dropped in favor
+ * of this single source of truth.
+ *
+ * Implementation: `Intl.NumberFormat` with `style: "currency"` so the
+ * runtime picks the correct symbol (or trailing ISO code) for the locale.
+ * Always two fraction digits to keep table alignment stable.
+ *
+ * @param amount Numeric amount in the major unit (e.g. dollars, not cents).
+ * @param currencyCode ISO-4217 code (default `"USD"`). Falls back to `"USD"`
+ *   when callers pass an empty string or `undefined` — preserves the legacy
+ *   "default to dollars" behavior at every call site that hasn't yet
+ *   threaded the real `currencyCode` from the upstream record.
+ */
+export function formatCurrency(amount: number, currencyCode: string = "USD"): string {
+  const code = (currencyCode && currencyCode.trim()) || "USD";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    // Unknown / malformed ISO-4217 code: fall back to a plain numeric render
+    // with the code as a suffix so the unit isn't silently dropped.
+    const abs = Math.abs(amount);
+    const formatted = abs.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return amount < 0 ? `-${formatted} ${code}` : `${formatted} ${code}`;
+  }
 }
 
 export function formatQuantity(n: number): string {

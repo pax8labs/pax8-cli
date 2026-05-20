@@ -173,15 +173,15 @@ describe("demo-data", () => {
       expect(summit).toHaveLength(3);
     });
 
-    // Coastline now also carries a 2-Year M365 E3 commit renewing in 270d,
-    // added in the feat/reporting-reshape PR so the `pax8 report
-    // subscriptions --by billing-term` view exercises the post-#439
-    // 2-Year normalization fix visibly.
-    it("Coastline Legal Group has 3 subscriptions", () => {
+    // Coastline now also carries a 2-Year M365 E3 commit renewing in 270d
+    // (feat/reporting-reshape, exercises post-#439 2-Year normalization)
+    // and a One-Time EUR onboarding fee (money-correctness fixture for
+    // #465 zero-MRR + #472 non-USD rendering).
+    it("Coastline Legal Group has 4 subscriptions", () => {
       const coastline = subscriptions.filter(
         (s) => s.companyId === "b2c3d4e5-f6a7-8901-bcde-f12345678901"
       );
-      expect(coastline).toHaveLength(3);
+      expect(coastline).toHaveLength(4);
     });
 
     it("Redwood Manufacturing has 7 subscriptions", () => {
@@ -191,11 +191,13 @@ describe("demo-data", () => {
       expect(redwood).toHaveLength(7);
     });
 
-    it("Bright Minds Academy has 2 subscriptions", () => {
+    // Bright Minds also carries a Trial Defender seat (money-correctness
+    // fixture for #465 — Trial billingTerm must zero out in MRR aggregates).
+    it("Bright Minds Academy has 3 subscriptions", () => {
       const bright = subscriptions.filter(
         (s) => s.companyId === "d4e5f6a7-b8c9-0123-defa-234567890123"
       );
-      expect(bright).toHaveLength(2);
+      expect(bright).toHaveLength(3);
     });
 
     // Pinnacle now also carries a 3-Year M365 E5 commit (added in the

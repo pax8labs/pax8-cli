@@ -164,6 +164,11 @@ JSON output (--json):
       // "Try next" block below can offer a pickable drill-in to it.
       let currentInput: SimulationInput["current"] | undefined;
       let affectedSubscriptionId: string | undefined;
+      // Currency for output rendering — inherited from the matched current
+      // subscription when one exists (#472). Cost-sim is a single-record
+      // simulation so the currency is unambiguous; defaults to USD when no
+      // current sub is present (add-new path).
+      let displayCurrency: string = "USD";
       if (allOpts.from) {
         // Explicit --from: resolve it as a separate product.
         const fromProduct = await resolveProduct(ctx, allOpts.from);
@@ -204,6 +209,7 @@ JSON output (--json):
           billingTerm: billingTerm ?? "Monthly",
           price: price ?? 0,
         };
+        if (existing?.currencyCode) displayCurrency = existing.currencyCode;
       } else {
         // No --from: try to auto-detect a matching subscription on the proposed product.
         const existing = pickCurrentSubscription(companySubs, proposedProduct.id);
@@ -216,6 +222,7 @@ JSON output (--json):
             billingTerm: existing.billingTerm,
             price: existing.price,
           };
+          if (existing.currencyCode) displayCurrency = existing.currencyCode;
         }
         // If no existing match, currentInput stays undefined → add-new simulation.
       }
@@ -351,8 +358,8 @@ JSON output (--json):
         leg: { productName: string; quantity: number; monthly: number; annual: number; billingTerm: string },
       ): string => {
         const left = `${label.padEnd(labelWidth)}${leg.productName} × ${leg.quantity}`;
-        const monthlyStr = `${formatCurrency(leg.monthly)}/mo`;
-        const annualStr = `${formatCurrency(leg.annual)}/yr`;
+        const monthlyStr = `${formatCurrency(leg.monthly, displayCurrency)}/mo`;
+        const annualStr = `${formatCurrency(leg.annual, displayCurrency)}/yr`;
         return `  ${left.padEnd(56)}  ${chalk.cyan(monthlyStr.padEnd(14))} ${chalk.cyan(annualStr)}`;
       };
 
@@ -361,10 +368,11 @@ JSON output (--json):
       }
       process.stdout.write(renderLeg("Proposed:", result.proposed) + "\n");
 
-      // Delta line
-      const dMonthly = `${deltaSign(result.delta.monthly)}${formatCurrency(result.delta.monthly)}/mo`;
-      const dAnnual = `${deltaSign(result.delta.annual)}${formatCurrency(result.delta.annual)}/yr`;
-      const dPerSeat = `${deltaSign(result.delta.perSeat)}${formatCurrency(result.delta.perSeat)}/seat/mo`;
+      // Delta line — render with the existing subscription's currency so a
+      // EUR sub's "Delta:" line shows €, not $ (#472).
+      const dMonthly = `${deltaSign(result.delta.monthly)}${formatCurrency(result.delta.monthly, displayCurrency)}/mo`;
+      const dAnnual = `${deltaSign(result.delta.annual)}${formatCurrency(result.delta.annual, displayCurrency)}/yr`;
+      const dPerSeat = `${deltaSign(result.delta.perSeat)}${formatCurrency(result.delta.perSeat, displayCurrency)}/seat/mo`;
       const deltaColor = result.delta.monthly >= 0 ? chalk.green : chalk.yellow;
       process.stdout.write(
         `  ${"Delta:".padEnd(labelWidth)}` +
