@@ -16,6 +16,7 @@ import {
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { replCmd } from "../../lib/confirm.js";
 
 function parseWithinDays(within: string): number {
   const match = within.match(/^(\d+)d$/);
@@ -243,12 +244,15 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         const steps: NextStep[] = [
           {
             key: "1",
-            label: `${chalk.cyan(`subscriptions show ${top.subscriptionId}`)}  ${chalk.dim("view details")}`,
+            // #482: wrap in replCmd(`pax8 ...`) so the rendered label matches
+            // every other "Try next" surface — same visual shape (`pax8`
+            // prefix in non-REPL contexts, none inside the REPL).
+            label: `${chalk.cyan(replCmd(`pax8 subscriptions show ${top.subscriptionId}`))}  ${chalk.dim("view details")}`,
             command: ["subscriptions", "show", top.subscriptionId],
           },
           {
             key: "2",
-            label: `${chalk.cyan(`clients more "${top.companyName}"`)}  ${chalk.dim("view client")}`,
+            label: `${chalk.cyan(replCmd(`pax8 clients more "${top.companyName}"`))}  ${chalk.dim("view client")}`,
             command: ["clients", "more", top.companyName],
           },
         ];

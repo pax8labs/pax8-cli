@@ -136,6 +136,11 @@ Note:
       // rather than a pickable step the partner is unlikely to choose in
       // this moment.
       const companyId = (updated as Quote).companyId;
+      // #481: prefer the resolved client name when available (the v2
+      // quoting API populates `client.name`, flattened to `clientName`
+      // by QuoteSchema's preprocess step). Falls back to the UUID for
+      // shadow companies / partner-side records without a display name.
+      const clientName = (updated as Quote).clientName;
       const steps: NextStep[] = [
         {
           key: "1",
@@ -146,7 +151,7 @@ Note:
       if (companyId) {
         steps.push({
           key: "2",
-          label: `${chalk.cyan(replCmd(`pax8 clients more "${companyId}"`))}  ${chalk.dim("view client")}`,
+          label: `${chalk.cyan(replCmd(`pax8 clients more "${clientName ?? companyId}"`))}  ${chalk.dim("view client")}`,
           command: ["clients", "more", companyId],
         });
       }
