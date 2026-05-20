@@ -41,10 +41,20 @@ export async function resolveCompany(ctx: CommandContext, input: string): Promis
   const fuzzy = result.content.filter((c) => c.name.toLowerCase().includes(lower));
   if (fuzzy.length === 1) return fuzzy[0];
   if (fuzzy.length > 1) {
+    // #520: when the user typed an ambiguous query, surfacing a truncated list
+    // gives the wrong impression that those are the only candidates. List all
+    // matches when ≤10; for larger result sets show the first 10 plus an
+    // explicit "and N more" tail so the user knows the list isn't exhaustive.
+    const MAX_INLINE = 10;
+    const names = fuzzy.map((c) => c.name);
+    const matchesLine =
+      names.length <= MAX_INLINE
+        ? `Matches: ${names.join(", ")}`
+        : `Matches: ${names.slice(0, MAX_INLINE).join(", ")} … and ${names.length - MAX_INLINE} more (run ${replCmd(`pax8 clients list | grep "${input}"`)} to see all)`;
     throw new CliError(
       `Multiple companies match "${input}"`,
-      [`Matches: ${fuzzy.map((c) => c.name).join(", ")}`],
-      [`Use an exact name or ID. Run ${replCmd("pax8 companies list")} to see all companies.`],
+      [matchesLine],
+      [`Use an exact name or ID. Run ${replCmd("pax8 clients list")} to see all companies.`],
       undefined,
       ERROR_COMPANY_NOT_FOUND,
     );
@@ -53,7 +63,7 @@ export async function resolveCompany(ctx: CommandContext, input: string): Promis
   throw new CliError(
     `Company not found: "${input}"`,
     ["No active company matched the supplied name or ID."],
-    [`Run ${replCmd("pax8 companies list")} to see available companies.`],
+    [`Run ${replCmd("pax8 clients list")} to see available companies.`],
     undefined,
     ERROR_COMPANY_NOT_FOUND,
   );
