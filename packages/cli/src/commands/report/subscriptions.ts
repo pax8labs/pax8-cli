@@ -18,13 +18,23 @@ import { formatCompanyName, formatCurrency } from "../../lib/formatters.js";
 import { enrichCompanyNames, enrichProductNames } from "../../lib/enrich-subscriptions.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 
-type GroupBy = "customer" | "vendor" | "product" | "billing-term";
+type GroupBy = "client" | "vendor" | "product" | "billing-term";
 
 interface SubscriptionsOptions {
   by?: string;
   company?: string;
   vendor?: string;
 }
+
+// `client` is the canonical noun (per #317 — `pax8 clients *` is the
+// canonical command surface). We accept `customer` and `company` as
+// deprecated aliases and emit a one-line stderr warning so existing
+// scripts keep working while the docs and tab-completion converge on
+// `client`.
+const BY_ALIASES: Record<string, "client"> = {
+  customer: "client",
+  company: "client",
+};
 
 interface SubscriptionsGroupRow {
   groupName: string;
@@ -36,8 +46,14 @@ interface SubscriptionsGroupRow {
 
 function parseGroupBy(raw: string | undefined): GroupBy {
   const v = (raw ?? "vendor").toLowerCase();
+  if (BY_ALIASES[v]) {
+    process.stderr.write(
+      `  ⚠ --by ${v} is deprecated; use --by client instead.\n`,
+    );
+    return BY_ALIASES[v];
+  }
   if (
-    v === "customer" ||
+    v === "client" ||
     v === "vendor" ||
     v === "product" ||
     v === "billing-term"
@@ -46,7 +62,7 @@ function parseGroupBy(raw: string | undefined): GroupBy {
   throw new CliError(
     `Invalid --by value: "${raw}".`,
     undefined,
-    ["Use --by customer, --by vendor, --by product, or --by billing-term."],
+    ["Use --by client, --by vendor, --by product, or --by billing-term."],
     undefined,
     ERROR_INVALID_INPUT,
   );
@@ -84,7 +100,7 @@ export const reportSubscriptionsCommand = new Command("subscriptions")
   .description(
     "Audit and group your active Pax8 commitments. Useful for periodic state checks, capacity audits, and identifying orphaned subscriptions.",
   )
-  .option("--by <customer|vendor|product|billing-term>", "Group axis", "vendor")
+  .option("--by <client|vendor|product|billing-term>", "Group axis", "vendor")
   .option("--company <id|name>", "Filter by company ID or name")
   .option("--vendor <name>", "Filter by vendor (e.g. Microsoft, AvePoint)")
   .addHelpText(
@@ -92,14 +108,14 @@ export const reportSubscriptionsCommand = new Command("subscriptions")
     `
 Examples:
   pax8 report subscriptions
-  pax8 report subscriptions --by customer
+  pax8 report subscriptions --by client
   pax8 report subscriptions --by billing-term --json
   pax8 report subscriptions --company "Redwood Manufacturing"
   pax8 report subscriptions --vendor Microsoft
 
 JSON output (--json):
   {
-    "groupBy": "customer" | "vendor" | "product" | "billing-term",
+    "groupBy": "client" | "vendor" | "product" | "billing-term",
     "totalActiveSubscriptions": number,
     "totalMonthlyCost": { "amount": number, "currency": string },
     "groups": [{
@@ -186,7 +202,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
         let key: string;
         let name: string;
-        if (groupBy === "customer") {
+        if (groupBy === "client") {
           key = sub.companyId;
           name = sub.companyName ?? sub.companyId;
         } else if (groupBy === "vendor") {

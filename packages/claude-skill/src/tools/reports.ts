@@ -71,7 +71,7 @@ function monthlyCostOf(
 export const pax8_report_subscriptions = {
   name: "pax8_report_subscriptions",
   description:
-    "Compute the partner's Pax8 cost rollup across active subscriptions, grouped by company. Returns `totalMonthlyCost` and `totalAnnualCost` as wrapped `AmountCurrency` objects ({ amount, currency }), plus a `companiesByMonthlyCost` array sorted descending with companyId, companyName, monthlyCost, subscriptionCount, and totalSeats. This is the partner's cost paid to Pax8 — NOT partner-side resale revenue. Includes the standard partner-revenue disclaimer in the payload. Pre-calculated; no follow-up calls needed. Optionally filter by companyId. NOTE: divergence from the `pax8 report subscriptions` CLI command — that command supports `--by customer|vendor|product|billing-term`; this skill tool returns a fixed by-company rollup.",
+    "Compute the partner's Pax8 cost rollup across active subscriptions, grouped by company. Returns `totalMonthlyCost` and `totalAnnualCost` as wrapped `AmountCurrency` objects ({ amount, currency }), plus a `companiesByMonthlyCost` array sorted descending with companyId, companyName, monthlyCost, subscriptionCount, and totalSeats. This is the partner's cost paid to Pax8 — NOT partner-side resale revenue. Includes the standard partner-revenue disclaimer in the payload. Pre-calculated; no follow-up calls needed. Optionally filter by companyId. NOTE: divergence from the `pax8 report subscriptions` CLI command — that command supports `--by client|vendor|product|billing-term` (with `customer`/`company` accepted as deprecated aliases); this skill tool returns a fixed by-company rollup.",
   parameters: {
     type: "object" as const,
     properties: {
