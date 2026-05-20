@@ -245,6 +245,35 @@ export class CredentialStore {
   }
 
   private async getFromFile(): Promise<Credentials | null> {
+    // Refuse to load credentials from a world-/group-readable file. Bumping
+    // checkPermissions() from "warn via doctor" to "refuse at load time"
+    // closes the window where a tampered or accidentally-loosened
+    // ~/.pax8/credentials.json silently keeps working. Windows has no POSIX
+    // mode bits, so skip the gate there — `checkPermissionsWindows` still
+    // surfaces ACL issues via `pax8 doctor`.
+    if (!isWindows) {
+      try {
+        const stat = await fs.stat(CREDENTIALS_FILE);
+        if ((stat.mode & 0o077) !== 0) {
+          const perms = (stat.mode & 0o777).toString(8);
+          throw new Error(
+            `Refusing to load credentials: ${CREDENTIALS_FILE} has mode ${perms} ` +
+              `(group/other have access). Run: chmod 600 ${CREDENTIALS_FILE}`,
+          );
+        }
+      } catch (err) {
+        // ENOENT — no file, nothing to load. Re-throw the explicit refusal
+        // so the caller sees a clear error rather than a silent null.
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") return null;
+        if (err instanceof Error && err.message.startsWith("Refusing to load credentials")) {
+          throw err;
+        }
+        // Any other stat failure (EACCES, etc.) — treat as "no creds".
+        return null;
+      }
+    }
+
     try {
       const content = await fs.readFile(CREDENTIALS_FILE, "utf-8");
       const data = JSON.parse(content) as Record<string, unknown>;

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { runCli, runCliExpectSuccess } from "./test-utils.js";
+import { runCli, runCliExpectFailure, runCliExpectSuccess } from "./test-utils.js";
 
 describe("pax8 auth", () => {
   describe("auth login", () => {
@@ -51,6 +51,92 @@ describe("pax8 auth", () => {
       expect(result.stderr).toContain("demo mode");
       // Stdout in human mode must be empty (no banner, no JSON).
       expect(result.stdout.trim()).toBe("");
+    });
+
+    // L-2: drop the `--client-secret <secret>` example from `--help`. Flag
+    // values land in shell history; the interactive prompt and the
+    // PAX8_CLIENT_SECRET env var are the safe alternatives, so those are
+    // what we show.
+    //
+    // Note: Commander still lists `--client-secret <secret>` in the
+    // auto-generated Options block (we keep the flag for CI users). The
+    // user-visible regression is the worked Example line that paired
+    // `--client-id` with `--client-secret` — that's what must vanish.
+    it("does not advertise --client-secret in worked examples (L-2)", async () => {
+      const result = await runCliExpectSuccess(["auth", "login", "--help"]);
+
+      // Slice off the Examples section and assert against it specifically,
+      // so the flag listing in the auto-generated Options block doesn't
+      // false-positive the check.
+      const examplesIdx = result.stdout.indexOf("Examples:");
+      expect(examplesIdx).toBeGreaterThanOrEqual(0);
+      const examples = result.stdout.slice(examplesIdx);
+
+      // No example line should pair `--client-secret` with a literal value.
+      expect(examples).not.toContain("--client-secret s3cret");
+      // And no example line should invoke `pax8 auth login` with the flag.
+      expect(examples).not.toMatch(/pax8 auth login[^\n]*--client-secret/);
+
+      // Affirmatively surface the safer alternatives.
+      expect(result.stdout).toContain("PAX8_CLIENT_SECRET");
+      expect(result.stdout).toContain("Interactive");
+    });
+
+    // L-2: when --client-secret IS passed as a flag, emit a stderr warning
+    // pointing the user at the safer alternatives. We still honor the flag
+    // (CI users rely on it), so we assert on stderr and that exit is clean.
+    it("warns to stderr when --client-secret is passed as a flag (L-2)", async () => {
+      const result = await runCliExpectSuccess([
+        "auth",
+        "login",
+        "--client-id",
+        "valid-client-id-1234",
+        "--client-secret",
+        "valid-client-secret-5678",
+      ]);
+      expect(result.stderr).toContain("--client-secret");
+      expect(result.stderr).toContain("shell history");
+      expect(result.stderr).toContain("PAX8_CLIENT_SECRET");
+    });
+
+    // L-3: client-id format validation. A value with spaces/special chars
+    // can never be a valid Pax8 credential — reject it locally rather than
+    // wasting a /token round-trip on a 401.
+    it("rejects --client-id with invalid characters as ERROR_INVALID_INPUT (L-3)", async () => {
+      const result = await runCliExpectFailure(
+        [
+          "auth",
+          "login",
+          "--client-id",
+          "bad value with spaces",
+          "--client-secret",
+          "valid-client-secret-1234",
+          "--json",
+        ],
+        { PAX8_DEMO: "" },
+      );
+      const haystack = result.stderr + result.stdout;
+      expect(haystack).toContain("ERROR_INVALID_INPUT");
+      expect(haystack).toMatch(/client-id/);
+    });
+
+    // L-3: client-secret format validation — same rationale as client-id.
+    it("rejects --client-secret with invalid characters as ERROR_INVALID_INPUT (L-3)", async () => {
+      const result = await runCliExpectFailure(
+        [
+          "auth",
+          "login",
+          "--client-id",
+          "valid-client-id-1234",
+          "--client-secret",
+          "x", // too short — fails the 8-char minimum
+          "--json",
+        ],
+        { PAX8_DEMO: "" },
+      );
+      const haystack = result.stderr + result.stdout;
+      expect(haystack).toContain("ERROR_INVALID_INPUT");
+      expect(haystack).toMatch(/client-secret/);
     });
 
     it("errors cleanly when stdin is non-TTY and no credentials are supplied", async () => {
