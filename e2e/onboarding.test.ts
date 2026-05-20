@@ -20,8 +20,13 @@ describe("E2E: Onboarding — first-time user experience", () => {
       "--client-secret",
       "demo",
     ]);
-    expect(result.stdout).toContain("Authenticated");
-    expect(result.stdout).toContain("demo mode");
+    // Subprocess stdout is non-TTY, so the agent-first contract auto-emits
+    // JSON (#210) — same pattern as the `auth status` assertion below. The
+    // human-mode "✓ Authenticated (demo mode)" banner is now stderr-only
+    // (#471) and never reaches a subprocess stdout consumer.
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.status).toBe("authenticated");
+    expect(parsed.mode).toBe("demo");
   });
 
   it("pax8 auth status shows auth info", async () => {
