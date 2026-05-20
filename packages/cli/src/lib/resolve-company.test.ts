@@ -49,6 +49,25 @@ describe("resolveCompany", () => {
     expect(ctx.api.companies.list).not.toHaveBeenCalled();
   });
 
+  // #519: the large demo fixture issues IDs of the form
+  // `co-<uuid>` (e.g. `co-9e3779b1-9e37-79b1-00009e3779b10000`). The
+  // pre-fix `^`-anchored hex check missed the leading `co-` and
+  // dropped these lookups through to name-search, which truncated the
+  // 1000-company portfolio at the first 200 entries and produced
+  // "Could not load company summary" for any company past the cutoff.
+  it("prefixed demo ID (co-<uuid>) is treated as ID, not name (#519)", async () => {
+    const demoId = "co-9e3779b1-9e37-79b1-00009e3779b10000";
+    const company = makeCompany({ id: demoId, name: "Stonebridge Limited" });
+    const ctx = makeMockCtx([company]);
+
+    const result = await resolveCompany(ctx, demoId);
+    expect(result).toEqual(company);
+    expect(ctx.api.companies.get).toHaveBeenCalledWith(demoId);
+    // The whole point of the fix: no fall-through to the name-search
+    // path that truncates the company list.
+    expect(ctx.api.companies.list).not.toHaveBeenCalled();
+  });
+
   it("name input resolves via list + exact match (case-insensitive)", async () => {
     const company = makeCompany();
     const ctx = makeMockCtx([company]);
