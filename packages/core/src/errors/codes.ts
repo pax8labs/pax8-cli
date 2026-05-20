@@ -26,6 +26,13 @@ export const ERROR_NOT_AUTHORIZED = "ERROR_NOT_AUTHORIZED";
 export const ERROR_NOT_FOUND = "ERROR_NOT_FOUND";
 export const ERROR_INTERNAL = "ERROR_INTERNAL";
 export const ERROR_QUOTE_LINE_ITEM_NOT_FOUND = "ERROR_QUOTE_LINE_ITEM_NOT_FOUND";
+/**
+ * The user interrupted the command (Ctrl+C / SIGINT) before it completed.
+ * Carried on the synthetic `command_executed` event emitted by the SIGINT
+ * handler so the telemetry stream distinguishes user-cancellations from
+ * real failures.
+ */
+export const ERROR_CANCELLED = "ERROR_CANCELLED";
 
 /**
  * Union of all known Pax8 CLI error codes. Use this for exhaustive switch
@@ -44,4 +51,5 @@ export type Pax8ErrorCode =
   | typeof ERROR_NOT_AUTHORIZED
   | typeof ERROR_NOT_FOUND
   | typeof ERROR_INTERNAL
-  | typeof ERROR_QUOTE_LINE_ITEM_NOT_FOUND;
+  | typeof ERROR_QUOTE_LINE_ITEM_NOT_FOUND
+  | typeof ERROR_CANCELLED;

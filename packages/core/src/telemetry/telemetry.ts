@@ -3,11 +3,12 @@
 
 import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
+import * as fsSync from "node:fs";
 import * as path from "node:path";
 import { PostHog } from "posthog-node";
 import { loadConfig, saveConfig, getConfigDir } from "../config/loader.js";
 import type { Pax8ErrorCode } from "../errors/codes.js";
+import { safeWriteFileSync } from "../security/safe-write.js";
 
 // PostHog project API key (public, write-only — safe to embed)
 const POSTHOG_API_KEY = "phc_XKIa0EPGDACY1p4Cczk6IWXFa3n9";
@@ -19,6 +20,11 @@ export interface TelemetryEvent {
   flags: string[];
   duration_ms: number;
   success: boolean;
+  /**
+   * Set when the command was interrupted (SIGINT) before completing.
+   * Always paired with `success: false` and `error_code: "ERROR_CANCELLED"`.
+   */
+  cancelled?: boolean;
   /**
    * Canonical machine-readable error code from `@pax8/core`'s `ERROR_*`
    * registry. Set on failed events (`success: false`); omitted on successful
@@ -33,15 +39,19 @@ export interface TelemetryEvent {
   subcommand?: string;
   /** For order create, did the order actually succeed */
   order_success?: boolean;
-  /** Revenue: order total in dollars (unit_price × quantity) */
+  /**
+   * Revenue: order total in dollars (unit_price × quantity) — RAW value
+   * staged by command handlers. Bucketed (M-2 security review) before
+   * leaving the machine; `order_total_bucket` is what actually ships.
+   */
   order_total_dollars?: number;
-  /** Revenue: monthly MRR impact of the order */
+  /** Revenue: monthly MRR impact of the order — RAW, see above. */
   order_mrr_impact?: number;
-  /** Revenue: number of seats ordered */
+  /** Revenue: number of seats ordered — RAW, see above. */
   order_seats?: number;
   /** For order create: whether the run was a dry-run validation (no real write) */
   order_dry_run?: boolean;
-  /** For order create: number of line items in the order */
+  /** For order create: number of line items in the order — RAW, see above. */
   order_line_count?: number;
   /** For recommendations act: total recs presented */
   recs_presented?: number;
@@ -49,8 +59,39 @@ export interface TelemetryEvent {
   recs_ordered?: number;
   /** For recommendations act: how many were skipped */
   recs_skipped?: number;
-  /** For recommendations act: total MRR uplift of orders placed */
+  /** For recommendations act: total MRR uplift of orders placed — RAW, see above. */
   recs_mrr_captured?: number;
+}
+
+/**
+ * Bucket a dollar/MRR value into a coarse string range so an internal
+ * employee with PostHog query access can't reverse a unique order size
+ * back to the partner who placed it. The cuts are deliberately wide and
+ * coarse — a small-MSP $40 order and a large-MSP $48 order both land in
+ * "10-50".
+ *
+ * Strings (not numbers) so PostHog queries can't sum them back to a total.
+ */
+export function bucketDollars(value: number): string {
+  if (!Number.isFinite(value) || value < 10) return "<10";
+  if (value < 50) return "10-50";
+  if (value < 200) return "50-200";
+  if (value < 1000) return "200-1000";
+  return ">1000";
+}
+
+/** Bucket a seat count. See {@link bucketDollars}. */
+export function bucketSeats(value: number): string {
+  if (!Number.isFinite(value) || value < 10) return "<10";
+  if (value <= 50) return "10-50";
+  return ">50";
+}
+
+/** Bucket a line-item count. See {@link bucketDollars}. */
+export function bucketLineCount(value: number): string {
+  if (!Number.isFinite(value) || value <= 1) return "1";
+  if (value <= 5) return "2-5";
+  return ">5";
 }
 
 export const TELEMETRY_NOTICE = `
@@ -75,12 +116,46 @@ export const TELEMETRY_NOTICE = `
 `;
 
 /**
- * Generate a stable, anonymous machine ID by hashing hostname + username.
- * No PII leaves the machine — only the SHA-256 hash is used as distinct_id.
+ * Per-install salted distinct ID, stored at `<config-dir>/telemetry-id`.
+ *
+ * Prior versions derived this from `sha256(hostname + username).slice(0, 16)`,
+ * which the M-2 security review flagged as easily de-anonymizable: anyone with
+ * directory access could regenerate any user's distinct_id from the AD/LDAP
+ * record. Migration is forward-only — events already attributed to the legacy
+ * hostname-derived ID stay where they are; new events get the salted ID.
+ *
+ * On first call:
+ *   - If `<config-dir>/telemetry-id` exists and contains a non-empty UUID,
+ *     return that.
+ *   - Else: generate `crypto.randomUUID()`, write it via `safeWriteFileSync`
+ *     (atomic O_CREAT + 0o600 + O_NOFOLLOW), and return it.
+ *
+ * Failures (I/O error reading or writing) degrade to an ephemeral
+ * per-process UUID. We never throw out of telemetry init — opting in must
+ * never become a CLI-breaking decision.
  */
 function getAnonymousId(): string {
-  const raw = `${os.hostname()}:${os.userInfo().username}`;
-  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 16);
+  const dir = getConfigDir();
+  const filePath = path.join(dir, "telemetry-id");
+
+  try {
+    if (fsSync.existsSync(filePath)) {
+      const existing = fsSync.readFileSync(filePath, "utf-8").trim();
+      if (existing.length > 0) return existing;
+    }
+  } catch {
+    // Fall through to (re)generate.
+  }
+
+  const fresh = crypto.randomUUID();
+  try {
+    fsSync.mkdirSync(dir, { recursive: true });
+    safeWriteFileSync(filePath, fresh);
+  } catch {
+    // Disk full, permission denied, etc. — fall back to an ephemeral id
+    // for this process. Better than crashing on telemetry init.
+  }
+  return fresh;
 }
 
 export class Telemetry {
@@ -175,6 +250,15 @@ export class Telemetry {
     }
 
     // Send to PostHog
+    //
+    // M-2 (security review): raw revenue fields (`order_total_dollars`,
+    // `order_mrr_impact`, `recs_mrr_captured`, `order_seats`,
+    // `order_line_count`) fingerprint partners when combined with the
+    // distinct_id. Before transmission we bucket them into coarse string
+    // ranges and rename the keys to `*_bucket` so downstream PostHog
+    // queries can't accidentally sum them back to raw totals. The raw
+    // numbers stay in the local JSONL backup (already 0o600) so the
+    // operator can still audit their own machine's usage.
     try {
       const ph = this.getPostHog();
       for (const event of events) {
@@ -192,16 +276,27 @@ export class Telemetry {
             os: event.os,
             demo_mode: event.demo_mode,
             ...(event.subcommand !== undefined && { subcommand: event.subcommand }),
+            ...(event.cancelled !== undefined && { cancelled: event.cancelled }),
             ...(event.order_success !== undefined && { order_success: event.order_success }),
-            ...(event.order_total_dollars !== undefined && { order_total_dollars: event.order_total_dollars }),
-            ...(event.order_mrr_impact !== undefined && { order_mrr_impact: event.order_mrr_impact }),
-            ...(event.order_seats !== undefined && { order_seats: event.order_seats }),
+            ...(event.order_total_dollars !== undefined && {
+              order_total_bucket: bucketDollars(event.order_total_dollars),
+            }),
+            ...(event.order_mrr_impact !== undefined && {
+              order_mrr_bucket: bucketDollars(event.order_mrr_impact),
+            }),
+            ...(event.order_seats !== undefined && {
+              order_seats_bucket: bucketSeats(event.order_seats),
+            }),
             ...(event.order_dry_run !== undefined && { order_dry_run: event.order_dry_run }),
-            ...(event.order_line_count !== undefined && { order_line_count: event.order_line_count }),
+            ...(event.order_line_count !== undefined && {
+              order_line_count_bucket: bucketLineCount(event.order_line_count),
+            }),
             ...(event.recs_presented !== undefined && { recs_presented: event.recs_presented }),
             ...(event.recs_ordered !== undefined && { recs_ordered: event.recs_ordered }),
             ...(event.recs_skipped !== undefined && { recs_skipped: event.recs_skipped }),
-            ...(event.recs_mrr_captured !== undefined && { recs_mrr_captured: event.recs_mrr_captured }),
+            ...(event.recs_mrr_captured !== undefined && {
+              recs_mrr_captured_bucket: bucketDollars(event.recs_mrr_captured),
+            }),
           },
         });
       }

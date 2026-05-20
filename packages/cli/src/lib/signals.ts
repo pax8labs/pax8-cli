@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import chalk from "chalk";
-import { getTelemetry } from "@pax8/core";
+import { getTelemetry, ERROR_CANCELLED } from "@pax8/core";
 import { stopAllActiveSpinners } from "./spinner.js";
 import { recordWriteAudit } from "./write-audit.js";
+
+// Injected at build time by the rollup config (see packages/cli/rollup.config.js).
+declare const __CLI_VERSION__: string;
 
 /**
  * In-flight write tracking for SIGINT cleanup.
@@ -147,6 +150,32 @@ export function installSigintHandler(): void {
       } catch {
         // If we can't even write to stderr there's nothing more we can do.
       }
+    }
+
+    // M-2: emit the cancellation audit event BEFORE the bounded flush so
+    // PostHog actually receives it. Without this, a Ctrl+C during a write
+    // never surfaces in the telemetry stream — the postAction hook never
+    // runs, and the flush below would ship an empty buffer. Guard the
+    // track() in try/catch because telemetry must never break exit.
+    try {
+      const telemetry = getTelemetry();
+      if (telemetry.isEnabled()) {
+        telemetry.track({
+          event: "command_executed",
+          command: "sigint",
+          flags: [],
+          duration_ms: 0,
+          success: false,
+          cancelled: true,
+          error_code: ERROR_CANCELLED,
+          cli_version: typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.0.0",
+          node_version: process.version,
+          os: process.platform,
+          demo_mode: process.env.PAX8_DEMO === "1",
+        });
+      }
+    } catch {
+      // Telemetry must never crash the SIGINT path.
     }
 
     // Best-effort telemetry flush before exit (#145). flushAndShutdown is a
