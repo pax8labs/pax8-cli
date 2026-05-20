@@ -97,6 +97,12 @@ describe("CredentialStore", () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
 
+      // Mode gate: the new pre-read stat in getFromFile() refuses to load
+      // when group/other bits are set. Return a secure mode here so the
+      // happy-path test still exercises the readFile branch.
+      vi.mocked(fs.stat).mockResolvedValueOnce({
+        mode: 0o100600,
+      } as import("node:fs").Stats);
       vi.mocked(fs.readFile).mockResolvedValueOnce(
         JSON.stringify({ clientId: "file-id", clientSecret: "file-secret" })
       );
@@ -110,7 +116,9 @@ describe("CredentialStore", () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
 
-      vi.mocked(fs.readFile).mockRejectedValueOnce(
+      // No file: the mode-check stat returns ENOENT, which getFromFile
+      // treats as "no creds" and returns null.
+      vi.mocked(fs.stat).mockRejectedValueOnce(
         Object.assign(new Error("ENOENT"), { code: "ENOENT" })
       );
 
@@ -122,7 +130,7 @@ describe("CredentialStore", () => {
       process.env.PAX8_CLIENT_ID = "partial-id";
       delete process.env.PAX8_CLIENT_SECRET;
 
-      vi.mocked(fs.readFile).mockRejectedValueOnce(
+      vi.mocked(fs.stat).mockRejectedValueOnce(
         Object.assign(new Error("ENOENT"), { code: "ENOENT" })
       );
 
@@ -134,6 +142,9 @@ describe("CredentialStore", () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
 
+      vi.mocked(fs.stat).mockResolvedValueOnce({
+        mode: 0o100600,
+      } as import("node:fs").Stats);
       vi.mocked(fs.readFile).mockResolvedValueOnce("not json");
 
       const creds = await store.getCredentials();
@@ -144,6 +155,9 @@ describe("CredentialStore", () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
 
+      vi.mocked(fs.stat).mockResolvedValueOnce({
+        mode: 0o100600,
+      } as import("node:fs").Stats);
       vi.mocked(fs.readFile).mockResolvedValueOnce(
         JSON.stringify({ clientId: "only-id" })
       );
@@ -151,6 +165,52 @@ describe("CredentialStore", () => {
       const creds = await store.getCredentials();
       expect(creds).toBeNull();
     });
+
+    // L-1: refuse to load a world-/group-readable credentials file. The
+    // pre-read stat in getFromFile() must throw a clear, fix-it-style error
+    // when group/other bits are set on POSIX. On Windows the production
+    // code skips the check (no POSIX mode bits), so this test skips there.
+    it.skipIf(process.platform === "win32")(
+      "refuses to load when credentials file is world/group readable on Unix (L-1)",
+      async () => {
+        delete process.env.PAX8_CLIENT_ID;
+        delete process.env.PAX8_CLIENT_SECRET;
+
+        vi.mocked(fs.stat).mockResolvedValueOnce({
+          mode: 0o100644,
+        } as import("node:fs").Stats);
+
+        await expect(store.getCredentials()).rejects.toThrow(
+          /Refusing to load credentials.*chmod 600/,
+        );
+        // readFile must NOT be reached when the mode gate trips — otherwise
+        // the credentials are sourced from an insecure file even though we
+        // "refused" them.
+        expect(fs.readFile).not.toHaveBeenCalled();
+      },
+    );
+
+    // Owner-only non-600 mode (e.g., 0o700) is still secure under our
+    // group/other gate — the gate is `mode & 0o077 !== 0`, which is false
+    // when only owner bits are set. Pin this so a future tightening of
+    // the gate to "exactly 600" is a deliberate decision, not a drive-by.
+    it.skipIf(process.platform === "win32")(
+      "still loads when owner-only non-600 mode is set (e.g. 0o700) on Unix",
+      async () => {
+        delete process.env.PAX8_CLIENT_ID;
+        delete process.env.PAX8_CLIENT_SECRET;
+
+        vi.mocked(fs.stat).mockResolvedValueOnce({
+          mode: 0o100700,
+        } as import("node:fs").Stats);
+        vi.mocked(fs.readFile).mockResolvedValueOnce(
+          JSON.stringify({ clientId: "ok-id", clientSecret: "ok-secret" }),
+        );
+
+        const creds = await store.getCredentials();
+        expect(creds).toEqual({ clientId: "ok-id", clientSecret: "ok-secret" });
+      },
+    );
   });
 
   describe("hasCredentials", () => {
