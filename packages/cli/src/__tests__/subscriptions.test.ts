@@ -140,6 +140,90 @@ describe("pax8 subscriptions list", () => {
     }
   });
 
+  // #398: server-side --billing-term / --product / --sort filters on
+  // subscriptions list. Pre-#398 these were dropped at the CLI boundary and
+  // partners with large portfolios had to filter client-side after a full
+  // pull. The new helpers mirror server-side filtering in the mock so demo
+  // mode exercises the same wire shape as the real API.
+  describe("--billing-term / --product / --sort (#398)", () => {
+    it("--billing-term filters server-side and accepts the canonical enum", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "list",
+        "--billing-term",
+        "Annual",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data.subscriptions)).toBe(true);
+      expect(data.subscriptions.length).toBeGreaterThan(0);
+      for (const sub of data.subscriptions) {
+        expect(sub.billingTerm).toBe("Annual");
+      }
+    });
+
+    it("--billing-term fails fast on a typo before any network call", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "list",
+        "--billing-term",
+        "Yearly",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid value for --billing-term: "Yearly"`);
+      // Help-text echo should surface the canonical enum so the partner
+      // self-corrects without round-tripping through `--help`.
+      expect(combined).toContain("Annual");
+      expect(combined).toContain("Monthly");
+    });
+
+    it("--product filters to the requested productId", async () => {
+      // Find a known productId from the demo fixture's first subscription.
+      const all = await runCliExpectSuccess(["subscriptions", "list", "--json"]);
+      const targetProductId = JSON.parse(all.stdout).subscriptions[0].productId;
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "list",
+        "--product",
+        targetProductId,
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.subscriptions.length).toBeGreaterThan(0);
+      for (const sub of data.subscriptions) {
+        expect(sub.productId).toBe(targetProductId);
+      }
+    });
+
+    it("--sort quantity:desc orders results by quantity descending", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "list",
+        "--sort",
+        "quantity:desc",
+        "--size",
+        "100",
+        "--json",
+      ]);
+      const qty = JSON.parse(result.stdout).subscriptions.map(
+        (s: { quantity: number }) => s.quantity,
+      );
+      const sorted = [...qty].sort((a, b) => b - a);
+      expect(qty).toEqual(sorted);
+    });
+
+    it("--sort rejects unknown sort fields client-side", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "list",
+        "--sort",
+        "ponies",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid value for --sort: "ponies"`);
+    });
+  });
+
   // #408 / partner-walkthrough finding #2: a typo'd --status used to silently
   // return [] from the API. Now fails fast with the allowed enum list so the
   // partner can self-correct without guessing.

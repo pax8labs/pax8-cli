@@ -3,7 +3,12 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { SubscriptionStatusSchema, type SubscriptionStatus } from "@pax8/core";
+import {
+  SubscriptionStatusSchema,
+  type SubscriptionStatus,
+  BillingTermSchema,
+  type BillingTerm,
+} from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import {
   output,
@@ -33,6 +38,21 @@ import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../
 // all read from this array — keeps them from drifting.
 const SUBSCRIPTION_STATUS_VALUES = SubscriptionStatusSchema.options as readonly SubscriptionStatus[];
 const SUBSCRIPTION_STATUS_HELP = SUBSCRIPTION_STATUS_VALUES.join(", ");
+
+// #398: `GET /subscriptions` exposes `billingTerm` as a server-side filter
+// per the public OpenAPI. Same fail-fast enum-validation pattern as
+// `--status` so a typo fails at the CLI boundary instead of round-tripping
+// and returning `[]`.
+const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
+const BILLING_TERM_HELP = BILLING_TERM_VALUES.join(", ");
+
+// #398: `--sort` accepts spec field names (the public OpenAPI doesn't
+// enumerate which fields are sortable, but the documented set across
+// related list endpoints is consistent). Accepts both bare field names
+// (default direction ascending) and `field,asc` / `field,desc` shapes;
+// anything not on this list is rejected client-side.
+const SUBSCRIPTION_SORT_FIELDS = ["quantity", "startDate", "endDate", "createdAt"] as const;
+const SUBSCRIPTION_SORT_HELP = `Sort by field (${SUBSCRIPTION_SORT_FIELDS.join(", ")}); append :desc for descending (e.g. quantity:desc)`;
 
 const columns: Column[] = [
   {
@@ -76,6 +96,17 @@ export const subscriptionsListCommand = new Command("list")
     "--status <status>",
     `Filter by status (${SUBSCRIPTION_STATUS_HELP})`
   )
+  // #398: spec-backed filters previously dropped at the CLI boundary.
+  // `--billing-term` accepts the canonical BillingTerm enum (validated
+  // before any network call). `--product` is a productId UUID — no
+  // resolveProduct() here because the user typically pastes the ID from
+  // a prior `subscriptions list --json` row.
+  .option(
+    "--billing-term <term>",
+    `Filter by billing term (${BILLING_TERM_HELP})`
+  )
+  .option("--product <productId>", "Filter by product ID (UUID)")
+  .option("--sort <field>", SUBSCRIPTION_SORT_HELP)
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "25")
   .option("--ids-only", "Output only resource IDs, one per line")
@@ -87,6 +118,9 @@ Examples:
   pax8 subscriptions list
   pax8 subscriptions list --company "Summit Healthcare Partners"
   pax8 subscriptions list --status Active
+  pax8 subscriptions list --billing-term Annual
+  pax8 subscriptions list --product 11111111-2222-3333-4444-555555555555
+  pax8 subscriptions list --sort quantity:desc
   pax8 subscriptions list --size 10 --page 2
   pax8 subscriptions list --json
   pax8 subscriptions list --json --with-actions
@@ -104,6 +138,22 @@ Examples:
       validateEnum(allOpts.status, SUBSCRIPTION_STATUS_VALUES, "--status", {
         cmdHint: "pax8 subscriptions list",
       });
+      // #398: fail-fast on --billing-term typos before any network call,
+      // same vocabulary as the existing --status validator.
+      validateEnum(allOpts.billingTerm, BILLING_TERM_VALUES, "--billing-term", {
+        cmdHint: "pax8 subscriptions list",
+      });
+      // #398: --sort accepts `field` or `field:asc` / `field:desc`. Wire form
+      // is `field,asc` / `field,desc` (comma separator); the user-facing
+      // separator is `:` to avoid shell-quoting surprises with the literal
+      // comma. Validate the field part client-side; anything unknown is
+      // rejected here so a typo doesn't silently no-op against the wire.
+      if (allOpts.sort) {
+        const [field] = String(allOpts.sort).split(":");
+        validateEnum(field, SUBSCRIPTION_SORT_FIELDS, "--sort", {
+          cmdHint: "pax8 subscriptions list",
+        });
+      }
     } catch (error) {
       await handleCommandError(error);
     }
@@ -122,9 +172,18 @@ Examples:
       if (sizeResult.clamped) {
         warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
       }
+      // #398: translate the user-friendly `field:direction` shape into the
+      // wire's `field,direction` shape. The Pax8 API uses comma as the
+      // sort separator per its OpenAPI examples.
+      const sortParam = allOpts.sort
+        ? String(allOpts.sort).replace(":", ",")
+        : undefined;
       const result = await ctx.api.subscriptions.list({
         companyId,
         status: allOpts.status,
+        billingTerm: allOpts.billingTerm,
+        productId: allOpts.product,
+        sort: sortParam,
         page: apiPage,
         size: sizeResult.size,
       });
@@ -161,7 +220,10 @@ Examples:
       const pageEnvelope = buildPageEnvelope(result.page);
       const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
       const statusFlag = allOpts.status ? ` --status ${allOpts.status}` : "";
-      const nextPageCommand = `pax8 subscriptions list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}${statusFlag}`;
+      const billingTermFlag = allOpts.billingTerm ? ` --billing-term ${allOpts.billingTerm}` : "";
+      const productFlag = allOpts.product ? ` --product ${allOpts.product}` : "";
+      const sortFlag = allOpts.sort ? ` --sort ${allOpts.sort}` : "";
+      const nextPageCommand = `pax8 subscriptions list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}${statusFlag}${billingTermFlag}${productFlag}${sortFlag}`;
 
       if (ctx.outputFormat === "json") {
         const subsList = result.content;

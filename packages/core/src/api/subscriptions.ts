@@ -23,6 +23,18 @@ export class SubscriptionsApi {
     size?: number;
     companyId?: string;
     status?: string;
+    // #398: the spec's `GET /subscriptions` exposes `billingTerm`, `productId`,
+    // and `sort` query params. The CLI previously skipped them, forcing
+    // partners with large portfolios to download then filter client-side.
+    billingTerm?: string;
+    productId?: string;
+    /**
+     * Spec-typed as a freeform string for forward-compat (the spec doesn't
+     * enumerate accepted sort keys); the CLI surface canonicalizes the
+     * known fields (`quantity`, `startDate`, `endDate`, `createdAt`) plus
+     * direction (`,asc` / `,desc`).
+     */
+    sort?: string;
   }): Promise<PaginatedResponse<Subscription>> {
     const raw = await this.client.get<unknown>("/subscriptions", params as Record<string, string | number | undefined>);
     return PaginatedSubscriptionSchema.parse(raw);
