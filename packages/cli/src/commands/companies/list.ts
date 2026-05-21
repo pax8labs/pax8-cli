@@ -16,7 +16,13 @@ import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { ALL_SUBS_PAGE_SIZE } from "@pax8/core";
 import { replCmd } from "../../lib/confirm.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+} from "../../lib/output.js";
 import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/formatters.js";
 import { saveLastList } from "../../lib/last-list.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
@@ -289,37 +295,64 @@ Examples:
 
       const columns = coverageMap ? coverageColumns : baseColumns;
 
-      if (ctx.outputFormat === "json" && allOpts.withActions) {
-        const nextActions: { command: string; description: string }[] = [];
-        // Companies with the largest coverage gaps first if available
-        const ranked = coverageMap
-          ? [...result.content].sort((a, b) => {
-              const aGap = coverageMap!.get(String(a.id))?.estimatedUplift ?? 0;
-              const bGap = coverageMap!.get(String(b.id))?.estimatedUplift ?? 0;
-              return bGap - aGap;
-            })
-          : result.content;
-        for (const c of ranked.slice(0, 3)) {
-          nextActions.push({
-            command: `pax8 clients more "${c.name}"`,
-            description: `Drill into ${c.name}`,
-          });
-        }
-        if (coverageMap) {
-          const top = ranked.find((c) => (coverageMap!.get(String(c.id))?.estimatedUplift ?? 0) > 0);
-          if (top) {
+      // #483: build the 1-based page envelope once for both JSON and footer.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const filterFlag = [
+        allOpts.status ? `--status ${allOpts.status}` : "",
+        allOpts.city ? `--city "${allOpts.city}"` : "",
+        allOpts.country ? `--country "${allOpts.country}"` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const nextPageCommand =
+        `pax8 clients list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
+        (filterFlag ? ` ${filterFlag}` : "");
+
+      if (ctx.outputFormat === "json") {
+        if (allOpts.withActions) {
+          const nextActions: { command: string; description: string }[] = [];
+          const pageAction = buildNextPageAction(
+            pageEnvelope,
+            `${nextPageCommand} --json`,
+            "client",
+          );
+          if (pageAction) nextActions.push(pageAction);
+          // Companies with the largest coverage gaps first if available
+          const ranked = coverageMap
+            ? [...result.content].sort((a, b) => {
+                const aGap = coverageMap!.get(String(a.id))?.estimatedUplift ?? 0;
+                const bGap = coverageMap!.get(String(b.id))?.estimatedUplift ?? 0;
+                return bGap - aGap;
+              })
+            : result.content;
+          for (const c of ranked.slice(0, 3)) {
             nextActions.push({
-              command: `pax8 recommendations list --company "${top.name}" --json`,
-              description: `Review growth opportunities for ${top.name}`,
+              command: `pax8 clients more "${c.name}"`,
+              description: `Drill into ${c.name}`,
             });
           }
+          if (coverageMap) {
+            const top = ranked.find((c) => (coverageMap!.get(String(c.id))?.estimatedUplift ?? 0) > 0);
+            if (top) {
+              nextActions.push({
+                command: `pax8 recommendations list --company "${top.name}" --json`,
+                description: `Review growth opportunities for ${top.name}`,
+              });
+            }
+          } else {
+            nextActions.push({
+              command: "pax8 clients list --coverage --json",
+              description: "Re-run with portfolio coverage analysis to surface gaps",
+            });
+          }
+          process.stdout.write(
+            JSON.stringify({ companies: numbered, page: pageEnvelope, nextActions }, null, 2) + "\n",
+          );
         } else {
-          nextActions.push({
-            command: "pax8 clients list --coverage --json",
-            description: "Re-run with portfolio coverage analysis to surface gaps",
-          });
+          process.stdout.write(
+            JSON.stringify({ companies: numbered, page: pageEnvelope }, null, 2) + "\n",
+          );
         }
-        process.stdout.write(JSON.stringify({ companies: numbered, nextActions }, null, 2) + "\n");
         return;
       }
 
@@ -362,21 +395,14 @@ Examples:
       });
 
       if (ctx.outputFormat === "table" && result.content.length > 0) {
-        const currentPage = result.page.number; // 0-based from API
-        const totalPages = result.page.totalPages;
-        const totalElements = result.page.totalElements;
-
-        let pageInfo = `${totalElements} clients`;
-        if (totalPages > 1) {
-          pageInfo += ` · page ${currentPage + 1}/${totalPages}`;
-        }
-        process.stderr.write(chalk.dim(`\n  ${pageInfo}\n`));
-
-        if (totalPages > 1 && currentPage < totalPages - 1) {
-          process.stderr.write(
-            chalk.dim("  Next page: ") + chalk.cyan(replCmd(`pax8 clients list --page ${currentPage + 2}`)) + "\n"
-          );
-        }
+        // #483: standardize on the `Page N of M — N records — next: …`
+        // footer used across every list command. Was `500 clients · page 1/20`
+        // with a separate `Next page: …` hint line; consolidated.
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "client",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
 
         if (!allOpts.coverage) {
           process.stderr.write(

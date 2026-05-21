@@ -8,29 +8,30 @@ describe("E2E: Billing workflow — invoice and audit", () => {
   it("pax8 invoices list shows invoices", async () => {
     const result = await runCliExpectSuccess(["invoices", "list"]);
     expect(result.stdout.length).toBeGreaterThan(0);
+    // #483: wrapped envelope { invoices, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
+    expect(Array.isArray(data.invoices)).toBe(true);
+    expect(data.invoices.length).toBeGreaterThan(0);
   });
 
   it("pax8 invoices list --json produces valid JSON", async () => {
     const result = await runCliExpectSuccess(["invoices", "list", "--json"]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("id");
-    expect(data[0]).toHaveProperty("total");
-    expect(data[0]).toHaveProperty("status");
+    expect(Array.isArray(data.invoices)).toBe(true);
+    expect(data.invoices.length).toBeGreaterThan(0);
+    expect(data.invoices[0]).toHaveProperty("id");
+    expect(data.invoices[0]).toHaveProperty("total");
+    expect(data.invoices[0]).toHaveProperty("status");
   });
 
-  it("pax8 invoices items --json produces valid JSON array", async () => {
+  it("pax8 invoices items --json produces valid { items, page } envelope", async () => {
     const result = await runCliExpectSuccess(["invoices", "items", "--json"]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("id");
-    expect(data[0]).toHaveProperty("quantity");
-    expect(data[0]).toHaveProperty("price");
+    expect(Array.isArray(data.items)).toBe(true);
+    expect(data.items.length).toBeGreaterThan(0);
+    expect(data.items[0]).toHaveProperty("id");
+    expect(data.items[0]).toHaveProperty("quantity");
+    expect(data.items[0]).toHaveProperty("price");
   });
 
   it("pax8 invoices audit shows discrepancy report", async () => {

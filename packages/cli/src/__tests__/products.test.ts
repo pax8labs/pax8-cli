@@ -8,12 +8,15 @@ describe("pax8 products", () => {
   describe("products list", () => {
     it("lists products in demo mode", async () => {
       const result = await runCliExpectSuccess(["products", "list", "--json"]);
+      // #483: JSON envelope is { products, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("name");
-      expect(data[0]).toHaveProperty("vendorName");
-      expect(data[0]).toHaveProperty("sku");
+      expect(data).toHaveProperty("products");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.products)).toBe(true);
+      expect(data.products.length).toBeGreaterThan(0);
+      expect(data.products[0]).toHaveProperty("name");
+      expect(data.products[0]).toHaveProperty("vendorName");
+      expect(data.products[0]).toHaveProperty("sku");
     });
 
     it("filters by vendor", async () => {
@@ -25,8 +28,8 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const p of data) {
+      expect(data.products.length).toBeGreaterThan(0);
+      for (const p of data.products) {
         expect(p.vendorName.toLowerCase()).toContain("avepoint");
       }
     });
@@ -40,7 +43,7 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeLessThanOrEqual(2);
+      expect(data.products.length).toBeLessThanOrEqual(2);
     });
   });
 
@@ -117,9 +120,12 @@ describe("pax8 products", () => {
         "365",
         "--json",
       ]);
+      // #483: search now emits { products, page } too.
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const p of data) {
+      expect(data).toHaveProperty("products");
+      expect(data).toHaveProperty("page");
+      expect(data.products.length).toBeGreaterThan(0);
+      for (const p of data.products) {
         expect(p.name.toLowerCase()).toContain("365");
       }
     });
@@ -134,8 +140,8 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const p of data) {
+      expect(data.products.length).toBeGreaterThan(0);
+      for (const p of data.products) {
         expect(p.name.toLowerCase()).toContain("backup");
       }
     });
@@ -148,7 +154,8 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data).toEqual([]);
+      expect(data.products).toEqual([]);
+      expect(data.page.totalElements).toBe(0);
     });
   });
 

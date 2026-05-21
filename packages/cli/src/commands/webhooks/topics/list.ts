@@ -4,7 +4,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../../lib/context.js";
-import { output } from "../../../lib/output.js";
+import { output, singlePageEnvelope } from "../../../lib/output.js";
 import { createSpinner } from "../../../lib/spinner.js";
 import { handleCommandError } from "../../../lib/errors.js";
 import { replCmd } from "../../../lib/confirm.js";
@@ -48,6 +48,10 @@ Examples:
       }
 
       if (ctx.outputFormat === "json") {
+        // #483: wrap as { topics, page } for shape parity with every
+        // other list command. The topics endpoint isn't paginated, so
+        // we synthesize a single-page envelope.
+        const page = singlePageEnvelope(sorted.length);
         if (options.withActions) {
           const nextActions: { command: string; description: string }[] = [];
           if (sorted.length > 0) {
@@ -59,10 +63,12 @@ Examples:
             });
           }
           process.stdout.write(
-            JSON.stringify({ topics: sorted, nextActions }, null, 2) + "\n",
+            JSON.stringify({ topics: sorted, page, nextActions }, null, 2) + "\n",
           );
         } else {
-          process.stdout.write(JSON.stringify(sorted, null, 2) + "\n");
+          process.stdout.write(
+            JSON.stringify({ topics: sorted, page }, null, 2) + "\n",
+          );
         }
         return;
       }

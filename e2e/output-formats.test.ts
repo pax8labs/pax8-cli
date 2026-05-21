@@ -5,10 +5,10 @@ import { describe, it, expect } from "vitest";
 import { runCliExpectSuccess } from "./test-utils.js";
 
 const COMMANDS = [
-  { name: "companies list", args: ["clients", "list"] },
-  { name: "subscriptions list", args: ["subscriptions", "list"] },
-  { name: "products list", args: ["products", "list"] },
-  { name: "invoices list", args: ["invoices", "list"] },
+  { name: "companies list", args: ["clients", "list"], envelopeKey: "companies" },
+  { name: "subscriptions list", args: ["subscriptions", "list"], envelopeKey: "subscriptions" },
+  { name: "products list", args: ["products", "list"], envelopeKey: "products" },
+  { name: "invoices list", args: ["invoices", "list"], envelopeKey: "invoices" },
 ];
 
 describe("E2E: Output format consistency", () => {
@@ -19,15 +19,18 @@ describe("E2E: Output format consistency", () => {
         expect(result.stdout.trim().length).toBeGreaterThan(0);
       });
 
-      it("--json produces valid JSON array of objects with expected keys", async () => {
+      it("--json produces valid { <resource>, page } envelope with expected keys (#483)", async () => {
         const result = await runCliExpectSuccess([...cmd.args, "--json"]);
-        const data = JSON.parse(result.stdout);
-        expect(Array.isArray(data)).toBe(true);
-        expect(data.length).toBeGreaterThan(0);
-        expect(typeof data[0]).toBe("object");
-        expect(data[0]).not.toBeNull();
+        const data = JSON.parse(result.stdout) as Record<string, unknown>;
+        expect(data).toHaveProperty(cmd.envelopeKey);
+        expect(data).toHaveProperty("page");
+        const items = data[cmd.envelopeKey] as Array<Record<string, unknown>>;
+        expect(Array.isArray(items)).toBe(true);
+        expect(items.length).toBeGreaterThan(0);
+        expect(typeof items[0]).toBe("object");
+        expect(items[0]).not.toBeNull();
         // Every item should have an id
-        expect(data[0]).toHaveProperty("id");
+        expect(items[0]).toHaveProperty("id");
       });
 
       it("--csv produces header row + data rows", async () => {

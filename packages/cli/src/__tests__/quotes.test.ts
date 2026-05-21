@@ -8,20 +8,23 @@ describe("pax8 quotes", () => {
   describe("quotes list", () => {
     it("returns quote data in JSON format", async () => {
       const result = await runCliExpectSuccess(["quotes", "list", "--json"]);
+      // #483: JSON envelope is { quotes, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("id");
-      expect(data[0]).toHaveProperty("companyId");
-      expect(data[0]).toHaveProperty("status");
-      expect(data[0]).toHaveProperty("createdAt");
+      expect(data).toHaveProperty("quotes");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.quotes)).toBe(true);
+      expect(data.quotes.length).toBeGreaterThan(0);
+      expect(data.quotes[0]).toHaveProperty("id");
+      expect(data.quotes[0]).toHaveProperty("companyId");
+      expect(data.quotes[0]).toHaveProperty("status");
+      expect(data.quotes[0]).toHaveProperty("createdAt");
     });
 
     it("emits canonical `createdAt` / `expiresAt` (#385); legacy `createdOn` / `expiresOn` are dropped", async () => {
       const result = await runCliExpectSuccess(["quotes", "list", "--json"]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const row of data) {
+      expect(data.quotes.length).toBeGreaterThan(0);
+      for (const row of data.quotes) {
         expect(row).toHaveProperty("createdAt");
         expect(row).not.toHaveProperty("createdOn");
         expect(row).not.toHaveProperty("expiresOn");
@@ -37,8 +40,8 @@ describe("pax8 quotes", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const quote of data) {
+      expect(data.quotes.length).toBeGreaterThan(0);
+      for (const quote of data.quotes) {
         expect(String(quote.status).toLowerCase()).toBe("accepted");
       }
     });
@@ -52,8 +55,8 @@ describe("pax8 quotes", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const quote of data) {
+      expect(data.quotes.length).toBeGreaterThan(0);
+      for (const quote of data.quotes) {
         expect(String(quote.status).toLowerCase()).toBe("declined");
       }
     });

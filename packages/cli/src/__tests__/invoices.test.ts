@@ -8,13 +8,17 @@ describe("pax8 invoices", () => {
   describe("invoices list", () => {
     it("lists invoices in demo mode", async () => {
       const result = await runCliExpectSuccess(["invoices", "list", "--json"]);
+      // #483: JSON envelope is { invoices, page } (was a flat array).
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("id");
-      expect(data[0]).toHaveProperty("companyName");
-      expect(data[0]).toHaveProperty("total");
-      expect(data[0]).toHaveProperty("status");
+      expect(data).toHaveProperty("invoices");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.invoices)).toBe(true);
+      expect(data.invoices.length).toBeGreaterThan(0);
+      expect(data.invoices[0]).toHaveProperty("id");
+      expect(data.invoices[0]).toHaveProperty("companyName");
+      expect(data.invoices[0]).toHaveProperty("total");
+      expect(data.invoices[0]).toHaveProperty("status");
+      expect(data.page.number).toBe(1);
     });
 
     it("filters by month", async () => {
@@ -30,8 +34,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const inv of data) {
+      expect(data.invoices.length).toBeGreaterThan(0);
+      for (const inv of data.invoices) {
         expect(inv.invoiceDate).toContain(currentMonth);
       }
     });
@@ -45,8 +49,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const inv of data) {
+      expect(data.invoices.length).toBeGreaterThan(0);
+      for (const inv of data.invoices) {
         expect(inv.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
       }
     });
@@ -72,8 +76,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const inv of data) {
+      expect(data.invoices.length).toBeGreaterThan(0);
+      for (const inv of data.invoices) {
         expect(inv.invoiceDate >= from).toBe(true);
         expect(inv.invoiceDate <= to).toBe(true);
       }
@@ -88,8 +92,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const inv of data) {
+      expect(data.invoices.length).toBeGreaterThan(0);
+      for (const inv of data.invoices) {
         expect(inv.status).toBe("Unpaid");
       }
     });
@@ -105,12 +109,12 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      const dueDates = data.map((i: { dueDate: string }) => i.dueDate);
+      const dueDates = data.invoices.map((i: { dueDate: string }) => i.dueDate);
       const sorted = [...dueDates].sort((a, b) => a.localeCompare(b));
       expect(dueDates).toEqual(sorted);
     });
 
-    it("--with-actions wraps in { invoices, nextActions }", async () => {
+    it("--with-actions adds nextActions to { invoices, page } envelope", async () => {
       const result = await runCliExpectSuccess([
         "invoices",
         "list",
@@ -119,6 +123,7 @@ describe("pax8 invoices", () => {
       ]);
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("invoices");
+      expect(data).toHaveProperty("page");
       expect(data).toHaveProperty("nextActions");
       expect(Array.isArray(data.invoices)).toBe(true);
       expect(Array.isArray(data.nextActions)).toBe(true);
@@ -157,13 +162,16 @@ describe("pax8 invoices", () => {
         "items",
         "--json",
       ]);
+      // #483: JSON envelope is { items, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("productName");
-      expect(data[0]).toHaveProperty("quantity");
-      expect(data[0]).toHaveProperty("price");
-      expect(data[0]).toHaveProperty("subTotal");
+      expect(data).toHaveProperty("items");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.items)).toBe(true);
+      expect(data.items.length).toBeGreaterThan(0);
+      expect(data.items[0]).toHaveProperty("productName");
+      expect(data.items[0]).toHaveProperty("quantity");
+      expect(data.items[0]).toHaveProperty("price");
+      expect(data.items[0]).toHaveProperty("subTotal");
     });
 
     it("filters items by invoice ID", async () => {
@@ -175,8 +183,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const item of data) {
+      expect(data.items.length).toBeGreaterThan(0);
+      for (const item of data.items) {
         expect(item.invoiceId).toBe("inv-summit-curr-001");
       }
     });

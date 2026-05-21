@@ -4,7 +4,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, singlePageEnvelope } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatStatus, formatDate } from "../../lib/formatters.js";
@@ -51,6 +51,9 @@ Examples:
       }
 
       if (ctx.outputFormat === "json") {
+        // #483: wrap as { webhooks, page } even though the endpoint isn't
+        // paginated, so agents get a single contract for every list shape.
+        const page = singlePageEnvelope(webhooks.length);
         if (options.withActions) {
           const nextActions: { command: string; description: string }[] = [];
           if (webhooks.length === 0) {
@@ -71,10 +74,12 @@ Examples:
             });
           }
           process.stdout.write(
-            JSON.stringify({ webhooks, nextActions }, null, 2) + "\n",
+            JSON.stringify({ webhooks, page, nextActions }, null, 2) + "\n",
           );
         } else {
-          process.stdout.write(JSON.stringify(webhooks, null, 2) + "\n");
+          process.stdout.write(
+            JSON.stringify({ webhooks, page }, null, 2) + "\n",
+          );
         }
         return;
       }

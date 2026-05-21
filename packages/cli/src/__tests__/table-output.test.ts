@@ -96,7 +96,7 @@ describe("table output — TTY-aware rendering", () => {
       const result = await runTable(["clients", "list", "--json"]);
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
+      expect(data.companies.length).toBeGreaterThan(0);
       // No per-row key-presence assertion here. The original assertion took
       // `Object.keys(data[0])` and required every other row to carry the same
       // keys, which forced uniform population of optional fields and bit us in
@@ -148,8 +148,9 @@ describe("table output — TTY-aware rendering", () => {
       const result = await runTable(["subscriptions", "list", "--json"]);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain("\x1b[");
+      // #483: wrapped envelope { subscriptions, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.subscriptions)).toBe(true);
     });
   });
 
@@ -164,8 +165,9 @@ describe("table output — TTY-aware rendering", () => {
       ]);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain("\x1b[");
+      // #483: wrapped envelope { renewals, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.renewals)).toBe(true);
     });
 
     it("CSV output has no ANSI codes", async () => {
@@ -216,8 +218,9 @@ describe("table output — TTY-aware rendering", () => {
       const result = await runTable(["invoices", "list", "--json"]);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain("\x1b[");
+      // #483: wrapped envelope { invoices, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.invoices)).toBe(true);
     });
   });
 });

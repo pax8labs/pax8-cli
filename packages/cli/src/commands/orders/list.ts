@@ -8,11 +8,19 @@ import { createSpinner } from "../../lib/spinner.js";
 import { CliError, handleCommandError, timeoutRecoverySteps } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+} from "../../lib/output.js";
 import { formatDate } from "../../lib/formatters.js";
-import { enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import {
+  enrichCompanyNames,
+  buildCompanyNameMap,
+} from "../../lib/enrich-subscriptions.js";
 import { clampListSize, LIST_SIZE_CAP, warnSizeClamped } from "../../lib/validate.js";
-import { debugLog } from "../../lib/debug.js";
 
 // #385: timestamp column references the canonical `createdAt`. The legacy
 // `createdDate` alias is still emitted on every row in `--json` output for
@@ -25,66 +33,6 @@ const columns: Column[] = [
   { key: "lineItems", header: "Items", format: (v) => String(Array.isArray(v) ? v.length : 0) },
 ];
 
-// #478: when the orders page references company IDs that aren't covered by
-// the first companies page, walk additional pages until every referenced ID
-// is resolved (or the catalog is exhausted). Capped so a misbehaving server
-// can't put us in an unbounded loop. The cap mirrors the platform's largest
-// observed partner — 1000 customers — split across 10 pages of 1000.
-const COMPANIES_ENRICHMENT_MAX_PAGES = 10;
-const COMPANIES_ENRICHMENT_PAGE_SIZE = 1000;
-
-/**
- * Build a {companyId → companyName} map covering every ID referenced in the
- * order rows. Pages through `companies.list` until either the needed IDs are
- * covered or we've hit `COMPANIES_ENRICHMENT_MAX_PAGES`. Surfaces a stderr
- * warning if names remain unresolved after the cap so partners don't see
- * blank `Company` cells with no explanation (#478, defect 4).
- */
-async function buildCompanyNameMap(
-  ctx: Awaited<ReturnType<typeof buildContext>>,
-  orderRows: { companyId?: string }[],
-  quiet: boolean,
-): Promise<Map<string, string>> {
-  const needed = new Set<string>();
-  for (const row of orderRows) {
-    if (row.companyId) needed.add(String(row.companyId));
-  }
-  const nameMap = new Map<string, string>();
-  if (needed.size === 0) return nameMap;
-
-  for (let page = 0; page < COMPANIES_ENRICHMENT_MAX_PAGES; page++) {
-    let result;
-    try {
-      result = await ctx.api.companies.list({
-        page,
-        size: COMPANIES_ENRICHMENT_PAGE_SIZE,
-      });
-    } catch (err) {
-      // Enrichment is best-effort — a failed companies fetch shouldn't
-      // sink the orders list. Log for diagnostics and stop paging.
-      debugLog("companies enrichment fetch failed", err);
-      break;
-    }
-    for (const c of result.content as { id: string; name: string }[]) {
-      nameMap.set(c.id, c.name);
-    }
-    // Early-exit: every referenced ID is now covered.
-    const stillMissing = [...needed].some((id) => !nameMap.has(id));
-    if (!stillMissing) break;
-    // Out of pages on the wire — no point looping further.
-    if (page + 1 >= result.page.totalPages) break;
-  }
-
-  const unresolved = [...needed].filter((id) => !nameMap.has(id));
-  if (unresolved.length > 0 && !quiet) {
-    process.stderr.write(
-      chalk.dim(
-        `  ⚠ ${unresolved.length} order${unresolved.length === 1 ? "" : "s"} reference companies outside the first ${COMPANIES_ENRICHMENT_MAX_PAGES * COMPANIES_ENRICHMENT_PAGE_SIZE} customers — Company column will show a placeholder.\n`,
-      ),
-    );
-  }
-  return nameMap;
-}
 
 export const ordersListCommand = new Command("list")
   .description("List orders")
@@ -155,14 +103,14 @@ Examples:
 
       const result = await ctx.api.orders.list(params);
 
-      // #478 defect 4: page the companies catalog until every companyId
-      // referenced by the orders page is covered. Pre-fix the call was
-      // `companies.list({ size: 200 })`, which left the Company column
-      // blank for any partner with >200 customers.
+      // #478 defect 4 / #483: page the companies catalog until every
+      // companyId referenced by the orders page is covered. Pre-fix the
+      // call was `companies.list({ size: 200 })`, which left the Company
+      // column blank for any partner with >200 customers.
       const nameMap = await buildCompanyNameMap(
         ctx,
         result.content as { companyId?: string }[],
-        Boolean(allOpts.quiet),
+        { quiet: Boolean(allOpts.quiet), resourceLabel: "order" },
       );
       enrichCompanyNames(nameMap, result.content as Record<string, unknown>[]);
 
@@ -175,31 +123,23 @@ Examples:
         return;
       }
 
-      // #478 defect 1: surface pagination in the JSON envelope so agents
-      // can see "page 1 of 1810 — 45208 orders" instead of silently
-      // truncating the answer at row 25. The envelope mirrors the wire
-      // page object but renumbers `number` 1-based so it matches the
-      // `--page` flag the user would pass next.
-      const pageEnvelope = {
-        number: result.page.number + 1,
-        size: result.page.size,
-        totalElements: result.page.totalElements,
-        totalPages: result.page.totalPages,
-      };
-      const onLastPage = pageEnvelope.number >= pageEnvelope.totalPages;
-      const hasNextPage = !onLastPage && pageEnvelope.totalPages > 0;
+      // #478 defect 1 / #483: surface pagination in the JSON envelope so
+      // agents can see "page 1 of 1810 — 45208 orders" instead of silently
+      // truncating the answer at row 25.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
+      const nextPageCommand = `pax8 orders list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}`;
 
       if (ctx.outputFormat === "json") {
         const orders = result.content;
         if (allOpts.withActions) {
           const nextActions: { command: string; description: string }[] = [];
-          if (hasNextPage) {
-            const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
-            nextActions.push({
-              command: `pax8 orders list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag} --json`,
-              description: `Fetch the next page of orders (page ${pageEnvelope.number + 1} of ${pageEnvelope.totalPages})`,
-            });
-          }
+          const pageAction = buildNextPageAction(
+            pageEnvelope,
+            `${nextPageCommand} --json`,
+            "order",
+          );
+          if (pageAction) nextActions.push(pageAction);
           if (orders.length > 0) {
             nextActions.push({
               command: `pax8 orders show ${orders[0].id}`,
@@ -244,20 +184,16 @@ Examples:
         },
       });
 
-      // #478 defect 1: human footer surfaces "Page X of Y — N orders" plus
-      // an explicit `--page <n+1>` hint when more pages exist. Pre-fix the
-      // footer just said "45208 orders" and partners had no signal that
-      // pagination existed at all.
-      if (ctx.outputFormat === "table" && result.content.length > 0) {
-        const parts = [
-          `Page ${pageEnvelope.number} of ${pageEnvelope.totalPages}`,
-          `${pageEnvelope.totalElements} order${pageEnvelope.totalElements === 1 ? "" : "s"}`,
-        ];
-        if (hasNextPage) {
-          const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
-          parts.push(`next: pax8 orders list --page ${pageEnvelope.number + 1}${companyFlag}`);
-        }
-        process.stderr.write(chalk.dim(`\n  ${parts.join(" — ")}\n\n`));
+      // #478 defect 1 / #483: human footer surfaces "Page X of Y — N
+      // orders" plus an explicit `--page <n+1>` hint when more pages
+      // exist. Pre-fix the footer just said "45208 orders" and partners
+      // had no signal that pagination existed at all.
+      if (ctx.outputFormat === "table") {
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "order",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
       }
     } catch (error) {
       // #199: the `/orders` endpoint is known to be slow against tenants with

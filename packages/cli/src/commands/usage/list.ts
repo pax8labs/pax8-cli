@@ -5,7 +5,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import type { UsageSummary } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, singlePageEnvelope } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate } from "../../lib/formatters.js";
@@ -94,6 +94,20 @@ Notes:
         for (const item of summaries) {
           process.stdout.write(item.id + "\n");
         }
+        return;
+      }
+
+      // #483: wrap JSON as { usage, page }. The endpoint is per-subscription
+      // (we fan out), so server pagination is per-call; we surface a
+      // single-page envelope summarizing the aggregated result instead.
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            { usage: summaries, page: singlePageEnvelope(summaries.length) },
+            null,
+            2,
+          ) + "\n",
+        );
         return;
       }
 

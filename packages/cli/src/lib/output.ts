@@ -300,6 +300,120 @@ function renderEmptyState(state: EmptyState): void {
 }
 
 /**
+ * Normalized pagination envelope rendered into `--json` output and into
+ * the human-facing table footer (#478 / #483).
+ *
+ * `number` is 1-based so it matches the `--page` flag a user would type
+ * next. The Pax8 wire returns 0-based `number`; the envelope flips it.
+ */
+export interface PageEnvelope {
+  number: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+/**
+ * Translate the wire `page` object (0-based `number`) into the 1-based
+ * envelope used by both the JSON output and the table footer.
+ */
+export function buildPageEnvelope(wirePage: {
+  number: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}): PageEnvelope {
+  return {
+    number: wirePage.number + 1,
+    size: wirePage.size,
+    totalElements: wirePage.totalElements,
+    totalPages: wirePage.totalPages,
+  };
+}
+
+/**
+ * Synthesize a single-page envelope for endpoints that return a flat
+ * array without server-side pagination (e.g. `webhooks.list`,
+ * `webhooks.getLogs`). Lets every list command emit a consistent
+ * `{ <resource>, page }` JSON shape regardless of wire pagination.
+ */
+export function singlePageEnvelope(rowCount: number): PageEnvelope {
+  return {
+    number: 1,
+    size: rowCount,
+    totalElements: rowCount,
+    totalPages: rowCount === 0 ? 0 : 1,
+  };
+}
+
+/**
+ * `true` when the supplied envelope has at least one more page of results.
+ * Single-page result sets (`totalPages === 1` or zero) return `false`.
+ */
+export function hasNextPage(page: PageEnvelope): boolean {
+  return page.totalPages > 0 && page.number < page.totalPages;
+}
+
+/**
+ * Render the standard pagination footer to stderr after a table render.
+ *
+ * Format:
+ *   `Page <n> of <total> — <N> <resource>s — next: <nextPageCommand>`
+ *
+ * The `next:` segment is suppressed on the last page. Called from the
+ * `format === "table"` branch only; JSON output gets the page object via
+ * the envelope helpers instead. Skipped silently when the result set is
+ * empty so the empty-state message stands alone (#483).
+ */
+export function renderPaginationFooter(
+  page: PageEnvelope,
+  options: {
+    /** Singular noun ("order", "subscription", "invoice"). Pluralized via simple `+ s`. */
+    resourceSingular: string;
+    /** Override plural form when the simple `+ s` doesn't work (e.g. "companies"). */
+    resourcePlural?: string;
+    /** Caller-built `pax8 <cmd> --page <N+1> ...` string, including any active filter flags. */
+    nextPageCommand?: string;
+    /** Skip the footer when the data array is empty. Default: true. */
+    skipWhenEmpty?: boolean;
+    rowCount: number;
+  },
+): void {
+  const skipWhenEmpty = options.skipWhenEmpty ?? true;
+  if (skipWhenEmpty && options.rowCount === 0) return;
+  const plural = options.resourcePlural ?? `${options.resourceSingular}s`;
+  const resourceLabel =
+    page.totalElements === 1 ? options.resourceSingular : plural;
+  const parts = [
+    `Page ${page.number} of ${page.totalPages || 1}`,
+    `${page.totalElements} ${resourceLabel}`,
+  ];
+  if (hasNextPage(page) && options.nextPageCommand) {
+    parts.push(`next: ${options.nextPageCommand}`);
+  }
+  process.stderr.write(chalk.dim(`\n  ${parts.join(" — ")}\n\n`));
+}
+
+/**
+ * Build the standard "fetch next page" nextActions entry, or `null` when
+ * the supplied envelope is already on the last page. Callers compose
+ * additional `nextActions` entries (e.g. "drill into the first row") on
+ * top of this base.
+ */
+export function buildNextPageAction(
+  page: PageEnvelope,
+  nextPageCommand: string,
+  resourceSingular: string,
+): { command: string; description: string } | null {
+  if (!hasNextPage(page)) return null;
+  const plural = `${resourceSingular}s`;
+  return {
+    command: nextPageCommand,
+    description: `Fetch the next page of ${plural} (page ${page.number + 1} of ${page.totalPages})`,
+  };
+}
+
+/**
  * Render `data` to stdout in the format selected by `options`.
  *
  * The parameter type is intentionally widened to `readonly object[]` so that

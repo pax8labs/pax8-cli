@@ -84,19 +84,24 @@ const COMMANDS: CommandCase[] = [
       expect(p.monthlyCost).toBeDefined();
     },
   },
-  // Flat-array list responses — agents already parse these as JSON arrays.
-  // We don't pass --with-actions; the contract for plain `list --json` is an
-  // array.
+  // #483: every list command now emits a wrapped { <resource>, page }
+  // envelope so agents can detect pagination without --with-actions. The
+  // pre-#483 contract was a flat array; this is a pre-publish breaking
+  // change shared across the list surface.
   {
     args: ["clients", "list", "--json"],
     shape: (parsed) => {
-      expect(Array.isArray(parsed)).toBe(true);
+      const data = parsed as { companies?: unknown; page?: unknown };
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.page).toBeDefined();
     },
   },
   {
     args: ["subscriptions", "list", "--json"],
     shape: (parsed) => {
-      expect(Array.isArray(parsed)).toBe(true);
+      const data = parsed as { subscriptions?: unknown; page?: unknown };
+      expect(Array.isArray(data.subscriptions)).toBe(true);
+      expect(data.page).toBeDefined();
     },
   },
   {

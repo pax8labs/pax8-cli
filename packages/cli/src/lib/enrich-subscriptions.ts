@@ -1,6 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import chalk from "chalk";
 import type { CommandContext } from "./context.js";
 import { debugLog } from "./debug.js";
 
@@ -14,6 +15,109 @@ interface EnrichableByProduct {
 interface EnrichableByCompany {
   companyId: string;
   companyName?: string;
+}
+
+// #478 / #483: when a list page references company IDs not covered by the
+// first companies page, walk additional pages until every referenced ID is
+// resolved (or the catalog is exhausted). Capped so a misbehaving server
+// can't put us in an unbounded loop — the cap mirrors the platform's largest
+// observed partner (1000 customers) split across 10 pages of 1000.
+const COMPANIES_ENRICHMENT_MAX_PAGES = 10;
+const COMPANIES_ENRICHMENT_PAGE_SIZE = 1000;
+
+/**
+ * Build a `{ companyId → companyName }` lookup map covering every ID
+ * referenced in the supplied rows. Pages `companies.list` until every
+ * needed ID is resolved or the catalog is exhausted (whichever comes
+ * first), with a guardrail cap of 10×1000 rows.
+ *
+ * Replaces the legacy `companies.list({ size: 200 })` pattern that left
+ * the Company column blank for any portfolio bigger than 200 customers.
+ * Best-effort: a failed companies fetch is logged via `debugLog` and
+ * paging stops — the list still renders, just with un-enriched cells.
+ *
+ * Surfaces a stderr warning if names remain unresolved after the cap so
+ * partners don't see blank cells with no explanation (#483).
+ */
+export async function buildCompanyNameMap(
+  ctx: CommandContext,
+  rows: { companyId?: string }[],
+  options: { quiet?: boolean; resourceLabel?: string } = {},
+): Promise<Map<string, string>> {
+  const needed = new Set<string>();
+  for (const row of rows) {
+    if (row.companyId) needed.add(String(row.companyId));
+  }
+  const nameMap = new Map<string, string>();
+  if (needed.size === 0) return nameMap;
+
+  for (let page = 0; page < COMPANIES_ENRICHMENT_MAX_PAGES; page++) {
+    let result;
+    try {
+      result = await ctx.api.companies.list({
+        page,
+        size: COMPANIES_ENRICHMENT_PAGE_SIZE,
+      });
+    } catch (err) {
+      // Enrichment is best-effort — a failed companies fetch shouldn't
+      // sink the list. Log for diagnostics and stop paging.
+      debugLog("companies enrichment fetch failed", err);
+      break;
+    }
+    for (const c of result.content as { id: string; name: string }[]) {
+      nameMap.set(c.id, c.name);
+    }
+    // Early-exit: every referenced ID is now covered.
+    const stillMissing = [...needed].some((id) => !nameMap.has(id));
+    if (!stillMissing) break;
+    // Out of pages on the wire — no point looping further.
+    if (page + 1 >= result.page.totalPages) break;
+  }
+
+  const unresolved = [...needed].filter((id) => !nameMap.has(id));
+  if (unresolved.length > 0 && !options.quiet) {
+    const resource = options.resourceLabel ?? "row";
+    const plural = unresolved.length === 1 ? "" : "s";
+    process.stderr.write(
+      chalk.dim(
+        `  ⚠ ${unresolved.length} ${resource}${plural} reference companies outside the first ${
+          COMPANIES_ENRICHMENT_MAX_PAGES * COMPANIES_ENRICHMENT_PAGE_SIZE
+        } customers — Company column will show a placeholder.\n`,
+      ),
+    );
+  }
+  return nameMap;
+}
+
+/**
+ * Fetch every company in the tenant by walking `companies.list` until the
+ * catalog is exhausted. Used by callers (recommendations engine, portfolio
+ * coverage) that need to reason over the FULL customer set, not just the
+ * subset referenced by a specific list of rows.
+ *
+ * Guardrailed to the same 10×1000 cap as `buildCompanyNameMap`. Returns
+ * a flat array of `{ id, name, ...rest }` records — caller decides how
+ * to consume them.
+ */
+export async function fetchAllCompanies(
+  ctx: CommandContext,
+): Promise<{ id: string; name: string }[]> {
+  const all: { id: string; name: string }[] = [];
+  for (let page = 0; page < COMPANIES_ENRICHMENT_MAX_PAGES; page++) {
+    let result;
+    try {
+      result = await ctx.api.companies.list({
+        page,
+        size: COMPANIES_ENRICHMENT_PAGE_SIZE,
+      });
+    } catch (err) {
+      debugLog("fetchAllCompanies fetch failed", err);
+      break;
+    }
+    all.push(...(result.content as { id: string; name: string }[]));
+    if (page + 1 >= result.page.totalPages) break;
+  }
+  return all;
 }
 
 /**

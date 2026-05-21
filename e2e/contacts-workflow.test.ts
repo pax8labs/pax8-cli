@@ -17,10 +17,11 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "--company",
       "Summit Healthcare Partners",
     ]);
+    // #483: wrapped envelope { contacts, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    const first = data[0];
+    expect(Array.isArray(data.contacts)).toBe(true);
+    expect(data.contacts.length).toBeGreaterThan(0);
+    const first = data.contacts[0];
     expect(first).toHaveProperty("id");
     expect(first).toHaveProperty("firstName");
     expect(first).toHaveProperty("lastName");
@@ -39,7 +40,9 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
     ]);
     const data = JSON.parse(result.stdout);
     // All returned contacts should share the same companyId
-    const companyIds = new Set(data.map((c: { companyId: string }) => c.companyId));
+    const companyIds = new Set(
+      data.contacts.map((c: { companyId: string }) => c.companyId),
+    );
     expect(companyIds.size).toBe(1);
   });
 
@@ -51,7 +54,7 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "Summit Healthcare Partners",
       "--json",
     ]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).contacts[0].id;
 
     const result = await runCliExpectSuccess([
       "contacts",
@@ -172,7 +175,7 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "Summit Healthcare Partners",
       "--json",
     ]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).contacts[0].id;
 
     const result = await runCliExpectSuccess([
       "contacts",
@@ -210,7 +213,7 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "Summit Healthcare Partners",
       "--json",
     ]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).contacts[0].id;
 
     const result = await runCliExpectFailure([
       "contacts",
@@ -231,7 +234,7 @@ describe("E2E: Contacts workflow — list, show, write commands", () => {
       "Summit Healthcare Partners",
       "--json",
     ]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).contacts[0].id;
 
     const result = await runCliExpectSuccess([
       "contacts",

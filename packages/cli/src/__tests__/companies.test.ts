@@ -8,19 +8,24 @@ describe("pax8 clients", () => {
   describe("clients list", () => {
     it("returns company data in JSON format", async () => {
       const result = await runCliExpectSuccess(["clients", "list", "--json"]);
+      // #483: JSON envelope is { companies, page } (was a flat array pre-rollout).
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("id");
-      expect(data[0]).toHaveProperty("name");
-      expect(data[0]).toHaveProperty("status");
+      expect(data).toHaveProperty("companies");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.companies.length).toBeGreaterThan(0);
+      expect(data.companies[0]).toHaveProperty("id");
+      expect(data.companies[0]).toHaveProperty("name");
+      expect(data.companies[0]).toHaveProperty("status");
+      expect(data.page.number).toBe(1);
+      expect(typeof data.page.totalElements).toBe("number");
     });
 
     it("emits canonical `createdAt` (#385); legacy `created` is dropped", async () => {
       const result = await runCliExpectSuccess(["clients", "list", "--json"]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const row of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const row of data.companies) {
         expect(row).toHaveProperty("createdAt");
         expect(row).not.toHaveProperty("created");
       }
@@ -30,8 +35,8 @@ describe("pax8 clients", () => {
       const result = await runCliExpectSuccess(["clients", "list"]);
       // Non-TTY defaults to JSON
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data[0].name).toBe("Summit Healthcare Partners");
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.companies[0].name).toBe("Summit Healthcare Partners");
     });
 
     it("outputs CSV format", async () => {
@@ -57,7 +62,8 @@ describe("pax8 clients", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBe(2);
+      expect(data.companies.length).toBe(2);
+      expect(data.page.size).toBe(2);
     });
 
     it("shows footer with company count on stderr", async () => {
@@ -77,8 +83,8 @@ describe("pax8 clients", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const c of data.companies) {
         expect(c.address?.city).toBe("Denver");
       }
     });
@@ -92,8 +98,8 @@ describe("pax8 clients", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const c of data.companies) {
         expect(c.address?.stateOrProvince).toBe("CO");
       }
     });
@@ -107,8 +113,8 @@ describe("pax8 clients", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const c of data.companies) {
         expect(c.address?.country).toBe("US");
       }
     });
@@ -122,8 +128,8 @@ describe("pax8 clients", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const c of data.companies) {
         expect(c.address?.postalCode).toBe("80246");
       }
     });
@@ -139,12 +145,14 @@ describe("pax8 clients", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      const cities = data.map((c: { address?: { city?: string } }) => c.address?.city ?? "");
+      const cities = data.companies.map(
+        (c: { address?: { city?: string } }) => c.address?.city ?? "",
+      );
       const sorted = [...cities].sort((a, b) => a.localeCompare(b));
       expect(cities).toEqual(sorted);
     });
 
-    it("--with-actions wraps in { companies, nextActions }", async () => {
+    it("--with-actions adds nextActions to { companies, page } envelope", async () => {
       const result = await runCliExpectSuccess([
         "clients",
         "list",

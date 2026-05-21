@@ -50,22 +50,27 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
         ["clients", "list", "--json", "--size", "1000"],
         LARGE,
       );
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(200);
+      // #483: wrapped envelope { companies, page }.
+      const data = parseJson<{ companies: unknown[]; page: { totalElements: number } }>(
+        result.stdout,
+      );
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.companies.length).toBeGreaterThan(200);
+      expect(data.page.totalElements).toBeGreaterThan(200);
     });
 
     it("subscriptions list fills a 1000-row page (small fixture caps out at dozens)", async () => {
-      // We can't assert > 1000 today because the page is capped at --size and
-      // list `--json` doesn't yet expose `totalElements` in the envelope
-      // (#478/#483). Hitting the size cap is itself the signal that we're on
-      // the large fixture: small fixture has < 50 subs total, large has 5000.
+      // #483: every list command emits `{ <resource>, page }`. We can now
+      // verify the total via `data.page.totalElements`.
       const result = await runCliExpectSuccess(
         ["subscriptions", "list", "--json", "--size", "1000"],
         LARGE,
       );
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(data.length).toBeGreaterThanOrEqual(1000);
+      const data = parseJson<{ subscriptions: unknown[]; page: { totalElements: number } }>(
+        result.stdout,
+      );
+      expect(data.subscriptions.length).toBeGreaterThanOrEqual(1000);
+      expect(data.page.totalElements).toBeGreaterThanOrEqual(5000);
     });
   });
 
@@ -82,16 +87,16 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
 
     it("pax8 clients list --json", async () => {
       const result = await runCliExpectSuccess(["clients", "list", "--json"], LARGE);
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
+      const data = parseJson<{ companies: unknown[] }>(result.stdout);
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.companies.length).toBeGreaterThan(0);
     });
 
     it("pax8 subscriptions list --json", async () => {
       const result = await runCliExpectSuccess(["subscriptions", "list", "--json"], LARGE);
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
+      const data = parseJson<{ subscriptions: unknown[] }>(result.stdout);
+      expect(Array.isArray(data.subscriptions)).toBe(true);
+      expect(data.subscriptions.length).toBeGreaterThan(0);
     });
 
     it("pax8 subscriptions renewals --json", async () => {
@@ -153,14 +158,14 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
 
     it("pax8 invoices list --json (empty under large fixture today)", async () => {
       const result = await runCliExpectSuccess(["invoices", "list", "--json"], LARGE);
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      const data = parseJson<{ invoices: unknown[] }>(result.stdout);
+      expect(Array.isArray(data.invoices)).toBe(true);
     });
 
     it("pax8 webhooks list --json (empty under large fixture today)", async () => {
       const result = await runCliExpectSuccess(["webhooks", "list", "--json"], LARGE);
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      const data = parseJson<{ webhooks: unknown[] }>(result.stdout);
+      expect(Array.isArray(data.webhooks)).toBe(true);
     });
   });
 
@@ -194,9 +199,9 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
         ["subscriptions", "list", "--json", "--size", "5000"],
         LARGE,
       );
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeLessThanOrEqual(1000);
+      const data = parseJson<{ subscriptions: unknown[] }>(result.stdout);
+      expect(Array.isArray(data.subscriptions)).toBe(true);
+      expect(data.subscriptions.length).toBeLessThanOrEqual(1000);
       expect(result.stderr).toContain("--size 5000 clamped to 1000");
     });
 
@@ -205,9 +210,9 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
         ["clients", "list", "--json", "--size", "10000"],
         LARGE,
       );
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeLessThanOrEqual(1000);
+      const data = parseJson<{ companies: unknown[] }>(result.stdout);
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.companies.length).toBeLessThanOrEqual(1000);
       expect(result.stderr).toContain("--size 10000 clamped to 1000");
     });
 
@@ -244,9 +249,9 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
       );
       // Just parsing successfully is the assertion — a crash or invalid
       // escape would throw above.
-      const data = parseJson<Array<{ name: string }>>(result.stdout);
+      const data = parseJson<{ companies: Array<{ name: string }> }>(result.stdout);
       // At least one of the hostile names should appear.
-      const hasHostile = data.some(
+      const hasHostile = data.companies.some(
         (c) => c.name.includes('"') || c.name.includes("'") || c.name.includes("北京"),
       );
       expect(hasHostile).toBe(true);
@@ -257,8 +262,8 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
         ["subscriptions", "list", "--json", "--size", "1000"],
         LARGE,
       );
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
+      const data = parseJson<{ subscriptions: unknown[] }>(result.stdout);
+      expect(data.subscriptions.length).toBeGreaterThan(0);
     });
   });
 

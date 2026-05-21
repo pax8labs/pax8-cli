@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
-import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+} from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency } from "../../lib/formatters.js";
@@ -77,6 +81,26 @@ Examples:
         emptyReasons.push("No invoiced line items are recorded yet.");
       }
 
+      // #483: wrap JSON output as { items, page } and standardize footer.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const filterFlag = [
+        options.company ? `--company "${options.company}"` : "",
+        options.month ? `--month ${options.month}` : "",
+        options.invoiceId ? `--invoice-id ${options.invoiceId}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const nextPageCommand =
+        `pax8 invoices items --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
+        (filterFlag ? ` ${filterFlag}` : "");
+
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify({ items: result.content, page: pageEnvelope }, null, 2) + "\n",
+        );
+        return;
+      }
+
       output(result.content, {
         format: ctx.outputFormat,
         columns,
@@ -92,10 +116,12 @@ Examples:
         },
       });
 
-      if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} items\n\n`)
-        );
+      if (ctx.outputFormat === "table") {
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "item",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list invoice items");
