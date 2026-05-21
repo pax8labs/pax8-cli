@@ -426,22 +426,50 @@ describe("ProductPricingResponseSchema", () => {
 
 // ─── Provisioning Detail ─────────────────────────────────────────────────────
 
-describe("ProvisioningDetailSchema", () => {
-  const valid = {
-    productId: uuid,
-    vendorPrerequisites: "Must have Azure AD tenant",
-    fields: [
-      { name: "domain", label: "Domain Name", type: "string", required: true },
-      { name: "plan", label: "Plan", type: "select", required: false, options: ["basic", "standard"] },
-    ],
-  };
-
-  it("validates a correct payload", () => {
-    expect(ProvisioningDetailSchema.parse(valid)).toEqual(valid);
+describe("ProvisioningDetailSchema (spec-shaped, see Candidate H)", () => {
+  it("validates a full Input-type field with null possibleValues", () => {
+    const detail = {
+      key: "domain",
+      label: "Tenant Domain",
+      description: "Customer's verified Microsoft tenant domain.",
+      valueType: "Input" as const,
+      possibleValues: null,
+    };
+    expect(ProvisioningDetailSchema.parse(detail)).toEqual(detail);
   });
 
-  it("validates minimal payload", () => {
-    expect(ProvisioningDetailSchema.parse({ productId: uuid })).toEqual({ productId: uuid });
+  it("validates a Single-Value field with allowed possibleValues", () => {
+    const detail = {
+      key: "plan",
+      label: "Plan",
+      valueType: "Single-Value" as const,
+      possibleValues: ["basic", "standard"],
+    };
+    expect(ProvisioningDetailSchema.parse(detail)).toEqual(detail);
+  });
+
+  it("validates a Multi-Value field", () => {
+    const detail = {
+      key: "regions",
+      valueType: "Multi-Value" as const,
+      possibleValues: ["us-east", "us-west", "eu-central"],
+    };
+    expect(ProvisioningDetailSchema.parse(detail)).toEqual(detail);
+  });
+
+  it("accepts writeOnly values array (orders / sub-update echo path)", () => {
+    const echoed = { key: "domain", values: ["contoso.onmicrosoft.com"] };
+    expect(ProvisioningDetailSchema.parse(echoed)).toEqual(echoed);
+  });
+
+  it("rejects a valueType outside the spec enum", () => {
+    expect(() =>
+      ProvisioningDetailSchema.parse({ key: "x", valueType: "Freeform" })
+    ).toThrow();
+  });
+
+  it("validates an empty object — all fields are optional in the spec", () => {
+    expect(ProvisioningDetailSchema.parse({})).toEqual({});
   });
 });
 

@@ -80,7 +80,7 @@ describe("pax8 products", () => {
       expect(plan.rates[0]).toHaveProperty("suggestedRetailPrice");
     });
 
-    it("shows provisioning with --provisioning flag", async () => {
+    it("shows provisioning with --provisioning flag (spec-shaped array per Candidate H)", async () => {
       const result = await runCliExpectSuccess([
         "products",
         "show",
@@ -91,8 +91,20 @@ describe("pax8 products", () => {
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(false);
       expect(data).toHaveProperty("provisioningDetails");
-      expect(data.provisioningDetails).toHaveProperty("productId");
-      expect(data.provisioningDetails).toHaveProperty("fields");
+      // The spec shape is `ProvisioningDetail[]`, NOT the pre-fix
+      // `{ productId, vendorPrerequisites, fields[] }` object. Each detail
+      // carries `{ key, label?, description?, valueType?, possibleValues?,
+      // values? }` per partner-endpoints.json.
+      expect(Array.isArray(data.provisioningDetails)).toBe(true);
+      expect(data.provisioningDetails.length).toBeGreaterThan(0);
+      const first = data.provisioningDetails[0];
+      expect(first).toHaveProperty("key");
+      expect(first).toHaveProperty("valueType");
+      expect(["Input", "Single-Value", "Multi-Value"]).toContain(first.valueType);
+      // None of the hallucinated pre-fix fields should appear.
+      expect(data.provisioningDetails).not.toHaveProperty("productId");
+      expect(data.provisioningDetails).not.toHaveProperty("fields");
+      expect(data.provisioningDetails).not.toHaveProperty("vendorPrerequisites");
     });
 
     it("shows dependencies with --dependencies flag", async () => {
