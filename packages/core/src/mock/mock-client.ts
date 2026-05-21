@@ -223,7 +223,14 @@ class CompaniesResource {
 
 class SubscriptionsResource {
   async list(
-    params?: ListParams & { companyId?: string; status?: string }
+    params?: ListParams & {
+      companyId?: string;
+      status?: string;
+      // #398: spec-backed filters previously dropped at the CLI boundary.
+      billingTerm?: string;
+      productId?: string;
+      sort?: string;
+    }
   ): Promise<PaginatedResponse<Subscription>> {
     await randomDelay();
     let filtered = subscriptions;
@@ -233,6 +240,41 @@ class SubscriptionsResource {
     if (params?.status) {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((sub) => sub.status.toLowerCase() === s);
+    }
+    // #398: billingTerm + productId mirror the wire-side filter so PAX8_DEMO=1
+    // exercises the same code path as the real API.
+    if (params?.billingTerm) {
+      filtered = filtered.filter((sub) => sub.billingTerm === params.billingTerm);
+    }
+    if (params?.productId) {
+      filtered = filtered.filter((sub) => sub.productId === params.productId);
+    }
+    if (params?.sort) {
+      const [field, direction] = params.sort.split(",").map((s) => s.trim());
+      const dir = (direction ?? "asc").toLowerCase() === "desc" ? -1 : 1;
+      // Demo-data `Subscription` doesn't carry every field surfaced in the
+      // public Zod schema (e.g. `endDate`). Restrict mock sort to the
+      // fields the demo fixture actually populates; unknown sort fields
+      // become a no-op rather than a TypeScript crash. The real API will
+      // honor anything documented as sortable.
+      const getField = (sub: Subscription): string | number => {
+        switch (field) {
+          case "quantity":
+            return sub.quantity;
+          case "startDate":
+            return sub.startDate ?? "";
+          case "createdAt":
+            return sub.createdAt ?? "";
+          default:
+            return "";
+        }
+      };
+      filtered = [...filtered].sort((a, b) => {
+        const av = getField(a);
+        const bv = getField(b);
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
     }
     const page = paginate(filtered, params);
     return page;
