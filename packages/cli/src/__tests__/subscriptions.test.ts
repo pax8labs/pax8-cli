@@ -7,13 +7,19 @@ import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.j
 describe("pax8 subscriptions list", () => {
   it("lists subscriptions in demo mode", async () => {
     const result = await runCliExpectSuccess(["subscriptions", "list"]);
-    // Non-TTY defaults to JSON
+    // Non-TTY defaults to JSON; #483 wraps the array in { subscriptions, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("id");
-    expect(data[0]).toHaveProperty("productName");
-    expect(data[0]).toHaveProperty("quantity");
+    expect(data).toHaveProperty("subscriptions");
+    expect(data).toHaveProperty("page");
+    expect(Array.isArray(data.subscriptions)).toBe(true);
+    expect(data.subscriptions.length).toBeGreaterThan(0);
+    expect(data.subscriptions[0]).toHaveProperty("id");
+    expect(data.subscriptions[0]).toHaveProperty("productName");
+    expect(data.subscriptions[0]).toHaveProperty("quantity");
+    // #483: page envelope is 1-based and matches what the user would pass next.
+    expect(data.page.number).toBe(1);
+    expect(typeof data.page.totalElements).toBe("number");
+    expect(typeof data.page.totalPages).toBe("number");
   });
 
   it("filters by company ID", async () => {
@@ -24,9 +30,9 @@ describe("pax8 subscriptions list", () => {
       "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    for (const sub of data) {
+    expect(Array.isArray(data.subscriptions)).toBe(true);
+    expect(data.subscriptions.length).toBeGreaterThan(0);
+    for (const sub of data.subscriptions) {
       expect(sub.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     }
   });
@@ -38,8 +44,8 @@ describe("pax8 subscriptions list", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data[0]).toHaveProperty("status");
+    expect(Array.isArray(data.subscriptions)).toBe(true);
+    expect(data.subscriptions[0]).toHaveProperty("status");
   });
 
   it("emits canonical `createdAt` (#385); legacy `createdDate` is dropped", async () => {
@@ -49,8 +55,8 @@ describe("pax8 subscriptions list", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(data.length).toBeGreaterThan(0);
-    for (const row of data) {
+    expect(data.subscriptions.length).toBeGreaterThan(0);
+    for (const row of data.subscriptions) {
       expect(row).toHaveProperty("createdAt");
       expect(row).not.toHaveProperty("createdDate");
     }
@@ -107,12 +113,14 @@ describe("pax8 subscriptions list", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    const eurSub = data.find((s: { id: string }) => s.id === "sub-coastline-e3-001");
+    const eurSub = data.subscriptions.find(
+      (s: { id: string }) => s.id === "sub-coastline-e3-001",
+    );
     expect(eurSub).toBeDefined();
     expect(eurSub.currencyCode).toBe("EUR");
   });
 
-  it("--with-actions wraps in { subscriptions, nextActions }", async () => {
+  it("--with-actions adds nextActions to the { subscriptions, page } envelope", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "list",
@@ -121,6 +129,7 @@ describe("pax8 subscriptions list", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(data).toHaveProperty("subscriptions");
+    expect(data).toHaveProperty("page");
     expect(data).toHaveProperty("nextActions");
     expect(Array.isArray(data.subscriptions)).toBe(true);
     expect(Array.isArray(data.nextActions)).toBe(true);
@@ -168,7 +177,7 @@ describe("pax8 subscriptions list", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.subscriptions)).toBe(true);
     });
   });
 });
@@ -219,16 +228,19 @@ describe("pax8 subscriptions renewals", () => {
       "subscriptions",
       "renewals",
     ]);
+    // #483: wrapped as { renewals, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("companyName");
-    expect(data[0]).toHaveProperty("productName");
-    expect(data[0]).toHaveProperty("daysUntilRenewal");
-    expect(data[0]).toHaveProperty("renewalDate");
+    expect(data).toHaveProperty("renewals");
+    expect(data).toHaveProperty("page");
+    expect(Array.isArray(data.renewals)).toBe(true);
+    expect(data.renewals.length).toBeGreaterThan(0);
+    expect(data.renewals[0]).toHaveProperty("companyName");
+    expect(data.renewals[0]).toHaveProperty("productName");
+    expect(data.renewals[0]).toHaveProperty("daysUntilRenewal");
+    expect(data.renewals[0]).toHaveProperty("renewalDate");
   });
 
-  it("--with-actions wraps in { renewals, nextActions }", async () => {
+  it("--with-actions adds nextActions to { renewals, page } envelope", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "renewals",
@@ -236,6 +248,7 @@ describe("pax8 subscriptions renewals", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(data).toHaveProperty("renewals");
+    expect(data).toHaveProperty("page");
     expect(data).toHaveProperty("nextActions");
     expect(Array.isArray(data.renewals)).toBe(true);
     expect(Array.isArray(data.nextActions)).toBe(true);
@@ -253,8 +266,8 @@ describe("pax8 subscriptions renewals", () => {
       "7d",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    for (const item of data) {
+    expect(Array.isArray(data.renewals)).toBe(true);
+    for (const item of data.renewals) {
       expect(item.daysUntilRenewal).toBeLessThanOrEqual(7);
     }
   });
@@ -280,9 +293,9 @@ describe("pax8 subscriptions renewals", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    for (const item of data) {
+    expect(Array.isArray(data.renewals)).toBe(true);
+    expect(data.renewals.length).toBeGreaterThan(0);
+    for (const item of data.renewals) {
       // Canonical names (#298).
       expect(item).toHaveProperty("mrrRenewing");
       expect(item).toHaveProperty("arrRenewing");

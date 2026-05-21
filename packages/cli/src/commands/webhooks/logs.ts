@@ -5,7 +5,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { ERROR_INVALID_INPUT, ERROR_NOT_FOUND } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, singlePageEnvelope } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
@@ -102,6 +102,9 @@ async function runLogsList(
     }
 
     if (ctx.outputFormat === "json") {
+      // #483: wrap as { logs, page } — the wire isn't paginated here, so a
+      // single-page envelope makes the agent-facing contract consistent.
+      const page = singlePageEnvelope(allLogs.length);
       if (options.withActions) {
         const nextActions: { command: string; description: string }[] = [];
         const failures = allLogs.filter(
@@ -121,10 +124,12 @@ async function runLogsList(
           });
         }
         process.stdout.write(
-          JSON.stringify({ logs: allLogs, nextActions }, null, 2) + "\n",
+          JSON.stringify({ logs: allLogs, page, nextActions }, null, 2) + "\n",
         );
       } else {
-        process.stdout.write(JSON.stringify(allLogs, null, 2) + "\n");
+        process.stdout.write(
+          JSON.stringify({ logs: allLogs, page }, null, 2) + "\n",
+        );
       }
       return;
     }

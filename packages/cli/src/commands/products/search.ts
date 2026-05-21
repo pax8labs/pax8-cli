@@ -4,7 +4,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, singlePageEnvelope } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
@@ -59,10 +59,24 @@ Examples:
         { key: "unitOfMeasure", header: "Category", width: 15 },
       ];
 
+      // #483: emit a `{ products, page }` envelope on `--json`. The Pax8
+      // search API isn't paginated end-to-end here (we narrow client-side
+      // after a single-page fetch), so we synthesize a single-page envelope
+      // for shape consistency with the other list commands.
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            { products: matches, page: singlePageEnvelope(matches.length) },
+            null,
+            2,
+          ) + "\n",
+        );
+        return;
+      }
+
       // Route the empty-search case through the standard `output()` helper so
       // it picks up the same "Filters applied:" / "Try next:" block partners
-      // see on every other list command. JSON mode still emits `[]` (the
-      // pipeline contract); CSV still emits a header-only row.
+      // see on every other list command. CSV still emits a header-only row.
       if (matches.length === 0) {
         const filtersApplied: Record<string, string> = { query: `"${query}"` };
         if (options.vendor) filtersApplied.vendor = `"${options.vendor}"`;

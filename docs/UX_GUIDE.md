@@ -194,6 +194,58 @@ const result = await ctx.api.companies.list({ page: apiPage, size: pageSize });
 
 Default `--page` to `"1"` and `--size` to `"25"` in the option declaration.
 
+### List-command envelope contract (#483)
+
+Every `--json` list command — `clients list`, `subscriptions list`, `invoices list`, `invoices items`, `quotes list`, `contacts list`, `webhooks list`, `webhooks logs`, `webhooks topics list`, `products search`, `products list`, `usage list`, `recommendations list`, `subscriptions renewals`, `orders list` — emits a **wrapped envelope**:
+
+```json
+{
+  "<resource>": [ ... ],
+  "page": { "number": 1, "size": 25, "totalElements": 1810, "totalPages": 73 }
+}
+```
+
+The resource key matches the resource name (`companies`, `subscriptions`, `invoices`, `items`, `quotes`, `contacts`, `webhooks`, `logs`, `topics`, `products`, `usage`, `renewals`, `orders`, `recommendations`). `page.number` is 1-based — matches what the user would pass as `--page` next. Compare `<resource>.length` to `page.totalElements` to detect pagination.
+
+When `--with-actions` is passed, an additional `nextActions` array is added, including a next-page entry on portfolios that span multiple pages. The next-page entry's `command` is exactly what the user/agent would run to fetch the next page.
+
+For endpoints that don't paginate server-side (webhooks list/logs/topics, usage, products search, subscriptions renewals), the helper `singlePageEnvelope(rowCount)` synthesizes a single-page envelope (`totalPages: 1`) so the shape stays consistent.
+
+#### Table footer
+
+Table output writes a one-line footer to **stderr** after the table:
+
+```
+  Page 1 of 73 — 1810 invoices — next: pax8 invoices list --page 2 --size 25
+```
+
+Suppress the `next:` segment on the last page. Use the helpers in `lib/output.ts`:
+
+```ts
+import {
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+} from "../../lib/output.js";
+
+const pageEnvelope = buildPageEnvelope(result.page);
+const nextPageCommand = `pax8 <cmd> --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}`;
+
+// JSON path:
+process.stdout.write(JSON.stringify({ <resource>: result.content, page: pageEnvelope }, null, 2) + "\n");
+
+// Table footer (stderr):
+renderPaginationFooter(pageEnvelope, {
+  resourceSingular: "invoice",
+  nextPageCommand,
+  rowCount: result.content.length,
+});
+```
+
+#### Uncapped name enrichment
+
+Lists that resolve a companion ID → name (most commonly company IDs) **must** use `buildCompanyNameMap()` from `lib/enrich-subscriptions.ts`, which pages through `companies.list` until every referenced ID is resolved or a 10×1000 guardrail trips. The pre-#483 `companies.list({ size: 200 })` pattern left blank cells for partners with more than 200 customers; never re-introduce it. For callers that need the full customer set (not just specific IDs), use `fetchAllCompanies(ctx)`.
+
 ---
 
 ## 7. Confirmation prompts — for writes only

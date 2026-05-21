@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
-import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import {
+  output,
+  buildPageEnvelope,
+  renderPaginationFooter,
+} from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 
@@ -47,6 +50,20 @@ Examples:
         return;
       }
 
+      // #483: wrap JSON as { products, page } + standardize footer.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const filterFlag = allOpts.vendor ? `--vendor "${allOpts.vendor}"` : "";
+      const nextPageCommand =
+        `pax8 products list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
+        (filterFlag ? ` ${filterFlag}` : "");
+
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify({ products: result.content, page: pageEnvelope }, null, 2) + "\n",
+        );
+        return;
+      }
+
       const columns = [
         { key: "name", header: "Name", width: 40 },
         { key: "vendorName", header: "Vendor", width: 20 },
@@ -81,10 +98,12 @@ Examples:
         },
       });
 
-      if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} products\n\n`)
-        );
+      if (ctx.outputFormat === "table") {
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "product",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list products");

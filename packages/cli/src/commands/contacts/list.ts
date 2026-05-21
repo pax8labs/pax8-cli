@@ -5,7 +5,12 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+} from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
@@ -69,6 +74,17 @@ Examples:
         return;
       }
 
+      // #483: page envelope for JSON consumers + standardized footer.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const nextPageCommand = `pax8 contacts list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size} --company "${allOpts.company}"`;
+
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify({ contacts: result.content, page: pageEnvelope }, null, 2) + "\n",
+        );
+        return;
+      }
+
       const columns: Column[] = [
         { key: "id", header: "ID", width: 14, format: (v) => chalk.dim(String(v).slice(0, 12)) },
         { key: "firstName", header: "First", width: 14 },
@@ -113,9 +129,11 @@ Examples:
       });
 
       if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.content.length} contacts at ${company.name}\n`)
-        );
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "contact",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
         const first = result.content[0];
         // Pickable next steps. `contacts create` needs email + first/last
         // name from the user, so it can't be drilled into by number;

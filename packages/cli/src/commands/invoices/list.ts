@@ -4,7 +4,13 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+} from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
@@ -178,31 +184,56 @@ Examples:
         },
       ];
 
-      if (ctx.outputFormat === "json" && options.withActions) {
-        const nextActions: { command: string; description: string }[] = [];
+      // #483: build the page envelope once for both JSON and footer.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const filterFlag = [
+        allOpts.company ? `--company "${allOpts.company}"` : "",
+        allOpts.status ? `--status "${allOpts.status}"` : "",
+        allOpts.month ? `--month ${allOpts.month}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const nextPageCommand =
+        `pax8 invoices list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
+        (filterFlag ? ` ${filterFlag}` : "");
+
+      if (ctx.outputFormat === "json") {
         const invoices = result.content;
-        const unpaid = invoices.filter(
-          (inv) =>
-            String((inv as Record<string, unknown>).status ?? "").toLowerCase() === "unpaid"
-        );
-        if (unpaid.length > 0) {
+        if (options.withActions) {
+          const nextActions: { command: string; description: string }[] = [];
+          const pageAction = buildNextPageAction(
+            pageEnvelope,
+            `${nextPageCommand} --json`,
+            "invoice",
+          );
+          if (pageAction) nextActions.push(pageAction);
+          const unpaid = invoices.filter(
+            (inv) =>
+              String((inv as Record<string, unknown>).status ?? "").toLowerCase() === "unpaid"
+          );
+          if (unpaid.length > 0) {
+            nextActions.push({
+              command: `pax8 invoices show ${unpaid[0].id}`,
+              description: `Review the first unpaid invoice (${unpaid.length} unpaid total)`,
+            });
+          } else if (invoices.length > 0) {
+            nextActions.push({
+              command: `pax8 invoices show ${invoices[0].id}`,
+              description: "Drill into the most recent invoice",
+            });
+          }
           nextActions.push({
-            command: `pax8 invoices show ${unpaid[0].id}`,
-            description: `Review the first unpaid invoice (${unpaid.length} unpaid total)`,
+            command: "pax8 invoices audit --json",
+            description: "Audit invoices against active subscriptions for billing discrepancies",
           });
-        } else if (invoices.length > 0) {
-          nextActions.push({
-            command: `pax8 invoices show ${invoices[0].id}`,
-            description: "Drill into the most recent invoice",
-          });
+          process.stdout.write(
+            JSON.stringify({ invoices, page: pageEnvelope, nextActions }, null, 2) + "\n"
+          );
+        } else {
+          process.stdout.write(
+            JSON.stringify({ invoices, page: pageEnvelope }, null, 2) + "\n"
+          );
         }
-        nextActions.push({
-          command: "pax8 invoices audit --json",
-          description: "Audit invoices against active subscriptions for billing discrepancies",
-        });
-        process.stdout.write(
-          JSON.stringify({ invoices: result.content, nextActions }, null, 2) + "\n"
-        );
         return;
       }
 
@@ -241,10 +272,12 @@ Examples:
         },
       });
 
-      if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} invoices\n\n`)
-        );
+      if (ctx.outputFormat === "table") {
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "invoice",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list invoices");

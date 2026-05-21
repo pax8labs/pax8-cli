@@ -5,7 +5,13 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { SubscriptionStatusSchema, type SubscriptionStatus } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+} from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import {
@@ -14,7 +20,11 @@ import {
   formatCompanyName,
 } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
-import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import {
+  enrichProductNames,
+  enrichCompanyNames,
+  buildCompanyNameMap,
+} from "../../lib/enrich-subscriptions.js";
 import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
 
 // Single source of truth for `--status` accepted values. Mirrors the
@@ -120,12 +130,18 @@ Examples:
       });
 
       const subs = result.content as Record<string, unknown>[];
-      // Enrich product and company names in parallel
-      const companiesPromise = ctx.api.companies.list({ size: 200 });
+      // #483: page the companies catalog (uncapped) in parallel with the
+      // product-name enrichment so subscriptions referencing customers
+      // beyond row 200 still render the customer name. Previously this
+      // capped at `size: 200`.
+      const nameMapPromise = buildCompanyNameMap(
+        ctx,
+        subs as { companyId?: string }[],
+        { quiet: Boolean(allOpts.quiet), resourceLabel: "subscription" },
+      );
       await enrichProductNames(ctx, subs);
       try {
-        const companies = await companiesPromise;
-        const nameMap = new Map((companies.content as Array<{ id: string; name: string }>).map(c => [c.id, c.name]));
+        const nameMap = await nameMapPromise;
         enrichCompanyNames(nameMap, subs);
       } catch { /* best effort */ }
 
@@ -138,30 +154,51 @@ Examples:
         return;
       }
 
-      if (ctx.outputFormat === "json" && options.withActions) {
-        const nextActions: { command: string; description: string }[] = [];
+      // #483: wrap JSON output in `{ subscriptions, page }`. The page
+      // envelope renumbers 1-based to match the `--page` flag the user
+      // would type next. `--with-actions` additionally surfaces a
+      // nextActions array (next-page hint + drill-in + renewal check).
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
+      const statusFlag = allOpts.status ? ` --status ${allOpts.status}` : "";
+      const nextPageCommand = `pax8 subscriptions list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}${statusFlag}`;
+
+      if (ctx.outputFormat === "json") {
         const subsList = result.content;
-        const trials = subsList.filter((s) => (s.status ?? "").toLowerCase() === "trial");
-        const top = subsList[0];
-        if (top) {
+        if (options.withActions) {
+          const nextActions: { command: string; description: string }[] = [];
+          const pageAction = buildNextPageAction(
+            pageEnvelope,
+            `${nextPageCommand} --json`,
+            "subscription",
+          );
+          if (pageAction) nextActions.push(pageAction);
+          const trials = subsList.filter((s) => (s.status ?? "").toLowerCase() === "trial");
+          const top = subsList[0];
+          if (top) {
+            nextActions.push({
+              command: `pax8 subscriptions show ${top.id}`,
+              description: `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`,
+            });
+          }
+          if (trials.length > 0) {
+            nextActions.push({
+              command: "pax8 subscriptions list --status Trial --json",
+              description: `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`,
+            });
+          }
           nextActions.push({
-            command: `pax8 subscriptions show ${top.id}`,
-            description: `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`,
+            command: "pax8 subscriptions renewals --json --with-actions",
+            description: "Check upcoming renewals before they auto-renew",
           });
+          process.stdout.write(
+            JSON.stringify({ subscriptions: subsList, page: pageEnvelope, nextActions }, null, 2) + "\n"
+          );
+        } else {
+          process.stdout.write(
+            JSON.stringify({ subscriptions: subsList, page: pageEnvelope }, null, 2) + "\n"
+          );
         }
-        if (trials.length > 0) {
-          nextActions.push({
-            command: "pax8 subscriptions list --status Trial --json",
-            description: `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`,
-          });
-        }
-        nextActions.push({
-          command: "pax8 subscriptions renewals --json --with-actions",
-          description: "Check upcoming renewals before they auto-renew",
-        });
-        process.stdout.write(
-          JSON.stringify({ subscriptions: result.content, nextActions }, null, 2) + "\n"
-        );
         return;
       }
 
@@ -197,10 +234,12 @@ Examples:
         },
       });
 
-      if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} subscriptions\n\n`)
-        );
+      if (ctx.outputFormat === "table") {
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "subscription",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list subscriptions");

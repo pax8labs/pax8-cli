@@ -13,7 +13,12 @@ import {
   formatCurrency,
   formatCompanyName,
 } from "../../lib/formatters.js";
-import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import {
+  enrichProductNames,
+  enrichCompanyNames,
+  buildCompanyNameMap,
+} from "../../lib/enrich-subscriptions.js";
+import { singlePageEnvelope } from "../../lib/output.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { replCmd } from "../../lib/confirm.js";
@@ -108,20 +113,22 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
     try {
       const withinDays = parseWithinDays(options.within);
 
-      // Fetch subscriptions and companies in parallel
+      // Fetch subscriptions first; #483: page the companies catalog
+      // uncapped via buildCompanyNameMap so portfolios with >200 customers
+      // still get full name enrichment in the renewals view.
       const companyId = options.company
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
-      const [result, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId }),
-        ctx.api.companies.list({ size: 200 }),
-      ]);
+      const result = await ctx.api.subscriptions.list({
+        size: ALL_SUBS_PAGE_SIZE,
+        companyId,
+      });
 
-      // Enrich with product and company names
-      const companyNames = new Map<string, string>();
-      for (const c of companiesResult.content) {
-        companyNames.set(c.id, c.name);
-      }
+      const companyNames = await buildCompanyNameMap(
+        ctx,
+        result.content as { companyId?: string }[],
+        { quiet: Boolean(allOpts.quiet), resourceLabel: "renewal" },
+      );
       enrichCompanyNames(companyNames, result.content);
       await enrichProductNames(ctx, result.content as Record<string, unknown>[]);
       const allSubs = result.content;
@@ -141,6 +148,10 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
             renewalDate: item.renewalDate.toISOString().split("T")[0],
           };
         });
+        // #483: emit `{ renewals, page }` (single-page envelope, no
+        // server-side pagination for renewals — the data is materialized
+        // client-side from the subscriptions list).
+        const page = singlePageEnvelope(renewalItems.length);
         if (options.withActions) {
           const nextActions = report.items
             .slice(0, 5)
@@ -148,9 +159,13 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
               command: `pax8 subscriptions show ${item.subscriptionId}`,
               description: `View renewal details for ${item.companyName} — ${item.productName} (${item.daysUntilRenewal}d)`,
             }));
-          process.stdout.write(JSON.stringify({ renewals: renewalItems, nextActions }, null, 2) + "\n");
+          process.stdout.write(
+            JSON.stringify({ renewals: renewalItems, page, nextActions }, null, 2) + "\n",
+          );
         } else {
-          process.stdout.write(JSON.stringify(renewalItems, null, 2) + "\n");
+          process.stdout.write(
+            JSON.stringify({ renewals: renewalItems, page }, null, 2) + "\n",
+          );
         }
         return;
       }

@@ -40,21 +40,23 @@ describe("E2E: Onboarding — first-time user experience", () => {
 
   it("pax8 clients list shows demo companies", async () => {
     const result = await runCliExpectSuccess(["clients", "list"]);
-    // In non-TTY, default output is JSON
+    // In non-TTY, default output is JSON. #483: wrapped as { companies, page }.
     expect(result.stdout.length).toBeGreaterThan(0);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("name");
+    expect(Array.isArray(data.companies)).toBe(true);
+    expect(data.companies.length).toBeGreaterThan(0);
+    expect(data.companies[0]).toHaveProperty("name");
   });
 
-  it("pax8 clients list --json produces valid JSON array", async () => {
+  it("pax8 clients list --json produces valid { companies, page } envelope", async () => {
     const result = await runCliExpectSuccess(["clients", "list", "--json"]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("id");
-    expect(data[0]).toHaveProperty("name");
-    expect(data[0]).toHaveProperty("status");
+    expect(data).toHaveProperty("companies");
+    expect(data).toHaveProperty("page");
+    expect(Array.isArray(data.companies)).toBe(true);
+    expect(data.companies.length).toBeGreaterThan(0);
+    expect(data.companies[0]).toHaveProperty("id");
+    expect(data.companies[0]).toHaveProperty("name");
+    expect(data.companies[0]).toHaveProperty("status");
   });
 });

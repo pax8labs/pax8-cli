@@ -7,10 +7,11 @@ import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 describe("E2E: Usage workflow — list and show summaries", () => {
   it("pax8 usage list returns JSON when piped", async () => {
     const result = await runCliExpectSuccess(["usage", "list"]);
+    // #483: wrapped envelope { usage, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    const first = data[0];
+    expect(Array.isArray(data.usage)).toBe(true);
+    expect(data.usage.length).toBeGreaterThan(0);
+    const first = data.usage[0];
     expect(first).toHaveProperty("id");
     expect(first).toHaveProperty("date");
     expect(first).toHaveProperty("quantity");
@@ -27,8 +28,8 @@ describe("E2E: Usage workflow — list and show summaries", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    for (const u of data) {
+    expect(Array.isArray(data.usage)).toBe(true);
+    for (const u of data.usage) {
       expect(u.companyName).toBe("Redwood Manufacturing");
     }
   });
@@ -38,8 +39,8 @@ describe("E2E: Usage workflow — list and show summaries", () => {
     // Pull all, pick one month, then re-query with that month and confirm.
     const all = await runCliExpectSuccess(["usage", "list", "--json"]);
     const allData = JSON.parse(all.stdout);
-    expect(allData.length).toBeGreaterThan(0);
-    const targetMonth = String(allData[0].date).slice(0, 7);
+    expect(allData.usage.length).toBeGreaterThan(0);
+    const targetMonth = String(allData.usage[0].date).slice(0, 7);
 
     const filtered = await runCliExpectSuccess([
       "usage",
@@ -49,15 +50,15 @@ describe("E2E: Usage workflow — list and show summaries", () => {
       "--json",
     ]);
     const filteredData = JSON.parse(filtered.stdout);
-    expect(filteredData.length).toBeGreaterThan(0);
-    for (const u of filteredData) {
+    expect(filteredData.usage.length).toBeGreaterThan(0);
+    for (const u of filteredData.usage) {
       expect(String(u.date).startsWith(targetMonth)).toBe(true);
     }
   });
 
   it("pax8 usage show returns a single summary object", async () => {
     const list = await runCliExpectSuccess(["usage", "list", "--json"]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).usage[0].id;
 
     const result = await runCliExpectSuccess(["usage", "show", id, "--json"]);
     const data = JSON.parse(result.stdout);
@@ -69,7 +70,7 @@ describe("E2E: Usage workflow — list and show summaries", () => {
   it("pax8 usage show --lines includes per-resource breakdown", async () => {
     const list = await runCliExpectSuccess(["usage", "list", "--json"]);
     // Pick a summary with known line items
-    const summary = JSON.parse(list.stdout).find(
+    const summary = JSON.parse(list.stdout).usage.find(
       (u: { id: string }) => u.id === "usage-redwood-acronis-curr",
     );
     expect(summary).toBeDefined();

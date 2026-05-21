@@ -19,7 +19,7 @@ import { runCliExpectSuccess } from "./test-utils.js";
 
 describe("empty list rendering — #197", () => {
   describe("clients list with no matches", () => {
-    it("--json emits an empty array on stdout with no human-facing noise", async () => {
+    it("--json emits empty companies array + page envelope on stdout with no human-facing noise", async () => {
       // No companies in demo data carry status=Deleted, so this filter
       // yields zero rows without needing a mock surgery.
       const result = await runCliExpectSuccess([
@@ -29,9 +29,11 @@ describe("empty list rendering — #197", () => {
         "Deleted",
         "--json",
       ]);
+      // #483: empty result still emits the wrapped { companies, page } shape.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBe(0);
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.companies.length).toBe(0);
+      expect(data.page.totalElements).toBe(0);
       // Empty-state message must not bleed into stdout — JSON contract is
       // load-bearing for agents and `--json | jq` pipelines.
       expect(result.stdout).not.toContain("No companies found");
@@ -45,9 +47,9 @@ describe("empty list rendering — #197", () => {
         "Deleted",
       ]);
       // Non-TTY defaults to JSON, so we don't get the human path through
-      // this transport. Stdout still must be a parseable empty array.
+      // this transport. Stdout still must be a parseable empty envelope.
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBe(0);
+      expect(data.companies.length).toBe(0);
     });
 
     it("--csv produces a header row only (no body, no message)", async () => {
@@ -80,7 +82,7 @@ describe("empty list rendering — #197", () => {
   });
 
   describe("invoices list with no matches", () => {
-    it("--json emits an empty array on stdout", async () => {
+    it("--json emits empty invoices array + page envelope on stdout", async () => {
       // 1900-01 predates any demo invoice, so the month filter is empty.
       const result = await runCliExpectSuccess([
         "invoices",
@@ -90,8 +92,9 @@ describe("empty list rendering — #197", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBe(0);
+      expect(Array.isArray(data.invoices)).toBe(true);
+      expect(data.invoices.length).toBe(0);
+      expect(data.page.totalElements).toBe(0);
       expect(result.stdout).not.toContain("No invoices found");
     });
 
@@ -170,19 +173,24 @@ describe("empty list rendering — #197", () => {
       expect(result.stderr).toContain("status=Deleted");
     });
 
-    it("JSON mode still returns [] regardless of filter and empty-state (load-bearing contract)", async () => {
-      // The new `filtersApplied` rendering is table-mode only. Pin the
-      // contract that JSON output stays exactly `[]` for every touched
-      // command so agents and pipelines aren't surprised.
-      for (const args of [
-        ["subscriptions", "list", "--status", "Cancelled"],
-        ["invoices", "list", "--month", "1900-01"],
-        ["clients", "list", "--status", "Deleted"],
-      ]) {
+    it("JSON mode still returns an empty envelope regardless of filter and empty-state (load-bearing contract)", async () => {
+      // #483: The new `filtersApplied` rendering is table-mode only. Pin the
+      // contract that JSON output stays the empty `{ <resource>, page }`
+      // envelope for every touched command so agents and pipelines aren't
+      // surprised. The resource key varies per command (companies / invoices
+      // / subscriptions); we just assert there's exactly one envelope key
+      // whose value is an empty array, plus the page envelope.
+      const cases: { args: string[]; resourceKey: string }[] = [
+        { args: ["subscriptions", "list", "--status", "Cancelled"], resourceKey: "subscriptions" },
+        { args: ["invoices", "list", "--month", "1900-01"], resourceKey: "invoices" },
+        { args: ["clients", "list", "--status", "Deleted"], resourceKey: "companies" },
+      ];
+      for (const { args, resourceKey } of cases) {
         const result = await runCliExpectSuccess([...args, "--json"]);
-        const data = JSON.parse(result.stdout);
-        expect(Array.isArray(data)).toBe(true);
-        expect(data.length).toBe(0);
+        const data = JSON.parse(result.stdout) as Record<string, unknown>;
+        expect(Array.isArray(data[resourceKey])).toBe(true);
+        expect((data[resourceKey] as unknown[]).length).toBe(0);
+        expect(data.page).toBeDefined();
         // No human-facing text in the JSON output.
         expect(result.stdout).not.toMatch(/No \w+ found/);
         expect(result.stdout).not.toContain("Filters applied:");

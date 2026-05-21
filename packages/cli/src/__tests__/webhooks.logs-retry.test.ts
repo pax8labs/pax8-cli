@@ -22,12 +22,15 @@ describe("pax8 webhooks logs (subcommand group)", () => {
       "logs",
       "--json",
     ]);
+    // #483: JSON envelope is { logs, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("id");
-    expect(data[0]).toHaveProperty("webhookId");
-    expect(data[0]).toHaveProperty("responseCode");
+    expect(data).toHaveProperty("logs");
+    expect(data).toHaveProperty("page");
+    expect(Array.isArray(data.logs)).toBe(true);
+    expect(data.logs.length).toBeGreaterThan(0);
+    expect(data.logs[0]).toHaveProperty("id");
+    expect(data.logs[0]).toHaveProperty("webhookId");
+    expect(data.logs[0]).toHaveProperty("responseCode");
   });
 
   it("preserves backward-compat: `logs <webhook-id>` still lists for that webhook", async () => {
@@ -38,8 +41,8 @@ describe("pax8 webhooks logs (subcommand group)", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    for (const log of data) {
+    expect(Array.isArray(data.logs)).toBe(true);
+    for (const log of data.logs) {
       expect(log.webhookId).toBe(ORDERS_WEBHOOK_ID);
     }
   });
@@ -52,8 +55,8 @@ describe("pax8 webhooks logs (subcommand group)", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
+    expect(Array.isArray(data.logs)).toBe(true);
+    expect(data.logs.length).toBeGreaterThan(0);
   });
 
   it("`logs --help` lists both `list` and `retry` subcommands", async () => {

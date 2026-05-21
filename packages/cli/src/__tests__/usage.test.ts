@@ -17,10 +17,13 @@ describe("pax8 usage", () => {
         REDWOOD_ACRONIS_SUB,
         "--json",
       ]);
+      // #483: JSON envelope is { usage, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      for (const item of data) {
+      expect(data).toHaveProperty("usage");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.usage)).toBe(true);
+      expect(data.usage.length).toBeGreaterThan(0);
+      for (const item of data.usage) {
         expect(item.subscriptionId).toBe(REDWOOD_ACRONIS_SUB);
       }
     });
@@ -34,12 +37,14 @@ describe("pax8 usage", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.usage)).toBe(true);
       // Redwood's Acronis sub is the only one with demo usage; --company
       // iterates over every Redwood subscription but only the Acronis sub
       // yields summaries.
-      expect(data.length).toBeGreaterThan(0);
-      const productNames = new Set(data.map((d: { productName?: string }) => d.productName));
+      expect(data.usage.length).toBeGreaterThan(0);
+      const productNames = new Set(
+        data.usage.map((d: { productName?: string }) => d.productName),
+      );
       expect(productNames.has("AvePoint Cloud Backup for Microsoft 365")).toBe(true);
     });
 
@@ -64,7 +69,7 @@ describe("pax8 usage", () => {
         REDWOOD_ACRONIS_SUB,
         "--json",
       ]);
-      const everything = JSON.parse(all.stdout) as Array<{ date: string }>;
+      const everything = (JSON.parse(all.stdout) as { usage: Array<{ date: string }> }).usage;
       expect(everything.length).toBeGreaterThan(0);
       const currMonth = everything[0].date.slice(0, 7); // YYYY-MM
 
@@ -77,7 +82,7 @@ describe("pax8 usage", () => {
         currMonth,
         "--json",
       ]);
-      const data = JSON.parse(filtered.stdout) as Array<{ date: string }>;
+      const data = (JSON.parse(filtered.stdout) as { usage: Array<{ date: string }> }).usage;
       for (const item of data) {
         expect(item.date.startsWith(currMonth)).toBe(true);
       }

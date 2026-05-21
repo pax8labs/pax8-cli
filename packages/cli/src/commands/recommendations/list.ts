@@ -15,7 +15,11 @@ import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName, formatQuantity, calculateMrr } from "../../lib/formatters.js";
-import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import {
+  enrichProductNames,
+  enrichCompanyNames,
+  fetchAllCompanies,
+} from "../../lib/enrich-subscriptions.js";
 import { filterRecommendations } from "./filter.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
@@ -239,17 +243,19 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
     const spinner = createSpinner("Analyzing customer portfolios...").start();
 
     try {
-      // Fetch subscriptions, companies, and enrich product names — all in parallel where possible
-      const [subsResult, companiesResult] = await Promise.all([
+      // #483: page through ALL companies (not the first 200) so the
+      // recommendations engine reasons over the full customer set on
+      // portfolios bigger than the legacy 200-customer cap.
+      const [subsResult, allCompanies] = await Promise.all([
         ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
-        ctx.api.companies.list({ size: 200 }),
+        fetchAllCompanies(ctx),
       ]);
 
       warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
-      // Build company name lookup
+      // Build company name lookup from the full set.
       const companyNames = new Map<string, string>();
-      for (const c of companiesResult.content) {
+      for (const c of allCompanies) {
         companyNames.set(c.id, c.name);
       }
 
@@ -262,12 +268,15 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       spinner.stop();
 
-      // Fetch products for order command matching
-      const productsResult = await ctx.api.products.list({ size: 200 });
+      // #483: bump the product-catalog page size to 1000 (the documented
+      // max). A deeper catalog still requires future pagination here, but
+      // 1000 covers every observed catalog and removes the silent 200-cap
+      // miss for SKU matching that #483 flagged.
+      const productsResult = await ctx.api.products.list({ size: 1000 });
       const report = getRecommendations(
         subs,
         productsResult.content,
-        companiesResult.content,
+        allCompanies,
       );
 
       let recs = report.recommendations;

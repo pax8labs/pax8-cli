@@ -7,10 +7,11 @@ import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 describe("E2E: Quotes workflow — list, show, write commands", () => {
   it("pax8 quotes list returns JSON when piped", async () => {
     const result = await runCliExpectSuccess(["quotes", "list"]);
+    // #483: wrapped envelope { quotes, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    const first = data[0];
+    expect(Array.isArray(data.quotes)).toBe(true);
+    expect(data.quotes.length).toBeGreaterThan(0);
+    const first = data.quotes[0];
     expect(first).toHaveProperty("id");
     expect(first).toHaveProperty("companyId");
     expect(first).toHaveProperty("status");
@@ -27,17 +28,17 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
+    expect(Array.isArray(data.quotes)).toBe(true);
     // Single company means only one unique companyId
-    const ids = new Set(data.map((q: { companyId: string }) => q.companyId));
+    const ids = new Set(data.quotes.map((q: { companyId: string }) => q.companyId));
     expect(ids.size).toBeLessThanOrEqual(1);
   });
 
   it("pax8 quotes list --status filters client-side by status", async () => {
     const all = await runCliExpectSuccess(["quotes", "list", "--json"]);
     const allData = JSON.parse(all.stdout);
-    expect(allData.length).toBeGreaterThan(0);
-    const targetStatus = allData[0].status;
+    expect(allData.quotes.length).toBeGreaterThan(0);
+    const targetStatus = allData.quotes[0].status;
 
     const filtered = await runCliExpectSuccess([
       "quotes",
@@ -47,15 +48,15 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
       "--json",
     ]);
     const filteredData = JSON.parse(filtered.stdout);
-    expect(filteredData.length).toBeGreaterThan(0);
-    for (const q of filteredData) {
+    expect(filteredData.quotes.length).toBeGreaterThan(0);
+    for (const q of filteredData.quotes) {
       expect(String(q.status).toLowerCase()).toBe(String(targetStatus).toLowerCase());
     }
   });
 
   it("pax8 quotes show returns a single quote object with computed total", async () => {
     const list = await runCliExpectSuccess(["quotes", "list", "--json"]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).quotes[0].id;
 
     const result = await runCliExpectSuccess(["quotes", "show", id, "--json"]);
     const data = JSON.parse(result.stdout);
@@ -130,7 +131,7 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
 
   it("pax8 quotes update --expiration-date with --yes returns the updated quote", async () => {
     const list = await runCliExpectSuccess(["quotes", "list", "--json"]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).quotes[0].id;
 
     const result = await runCliExpectSuccess([
       "quotes",
@@ -151,7 +152,7 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
 
   it("pax8 quotes update fails when no fields are provided", async () => {
     const list = await runCliExpectSuccess(["quotes", "list", "--json"]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).quotes[0].id;
 
     const result = await runCliExpectFailure(["quotes", "update", id, "--yes"]);
     expect(result.stderr.toLowerCase()).toContain("update");
@@ -159,7 +160,7 @@ describe("E2E: Quotes workflow — list, show, write commands", () => {
 
   it("pax8 quotes delete with --yes returns deleted status", async () => {
     const list = await runCliExpectSuccess(["quotes", "list", "--json"]);
-    const id = JSON.parse(list.stdout)[0].id;
+    const id = JSON.parse(list.stdout).quotes[0].id;
 
     const result = await runCliExpectSuccess(["quotes", "delete", id, "--yes", "--json"]);
     const data = JSON.parse(result.stdout);

@@ -4,7 +4,12 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+} from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatDate, formatCurrency } from "../../lib/formatters.js";
@@ -112,6 +117,25 @@ Examples:
         _items: q.lineItems?.length ?? 0,
       }));
 
+      // #483: build the 1-based page envelope once for both JSON and footer.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const filterFlag = [
+        allOpts.company ? `--company "${allOpts.company}"` : "",
+        status ? `--status ${status}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const nextPageCommand =
+        `pax8 quotes list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
+        (filterFlag ? ` ${filterFlag}` : "");
+
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify({ quotes: enriched, page: pageEnvelope }, null, 2) + "\n",
+        );
+        return;
+      }
+
       // #385: timestamp columns reference the canonical `createdAt` /
       // `expiresAt`. The legacy `createdOn` / `expiresOn` aliases are still
       // emitted on every row in `--json` output for backwards compatibility;
@@ -156,8 +180,13 @@ Examples:
 
       if (ctx.outputFormat === "table" && enriched.length > 0) {
         const total = enriched.reduce((s, q) => s + q._total, 0);
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "quote",
+          nextPageCommand,
+          rowCount: enriched.length,
+        });
         process.stderr.write(
-          chalk.dim(`\n  ${enriched.length} quotes · ${formatCurrency(total)} total\n`)
+          chalk.dim(`  Total on this page: ${formatCurrency(total)}\n`),
         );
         const first = enriched[0];
         process.stderr.write(chalk.dim("\n  Try next:\n"));
