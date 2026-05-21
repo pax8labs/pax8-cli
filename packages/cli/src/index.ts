@@ -20,7 +20,7 @@ import { registerContactsCommands } from "./commands/contacts/index.js";
 import { registerQuotesCommands } from "./commands/quotes/index.js";
 import { registerCostCommands } from "./commands/cost/index.js";
 import { registerReportCommands } from "./commands/report/index.js";
-import { dashboardCommand, statusCommand } from "./commands/dashboard.js";
+import { dashboardCommand } from "./commands/dashboard.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
@@ -110,10 +110,6 @@ export function createProgram(): Command {
   registerCostCommands(program);
   registerReportCommands(program);
   program.addCommand(dashboardCommand);
-  // Deprecated alias for `dashboard`. Hidden from --help; emits a one-line
-  // stderr deprecation notice when invoked. Will be removed in v1.0. Same
-  // pattern as the `--events` → `--topics` deprecation on `webhooks create`.
-  program.addCommand(statusCommand, { hidden: true });
   program.addCommand(initCommand);
   program.addCommand(doctorCommand);
   program.addCommand(completionsCommand);

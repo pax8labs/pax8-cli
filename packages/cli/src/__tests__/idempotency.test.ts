@@ -141,7 +141,7 @@ describe("--idempotency-key", () => {
 
   it("read commands do not accept --idempotency-key", async () => {
     const result = await runCli(
-      ["companies", "list", "--idempotency-key", "abc12345-1234-4abc-8def-0123456789ab"],
+      ["clients", "list", "--idempotency-key", "abc12345-1234-4abc-8def-0123456789ab"],
     );
     // Commander prints "unknown option" to stderr and exits non-zero.
     expect(result.exitCode).not.toBe(0);
@@ -155,7 +155,7 @@ describe("--idempotency-key", () => {
   });
 
   it("--help on a read command does not mention --idempotency-key", async () => {
-    const result = await runCliExpectSuccess(["companies", "list", "--help"]);
+    const result = await runCliExpectSuccess(["clients", "list", "--help"]);
     expect(result.stdout).not.toContain("--idempotency-key");
   });
 });

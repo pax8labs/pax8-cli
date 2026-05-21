@@ -134,7 +134,7 @@ describe("QuotesApi", () => {
         },
         V2_OPTS,
       );
-      expect(result.expiresOn).toBe("2026-03-15T00:00:00Z");
+      expect(result.expiresAt).toBe("2026-03-15T00:00:00Z");
     });
 
     it("merges current values when no overrides are supplied", async () => {

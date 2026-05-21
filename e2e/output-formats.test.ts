@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import { runCliExpectSuccess } from "./test-utils.js";
 
 const COMMANDS = [
-  { name: "companies list", args: ["companies", "list"] },
+  { name: "companies list", args: ["clients", "list"] },
   { name: "subscriptions list", args: ["subscriptions", "list"] },
   { name: "products list", args: ["products", "list"] },
   { name: "invoices list", args: ["invoices", "list"] },

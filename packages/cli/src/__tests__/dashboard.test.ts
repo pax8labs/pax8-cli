@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
-
-const DEPRECATION_NOTICE =
-  "warning: `status` is deprecated; use `dashboard`. Will be removed in v1.0.";
+import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 dashboard (canonical)", () => {
   it("--json returns the portfolio snapshot with wrapped AmountCurrency envelopes", async () => {
@@ -30,15 +27,14 @@ describe("pax8 dashboard (canonical)", () => {
     expect(data).not.toHaveProperty("arr");
     expect(data).not.toHaveProperty("pax8MonthlyCost");
     expect(data).not.toHaveProperty("pax8AnnualCost");
-    // Deprecation notice MUST NOT fire for the canonical name.
-    expect(result.stderr).not.toContain(DEPRECATION_NOTICE);
+    // The mrrAtRisk alias was removed pre-launch.
+    expect(data).not.toHaveProperty("mrrAtRisk");
   });
 
   it("--help mentions the dashboard command name", async () => {
     const result = await runCliExpectSuccess(["dashboard", "--help"]);
     expect(result.stdout).toContain("dashboard");
     expect(result.stdout.toLowerCase()).toContain("snapshot");
-    expect(result.stderr).not.toContain(DEPRECATION_NOTICE);
   });
 
   it("is listed in `pax8 --help` (canonical command surfaces in top-level help)", async () => {
@@ -47,44 +43,14 @@ describe("pax8 dashboard (canonical)", () => {
   });
 });
 
-describe("pax8 status (deprecated alias)", () => {
-  it("--json returns the same payload shape as `pax8 dashboard --json`", async () => {
-    const dash = await runCliExpectSuccess(["dashboard", "--json"]);
-    const status = await runCliExpectSuccess(["status", "--json"]);
-
-    const dashData = JSON.parse(dash.stdout);
-    const statusData = JSON.parse(status.stdout);
-
-    // Same keys → same surface (values may drift across calls if the demo
-    // mock is non-deterministic, but the contract is identical).
-    expect(Object.keys(statusData).sort()).toEqual(Object.keys(dashData).sort());
-    expect(statusData).toHaveProperty("totalCompanies");
-    expect(statusData).toHaveProperty("activeSubscriptions");
+describe("pax8 dashboard (removed)", () => {
+  it("`pax8 dashboard` no longer resolves — the deprecated alias was removed pre-launch", async () => {
+    const result = await runCliExpectFailure(["status", "--json"]);
+    expect(result.exitCode).not.toBe(0);
   });
 
-  it("emits the one-line deprecation notice on stderr", async () => {
-    const result = await runCliExpectSuccess(["status", "--json"]);
-    expect(result.stderr).toContain(DEPRECATION_NOTICE);
-    // Stderr-only — never leaks into the JSON payload that consumers parse.
-    expect(result.stdout).not.toContain(DEPRECATION_NOTICE);
-  });
-
-  it("is hidden from `pax8 --help` (still works, but not advertised)", async () => {
+  it("`pax8 --help` does not advertise a `status` command", async () => {
     const result = await runCliExpectSuccess(["--help"]);
-    // The legacy alias must not appear as its own line in the top-level
-    // command list. (The substring "status" still occurs inside other
-    // help phrases — e.g. `--status <status>` filter examples — so we
-    // assert on the leading-whitespace-then-"status" command-listing
-    // shape Commander uses, which would only be present if the alias
-    // were *not* hidden.)
     expect(result.stdout).not.toMatch(/^\s+status\b/m);
-  });
-
-  it("--help still works on the alias and emits the deprecation notice on stderr", async () => {
-    const result = await runCliExpectSuccess(["status", "--help"]);
-    // The alias --help can render either the dashboard help or the alias's
-    // own help; either is acceptable. What matters is that invoking the
-    // alias still surfaces the deprecation notice.
-    expect(result.stderr).toContain(DEPRECATION_NOTICE);
   });
 });

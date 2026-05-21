@@ -53,7 +53,7 @@ MSPs using Pax8 today face:
 - Link to relevant Pax8 docs or portal pages when the CLI can't help
 
 ### 6. Progressive disclosure
-- Simple commands stay simple: `pax8 companies list`
+- Simple commands stay simple: `pax8 clients list`
 - Power features are discoverable but not in the way: `--renewing-within`, `--include-usage`, `--bulk`
 - Help text includes real-world examples, not just flag descriptions
 
@@ -141,15 +141,15 @@ pax8 auth logout                   # Clear stored credentials
 ### Companies
 
 ```
-pax8 companies list                        # List all companies
-pax8 companies show <id|name>              # Company details
-pax8 companies show <id|name> --subscriptions  # Include active subscriptions
-pax8 companies create --name "Acme Corp"   # Create new company
-pax8 companies update <id> --name "New Name"
+pax8 clients list                        # List all companies
+pax8 clients show <id|name>              # Company details
+pax8 clients show <id|name> --subscriptions  # Include active subscriptions
+pax8 clients create --name "Acme Corp"   # Create new company
+pax8 clients update <id> --name "New Name"
 ```
 
 **Smart behaviors:**
-- Fuzzy name matching: `pax8 companies show acme` finds "Acme Corp LLC"
+- Fuzzy name matching: `pax8 clients show acme` finds "Acme Corp LLC"
 - `show` auto-includes subscription summary (count + estimated MRR) without extra flags
 - `list` shows inline estimated MRR per company when data is cached
 
@@ -456,7 +456,7 @@ For gaps requiring Pax8 changes, the CLI provides the best available alternative
 
 **Table output (default for TTY):**
 ```
-$ pax8 companies list
+$ pax8 clients list
 
   Name                 ID                                     Subscriptions   Est. MRR
   Acme Corp            a1b2c3d4-e5f6-7890-abcd-ef1234567890   12             $2,450.00
@@ -468,13 +468,13 @@ $ pax8 companies list
 
 **JSON output (for pipes/scripts):**
 ```
-$ pax8 companies list --json
+$ pax8 clients list --json
 [{"name":"Acme Corp","id":"a1b2c3d4...","subscriptions":12,"mrr":2450.00}, ...]
 ```
 
 **CSV output (for spreadsheets):**
 ```
-$ pax8 companies list --csv > companies.csv
+$ pax8 clients list --csv > clients.csv
 ```
 
 ### Progress & Feedback

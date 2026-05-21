@@ -14,26 +14,17 @@ describe("pax8 quotes", () => {
       expect(data[0]).toHaveProperty("id");
       expect(data[0]).toHaveProperty("companyId");
       expect(data[0]).toHaveProperty("status");
-      expect(data[0]).toHaveProperty("createdOn");
+      expect(data[0]).toHaveProperty("createdAt");
     });
 
-    it("emits BOTH `createdOn`/`expiresOn` and canonical `createdAt`/`expiresAt` on every row (#385 deprecation window)", async () => {
-      // #385: timestamp field standardization. `createdAt` and `expiresAt`
-      // are the canonical past-tense camelCase names. The quoting-v2 legacy
-      // names `createdOn` and `expiresOn` are preserved as deprecated aliases
-      // for one minor version cycle so existing `--json` consumers don't
-      // break. Removal scheduled for v0.3.0.
+    it("emits canonical `createdAt` / `expiresAt` (#385); legacy `createdOn` / `expiresOn` are dropped", async () => {
       const result = await runCliExpectSuccess(["quotes", "list", "--json"]);
       const data = JSON.parse(result.stdout);
       expect(data.length).toBeGreaterThan(0);
       for (const row of data) {
-        expect(row).toHaveProperty("createdOn");
         expect(row).toHaveProperty("createdAt");
-        expect(row.createdAt).toBe(row.createdOn);
-        if (row.expiresOn !== undefined) {
-          expect(row).toHaveProperty("expiresAt");
-          expect(row.expiresAt).toBe(row.expiresOn);
-        }
+        expect(row).not.toHaveProperty("createdOn");
+        expect(row).not.toHaveProperty("expiresOn");
       }
     });
 

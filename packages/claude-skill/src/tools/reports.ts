@@ -97,7 +97,7 @@ export const pax8_report_subscriptions = {
 
     const [subsRaw, companiesRaw] = await Promise.all([
       execCli(subsArgs),
-      execCli(["companies", "list", "--json", "--size", "200"]),
+      execCli(["clients", "list", "--json", "--size", "200"]),
     ]);
 
     // Parse — CLI outputs either { page, content } or flat array

@@ -23,7 +23,7 @@ const sampleWebhook = {
   url: "https://example.com/webhook",
   topics: ["subscription.created"],
   status: "Active",
-  createdDate: "2026-01-15",
+  createdAt: "2026-01-15",
   secret: "whsec_test",
 };
 

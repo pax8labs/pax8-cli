@@ -86,7 +86,7 @@ describe("SIGINT handler", () => {
       // command (~150–200ms wall) is still mid-spinner. Too short and the
       // signal hits Node's default handler (signal=SIGINT, code=null);
       // too long and the command exits cleanly first (code=0).
-      const result = await runWithSigint(["companies", "list"], 120);
+      const result = await runWithSigint(["clients", "list"], 120);
 
       // Either Node delivered SIGINT and our handler exited 130, OR — if
       // the command finished before the SIGINT arrived — we got 0. Both

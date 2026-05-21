@@ -11,7 +11,7 @@ _pax8_completions() {
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
 
-  commands="auth config companies subscriptions products invoices orders doctor version completions"
+  commands="auth config clients subscriptions products invoices orders doctor version completions"
 
   case "\${prev}" in
     auth)
@@ -22,7 +22,7 @@ _pax8_completions() {
       COMPREPLY=( $(compgen -W "init show set path" -- "\${cur}") )
       return 0
       ;;
-    companies|subscriptions|products|invoices|orders)
+    clients|subscriptions|products|invoices|orders)
       COMPREPLY=( $(compgen -W "list show" -- "\${cur}") )
       return 0
       ;;
@@ -46,7 +46,7 @@ _pax8() {
   commands=(
     'auth:Manage authentication with Pax8 API'
     'config:Manage CLI configuration'
-    'companies:Manage companies'
+    'clients:Manage clients'
     'subscriptions:Manage subscriptions'
     'products:Manage products'
     'invoices:Manage invoices'
@@ -79,7 +79,7 @@ _pax8 "$@"
 const FISH_COMPLETION = `# pax8 fish completion
 complete -c pax8 -n '__fish_use_subcommand' -a auth -d 'Manage authentication with Pax8 API'
 complete -c pax8 -n '__fish_use_subcommand' -a config -d 'Manage CLI configuration'
-complete -c pax8 -n '__fish_use_subcommand' -a companies -d 'Manage companies'
+complete -c pax8 -n '__fish_use_subcommand' -a clients -d 'Manage clients'
 complete -c pax8 -n '__fish_use_subcommand' -a subscriptions -d 'Manage subscriptions'
 complete -c pax8 -n '__fish_use_subcommand' -a products -d 'Manage products'
 complete -c pax8 -n '__fish_use_subcommand' -a invoices -d 'Manage invoices'
@@ -106,11 +106,11 @@ complete -c pax8 -l no-color -d 'Disable color output'
 
 const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -CommandName pax8 -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-    $commands = @('auth', 'config', 'companies', 'subscriptions', 'products', 'invoices', 'orders', 'telemetry', 'doctor', 'completions', 'version')
+    $commands = @('auth', 'config', 'clients', 'subscriptions', 'products', 'invoices', 'orders', 'telemetry', 'doctor', 'completions', 'version')
     $subcommands = @{
         'auth' = @('login', 'status', 'logout')
         'config' = @('init', 'show', 'set', 'path')
-        'companies' = @('list', 'show', 'create', 'update')
+        'clients' = @('list', 'show', 'create', 'update')
         'subscriptions' = @('list', 'show', 'update', 'cancel', 'renewals')
         'products' = @('list', 'show', 'search')
         'invoices' = @('list', 'show', 'items', 'audit')

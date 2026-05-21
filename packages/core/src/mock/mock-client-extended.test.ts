@@ -432,14 +432,14 @@ describe("MockPax8Client — extended coverage", () => {
     // surface — `{ expiresOn?, introMessage?, published?, status?,
     // termsAndDisclaimers? }`. Passing one field overrides only that one;
     // the rest are read from the existing demo fixture.
-    it("updates a quote's expiresOn", async () => {
+    it("updates a quote's expiresAt (write-side `expiresOn` payload maps to canonical read field)", async () => {
       const all = await client.quotes.list({ size: 100 });
       const firstId = all.content[0].id;
       const result = await client.quotes.update(firstId, {
         expiresOn: "2026-12-31",
       });
       expect(result.id).toBe(firstId);
-      expect(result.expiresOn).toBe("2026-12-31");
+      expect(result.expiresAt).toBe("2026-12-31");
     });
 
     it("rides setStatus through update (status transitions PUT the full body)", async () => {

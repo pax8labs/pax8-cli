@@ -22,7 +22,7 @@ export interface Column {
  * command. The CLI command is shown in cyan; the description in dim text.
  */
 export interface EmptyStateSuggestion {
-  /** Shell-runnable command, e.g. `pax8 companies create --name "Acme"`. */
+  /** Shell-runnable command, e.g. `pax8 clients create --name "Acme"`. */
   command: string;
   /** Short hint describing what the command does. */
   description: string;

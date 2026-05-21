@@ -42,10 +42,7 @@ describe("pax8 subscriptions list", () => {
     expect(data[0]).toHaveProperty("status");
   });
 
-  it("emits BOTH `createdDate` and canonical `createdAt` on every row (#385 deprecation window)", async () => {
-    // #385: timestamp field standardization. `createdAt` is the canonical
-    // past-tense camelCase name; `createdDate` is preserved as a deprecated
-    // alias for one minor version cycle so `--json` consumers don't break.
+  it("emits canonical `createdAt` (#385); legacy `createdDate` is dropped", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "list",
@@ -54,9 +51,8 @@ describe("pax8 subscriptions list", () => {
     const data = JSON.parse(result.stdout);
     expect(data.length).toBeGreaterThan(0);
     for (const row of data) {
-      expect(row).toHaveProperty("createdDate");
       expect(row).toHaveProperty("createdAt");
-      expect(row.createdAt).toBe(row.createdDate);
+      expect(row).not.toHaveProperty("createdDate");
     }
   });
 
@@ -274,7 +270,7 @@ describe("pax8 subscriptions renewals", () => {
     expect(result.stdout).toContain("Examples:");
   });
 
-  // ─── #295: arrAtRisk companion + canonical MRR/ARR definitions ────────────
+  // ─── #295/#298: canonical MRR/ARR field names on renewals ─────────────────
   it("includes arrRenewing = mrrRenewing * 12 for every renewal in --json", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
@@ -290,14 +286,11 @@ describe("pax8 subscriptions renewals", () => {
       // Canonical names (#298).
       expect(item).toHaveProperty("mrrRenewing");
       expect(item).toHaveProperty("arrRenewing");
-      // Deprecated aliases — kept for one minor version cycle (#298).
-      expect(item).toHaveProperty("mrrAtRisk");
-      expect(item).toHaveProperty("arrAtRisk");
+      // The pre-launch at-risk aliases were dropped.
+      expect(item).not.toHaveProperty("mrrAtRisk");
+      expect(item).not.toHaveProperty("arrAtRisk");
       // JSON output rounds to 2dp; allow a tiny rounding delta.
       expect(item.arrRenewing).toBeCloseTo(item.mrrRenewing * 12, 1);
-      // Aliases mirror canonical values exactly.
-      expect(item.mrrAtRisk).toBe(item.mrrRenewing);
-      expect(item.arrAtRisk).toBe(item.arrRenewing);
     }
   });
 

@@ -107,59 +107,6 @@ function notFound(resource: string, id: string): NotFoundError {
   return new NotFoundError(resource, id);
 }
 
-// ─── Timestamp canonicalization (#385) ────────────────────────────────────────
-//
-// Per #385, all read-side responses now carry BOTH the canonical camelCase /
-// past-tense timestamp names (`createdAt`, `updatedAt`, `expiresAt`) AND the
-// legacy Pax8-API names (`created`, `updatedDate`, `createdDate`, `createdOn`,
-// `expiresOn`) so existing `--json` consumers don't break during the deprecation
-// window. Real-API responses get this dual-emit via the Zod preprocess in
-// `api/types.ts`; demo-mode responses get it via these helpers — the mock
-// client doesn't Zod-parse on the way out for these resources because the
-// demo-data interfaces are slightly looser than the canonical schemas.
-
-function withCompanyTimestampAliases<T extends { created?: string; updatedDate?: string; createdAt?: string; updatedAt?: string }>(
-  c: T,
-): T & { createdAt?: string; updatedAt?: string; created?: string; updatedDate?: string } {
-  const createdAt = c.createdAt ?? c.created;
-  const updatedAt = c.updatedAt ?? c.updatedDate;
-  return {
-    ...c,
-    ...(createdAt !== undefined ? { createdAt, created: createdAt } : {}),
-    ...(updatedAt !== undefined ? { updatedAt, updatedDate: updatedAt } : {}),
-  };
-}
-
-function withOrderTimestampAliases<T extends { createdDate?: string; createdAt?: string }>(
-  o: T,
-): T & { createdAt?: string; createdDate?: string } {
-  const createdAt = o.createdAt ?? o.createdDate;
-  return {
-    ...o,
-    ...(createdAt !== undefined ? { createdAt, createdDate: createdAt } : {}),
-  };
-}
-
-function withSubscriptionTimestampAliases<T extends { createdDate?: string; createdAt?: string }>(
-  s: T,
-): T & { createdAt?: string; createdDate?: string } {
-  const createdAt = s.createdAt ?? s.createdDate;
-  return {
-    ...s,
-    ...(createdAt !== undefined ? { createdAt, createdDate: createdAt } : {}),
-  };
-}
-
-function withWebhookTimestampAliases<T extends { createdDate?: string; createdAt?: string; updatedAt?: string }>(
-  w: T,
-): T & { createdAt?: string; createdDate?: string; updatedAt?: string } {
-  const createdAt = w.createdAt ?? w.createdDate;
-  return {
-    ...w,
-    ...(createdAt !== undefined ? { createdAt, createdDate: createdAt } : {}),
-  };
-}
-
 // ─── Resource helpers ────────────────────────────────────────────────────────
 
 class CompaniesResource {
@@ -232,12 +179,7 @@ class CompaniesResource {
       filtered = [...filtered].sort((a, b) => getField(a).localeCompare(getField(b)));
     }
     const page = paginate(filtered, params);
-    // #385: emit canonical timestamp aliases (`createdAt`) alongside the
-    // legacy wire-shape field names (`created`, `updatedDate`) so downstream
-    // `--json` consumers see both during the v0.2.x → v0.3.0 deprecation
-    // window. Real-API responses get this dual-emit via the Zod preprocess
-    // in `api/types.ts`.
-    return { ...page, content: page.content.map(withCompanyTimestampAliases) };
+    return page;
   }
 
   async get(id: string): Promise<Company> {
@@ -246,7 +188,7 @@ class CompaniesResource {
       ?? companies.find((c) => c.name.toLowerCase() === id.toLowerCase())
       ?? companies.find((c) => c.id.startsWith(id) || c.name.toLowerCase().includes(id.toLowerCase()));
     if (!company) throw notFound("Company", id);
-    return withCompanyTimestampAliases(company);
+    return company;
   }
 
   async create(data: Partial<Company>): Promise<Company> {
@@ -266,17 +208,16 @@ class CompaniesResource {
       billOnBehalfOfEnabled: data.billOnBehalfOfEnabled ?? false,
       selfServiceAllowed: data.selfServiceAllowed ?? false,
       orderApprovalRequired: data.orderApprovalRequired ?? false,
-      created: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString().split("T")[0],
     };
-    return withCompanyTimestampAliases(newCompany);
+    return newCompany;
   }
 
   async update(id: string, data: Partial<Company>): Promise<Company> {
     await randomDelay();
     const company = companies.find((c) => c.id === id);
     if (!company) throw notFound("Company", id);
-    return withCompanyTimestampAliases({ ...company, ...data, id: company.id });
+    return { ...company, ...data, id: company.id };
   }
 }
 
@@ -294,18 +235,14 @@ class SubscriptionsResource {
       filtered = filtered.filter((sub) => sub.status.toLowerCase() === s);
     }
     const page = paginate(filtered, params);
-    // #385: dual-emit `createdAt` alongside legacy `createdDate`.
-    return {
-      ...page,
-      content: page.content.map(withSubscriptionTimestampAliases),
-    };
+    return page;
   }
 
   async get(id: string): Promise<Subscription> {
     await randomDelay();
     const sub = subscriptions.find((s) => s.id === id);
     if (!sub) throw notFound("Subscription", id);
-    return withSubscriptionTimestampAliases(sub);
+    return sub;
   }
 
   async getHistory(
@@ -317,7 +254,7 @@ class SubscriptionsResource {
     return {
       changes: [
         {
-          date: sub.createdDate,
+          date: sub.createdAt,
           field: "status",
           oldValue: "New",
           newValue: sub.status,
@@ -654,8 +591,7 @@ class OrdersResource {
       filtered = filtered.filter((o) => o.status.toLowerCase() === s);
     }
     const page = paginate(filtered, params);
-    // #385: dual-emit `createdAt` alongside legacy `createdDate`.
-    return { ...page, content: page.content.map(withOrderTimestampAliases) };
+    return page;
   }
 
   async get(id: string): Promise<Order> {
@@ -663,7 +599,7 @@ class OrdersResource {
     const allOrders = [...orders, ...this.loadCreated()];
     const order = allOrders.find((o) => o.id === id);
     if (!order) throw notFound("Order", id);
-    return withOrderTimestampAliases(order);
+    return order;
   }
 
   async create(
@@ -682,7 +618,6 @@ class OrdersResource {
       companyName: company?.name ?? "Unknown",
       orderedBy: "Demo User",
       orderedByEmail: "demo@example.com",
-      createdDate: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString().split("T")[0],
       // Echo `lineItemNumber` back so callers can verify it was sent. Falls
       // back to 1-based array position when callers don't supply one — same
@@ -712,7 +647,7 @@ class OrdersResource {
       this.loadCreated().push(newOrder);
       this.saveCreated();
     }
-    return withOrderTimestampAliases(newOrder);
+    return newOrder;
   }
 }
 
@@ -885,7 +820,6 @@ class QuotesResource {
         isShadowCompany: false,
         ...(clientName ? { name: clientName } : {}),
       },
-      createdOn: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString().split("T")[0],
       status: "Draft",
       // Empty defaults for the two free-text fields the v2 read shape marks
@@ -932,10 +866,6 @@ class QuotesResource {
     if (!quote) throw notFound("Quote", id);
 
     if (typeof data.expiresOn === "string") {
-      // Set BOTH names — without this, the stored `expiresAt` alias would
-      // win in the schema preprocess (it prefers the canonical name when
-      // both are present) and the user's update would silently revert.
-      quote.expiresOn = data.expiresOn;
       quote.expiresAt = data.expiresOn;
     }
     if (typeof data.introMessage === "string") quote.introMessage = data.introMessage;
@@ -1067,15 +997,14 @@ class QuotesResource {
 class WebhooksResource {
   async list(): Promise<Webhook[]> {
     await randomDelay();
-    // #385: dual-emit `createdAt` alongside legacy `createdDate`.
-    return webhooks.map(withWebhookTimestampAliases);
+    return webhooks;
   }
 
   async get(id: string): Promise<Webhook> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
-    return withWebhookTimestampAliases(wh);
+    return wh;
   }
 
   async create(data: {
@@ -1096,12 +1025,11 @@ class WebhooksResource {
       url: data.url,
       status: "Active",
       topics: data.webhookTopics.map((t) => t.topic),
-      createdDate: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString().split("T")[0],
       secret: `whsec_demo_${Date.now()}`,
       displayName: data.displayName,
     };
-    return withWebhookTimestampAliases(newWh);
+    return newWh;
   }
 
   async updateConfiguration(
@@ -1122,12 +1050,12 @@ class WebhooksResource {
     // real API and is not echoed back on read, so we don't include it.
     const { authorization: _ignored, ...rest } = data;
     void _ignored;
-    return withWebhookTimestampAliases({
+    return {
       ...wh,
       ...rest,
       id: wh.id,
       updatedAt: new Date().toISOString(),
-    });
+    };
   }
 
   async setStatus(id: string, active: boolean): Promise<Webhook> {
@@ -1139,7 +1067,7 @@ class WebhooksResource {
       status: active ? "Active" : "Disabled",
       updatedAt: new Date().toISOString(),
     };
-    return withWebhookTimestampAliases(updated);
+    return updated;
   }
 
   async delete(id: string): Promise<void> {

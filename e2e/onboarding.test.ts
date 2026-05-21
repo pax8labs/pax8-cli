@@ -38,8 +38,8 @@ describe("E2E: Onboarding — first-time user experience", () => {
     expect(parsed.mode).toBe("demo");
   });
 
-  it("pax8 companies list shows demo companies", async () => {
-    const result = await runCliExpectSuccess(["companies", "list"]);
+  it("pax8 clients list shows demo companies", async () => {
+    const result = await runCliExpectSuccess(["clients", "list"]);
     // In non-TTY, default output is JSON
     expect(result.stdout.length).toBeGreaterThan(0);
     const data = JSON.parse(result.stdout);
@@ -48,8 +48,8 @@ describe("E2E: Onboarding — first-time user experience", () => {
     expect(data[0]).toHaveProperty("name");
   });
 
-  it("pax8 companies list --json produces valid JSON array", async () => {
-    const result = await runCliExpectSuccess(["companies", "list", "--json"]);
+  it("pax8 clients list --json produces valid JSON array", async () => {
+    const result = await runCliExpectSuccess(["clients", "list", "--json"]);
     const data = JSON.parse(result.stdout);
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBeGreaterThan(0);

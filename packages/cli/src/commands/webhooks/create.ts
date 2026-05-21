@@ -34,16 +34,9 @@ export const webhooksCreateCommand = new Command("create")
     "--display-name <name>",
     'Human-friendly label for the webhook (required by the Pax8 API). Pick something memorable — e.g. "Subscription events — prod"',
   )
-  .option(
+  .requiredOption(
     "--topics <comma-separated-topics>",
     'Topics to subscribe to, comma-separated (e.g. "subscription.created,invoice.paid")',
-  )
-  // Deprecated alias for `--topics`. Kept for backward compatibility with
-  // anyone who scripted against the v0.1 surface; emits a deprecation notice
-  // on stderr and will be removed in v1.0. Refs #273.
-  .option(
-    "--events <comma-separated-topics>",
-    "[deprecated] Alias for --topics. Will be removed in v1.0.",
   )
   .option("-y, --yes", "Skip confirmation prompt")
   .addHelpText(
@@ -53,7 +46,6 @@ Examples:
   pax8 webhooks create --url https://example.com/hook --display-name "Subscription events" --topics subscription.created,subscription.cancelled
   pax8 webhooks create --url https://example.com/hook --display-name "Invoice events" --topics invoice.paid --yes
 
-Note: --events is a deprecated alias for --topics; it still works but will be removed in v1.0.
 Note: --display-name is required by the Pax8 webhooks API; the server will reject creates that omit it.`,
   )
   .action(async (_options, command: Command) => {
@@ -65,45 +57,8 @@ Note: --display-name is required by the Pax8 webhooks API; the server will rejec
       const url = String(allOpts.url);
       const displayName = String(allOpts.displayName ?? "").trim();
 
-      // Resolve the canonical `--topics` value, accepting `--events` as a
-      // deprecated alias. Erroring if both are passed avoids a silent
-      // ambiguity when the two values disagree.
-      const topicsRaw = allOpts.topics as string | undefined;
-      const eventsRaw = allOpts.events as string | undefined;
-
-      if (topicsRaw !== undefined && eventsRaw !== undefined) {
-        throw new CliError(
-          "Specify only one of --topics or --events",
-          [
-            "--events is a deprecated alias for --topics; passing both is ambiguous.",
-          ],
-          [
-            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --topics subscription.created,invoice.paid`,
-          ],
-          undefined,
-          ERROR_INVALID_INPUT,
-        );
-      }
-
-      if (topicsRaw === undefined && eventsRaw === undefined) {
-        throw new CliError(
-          "Missing required option: --topics",
-          ["--topics must contain one or more comma-separated topic names"],
-          [
-            `Example: ${replCmd("pax8 webhooks create")} --url ${url} --topics subscription.created,invoice.paid`,
-          ],
-          undefined,
-          ERROR_INVALID_INPUT,
-        );
-      }
-
-      if (eventsRaw !== undefined) {
-        process.stderr.write(
-          "warning: --events is deprecated; use --topics. Will be removed in v1.0.\n",
-        );
-      }
-
-      const topics = parseTopics(String(topicsRaw ?? eventsRaw));
+      const topicsRaw = allOpts.topics as string;
+      const topics = parseTopics(topicsRaw);
 
       if (!isValidUrl(url)) {
         throw new CliError(

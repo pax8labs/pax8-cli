@@ -18,12 +18,12 @@ import { runCliExpectSuccess } from "./test-utils.js";
  */
 
 describe("empty list rendering — #197", () => {
-  describe("companies list with no matches", () => {
+  describe("clients list with no matches", () => {
     it("--json emits an empty array on stdout with no human-facing noise", async () => {
       // No companies in demo data carry status=Deleted, so this filter
       // yields zero rows without needing a mock surgery.
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--status",
         "Deleted",
@@ -39,7 +39,7 @@ describe("empty list rendering — #197", () => {
 
     it("human/table mode prints the empty-state headline on stderr", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--status",
         "Deleted",
@@ -52,7 +52,7 @@ describe("empty list rendering — #197", () => {
 
     it("--csv produces a header row only (no body, no message)", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--status",
         "Deleted",
@@ -69,7 +69,7 @@ describe("empty list rendering — #197", () => {
 
     it("--ids-only produces no stdout when empty", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--status",
         "Deleted",
@@ -163,10 +163,10 @@ describe("empty list rendering — #197", () => {
 
     it("companies list --status Deleted in table mode shows the empty-state", async () => {
       const result = await runCliExpectSuccess(
-        ["companies", "list", "--status", "Deleted"],
+        ["clients", "list", "--status", "Deleted"],
         { PAX8_OUTPUT_FORMAT: "table" },
       );
-      expect(result.stderr).toContain("No companies found.");
+      expect(result.stderr).toContain("No clients found.");
       expect(result.stderr).toContain("status=Deleted");
     });
 
@@ -177,7 +177,7 @@ describe("empty list rendering — #197", () => {
       for (const args of [
         ["subscriptions", "list", "--status", "Cancelled"],
         ["invoices", "list", "--month", "1900-01"],
-        ["companies", "list", "--status", "Deleted"],
+        ["clients", "list", "--status", "Deleted"],
       ]) {
         const result = await runCliExpectSuccess([...args, "--json"]);
         const data = JSON.parse(result.stdout);

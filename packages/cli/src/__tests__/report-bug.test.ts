@@ -23,7 +23,7 @@ const SAMPLE_ENVELOPE = {
   ],
   recoverySteps: ["Run pax8 auth login to re-authenticate."],
   docsUrl: "https://docs.pax8.com/auth",
-  command: "companies list",
+  command: "clients list",
   flags: ["--json"],
   cli_version: "0.1.0",
   node_version: "v22.5.1",
@@ -171,7 +171,7 @@ describe("handleCommandError last-error.json side effect", () => {
   it("writes a structured envelope on a CliError and is mode 0600", async () => {
     // Force a CliError by asking for a company that doesn't exist in demo data.
     const result = await runCliExpectFailure(
-      ["companies", "show", "definitely-does-not-exist", "--json"],
+      ["clients", "show", "definitely-does-not-exist", "--json"],
       { PAX8_CONFIG_DIR: tmpDir }
     );
     expect(result.exitCode).toBe(1);
@@ -192,7 +192,7 @@ describe("handleCommandError last-error.json side effect", () => {
     expect(typeof env.node_version).toBe("string");
     expect(typeof env.os).toBe("string");
     expect(typeof env.timestamp).toBe("string");
-    expect(env.command).toContain("companies");
+    expect(env.command).toContain("clients");
     expect(Array.isArray(env.flags)).toBe(true);
     expect(env.flags).toContain("--json");
   });
@@ -200,7 +200,7 @@ describe("handleCommandError last-error.json side effect", () => {
   it("end-to-end: failed command → report-bug --print produces a redacted body", async () => {
     // Cause a failure that populates last-error.json.
     await runCliExpectFailure(
-      ["companies", "show", "definitely-does-not-exist", "--json"],
+      ["clients", "show", "definitely-does-not-exist", "--json"],
       { PAX8_CONFIG_DIR: tmpDir }
     );
 
@@ -219,7 +219,7 @@ describe("handleCommandError last-error.json side effect", () => {
   it("does not leak a positional company-name argument into last-error.json (#170)", async () => {
     const sensitiveName = "ZZZSensitiveCustomerInc";
     await runCliExpectFailure(
-      ["companies", "show", sensitiveName, "--json"],
+      ["clients", "show", sensitiveName, "--json"],
       { PAX8_CONFIG_DIR: tmpDir }
     );
 
@@ -230,7 +230,7 @@ describe("handleCommandError last-error.json side effect", () => {
 
     const env = JSON.parse(raw);
     // Structure preserved.
-    expect(env.command).toBe("companies show <REDACTED:ARG>");
+    expect(env.command).toBe("clients show <REDACTED:ARG>");
     expect(env.flags).toContain("--json");
     expect(env.code).toBe("ERROR_COMPANY_NOT_FOUND");
     // Message had the value interpolated (`Company not found: "${input}"`)
@@ -242,7 +242,7 @@ describe("handleCommandError last-error.json side effect", () => {
   it("report-bug --print does not leak the positional value in its body (#170)", async () => {
     const sensitiveName = "ZZZSensitiveCustomerInc";
     await runCliExpectFailure(
-      ["companies", "show", sensitiveName, "--json"],
+      ["clients", "show", sensitiveName, "--json"],
       { PAX8_CONFIG_DIR: tmpDir }
     );
     const result = await runCliExpectSuccess(["report-bug", "--print"], {
@@ -250,6 +250,6 @@ describe("handleCommandError last-error.json side effect", () => {
     });
     expect(result.stdout).not.toContain(sensitiveName);
     expect(result.stdout).toContain("<REDACTED:ARG>");
-    expect(result.stdout).toContain("companies show <REDACTED:ARG>");
+    expect(result.stdout).toContain("clients show <REDACTED:ARG>");
   });
 });

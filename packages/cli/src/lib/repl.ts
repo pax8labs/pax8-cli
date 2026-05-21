@@ -30,7 +30,7 @@ export function resolveCliPath(scriptPath: string | undefined): string {
 
 /**
  * Tokenize a command line string, respecting quoted strings.
- * "companies more "Acme Corp" --json" -> ["companies", "more", "Acme Corp", "--json"]
+ * "clients more "Acme Corp" --json" -> ["clients", "more", "Acme Corp", "--json"]
  */
 export function tokenize(input: string): string[] {
   const tokens: string[] = [];
