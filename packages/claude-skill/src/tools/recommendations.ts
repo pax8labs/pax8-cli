@@ -6,7 +6,7 @@ import { execCli } from "../index.js";
 export const pax8_recommendations = {
   name: "pax8_recommendations",
   description:
-    "Analyze customer portfolios and recommend products they should consider. Returns a wrapped envelope `{ recommendations: [...], totalAvailable: number }` — each recommendation carries type (cross-sell or seat-gap), companyName, productName, priority (high/medium/low), reason, estimatedMRR, and orderCommand. Sorted by estimatedMrrUplift DESC, priority as tiebreaker, nulls last. Capped at 10 by default; pass `top: 0` to retrieve all (compare against `totalAvailable` to know if the cap fired). Filter by companyId (name or UUID) and/or priority level. Use this for upsell opportunities, product gaps, or revenue growth questions.",
+    "Analyze customer portfolios and recommend products they should consider. Returns a wrapped envelope `{ recommendations: [...], totalAvailable: number }` — each recommendation carries type (cross-sell or seat-gap), companyName, productName, priority (high/medium/low), reason, estimatedMRR, plus both `orderArgs` (argv-style array, first element is \"pax8\") and `orderCommand` (display-string). To execute an order, use `orderArgs.slice(1)` with a subprocess / Bash tool — `orderCommand` interpolates the partner-controlled `companyName` and is unsafe to shell-eval (#462). Sorted by estimatedMrrUplift DESC, priority as tiebreaker, nulls last. Capped at 10 by default; pass `top: 0` to retrieve all (compare against `totalAvailable` to know if the cap fired). Filter by companyId (name or UUID) and/or priority level. Use this for upsell opportunities, product gaps, or revenue growth questions.",
   parameters: {
     type: "object" as const,
     properties: {

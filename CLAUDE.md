@@ -21,7 +21,7 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, Pax8 cost
 | products / catalog | `pax8 products search "query" --json 2>/dev/null` |
 | cost sim / what if / pricing change / SKU swap | `pax8 cost sim --company <name> --product <name> --quantity <n> --json 2>/dev/null` |
 | place an order | `pax8 orders create --company <id> --product <id> --quantity <n>` (confirm first) |
-| act on a recommendation | Extract `orderCommand` from `pax8 recommendations list --json` and run it (confirm first), or use `pax8 recommendations act` for the interactive flow |
+| act on a recommendation | Prefer `pax8 recommendations act` for the interactive flow. To act programmatically: read `orderArgs` (an argv array — first element is `"pax8"`) from `pax8 recommendations list --json` and pass `orderArgs.slice(1)` to a subprocess / Bash tool. **Do not pass `orderCommand` to a shell.** It's a display string with raw `companyName` interpolation; #462. Confirm before any write. |
 | invoice dispute | `pax8 invoices dispute --discrepancy <id>` (id from `invoices audit`) |
 | webhook delivery history | `pax8 webhooks logs <id> --json 2>/dev/null` |
 | diagnostics / health | `pax8 doctor --json 2>/dev/null` |
