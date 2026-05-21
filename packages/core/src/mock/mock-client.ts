@@ -598,8 +598,12 @@ class OrdersResource {
       const [field, direction] = params.sort.split(",").map((s) => s.trim());
       const dir = (direction ?? "asc").toLowerCase() === "desc" ? -1 : 1;
       const getField = (o: Order): string | number => {
+        // #385 / #476: `createdAt` is canonical; `createdDate` was the
+        // pre-removal alias. The mock honors both spellings on the
+        // input `sort` param (real Pax8 API still accepts both wire
+        // names) but the underlying Order field is just `createdAt`.
         if (field === "createdAt" || field === "createdDate") {
-          return o.createdAt ?? o.createdDate ?? "";
+          return o.createdAt ?? "";
         }
         return "";
       };
