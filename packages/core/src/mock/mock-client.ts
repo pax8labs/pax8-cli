@@ -563,7 +563,7 @@ class OrdersResource {
   }
 
   async list(
-    params?: ListParams & { companyId?: string; status?: string }
+    params?: ListParams & { companyId?: string; status?: string; sort?: string }
   ): Promise<PaginatedResponse<Order>> {
     await randomDelay();
     // Test-only fault injection for the `pax8 orders list` timeout-hint UX
@@ -589,6 +589,26 @@ class OrdersResource {
     if (params?.status) {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((o) => o.status.toLowerCase() === s);
+    }
+    // #478: honor the `sort=<field>,<direction>` hint so the demo posture
+    // exercises the same code path partners take on real traffic. Default
+    // is `createdAt,desc` (newest first) — pre-#478 the CLI passed nothing
+    // and the large fixture surfaced 2013 archives in row 1.
+    if (params?.sort) {
+      const [field, direction] = params.sort.split(",").map((s) => s.trim());
+      const dir = (direction ?? "asc").toLowerCase() === "desc" ? -1 : 1;
+      const getField = (o: Order): string | number => {
+        if (field === "createdAt" || field === "createdDate") {
+          return o.createdAt ?? o.createdDate ?? "";
+        }
+        return "";
+      };
+      filtered = [...filtered].sort((a, b) => {
+        const av = getField(a);
+        const bv = getField(b);
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
     }
     const page = paginate(filtered, params);
     return page;
