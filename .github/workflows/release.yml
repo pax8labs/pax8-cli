@@ -40,21 +40,16 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # Publish gate (see #370): we intentionally do NOT pass a `publish:`
-      # command here, so this action only opens/updates the "chore: release"
-      # PR and never invokes `npm publish`. Versions have been auto-bumped
-      # past anything we've shipped (CHANGELOG headings for 0.2.0/0.3.0 exist
-      # but the registry has nothing), and we want a deliberate human signal
-      # before the first real publish.
-      #
-      # When the team is ready to ship the first release, restore the
-      # `publish: pnpm changeset publish` input below and merge — the next
-      # push to main will publish whatever the open "chore: release" PR has
-      # already version-bumped to.
-      - name: Create release PR (publish gated — see #370)
+      # Publish gate lifted (#370): the open `chore: release` PR (#535) has
+      # been merged, both packages versioned to 0.2.0, CHANGELOG written.
+      # Enabling `publish` here means the next push to main that consumes a
+      # changeset will run `npm publish` automatically. Trusted publishing
+      # via `id-token: write` (see the OIDC note below) covers auth — no
+      # NPM_TOKEN secret is required.
+      - name: Create release PR and publish on merge
         uses: changesets/action@63a615b9cd06ba9a3e6d13796c7fbcb080a60a0b # v1.8.0
         with:
-          # publish: pnpm changeset publish  # gated — enable when ready to ship
+          publish: pnpm changeset publish
           version: pnpm changeset version
           commit: "chore: release"
           title: "chore: release"
