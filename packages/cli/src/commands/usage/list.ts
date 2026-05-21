@@ -35,7 +35,15 @@ Notes:
   subscription (\`/v1/subscriptions/{id}/usage-summaries\`). \`--company\`
   is a convenience: the CLI resolves the company to its subscriptions and
   iterates. Pass \`--subscription <id>\` to skip the lookup when you already
-  know the ID.`
+  know the ID.
+
+  Pagination: the per-subscription endpoint accepts \`page\` / \`size\`. Use
+  \`--page\` and \`--size\` (default 50, max ${LIST_SIZE_CAP} per page; values above the
+  cap are clamped with a stderr warning, #518). When fanning out via
+  \`--company\` or no filter, each subscription is fetched with the same
+  page / size — results from all subscriptions are concatenated, so
+  consumers should treat the combined output as a single result set and
+  re-query with a larger \`--size\` if any one subscription truncates.`
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
