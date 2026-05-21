@@ -1,5 +1,0 @@
----
-"@pax8/cli": patch
----
-
-UX: cleaned up ~15 stale `pax8 companies *` references inside command source code that #382's doc cleanup didn't reach. These strings print at runtime as Try-next suggestions, error-recovery hints, and demo-mode `Try:` prompts (in `init`, `contacts/{list,show,update,delete}`, `dashboard`, `subscriptions/show`, `invoices/show`, `orders/create`, `report/mrr`, `quotes` examples, and `companies/{create,list,more,show,update}` Examples blocks). Plus a few user-facing prose strings: "Pick a company first" → "Pick a client first", "Full company summary" → "Full client summary", "view company" → "view client", "Create a new company" → "Create a new client", "List companies:" → "List clients:". The `--company` flag on every command stays unchanged (per #317's decision: flag mirrors the API field; will migrate when the API ships `/clients` endpoints). JSON output field names (`companyId`, `companyName`, etc.) unchanged. Code comments and `companies/index.ts`'s deliberate alias-explanation block also unchanged. Closes the runtime gap that pair-completes #379/#382.
