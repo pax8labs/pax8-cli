@@ -76,7 +76,7 @@ Write commands:
 - `pax8 orders create` — places a real order, charges the partner, creates a subscription.
 - `pax8 clients create`, `pax8 clients update` — partner-account-level customer-record changes.
 
-> `pax8 clients *` is the canonical command surface. `pax8 companies *` is retained as an indefinite deprecated alias — both invocations share the exact same command graph, so agents can use either form. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
+> `pax8 clients *` is the canonical (and only) command surface. The previous `pax8 companies *` alias was removed pre-launch (#476). JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
 - `pax8 contacts create`, `pax8 contacts update`, `pax8 contacts delete` — modifies customer contacts.
 - `pax8 quotes create`, `pax8 quotes update`, `pax8 quotes delete` — modifies sales quotes.
 - `pax8 subscriptions update`, `pax8 subscriptions cancel` — changes seat counts, billing terms, or terminates a subscription.

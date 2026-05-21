@@ -31,16 +31,9 @@ export interface RenewalItem {
    *
    * Naming note (#298): this is a TEMPORAL filter (subscriptions renewing in
    * window), NOT a churn-risk prediction. Pax8's patent-filed Revenue at Risk
-   * Predictor is a separate ML-based product. Field renamed to `mrrRenewing`;
-   * `mrrAtRisk` is retained as a deprecated alias for one minor version cycle
-   * and will be removed in a future release.
+   * Predictor is a separate ML-based product.
    */
   mrrRenewing: number;
-  /**
-   * @deprecated Use `mrrRenewing`. Retained for one minor version cycle so
-   * existing scripts don't break. See #298.
-   */
-  mrrAtRisk: number;
   /**
    * ARR companion field added in #295 — `mrrRenewing × 12`. ARR is the derived
    * board/investor metric (PFR-86 escalations frame risk as "$12M ARR
@@ -48,11 +41,6 @@ export interface RenewalItem {
    * partners can pick whichever unit matches their conversation.
    */
   arrRenewing: number;
-  /**
-   * @deprecated Use `arrRenewing`. Retained for one minor version cycle so
-   * existing scripts don't break. See #298.
-   */
-  arrAtRisk: number;
   daysUntilRenewal: number;
 }
 
@@ -60,18 +48,8 @@ export interface RenewalReport {
   items: RenewalItem[];
   /** Aggregate MRR renewing in window — sum of `mrrRenewing` across items. See #298. */
   totalMrrRenewing: number;
-  /**
-   * @deprecated Use `totalMrrRenewing`. Retained for one minor version cycle.
-   * See #298.
-   */
-  totalMrrAtRisk: number;
   /** Aggregate ARR renewing in window — `totalMrrRenewing × 12`. See #295. */
   totalArrRenewing: number;
-  /**
-   * @deprecated Use `totalArrRenewing`. Retained for one minor version cycle.
-   * See #298.
-   */
-  totalArrAtRisk: number;
   annualCount: number;
   monthlyCount: number;
   urgentCount: number; // within 14 days
@@ -122,11 +100,7 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
       billingTerm,
       price,
       mrrRenewing,
-      // Deprecated alias — same value as `mrrRenewing` for one cycle. See #298.
-      mrrAtRisk: mrrRenewing,
       arrRenewing,
-      // Deprecated alias — same value as `arrRenewing` for one cycle. See #298.
-      arrAtRisk: arrRenewing,
       daysUntilRenewal,
     });
   }
@@ -145,11 +119,7 @@ export function getUpcomingRenewals(subscriptions: RenewalSubscriptionInput[], w
   return {
     items,
     totalMrrRenewing,
-    // Deprecated alias — same value as `totalMrrRenewing` for one cycle. See #298.
-    totalMrrAtRisk: totalMrrRenewing,
     totalArrRenewing,
-    // Deprecated alias — same value as `totalArrRenewing` for one cycle. See #298.
-    totalArrAtRisk: totalArrRenewing,
     annualCount,
     monthlyCount,
     urgentCount,

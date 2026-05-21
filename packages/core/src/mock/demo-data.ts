@@ -53,16 +53,10 @@ export interface Company {
    */
   externalId?: string;
   /**
-   * @deprecated Use `createdAt`. One-cycle alias preserved so existing
-   * `--json` consumers don't break; removal in v0.3.0. See #385.
-   */
-  created: string;
-  /**
    * Canonical timestamp (camelCase, past tense). Required so the demo
    * fixture shape matches the Zod-inferred `Company` type, which keeps
    * the `Company | DemoCompany` union narrowable across the CLI/mock
-   * boundary. Introduced as a hotfix after #385 (#407 missed updating
-   * the demo-data hand-coded interfaces).
+   * boundary.
    */
   createdAt: string;
   /** Optional canonical updated-at; mirrors Zod `updatedAt`. */
@@ -77,11 +71,7 @@ export interface Subscription {
   productName: string;
   quantity: number;
   startDate: string;
-  /**
-   * @deprecated Use `createdAt`. One-cycle alias; removal in v0.3.0. See #385.
-   */
-  createdDate: string;
-  /** Canonical timestamp; mirrors Zod `Subscription.createdAt`. See #385. */
+  /** Canonical timestamp; mirrors Zod `Subscription.createdAt`. */
   createdAt: string;
   billingStart: string;
   status: "Active" | "Trial" | "PendingManual" | "Cancelled" | "PendingCancel";
@@ -176,11 +166,7 @@ export interface Order {
   companyName: string;
   orderedBy: string;
   orderedByEmail: string;
-  /**
-   * @deprecated Use `createdAt`. One-cycle alias; removal in v0.3.0. See #385.
-   */
-  createdDate: string;
-  /** Canonical timestamp; mirrors Zod `Order.createdAt`. See #385. */
+  /** Canonical timestamp; mirrors Zod `Order.createdAt`. */
   createdAt: string;
   lineItems: OrderLineItem[];
   status: "Completed" | "Processing" | "Failed" | "PendingManual";
@@ -300,18 +286,9 @@ export interface Quote {
     isShadowCompany?: boolean;
     name?: string;
   };
-  /**
-   * @deprecated Use `createdAt`. One-cycle alias; removal in v0.3.0. See #385.
-   * Originally mirrored the public quoting v2 API field name.
-   */
-  createdOn: string;
-  /** Canonical timestamp; mirrors Zod `Quote.createdAt`. See #385. */
+  /** Canonical timestamp; mirrors Zod `Quote.createdAt`. */
   createdAt: string;
-  /**
-   * @deprecated Use `expiresAt`. One-cycle alias; removal in v0.3.0. See #385.
-   */
-  expiresOn?: string;
-  /** Canonical expiry timestamp; mirrors Zod `Quote.expiresAt`. See #385. */
+  /** Canonical expiry timestamp; mirrors Zod `Quote.expiresAt`. */
   expiresAt?: string;
   status: "Draft" | "Sent" | "Accepted" | "Declined";
   lineItems?: QuoteLineItem[];
@@ -389,11 +366,7 @@ export interface Webhook {
   url: string;
   status: "Active" | "Disabled";
   topics: string[];
-  /**
-   * @deprecated Use `createdAt`. One-cycle alias; removal in v0.3.0. See #385.
-   */
-  createdDate: string;
-  /** Canonical timestamp; mirrors Zod `Webhook.createdAt`. See #385. */
+  /** Canonical timestamp; mirrors Zod `Webhook.createdAt`. */
   createdAt: string;
   secret?: string;
   /** Human-friendly label (Pax8 webhook-manager v2.1+). */
@@ -454,7 +427,6 @@ export const companies: Company[] = [
     // Partner-side ID (e.g. PSA / billing-system ID) — exercises the
     // `externalId` surface introduced in #273 (fixes #5).
     externalId: "PSA-SUMMIT-1042",
-    created: "2023-06-15",
     createdAt: "2023-06-15",
     billingContact: {
       firstName: "Rachel",
@@ -479,7 +451,6 @@ export const companies: Company[] = [
     selfServiceAllowed: true,
     orderApprovalRequired: true,
     externalId: "PSA-COASTLINE-2018",
-    created: "2024-01-10",
     createdAt: "2024-01-10",
     billingContact: {
       firstName: "Marco",
@@ -504,7 +475,6 @@ export const companies: Company[] = [
     selfServiceAllowed: false,
     orderApprovalRequired: true,
     externalId: "PSA-REDWOOD-0517",
-    created: "2022-09-01",
     createdAt: "2022-09-01",
     billingContact: {
       firstName: "Karen",
@@ -529,7 +499,6 @@ export const companies: Company[] = [
     selfServiceAllowed: false,
     orderApprovalRequired: false,
     externalId: "PSA-BRIGHT-3304",
-    created: "2025-03-20",
     createdAt: "2025-03-20",
     billingContact: {
       firstName: "Lisa",
@@ -554,7 +523,6 @@ export const companies: Company[] = [
     selfServiceAllowed: true,
     orderApprovalRequired: false,
     externalId: "PSA-PINNACLE-7710",
-    created: "2024-08-05",
     createdAt: "2024-08-05",
     billingContact: {
       firstName: "David",
@@ -584,7 +552,6 @@ export const companies: Company[] = [
     selfServiceAllowed: true,
     orderApprovalRequired: false,
     externalId: "PSA-ACME-0001",
-    created: "2024-11-15",
     createdAt: "2024-11-15",
     billingContact: {
       firstName: "Wile",
@@ -839,7 +806,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 85,
     startDate: "2025-03-26",
-    createdDate: "2025-03-20",
     createdAt: "2025-03-20",
     billingStart: "2025-03-26",
     status: "Active",
@@ -858,7 +824,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 85,
     startDate: "2025-03-26",
-    createdDate: "2025-03-20",
     createdAt: "2025-03-20",
     billingStart: "2025-03-26",
     status: "Active",
@@ -876,7 +841,6 @@ export const subscriptions: Subscription[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 85,
     startDate: "2025-03-26",
-    createdDate: "2025-03-20",
     createdAt: "2025-03-20",
     billingStart: "2025-03-26",
     status: "Active",
@@ -896,7 +860,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 40,
     startDate: "2025-04-07",
-    createdDate: "2025-04-01",
     createdAt: "2025-04-01",
     billingStart: "2025-04-07",
     status: "Active",
@@ -917,7 +880,6 @@ export const subscriptions: Subscription[] = [
     productName: "Exchange Online (Plan 2) [New Commerce Experience]",
     quantity: 40,
     startDate: "2025-04-07",
-    createdDate: "2025-04-01",
     createdAt: "2025-04-01",
     billingStart: "2025-04-07",
     status: "Active",
@@ -937,7 +899,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 100,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
@@ -955,7 +916,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E5 [New Commerce Experience]",
     quantity: 50,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
@@ -973,7 +933,6 @@ export const subscriptions: Subscription[] = [
     productName: "Exchange Online (Plan 1) [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
@@ -991,7 +950,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
@@ -1009,7 +967,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
@@ -1027,7 +984,6 @@ export const subscriptions: Subscription[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 150,
     startDate: "2024-08-01",
-    createdDate: "2024-07-25",
     createdAt: "2024-07-25",
     billingStart: "2024-08-01",
     status: "Active",
@@ -1045,7 +1001,6 @@ export const subscriptions: Subscription[] = [
     productName: "AvePoint Cloud Backup for Microsoft 365",
     quantity: 30,
     startDate: "2024-09-01",
-    createdDate: "2024-08-28",
     createdAt: "2024-08-28",
     billingStart: "2024-09-01",
     status: "Active",
@@ -1064,7 +1019,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 Business Basic [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-10-01",
-    createdDate: "2025-09-28",
     createdAt: "2025-09-28",
     billingStart: "2025-10-01",
     status: "Active",
@@ -1081,7 +1035,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 25,
     startDate: "2026-02-20",
-    createdDate: "2026-02-18",
     createdAt: "2026-02-18",
     billingStart: "2026-02-20",
     status: "Trial",
@@ -1100,7 +1053,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 15,
     startDate: "2025-04-01",
-    createdDate: "2025-03-28",
     createdAt: "2025-03-28",
     billingStart: "2025-04-01",
     status: "Active",
@@ -1118,7 +1070,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 15,
     startDate: "2025-04-01",
-    createdDate: "2025-03-28",
     createdAt: "2025-03-28",
     billingStart: "2025-04-01",
     status: "Active",
@@ -1136,7 +1087,6 @@ export const subscriptions: Subscription[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 15,
     startDate: "2025-04-01",
-    createdDate: "2025-03-28",
     createdAt: "2025-03-28",
     billingStart: "2025-04-01",
     status: "Active",
@@ -1158,7 +1108,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-01-15",
-    createdDate: "2025-01-10",
     createdAt: "2025-01-10",
     billingStart: "2025-01-15",
     status: "Active",
@@ -1176,7 +1125,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-01-15",
-    createdDate: "2025-01-10",
     createdAt: "2025-01-10",
     billingStart: "2025-01-15",
     status: "Active",
@@ -1199,7 +1147,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 25,
     startDate: "2024-01-15",
-    createdDate: "2024-01-10",
     createdAt: "2024-01-10",
     billingStart: "2024-01-15",
     status: "Active",
@@ -1234,7 +1181,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 40,
     startDate: "2025-08-15",
-    createdDate: "2025-08-10",
     createdAt: "2025-08-10",
     billingStart: "2025-08-15",
     status: "Active",
@@ -1257,7 +1203,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E5 [New Commerce Experience]",
     quantity: 15,
     startDate: "2025-06-01",
-    createdDate: "2025-05-28",
     createdAt: "2025-05-28",
     billingStart: "2025-06-01",
     status: "Active",
@@ -1279,7 +1224,6 @@ export const subscriptions: Subscription[] = [
     productName: "Exchange Online (Plan 1) [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-05-20",
-    createdDate: "2025-05-18",
     createdAt: "2025-05-18",
     billingStart: "2025-05-20",
     status: "Active",
@@ -1316,7 +1260,6 @@ export const subscriptions: Subscription[] = [
     productName: "M365 onboarding & migration (one-time)",
     quantity: 1,
     startDate: "2025-04-07",
-    createdDate: "2025-04-01",
     createdAt: "2025-04-01",
     billingStart: "2025-04-07",
     status: "Active",
@@ -1339,7 +1282,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) — trial",
     quantity: 5,
     startDate: "2025-05-10",
-    createdDate: "2025-05-08",
     createdAt: "2025-05-08",
     billingStart: "2025-05-10",
     status: "Active",
@@ -1361,7 +1303,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Entra ID P2 [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-02-15",
-    createdDate: "2025-02-10",
     createdAt: "2025-02-10",
     billingStart: "2025-02-15",
     status: "Active",
@@ -1821,7 +1762,6 @@ export const orders: Order[] = [
     companyName: "Summit Healthcare Partners",
     orderedBy: "Rachel Thornton",
     orderedByEmail: "rachel.thornton@summithealthcare.example.com",
-    createdDate: "2026-03-08",
     createdAt: "2026-03-08",
     status: "Completed",
     lineItems: [
@@ -1840,7 +1780,6 @@ export const orders: Order[] = [
     companyName: "Redwood Manufacturing",
     orderedBy: "Karen Olsen",
     orderedByEmail: "karen.olsen@redwoodmfg.example.com",
-    createdDate: "2026-02-15",
     createdAt: "2026-02-15",
     status: "Completed",
     lineItems: [
@@ -1859,7 +1798,6 @@ export const orders: Order[] = [
     companyName: "Pinnacle Financial Advisors",
     orderedBy: "David Nakamura",
     orderedByEmail: "david.nakamura@pinnaclefa.example.com",
-    createdDate: "2026-01-28",
     createdAt: "2026-01-28",
     status: "Processing",
     lineItems: [
@@ -1885,7 +1823,6 @@ export const orders: Order[] = [
     companyName: "Coastline Legal Group",
     orderedBy: "Marco Reyes",
     orderedByEmail: "marco.reyes@coastlinelegal.example.com",
-    createdDate: "2025-04-01",
     createdAt: "2025-04-01",
     status: "Completed",
     lineItems: [
@@ -1911,7 +1848,6 @@ export const orders: Order[] = [
     companyName: "Bright Minds Academy",
     orderedBy: "Lisa Cheng",
     orderedByEmail: "lisa.cheng@brightminds.example.com",
-    createdDate: "2025-09-28",
     createdAt: "2025-09-28",
     status: "Completed",
     lineItems: [
@@ -2079,9 +2015,7 @@ export const quotes: Quote[] = [
   {
     id: "quote-summit-001",
     client: { id: SUMMIT_ID, isShadowCompany: false, name: "Summit Healthcare Partners" },
-    createdOn: "2026-03-10",
     createdAt: "2026-03-10",
-    expiresOn: "2026-04-10",
     expiresAt: "2026-04-10",
     status: "Sent",
     referenceCode: "Q-2026-001",
@@ -2122,9 +2056,7 @@ export const quotes: Quote[] = [
   {
     id: "quote-bright-001",
     client: { id: BRIGHT_ID, isShadowCompany: false, name: "Bright Minds Academy" },
-    createdOn: "2026-03-05",
     createdAt: "2026-03-05",
-    expiresOn: "2026-04-05",
     expiresAt: "2026-04-05",
     status: "Draft",
     intentType: "PARTNER_TO_CLIENT",
@@ -2167,9 +2099,7 @@ export const quotes: Quote[] = [
     // (quote-bright-001) has 2 items and triggers the destructive path.
     id: "quote-acme-001",
     client: { id: ACME_ID, isShadowCompany: false, name: "Acme Corp" },
-    createdOn: "2026-04-15",
     createdAt: "2026-04-15",
-    expiresOn: "2026-05-15",
     expiresAt: "2026-05-15",
     status: "Draft",
     intentType: "PARTNER_TO_CLIENT",
@@ -2202,9 +2132,7 @@ export const quotes: Quote[] = [
   {
     id: "quote-redwood-001",
     client: { id: REDWOOD_ID, isShadowCompany: false, name: "Redwood Manufacturing" },
-    createdOn: "2026-02-20",
     createdAt: "2026-02-20",
-    expiresOn: "2026-03-20",
     expiresAt: "2026-03-20",
     status: "Accepted",
     referenceCode: "Q-2026-002",
@@ -2261,9 +2189,7 @@ export const quotes: Quote[] = [
   {
     id: "quote-coastline-001",
     client: { id: COASTLINE_ID, isShadowCompany: false, name: "Coastline Legal Group" },
-    createdOn: "2026-02-12",
     createdAt: "2026-02-12",
-    expiresOn: "2026-03-12",
     expiresAt: "2026-03-12",
     status: "Declined",
     referenceCode: "Q-2026-003",
@@ -2304,9 +2230,7 @@ export const quotes: Quote[] = [
     // no subscription lines. 20% margin.
     id: "quote-pinnacle-001",
     client: { id: PINNACLE_ID, isShadowCompany: false, name: "Pinnacle Financial Advisors" },
-    createdOn: "2026-04-01",
     createdAt: "2026-04-01",
-    expiresOn: "2026-05-01",
     expiresAt: "2026-05-01",
     status: "Sent",
     referenceCode: "Q-2026-004",
@@ -2354,7 +2278,6 @@ export const webhooks: Webhook[] = [
       "subscription.updated",
       "subscription.cancelled",
     ],
-    createdDate: "2025-06-01",
     createdAt: "2025-06-01",
     secret: "whsec_demo_abc123",
     displayName: "Subscription events",
@@ -2368,7 +2291,6 @@ export const webhooks: Webhook[] = [
     url: "https://hooks.example.com/pax8/invoices",
     status: "Active",
     topics: ["invoice.created", "invoice.paid"],
-    createdDate: "2025-08-15",
     createdAt: "2025-08-15",
     secret: "whsec_demo_def456",
     displayName: "Invoice events",
@@ -2382,7 +2304,6 @@ export const webhooks: Webhook[] = [
     url: "https://hooks.example.com/pax8/orders",
     status: "Disabled",
     topics: ["order.created", "order.completed"],
-    createdDate: "2025-11-20",
     createdAt: "2025-11-20",
     secret: "whsec_demo_ghi789",
     displayName: "Order events",

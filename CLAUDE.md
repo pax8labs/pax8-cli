@@ -30,7 +30,7 @@ Pax8 cost math (only if you must roll it yourself): monthly term = `price × qua
 
 Rules: no clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, hide UUIDs. Only confirm writes — never reads.
 
-> `pax8 clients *` is the canonical command surface (per #317). `pax8 companies *` is retained as an indefinite deprecated alias — both invocations share the same command graph. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
+> `pax8 clients *` is the canonical (and only) command surface (per #317, #476). The previous `pax8 companies *` alias was removed pre-launch. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
 
 The full read-vs-write safety contract for agent-driven sessions lives in `packages/claude-skill/skill.md`. Honor it whether the skill is loaded or not: every command listed under "Write commands" requires explicit user approval before execution.
 

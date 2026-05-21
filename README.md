@@ -108,7 +108,7 @@ pax8 clients create --name "Acme" --city Denver --state CO --zip 80202 --phone "
 
 > **Note:** The single contact you supply on `clients create` is set as primary on all three types (Admin, Billing, Technical). Split roles afterward via `pax8 contacts update` or additional `pax8 contacts create --type` calls.
 
-> `pax8 companies *` works as an indefinite deprecated alias of `pax8 clients *` — both invocations route through the same command graph, so partner scripts written against the old name keep working. The data surface (`companyId`, `companyName`, `--company` flag, etc.) stays aligned with the wire until Pax8's API renames the field.
+> `pax8 clients *` is the canonical (and only) command surface. The earlier `pax8 companies *` alias was removed pre-launch (#476); update any scripts that called the old verb. The data surface (`companyId`, `companyName`, `--company` flag, etc.) stays aligned with the wire until Pax8's API renames the field.
 
 ### Subscriptions
 

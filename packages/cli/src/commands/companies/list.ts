@@ -72,7 +72,7 @@ function parseTriBool(raw: unknown): boolean | undefined {
 }
 
 export const companiesListCommand = new Command("list")
-  .description("List all companies")
+  .description("List all clients")
   .option(
     "--status <status>",
     `Filter by status (${COMPANY_STATUS_VALUES.join(", ")})`,
@@ -131,7 +131,7 @@ Examples:
     } catch (error) {
       await handleCommandError(error);
     }
-    const spinner = createSpinner("Fetching companies...").start();
+    const spinner = createSpinner("Fetching clients...").start();
 
     try {
       const ctx = await buildContext(allOpts);
@@ -341,13 +341,13 @@ Examples:
         format: ctx.outputFormat,
         columns,
         emptyState: {
-          headline: "No companies found.",
+          headline: "No clients found.",
           filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
           reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
             {
               command: "pax8 clients list",
-              description: "list all companies (no filters)",
+              description: "list all clients (no filters)",
             },
             {
               command: replCmd("pax8 clients create --name <name> ..."),
@@ -366,7 +366,7 @@ Examples:
         const totalPages = result.page.totalPages;
         const totalElements = result.page.totalElements;
 
-        let pageInfo = `${totalElements} companies`;
+        let pageInfo = `${totalElements} clients`;
         if (totalPages > 1) {
           pageInfo += ` · page ${currentPage + 1}/${totalPages}`;
         }
@@ -389,12 +389,12 @@ Examples:
           (c, i) => ({
             key: String(startNum + i + 1),
             label: String(c.name),
-            command: ["companies", "more", String(c.name)],
+            command: ["clients", "more", String(c.name)],
           })
         );
         await promptNextSteps(steps);
       }
     } catch (error) {
-      await handleCommandError(error, spinner, "Failed to list companies");
+      await handleCommandError(error, spinner, "Failed to list clients");
     }
   });

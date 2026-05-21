@@ -187,14 +187,14 @@ function getCliVersion(): string {
 }
 
 /**
- * Best-effort extraction of the command name (e.g. "companies list"), the
+ * Best-effort extraction of the command name (e.g. "clients list"), the
  * flag *names* (e.g. ["--json", "--page"]), and the positional argument
  * *values* from `process.argv`.
  *
  * The returned `command` field renders positional arguments as
  * `<REDACTED:ARG>` placeholders rather than their literal values, so that
  * what we persist to disk preserves the structure of the invocation
- * (`companies show <REDACTED:ARG>`) without leaking the user-supplied
+ * (`clients show <REDACTED:ARG>`) without leaking the user-supplied
  * customer / company / product name. See #170 — the public README's
  * Telemetry section commits to never sending names, but this field used to
  * pass them through.
@@ -209,7 +209,7 @@ function getCliVersion(): string {
  * the command path. Any non-flag token after that boundary is a positional
  * arg. Flags are collected from anywhere in argv, not only before the
  * first positional, fixing a pre-existing bug where
- * `pax8 companies show "Acme" --json` lost the `--json` flag.
+ * `pax8 clients show "Acme" --json` lost the `--json` flag.
  */
 function extractCommandAndFlags(): {
   command: string;
@@ -235,9 +235,9 @@ function extractCommandAndFlags(): {
     ) {
       // Still consuming the leading subcommand path. Cap at 2 levels — the
       // CLI's deepest command tree today is `<group> <action>` (e.g.
-      // `companies show`, `recommendations act`). Leaving this generous (the
+      // `clients show`, `recommendations act`). Leaving this generous (the
       // pre-#170 code allowed up to 3) would mistake a positional like
-      // `pax8 companies show definitely-does-not-exist` for a subcommand
+      // `pax8 clients show definitely-does-not-exist` for a subcommand
       // and skip redacting it. If a future subcommand goes 3 deep, raise
       // this cap intentionally.
       cmdParts.push(a);

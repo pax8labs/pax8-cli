@@ -7,10 +7,10 @@ import { runCliExpectFailure } from "./test-utils.js";
 /**
  * #522 regression guard: error-recovery hints across the resolve-company
  * fan-in must point users (and agents) at `pax8 clients list` — the
- * canonical surface — not the deprecated `pax8 companies list` alias.
+ * canonical surface — not the deprecated `pax8 clients list` alias.
  *
  * Before #522 only `clients more` used the new vocabulary; every other path
- * that called through `resolveCompany` printed `pax8 companies list` on
+ * that called through `resolveCompany` printed `pax8 clients list` on
  * failure, bouncing the user back to a deprecated verb at exactly the
  * moment they were already stuck.
  *

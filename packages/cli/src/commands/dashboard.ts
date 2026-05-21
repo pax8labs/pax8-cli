@@ -165,11 +165,6 @@ function renderGrowthSection(
 
 // ── Command ──────────────────────────────────────────────────────────────────
 
-// The dashboard handler is extracted so the canonical `dashboard` command and
-// the deprecated `status` alias share the same implementation; the alias is
-// just a thin wrapper that prints a stderr deprecation notice before invoking
-// `runDashboard()`. Will be removed in v1.0 (mirrors the `--events` → `--topics`
-// deprecation in `pax8 webhooks create`).
 async function runDashboard(options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, cmd: Command): Promise<void> {
     const allOpts = cmd.optsWithGlobals();
     const ctx = await buildContext(allOpts);
@@ -214,8 +209,6 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
 
       // Recent orders (today)
       const today = new Date().toISOString().slice(0, 10);
-      // #385: read canonical `createdAt`. `createdDate` is still dual-emitted
-      // on `--json` for back-compat; removal in v0.3.0.
       const recentOrders = ordersResult.content
         .filter((o) => o.createdAt.startsWith(today))
         .map((o) => ({
@@ -276,11 +269,8 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         // envelopes ({ amount, currency }) — the canonical Pax8 wire shape
         // used by the v2 quoting API (`QuoteResponse.totals.initialCost`,
         // etc., schema at `packages/core/src/api/types.ts`). Surface-
-        // consistent with the upcoming reporting commands (`report renewals`
-        // / `concentration` / `subscriptions`). The previous flat
-        // `pax8MonthlyCost` / `pax8AnnualCost` numbers and the deprecated
-        // `mrr` / `arr` aliases were dropped in this revision — v0.1.0 is
-        // pre-publish so there's no external contract to preserve.
+        // consistent with the reporting commands (`report renewals` /
+        // `concentration` / `subscriptions`).
         // Currency is read from `Subscription.currencyCode` on the underlying
         // subs (first active sub for aggregates), defaulting to "USD" when
         // missing. Mixed-currency portfolios are out of scope for v0.x.
@@ -306,13 +296,10 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           }),
           renewalsNext30Days: renewals.items.length,
           urgentRenewals: renewals.urgentCount,
-          // `mrrRenewing` is the canonical name introduced in #298. The
-          // `mrrAtRisk` alias is kept for one minor version cycle so existing
-          // scripts don't break. Wire-side fields preserved — not part of the
-          // AmountCurrency reshape (those are partner-side risk-framing
-          // fields on `RenewalReport`, not CLI-aggregated Pax8 cost).
+          // `mrrRenewing` is the canonical name (#298). Wire-side partner-
+          // risk framing field, preserved flat (not part of the
+          // AmountCurrency reshape).
           mrrRenewing: Number(renewals.totalMrrRenewing.toFixed(2)),
-          mrrAtRisk: Number(renewals.totalMrrRenewing.toFixed(2)),
           renewals: renewals.items.slice(0, 10).map((r) => {
             const mrr = Number(r.mrrRenewing.toFixed(2));
             return {
@@ -320,7 +307,6 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
               productName: r.productName,
               daysUntilRenewal: r.daysUntilRenewal,
               mrrRenewing: mrr,
-              mrrAtRisk: mrr,
             };
           }),
           highPriorityRecs: highRecs.length,
@@ -329,10 +315,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           recentOrders: recentOrders.map((o) => ({
             companyName: o.companyName,
             status: o.status,
-            // #385: emit canonical `createdAt` alongside the legacy
-            // `createdDate` alias for one minor version cycle. Removal in v0.3.0.
             createdAt: o.createdAt,
-            createdDate: o.createdAt,
             lineItems: o.lineItems?.map(
               (li: { productId: string; productName?: string; quantity: number }) => ({
                 productName: li.productName ?? li.productId,
@@ -448,7 +431,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           quickActions.push({
             key: String(quickActions.length + 1),
             label: `${chalk.yellow("~")} ${coName} — ${prodName} trial expiring`,
-            command: ["companies", "more", coName],
+            command: ["clients", "more", coName],
           });
         }
 
@@ -554,27 +537,21 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
     }
 }
 
-// One-line stderr deprecation notice for the legacy `status` alias. Mirrors
-// the `--events`/`--topics` deprecation pattern (#274). Will be removed in v1.0.
-const STATUS_DEPRECATION_NOTICE =
-  "warning: `status` is deprecated; use `dashboard`. Will be removed in v1.0.\n";
-
-function buildDashboardCommand(name: "dashboard" | "status"): Command {
-  const cmd = new Command(name)
-    .description("Quick snapshot of your Pax8 business")
-    .option("--all", "Show full dashboard with all sections")
-    .option("--customers", "Show top customers by Pax8 monthly cost")
-    .option("--renewals", "Show upcoming renewal details")
-    .option("--growth", "Show growth opportunities")
-    .addHelpText(
-      "after",
-      `
+export const dashboardCommand = new Command("dashboard")
+  .description("Quick snapshot of your Pax8 business")
+  .option("--all", "Show full dashboard with all sections")
+  .option("--customers", "Show top customers by Pax8 monthly cost")
+  .option("--renewals", "Show upcoming renewal details")
+  .option("--growth", "Show growth opportunities")
+  .addHelpText(
+    "after",
+    `
 Examples:
-  pax8 ${name}
-  pax8 ${name} --all
-  pax8 ${name} --customers
-  pax8 ${name} --renewals --growth
-  pax8 ${name} --json
+  pax8 dashboard
+  pax8 dashboard --all
+  pax8 dashboard --customers
+  pax8 dashboard --renewals --growth
+  pax8 dashboard --json
 
 JSON output (--json):
   Pax8-cost figures are emitted as wrapped AmountCurrency envelopes
@@ -597,14 +574,12 @@ JSON output (--json):
     }],
     "renewalsNext30Days": number,
     "urgentRenewals": number,             // renewals within 14d
-    "mrrRenewing": number,                // canonical key (#298) — wire-side partner-risk framing, preserved flat
-    "mrrAtRisk": number,                  // DEPRECATED alias of mrrRenewing — removed in a future minor
+    "mrrRenewing": number,                // partner-risk framing, preserved flat
     "renewals": [{
       "companyName": string,
       "productName": string,
       "daysUntilRenewal": number,
-      "mrrRenewing": number,
-      "mrrAtRisk": number                 // DEPRECATED alias
+      "mrrRenewing": number
     }],
     "highPriorityRecs": number,
     "potentialMonthlyUplift": { "amount": number, "currency": string }, // additional Pax8 monthly cost across high-priority recs
@@ -612,39 +587,14 @@ JSON output (--json):
     "recentOrders": [{
       "companyName": string,
       "status": string,
-      "createdAt": string,                // ISO-8601 (canonical, #385)
-      "createdDate": string,              // DEPRECATED alias — removed in v0.3.0
+      "createdAt": string,                // ISO-8601
       "lineItems": [{ "productName": string, "quantity": number }]
     }],
     "nextActions": [{ "command": string, "description": string }]
   }
 
 Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`,
-    )
-    .action(async (options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, c: Command) => {
-      if (name === "status") {
-        process.stderr.write(STATUS_DEPRECATION_NOTICE);
-      }
-      await runDashboard(options, c);
-    });
-
-  if (name === "status") {
-    // Commander short-circuits `--help` before running .action(), so the
-    // deprecation notice is also emitted as a beforeAll help-text hook so
-    // `pax8 status --help` still surfaces the notice on stderr. The hook
-    // returns "" (no extra help-text content) — its sole purpose is the
-    // side-effect of writing to stderr.
-    cmd.addHelpText("beforeAll", () => {
-      process.stderr.write(STATUS_DEPRECATION_NOTICE);
-      return "";
-    });
-  }
-
-  return cmd;
-}
-
-export const dashboardCommand = buildDashboardCommand("dashboard");
-
-// Deprecated alias. Registered with `{ hidden: true }` in src/index.ts so it
-// does not appear in `pax8 --help`. Removal tracked for v1.0.
-export const statusCommand = buildDashboardCommand("status");
+  )
+  .action(async (options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, c: Command) => {
+    await runDashboard(options, c);
+  });

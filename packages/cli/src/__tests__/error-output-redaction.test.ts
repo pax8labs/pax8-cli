@@ -21,7 +21,7 @@ describe("error stderr is redacted", () => {
   const PII_NAME = "rachel.thornton-not-a-real-company@leak.example";
 
   it("--json: a PII-shaped positional arg does not survive into stderr verbatim", async () => {
-    const result = await runCli(["companies", "show", PII_NAME, "--json"]);
+    const result = await runCli(["clients", "show", PII_NAME, "--json"]);
     expect(result.exitCode).not.toBe(0);
     // The raw value must not appear in either the message or the causes
     // (extractErrorDetail-derived) field of the envelope. The redactor will
@@ -32,7 +32,7 @@ describe("error stderr is redacted", () => {
   });
 
   it("human mode: a PII-shaped positional arg does not survive into stderr verbatim", async () => {
-    const result = await runCli(["companies", "show", PII_NAME]);
+    const result = await runCli(["clients", "show", PII_NAME]);
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).not.toContain(PII_NAME);
     expect(result.stderr).toContain("<REDACTED:");

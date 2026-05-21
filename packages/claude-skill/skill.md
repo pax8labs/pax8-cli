@@ -74,7 +74,7 @@ Result size: list commands default to `--size 25`. For portfolio-wide analysis (
 
 ## Commands
 
-> `pax8 clients *` is the canonical command surface. `pax8 companies *` is retained as an indefinite deprecated alias — both invocations share the exact same command graph. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned to the wire.
+> `pax8 clients *` is the canonical (and only) command surface. The previous `pax8 companies *` alias was removed pre-launch (#476). JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned to the wire.
 
 ```
 pax8 dashboard [--all|--customers|--renewals|--growth] --json

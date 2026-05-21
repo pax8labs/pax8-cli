@@ -87,12 +87,12 @@ describe("recordWriteAudit", () => {
   });
 
   it("strips positional-arg values from the command field", () => {
-    // A command like `pax8 companies show "Real Customer Inc"` should
-    // record as `"companies show"` — never the customer name.
-    process.argv = ["node", "test", "companies", "show", "Real Customer Inc"];
-    recordWriteAudit({ resource: "companies", outcome: "completed" });
+    // A command like `pax8 clients show "Real Customer Inc"` should
+    // record as `"clients show"` — never the customer name.
+    process.argv = ["node", "test", "clients", "show", "Real Customer Inc"];
+    recordWriteAudit({ resource: "clients", outcome: "completed" });
     const entry = readLog()[0] as { command: string };
-    expect(entry.command).toBe("companies show");
+    expect(entry.command).toBe("clients show");
     expect(entry.command).not.toContain("Real Customer Inc");
   });
 

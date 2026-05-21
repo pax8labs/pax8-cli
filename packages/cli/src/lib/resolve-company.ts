@@ -76,7 +76,7 @@ export async function resolveCompany(ctx: CommandContext, input: string): Promis
   throw new CliError(
     `Company not found: "${input}"`,
     ["No active company matched the supplied name or ID."],
-    [`Run ${replCmd("pax8 clients list")} to see available companies.`],
+    [`Run ${replCmd("pax8 clients list")} to see available clients.`],
     undefined,
     ERROR_COMPANY_NOT_FOUND,
   );

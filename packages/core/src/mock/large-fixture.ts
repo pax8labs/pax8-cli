@@ -252,7 +252,6 @@ function buildCompany(index: number, name: string, createdAt: string, rng: Retur
     selfServiceAllowed: rng.next() > 0.5,
     orderApprovalRequired: rng.next() > 0.7,
     externalId: rng.next() > 0.4 ? `PSA-${String(index).padStart(6, "0")}` : undefined,
-    created: createdAt,
     createdAt,
   };
 }
@@ -329,7 +328,6 @@ function generateSubscriptions(
       productName: product.name,
       quantity,
       startDate,
-      createdDate: startDate,
       createdAt: startDate,
       billingStart: startDate,
       status,
@@ -381,7 +379,6 @@ function generateOrders(
       companyName: company.name,
       orderedBy: "Pax8 Partner",
       orderedByEmail: "partner@example.com",
-      createdDate: createdAt,
       createdAt,
       lineItems,
       status: rng.pickWeighted(ORDER_STATUS),

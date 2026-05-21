@@ -93,7 +93,7 @@ describe("table output — TTY-aware rendering", () => {
       // Non-TTY defaults to JSON, so we explicitly request table format won't work.
       // Instead, test the JSON output structure, then test table rendering via unit tests.
       // For subprocess table output, we need to check --csv as a proxy for column structure.
-      const result = await runTable(["companies", "list", "--json"]);
+      const result = await runTable(["clients", "list", "--json"]);
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.length).toBeGreaterThan(0);
@@ -106,7 +106,7 @@ describe("table output — TTY-aware rendering", () => {
     });
 
     it("CSV output has no ANSI codes", async () => {
-      const result = await runTable(["companies", "list", "--csv"]);
+      const result = await runTable(["clients", "list", "--csv"]);
       expect(result.exitCode).toBe(0);
       // CSV should never contain ANSI escape sequences
       expect(result.stdout).not.toContain("\x1b[");
@@ -124,7 +124,7 @@ describe("table output — TTY-aware rendering", () => {
     });
 
     it("JSON output has no ANSI codes", async () => {
-      const result = await runTable(["companies", "list", "--json"]);
+      const result = await runTable(["clients", "list", "--json"]);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain("\x1b[");
       // Should be valid JSON

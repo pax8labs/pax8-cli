@@ -48,7 +48,7 @@ describe("README snippet smoke", () => {
 
   // Parse fenced ```bash blocks; collect lines starting with `pax8 ` or
   // `PAX8_DEMO=1 pax8 ` (after trim). Strip inline `# comments` first
-  // since a snippet like `pax8 companies more "Acme Corp"   # caption` would
+  // since a snippet like `pax8 clients more "Acme Corp"   # caption` would
   // otherwise tokenize the comment text as args.
   const codeBlocks: string[] = [];
   const fenceRe = /```bash\n([\s\S]*?)```/g;
@@ -155,7 +155,7 @@ describe("README snippet smoke", () => {
 
 describe("error-path UX", () => {
   it("error renderer points at `pax8 report-bug` (#161 hint)", async () => {
-    const r = await runCli(["companies", "show", "ZZZNotARealCompanyForUxSmoke"]);
+    const r = await runCli(["clients", "show", "ZZZNotARealCompanyForUxSmoke"]);
     expect(r.exitCode).toBe(1);
     expect(
       stripAnsi(combined(r)),

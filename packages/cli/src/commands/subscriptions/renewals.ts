@@ -65,11 +65,8 @@ What this measures:
   the probability of churn — this CLI metric is a temporal filter, not
   a predictive score.
 
-  In v0.x output the field is named \`mrrRenewing\` (and \`arrRenewing\`).
-  These names are preserved on the wire so existing partner-side
-  risk-framing scripts keep working. The previous \`mrrAtRisk\` /
-  \`arrAtRisk\` keys are emitted alongside as deprecated aliases and will
-  be removed in a future minor version.
+  Output fields are named \`mrrRenewing\` and \`arrRenewing\` (#298 — the
+  earlier \`mrrAtRisk\` / \`arrAtRisk\` keys were dropped pre-launch).
 
 Metric definitions:
   Pax8 monthly cost (a.k.a. mrrRenewing on the wire): The partner's
@@ -97,16 +94,9 @@ JSON output (--json):
     "billingTerm": string,
     "price": number,
     "mrrRenewing": number,                // canonical key (#298)
-    "mrrAtRisk": number,                  // DEPRECATED alias of mrrRenewing — removed in a future minor
     "arrRenewing": number,                // canonical key (#298)
-    "arrAtRisk": number,                  // DEPRECATED alias of arrRenewing — removed in a future minor
     "daysUntilRenewal": number
   }
-
-  The mrrAtRisk / arrAtRisk aliases are dual-emitted alongside the canonical
-  mrrRenewing / arrRenewing fields for one minor version cycle so existing
-  scripts don't break. Migrate to the renewing-named fields; the at-risk
-  names will be removed in a future minor version (see #299).
 
 Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
@@ -148,10 +138,6 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
             ...item,
             mrrRenewing: mrr,
             arrRenewing: arr,
-            // Deprecated aliases — emitted alongside the canonical names for
-            // one minor version cycle so existing scripts don't break. See #298.
-            mrrAtRisk: mrr,
-            arrAtRisk: arr,
             renewalDate: item.renewalDate.toISOString().split("T")[0],
           };
         });
