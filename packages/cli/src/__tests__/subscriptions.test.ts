@@ -308,9 +308,9 @@ describe("pax8 subscriptions renewals", () => {
       "--help",
     ]);
     expect(result.stdout).toContain("Metric definitions:");
-    // Bret Pittenger reporting-domain review: the figures here are the
-    // partner's cost paid to Pax8, not partner-side MRR/ARR. Wire-side
-    // field names (mrrRenewing / arrRenewing) are preserved for back-compat.
+    // Reporting-domain review: the figures here are the partner's cost
+    // paid to Pax8, not partner-side MRR/ARR. Wire-side field names
+    // (mrrRenewing / arrRenewing) are preserved for back-compat.
     expect(result.stdout).toContain("Pax8 monthly cost");
     expect(result.stdout).toContain("Pax8 annual cost");
     expect(result.stdout).toContain("Partner Gross MRR");
@@ -447,9 +447,9 @@ describe("pax8 subscriptions update", () => {
 
   // ─── --billing-term enum mirrors the Pax8 API request body ──────────────
   // The CLI used to advertise only "Monthly or Annual" in help text — a
-  // hand-curated subset that didn't match the API. Fred Lintz flagged that
-  // the API actually accepts seven values. The CLI now mirrors the API
-  // request-body enum at PUT /subscriptions/{id}, fail-fasts on values
+  // hand-curated subset that didn't match the API. Domain review flagged
+  // that the API actually accepts seven values. The CLI now mirrors the
+  // API request-body enum at PUT /subscriptions/{id}, fail-fasts on values
   // outside it, and lets vendor-specific rejections come back from the
   // API (rather than CLI-predicting them).
   //

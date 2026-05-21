@@ -18,9 +18,10 @@ import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 
 // Internal name `cost` reflects what these numbers actually are: the
 // partner's monthly cost to Pax8 (price × quantity, amortized monthly).
-// Previously framed as partner-side "MRR" — corrected per Bret Pittenger's
-// reporting-domain review. The math is unchanged; the labels and the
-// CLI's own JSON field names are.
+// Previously framed as partner-side "MRR" — corrected per the reporting-
+// domain review: these are wholesale costs paid to Pax8, not partner-side
+// resale revenue. The math is unchanged; the labels and the CLI's own JSON
+// field names are.
 interface CompanyStats {
   name: string;
   cost: number;
@@ -151,7 +152,7 @@ function renderGrowthSection(
   divider();
   // Wording note: "uplift" here is the additional Pax8 monthly cost to the
   // partner if these recs were ordered (unit price × seats). It is not the
-  // partner's resale revenue. See Bret Pittenger's reporting-domain review.
+  // partner's resale revenue.
   out.write(chalk.bold(`  Growth Opportunities  `) + chalk.green.bold(`${formatCurrency(uplift)}/mo`) + chalk.dim(` potential Pax8 cost uplift\n\n`));
   for (const r of highRecs.slice(0, 10)) {
     const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
@@ -362,8 +363,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
       // These figures are partner cost paid to Pax8 (sum of price ×
       // quantity across active subs, amortized monthly). They are NOT
       // partner-side MRR / ARR — that distinction was previously elided
-      // in the headline and got flagged in Bret Pittenger's reporting-
-      // domain review.
+      // in the headline and got flagged in the reporting-domain review.
       out.write("\n");
       out.write(chalk.bold("  Pax8 Business Snapshot\n\n"));
       out.write(`  ${chalk.cyan.bold(formatCurrency(cost))}/mo Pax8 cost  ·  ${chalk.cyan.bold(formatCurrency(annualCost))}/yr annualized\n\n`);

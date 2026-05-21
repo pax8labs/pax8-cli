@@ -14,7 +14,7 @@
  * engine's security-focused cross-sell heuristic. When OE's first-party
  * recommendations API ships (ARC-785, `GET /opportunities`), this local
  * taxonomy sunsets. Pax8's STAX taxonomy is itself being replaced by a new
- * L1/L2/L3 hierarchical taxonomy (PCM team, Angelo Echtermeijer) — the CLI
+ * L1/L2/L3 hierarchical taxonomy (PCM team) — the CLI
  * should align to whichever taxonomy the OE API uses at sunset time. See:
  * Product Category (STAX) Layout, Product Taxonomy & Ontology PRD, and the
  * v0.2 follow-up issue (#375).

@@ -24,8 +24,8 @@ import { validateEnum } from "../../lib/validate.js";
  * The two commands share the same wire-level operation
  * (`POST /v2/quotes/{id}/line-items`) and must accept the same flag surface
  * — anything `line-items add` understands, the shorthand needs to mirror so
- * partners don't unknowingly produce incomplete line items (Fred Lintz
- * domain-review finding).
+ * partners don't unknowingly produce incomplete line items (domain-review
+ * finding).
  *
  * The actual flag declarations stay on each command (so each command's
  * `--help` is self-documenting), but the validation + payload build live
