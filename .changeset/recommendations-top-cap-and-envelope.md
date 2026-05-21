@@ -1,6 +1,5 @@
 ---
 "@pax8/cli": minor
-"@pax8/claude-skill": minor
 ---
 
 Cap `pax8 recommendations list` at 10 by default and add `--top <n>` (with `--top 0` for unlimited). Closes #521.
