@@ -1,5 +1,33 @@
 # @pax8/core
 
+## 0.3.0
+
+### Minor Changes
+
+- [#544](https://github.com/pax8labs/pax8-cli/pull/544) [`74cd0e4`](https://github.com/pax8labs/pax8-cli/commit/74cd0e44120aebe49baa0f154cffb6d039840b38) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 subscriptions list` now exposes the server-side `billingTerm`, `productId`, and `sort` filters the public OpenAPI has always supported. Closes [#398](https://github.com/pax8labs/pax8-cli/issues/398).
+
+  Three new flags, additive — every existing invocation still works unchanged:
+  - `--billing-term <Monthly|Annual|2-Year|3-Year|One-Time|Trial|Activation>` — fails fast on typos before any network call, same vocabulary as `--status` ([#408](https://github.com/pax8labs/pax8-cli/issues/408)).
+  - `--product <productId>` — passes through to the wire as `?productId=…`. UUID expected; no fuzzy product-name resolution here because the typical use case is `subscriptions list --product <copy-pasted-id-from-a-prior-row>`.
+  - `--sort <field>` / `--sort <field>:<direction>` — accepts `quantity`, `startDate`, `endDate`, `createdAt`. Ascending by default; append `:desc` for descending. The user-facing separator is `:` (not `,`) to avoid shell-quoting surprises; the CLI rewrites it to the wire's `field,direction` form before forwarding.
+
+  Pre-fix, partners with large portfolios had to download a full subscriptions list and filter client-side — even though the OpenAPI spec defined these parameters. `MockPax8Client.SubscriptionsResource.list` mirrors the server-side filtering for every new parameter so `PAX8_DEMO=1` exercises the same code path as the real API.
+
+  `@pax8/core`'s `SubscriptionsApi.list` signature gains the three new optional fields. Type-safe additive change; consumers that don't pass the new fields are unaffected.
+
+### Patch Changes
+
+- [#543](https://github.com/pax8labs/pax8-cli/pull/543) [`e7ef4a7`](https://github.com/pax8labs/pax8-cli/commit/e7ef4a72a15ec7e491e4c948ae571a0340ffc8df) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 products show <id> --provisioning` now hits the correct Pax8 endpoint and parses the response shape per the spec. Closes [#443](https://github.com/pax8labs/pax8-cli/issues/443) (Candidate H from `docs/triage/v0.1.0-candidates.md`), surfaced by Fred Lintz's correction during domain review.
+
+  Three bugs fixed in lockstep — the half-implementation worked under `PAX8_DEMO=1` (the mock matched the hallucination) but would 404 against the real API and then throw a Zod parse error after the path:
+  1. **Endpoint path.** `/products/{id}/provisioning-details` → `/products/{id}/provision-details` (the Pax8 spec uses the singular form per `findProvisionDetailsByProductId`).
+  2. **Response shape.** The endpoint returns `{ content: ProvisioningDetail[] }` (envelope-wrapped array). `getProvisioningDetails` now returns `ProvisioningDetail[]`; `products show --provisioning --json` emits a top-level `provisioningDetails` array, not the previous single object.
+  3. **Schema.** Replaced the hallucinated `{ productId, vendorPrerequisites, fields[{ name, label, type, required, options }] }` with the spec shape: `{ key?, label?, description?, valueType?: "Input" | "Single-Value" | "Multi-Value", possibleValues?, values? }`. The schema is now shared with the `orders create` and `subscriptions update` write paths — same component on the wire, same shape in `@pax8/core`.
+
+  Mock fixtures (`packages/core/src/mock/mock-client.ts`) updated to the spec shape too, so `PAX8_DEMO=1` and the real API now exercise the same code path. **Breaking** to `provisioningDetails` JSON shape (was a single object with `productId/vendorPrerequisites/fields`; now a `ProvisioningDetail[]` array) — pre-publish, no deprecation owed.
+
+  Threading provision details into orders / subscriptions write paths per Fred's "safest bet is to always add provision details to each line item" guidance is tracked separately as Candidate H Option B.
+
 ## 0.2.0
 
 ### Minor Changes
