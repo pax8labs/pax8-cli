@@ -144,8 +144,8 @@ across vendors, so the CLI provides the guard.`,
       //
       // Quantity INCREASES are permitted (each gets its own vendor-specific
       // cancel window, but those windows are scattered across internal-only
-      // VPM wiki pages — Rovo confirmed this — so we don't try to mirror them
-      // here; we let increases pass through to the API.
+      // VPM wiki pages, so we don't try to mirror them here; we let
+      // increases pass through to the API.
       const commitEnd = activeCommitmentEndDate(sub);
       if (commitEnd) {
         const endLabel = formatDate(commitEnd);
@@ -255,10 +255,10 @@ across vendors, so the CLI provides the guard.`,
     } catch (error) {
       // Wrap opaque API rejections (post-confirm) with a generic
       // commitment-restriction hint. We deliberately do NOT pattern-match the
-      // flat `errors[]` string — Rovo confirmed it isn't a stable contract,
-      // and brittle string matching has bitten the CLI before. The hint
-      // simply points the user at `subscriptions show` so they can see the
-      // commitment shape and decide.
+      // flat `errors[]` string — it isn't a stable contract, and brittle
+      // string matching has bitten the CLI before. The hint simply points
+      // the user at `subscriptions show` so they can see the commitment
+      // shape and decide.
       if (error instanceof ApiError && error.statusCode >= 400 && error.statusCode < 500) {
         const detail = extractErrorDetail(error.responseBody);
         const causes: string[] = [];

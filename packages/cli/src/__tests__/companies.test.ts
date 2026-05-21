@@ -593,11 +593,11 @@ describe("pax8 clients", () => {
       expect(result.stdout).toContain("Examples:");
     });
 
-    // #432: Franco Aurieme's domain-review finding. The atomic-create path
-    // implicitly assigns the supplied contact as primary Admin/Billing/
-    // Technical to satisfy activation. Partners need to discover that they
-    // can re-split those roles afterward — pin the Note block in --help so
-    // a future help-text refactor can't quietly drop it.
+    // #432: domain-review finding. The atomic-create path implicitly
+    // assigns the supplied contact as primary Admin/Billing/Technical to
+    // satisfy activation. Partners need to discover that they can re-split
+    // those roles afterward — pin the Note block in --help so a future
+    // help-text refactor can't quietly drop it.
     it("create --help documents the multi-role primary assignment (#432)", async () => {
       const result = await runCliExpectSuccess([
         "clients",

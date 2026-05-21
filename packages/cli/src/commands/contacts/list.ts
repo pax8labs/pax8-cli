@@ -27,7 +27,7 @@ Examples:
   pax8 contacts list --company a1b2c3d4-e5f6-7890-abcd-ef1234567890
   pax8 contacts list --company "Summit Healthcare Partners" --json
   pax8 contacts list --company "Summit Healthcare Partners" --csv
-  pax8 contacts list --company "Summit Healthcare Partners" --ids-only | xargs -I{} pax8 contacts show {}`
+  pax8 contacts list --company "Summit Healthcare Partners" --ids-only | xargs -I{} pax8 contacts show {} --company "Summit Healthcare Partners"`
   )
   .action(async (options, command) => {
     const allOpts = command.optsWithGlobals();

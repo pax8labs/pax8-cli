@@ -16,9 +16,9 @@
  *    https://pax8.atlassian.net/wiki/spaces/PS1/pages/2748907531/Marketplace+Platform+Data+Risk+Tiering),
  *    OR
  *  - Were explicitly called out by reviewers as "must never see the light
- *    of day" (Josh Hollander's inline comment on the CLI domain review:
- *    "let's also make sure `originalSubscriptionId` never sees the light
- *    of day. I don't want to double down on that massive mistake.").
+ *    of day" (inline review comment on the CLI domain review: "let's also
+ *    make sure `originalSubscriptionId` never sees the light of day. I
+ *    don't want to double down on that massive mistake.").
  *
  * The list below is **policy as code** — if a future PR adds one of these
  * field names to any exported Zod schema in this file (top-level OR
@@ -1431,16 +1431,16 @@ describe("PaginatedResponseSchema", () => {
 
 const FORBIDDEN_FIELDS = [
   // "Let's also make sure `originalSubscriptionId` never sees the light of
-  // day" — Josh Hollander, inline review comment. Surfaced from a prior
-  // platform incident; partners must never see it.
+  // day" — inline review comment. Surfaced from a prior platform incident;
+  // partners must never see it.
   "originalSubscriptionId",
   // Internal subscription hierarchy reference. Reveals how Pax8 structures
   // subscription relationships internally; out of scope for partner-facing
   // surfaces. Hidden per the field-tier audit.
   "parentSubscriptionId",
   // Cross-vendor subscription mapping. Available on Microsoft via UPS-1751
-  // but the CLI deliberately omits it; Josh Hollander approved the choice
-  // on the domain review page.
+  // but the CLI deliberately omits it; the domain-review reviewer approved
+  // the choice.
   "vendorSubscriptionId",
   // Pax8's cost basis from the vendor. Tier 1 (Revenue/Competitive) —
   // direct margin disclosure.
@@ -1449,9 +1449,9 @@ const FORBIDDEN_FIELDS = [
   // partnerCost. The partner sees their own buy rate (price /
   // partnerBuyRate); they must never see what Pax8 pays the vendor.
   "wholesaleBuyRate",
-  // Invoice-level cost basis. Surfaced by Rovo as one of the fields the
-  // partner-safe invoice summary endpoint deliberately omits to avoid
-  // wholesale cost leakage (per Finance Services PRD).
+  // Invoice-level cost basis. One of the fields the partner-safe invoice
+  // summary endpoint deliberately omits to avoid wholesale cost leakage
+  // (per Finance Services PRD).
   "costTotal",
   // Internal billing-engine fee surface. Same Finance Services exclusion
   // rationale as costTotal.

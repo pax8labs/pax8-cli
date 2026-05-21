@@ -170,8 +170,8 @@ Behavior on committed subscriptions:
         // can differ); "Cancelling now will not stop billing" (Pax8 has no
         // early-termination fee per the Direct User Agreement — the
         // consequence is "fees paid are nonrefundable", i.e. billing
-        // continues, not a separate penalty). See the canonical Rovo
-        // research grounding for #294.
+        // continues, not a separate penalty). See the canonical Pax8 docs /
+        // TOS research grounding for #294.
         //
         // Both branches print BEFORE the confirmation prompt so the partner
         // sees the full picture (committed vs uncommitted) before they
@@ -334,8 +334,8 @@ Behavior on committed subscriptions:
       // 7-day window, Adobe renewal-only window, Azure Savings Plan
       // finality, vendor-coordinated cancellations like Sophos / INKY)
       // with an actionable message that points partners at the portal.
-      // Per Rovo research, the cancel API returns 204/404 with no
-      // structured body — pattern-matching the error string is fragile,
+      // Per Pax8 docs / TOS research, the cancel API returns 204/404 with
+      // no structured body — pattern-matching the error string is fragile,
       // so the wrapper is generic.
       if (error instanceof ApiError && error.statusCode !== 404) {
         const display = productName

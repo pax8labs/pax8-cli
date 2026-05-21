@@ -34,11 +34,13 @@ Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see t
 
 ## Quick Start
 
+> ***Pre-release: `@pax8/cli` is not yet on npm.*** Install from source today (see [Running from source](#running-from-source) below). The `npm install -g @pax8/cli` path will start working once v0.1.0 ships.
+
 Tested on macOS, Linux, and Windows under PowerShell. Requires Node.js 20+ and [pnpm](https://pnpm.io/installation) 9+.
 
 ### Running from source
 
-Until `@pax8/cli` is published to npm, install from source — copy-pasteable, under 5 minutes on a fresh checkout:
+Install from source — copy-pasteable, under 5 minutes on a fresh checkout:
 
 ```bash
 git clone https://github.com/pax8labs/pax8-cli

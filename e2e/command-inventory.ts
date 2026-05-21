@@ -745,9 +745,9 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
   },
   // ── report ────────────────────────────────────────────────────────────────
   // `pax8 report mrr` and `pax8 report growth` were removed in the
-  // Bret Pittenger reporting-domain review — they framed Pax8 cost as
-  // partner-side MRR / growth. The underlying analytics (`computeMrr`,
-  // `computeGrowth`) are preserved in `@pax8/core` for v0.2 reporting reuse.
+  // reporting-domain review — they framed Pax8 cost as partner-side MRR /
+  // growth. The underlying analytics (`computeMrr`, `computeGrowth`) are
+  // preserved in `@pax8/core` for v0.2 reporting reuse.
   // ── usage ─────────────────────────────────────────────────────────────────
   {
     command: ["usage", "list"],
