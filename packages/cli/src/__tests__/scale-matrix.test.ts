@@ -107,10 +107,15 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
     });
 
     it("pax8 orders list --json", async () => {
+      // #478: orders list --json is now wrapped { orders, page } so agents
+      // can see the totalElements / totalPages without a separate call.
       const result = await runCliExpectSuccess(["orders", "list", "--json"], LARGE);
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
+      const data = parseJson<{ orders: unknown[]; page: { totalElements: number } }>(
+        result.stdout,
+      );
+      expect(Array.isArray(data.orders)).toBe(true);
+      expect(data.orders.length).toBeGreaterThan(0);
+      expect(data.page.totalElements).toBeGreaterThan(0);
     });
 
     it("pax8 products search --json", async () => {
@@ -170,9 +175,10 @@ describe("scale matrix — read surface under PAX8_DEMO_SCALE=large", () => {
         ["orders", "list", "--json", "--size", "50000"],
         LARGE,
       );
-      const data = parseJson<unknown[]>(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeLessThanOrEqual(1000);
+      // #478: wrapped envelope { orders, page }.
+      const data = parseJson<{ orders: unknown[] }>(result.stdout);
+      expect(Array.isArray(data.orders)).toBe(true);
+      expect(data.orders.length).toBeLessThanOrEqual(1000);
     });
 
     it("orders list --size 50000 emits the clamp warning on stderr", async () => {

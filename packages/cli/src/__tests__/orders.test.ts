@@ -6,22 +6,128 @@ import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 orders", () => {
   describe("orders list", () => {
-    it("returns order data in JSON format", async () => {
+    it("returns order data in JSON format wrapped with a page envelope (#478)", async () => {
+      // #478: `--json` now wraps the result as `{ orders, page }` so agents
+      // crawling large portfolios can see pagination instead of silently
+      // truncating at row 25. Pre-#478 the output was a flat array and the
+      // partner had no signal there were more pages.
       const result = await runCliExpectSuccess(["orders", "list", "--json"]);
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("id");
-      expect(data[0]).toHaveProperty("companyName");
-      expect(data[0]).toHaveProperty("status");
-      expect(data[0]).toHaveProperty("createdAt");
+      // #478: wrapped envelope (was flat array pre-fix); #532: canonical
+      // createdAt field name (was createdDate shadow pre-removal).
+      expect(Array.isArray(data)).toBe(false);
+      expect(data).toHaveProperty("orders");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.orders)).toBe(true);
+      expect(data.orders.length).toBeGreaterThan(0);
+      expect(data.orders[0]).toHaveProperty("id");
+      expect(data.orders[0]).toHaveProperty("companyName");
+      expect(data.orders[0]).toHaveProperty("status");
+      expect(data.orders[0]).toHaveProperty("createdAt");
+    });
+
+    it("page envelope reports 1-based page number plus totals (#478)", async () => {
+      const result = await runCliExpectSuccess([
+        "orders",
+        "list",
+        "--json",
+        "--page",
+        "1",
+        "--size",
+        "2",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.page).toMatchObject({
+        number: 1,
+        size: 2,
+      });
+      expect(typeof data.page.totalElements).toBe("number");
+      expect(typeof data.page.totalPages).toBe("number");
+      expect(data.page.totalElements).toBeGreaterThanOrEqual(data.orders.length);
+    });
+
+    it("--with-actions adds a next-page nextActions entry when more pages exist (#478)", async () => {
+      // Force multi-page by using size=1 — the small fixture has 5 orders so
+      // totalPages will be >= 5.
+      const result = await runCliExpectSuccess([
+        "orders",
+        "list",
+        "--json",
+        "--with-actions",
+        "--page",
+        "1",
+        "--size",
+        "1",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("nextActions");
+      expect(Array.isArray(data.nextActions)).toBe(true);
+      // First nextAction should be the "fetch next page" entry.
+      const fetchNext = data.nextActions.find((a: { command: string }) =>
+        a.command.includes("--page 2"),
+      );
+      expect(fetchNext).toBeDefined();
+      expect(fetchNext.command).toContain("pax8 orders list");
+      expect(fetchNext.command).toContain("--page 2");
+    });
+
+    it("--with-actions omits the next-page entry on the last page (#478)", async () => {
+      // Land on the final page (size=1, page=totalPages). Re-fetch first to
+      // discover totalPages from the envelope.
+      const probe = await runCliExpectSuccess([
+        "orders",
+        "list",
+        "--json",
+        "--size",
+        "1",
+      ]);
+      const totalPages = JSON.parse(probe.stdout).page.totalPages;
+      expect(totalPages).toBeGreaterThan(1);
+
+      const result = await runCliExpectSuccess([
+        "orders",
+        "list",
+        "--json",
+        "--with-actions",
+        "--size",
+        "1",
+        "--page",
+        String(totalPages),
+      ]);
+      const data = JSON.parse(result.stdout);
+      const fetchNext = (data.nextActions as { command: string }[]).find((a) =>
+        a.command.includes(`--page ${totalPages + 1}`),
+      );
+      expect(fetchNext).toBeUndefined();
+    });
+
+    it("default sort is newest-first (#478)", async () => {
+      // Pre-#478 the CLI sent no sort hint and the real Pax8 API returned
+      // 2013-era orders in row 1. Now every adjacent pair must be in
+      // descending createdAt order — covers both the fixed fixture rows
+      // and any `ord-demo-*` rows that `orders create` tests left behind
+      // (those carry today's date and so legitimately sort first).
+      const result = await runCliExpectSuccess(["orders", "list", "--json"]);
+      const data = JSON.parse(result.stdout);
+      expect(data.orders.length).toBeGreaterThan(0);
+      for (let i = 1; i < data.orders.length; i++) {
+        const prev = String(data.orders[i - 1].createdAt);
+        const curr = String(data.orders[i].createdAt);
+        expect(prev >= curr).toBe(true);
+      }
+      // Among the fixed fixture rows (no `ord-demo-` prefix) the most-recent
+      // is `ord-summit-001` (2026-03-08). It should be the first such row.
+      const firstFixtureRow = data.orders.find(
+        (o: { id: string }) => !o.id.startsWith("ord-demo-"),
+      );
+      expect(firstFixtureRow?.id).toBe("ord-summit-001");
     });
 
     it("emits canonical `createdAt` (#385); legacy `createdDate` is dropped", async () => {
       const result = await runCliExpectSuccess(["orders", "list", "--json"]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const row of data) {
+      expect(data.orders.length).toBeGreaterThan(0);
+      for (const row of data.orders) {
         expect(row).toHaveProperty("createdAt");
         expect(row).not.toHaveProperty("createdDate");
       }
@@ -30,8 +136,12 @@ describe("pax8 orders", () => {
     it("outputs data by default (non-TTY falls back to JSON)", async () => {
       const result = await runCliExpectSuccess(["orders", "list"]);
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data[0].id).toBe("ord-summit-001");
+      // The first fixture row (skipping any `ord-demo-*` rows seeded by
+      // co-running `orders create` tests) is `ord-summit-001`.
+      const firstFixtureRow = data.orders.find(
+        (o: { id: string }) => !o.id.startsWith("ord-demo-"),
+      );
+      expect(firstFixtureRow?.id).toBe("ord-summit-001");
     });
 
     it("filters by company ID", async () => {
@@ -43,8 +153,8 @@ describe("pax8 orders", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const order of data) {
+      expect(data.orders.length).toBeGreaterThan(0);
+      for (const order of data.orders) {
         expect(order.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
       }
     });
@@ -60,12 +170,82 @@ describe("pax8 orders", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBe(2);
+      expect(data.orders.length).toBe(2);
     });
 
-    it("shows footer with order count on stderr", async () => {
-      const result = await runCliExpectSuccess(["orders", "list"]);
+    it("shows table footer with page indicator on stderr (#478)", async () => {
+      // Subprocess runs are non-TTY, which forces JSON by default. Use the
+      // PAX8_OUTPUT_FORMAT escape hatch to exercise the table-mode footer.
+      const result = await runCliExpectSuccess(["orders", "list"], {
+        PAX8_OUTPUT_FORMAT: "table",
+      });
+      // Footer surfaces "Page X of Y — N orders" so pagination is visible
+      // to humans inspecting the default table output.
+      expect(result.stderr).toMatch(/Page \d+ of \d+/);
       expect(result.stderr).toContain("orders");
+    });
+
+    it("table footer's next-page hint appears only when more pages exist (#478)", async () => {
+      // size=1 against the small fixture guarantees multiple pages.
+      const multi = await runCliExpectSuccess(
+        ["orders", "list", "--size", "1", "--page", "1"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      expect(multi.stderr).toMatch(/next:\s*pax8 orders list --page 2/);
+
+      // On the final page the hint is suppressed.
+      const probe = await runCliExpectSuccess([
+        "orders",
+        "list",
+        "--json",
+        "--size",
+        "1",
+      ]);
+      const totalPages = JSON.parse(probe.stdout).page.totalPages;
+      const last = await runCliExpectSuccess(
+        ["orders", "list", "--size", "1", "--page", String(totalPages)],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      expect(last.stderr).not.toMatch(/next:\s*pax8 orders list/);
+    });
+
+    it("populates Company column for orders beyond the first 200 companies (#478 defect 4)", async () => {
+      // The large fixture has 1000 companies and 45000 orders. Pre-#478 the
+      // CLI fetched only the first 200 companies for name enrichment, so
+      // 80% of rows showed a blank Company column on real partner data.
+      // After the fix the enrichment pages until every referenced ID is
+      // covered. Set `--size 50` so we get plenty of rows from many
+      // different companies and the test fails LOUDLY if a regression
+      // re-introduces the 200-cap (the demo's hostile-name companies tend
+      // to sort later than index 200).
+      const result = await runCliExpectSuccess(
+        ["orders", "list", "--json", "--size", "50", "--page", "1"],
+        { PAX8_DEMO_SCALE: "large" },
+      );
+      const data = JSON.parse(result.stdout);
+      expect(data.orders.length).toBeGreaterThan(0);
+      const blank = data.orders.filter(
+        (o: { companyName?: string; companyId: string }) =>
+          !o.companyName || o.companyName === o.companyId,
+      );
+      // Every row must resolve to a real company name. Pre-fix this was
+      // ~40 of 50; we assert zero.
+      expect(blank).toHaveLength(0);
+    });
+
+    it("rejects --status (flag removed in #478)", async () => {
+      // #478 defect 3: pre-fix the CLI accepted `--status` and passed it to
+      // a server that silently ignored it. Partners running
+      // `pax8 orders list --status Completed | grep Completed` had no way to
+      // know they were looking at unfiltered data. The flag is removed
+      // entirely — Commander errors with `unknown option` and exit code 1.
+      const result = await runCliExpectFailure([
+        "orders",
+        "list",
+        "--status",
+        "Completed",
+      ]);
+      expect(result.stderr).toMatch(/unknown option|--status/i);
     });
 
     // #199 — the `/orders` endpoint is slow on large portfolios; the 30s
@@ -167,19 +347,16 @@ describe("pax8 orders", () => {
       expect(result.stdout).toContain("--page");
     });
 
-    // Help text must disclose two facts about --status now:
-    //   (a) the field isn't in the public OpenAPI (#250 contract)
-    //   (b) the server silently ignores the filter — verified 2026-05-11
-    //       against the real API; see docs/triage/orders-status-server-behavior.md.
-    // The flag itself is retained so existing partner scripts keep working.
-    it("--status help honestly flags that the field is not in the public OpenAPI and the server ignores it", async () => {
+    // #478: `--status` was removed entirely (the server silently ignored it
+    // and there's no real backend contract until #369 lands). The help
+    // surface should no longer advertise the flag; partners get a clean
+    // "unknown option" error instead of a silently-unfiltered list.
+    it("--status flag is no longer documented in --help (#478)", async () => {
       const result = await runCliExpectSuccess(["orders", "list", "--help"]);
-      expect(result.stdout).toContain("--status");
-      expect(result.stdout).toMatch(/not\s+in\s+public\s+OpenAPI|observed|undocumented/i);
-      expect(result.stdout).toMatch(/no-op|ignores|silently dropped/i);
-      // Bare-list framing (pre-#250) must not regress.
+      expect(result.stdout).not.toMatch(/--status/);
+      // Bare-list framing (pre-#250) must not regress either.
       expect(result.stdout).not.toMatch(
-        /Filter by status \(Completed, Processing, Failed, PendingManual\)/
+        /Filter by status \(Completed, Processing, Failed, PendingManual\)/,
       );
     });
 

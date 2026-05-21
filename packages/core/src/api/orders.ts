@@ -19,7 +19,16 @@ export class OrdersApi {
     page?: number;
     size?: number;
     companyId?: string;
-    status?: string;
+    /**
+     * #478: server-side sort hint. The Pax8 OpenAPI doesn't enumerate this
+     * for `GET /orders`, but the platform's standard list endpoints accept
+     * `sort=<field>,<direction>` (`createdAt,desc` puts newest first) and
+     * the server returns the parameter unchanged in its `Link` header on
+     * real traffic. The CLI sends `createdAt,desc` by default so partners
+     * with thousands of orders don't see 2013 archives in row 1. Servers
+     * that ignore the hint still get a well-formed request.
+     */
+    sort?: string;
   }): Promise<PaginatedResponse<Order>> {
     const raw = await this.client.get<unknown>("/orders", params as Record<string, string | number | undefined>);
     return PaginatedOrderSchema.parse(raw);

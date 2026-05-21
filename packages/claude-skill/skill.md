@@ -92,7 +92,12 @@ pax8 recommendations list --json [--priority high|medium|low] [--company <id|nam
   # — sorted by estimatedMrrUplift DESC, priority tiebreaker, nulls last.
   # Capped at 10 by default; pass --top 0 for the full set.
 pax8 recommendations act [--company <id|name>] [--product <name>] [--yes]    # multi-select picker; --yes places all without prompting
-pax8 orders list --json
+pax8 orders list --json [--company <id|name>] [--page <n>] [--size <n>] [--sort <field>] [--order asc|desc]
+  # Wrapped envelope (#478): { orders, page: { number, size, totalElements, totalPages } }.
+  # Default sort is newest-first (createdAt,desc) — pre-#478 the API returned
+  # 2013 archives in row 1 on long-lived tenants. Compare orders.length to
+  # page.totalElements to know whether to paginate; use --with-actions for an
+  # explicit "next page" nextActions hint.
 pax8 orders create --company <id|name> --product <id|name> --quantity <n> [--billing-term Monthly|Annual]
 pax8 cost sim --company <id|name> --product <id|name> --quantity <n> [--from <id|name>] [--billing-term Monthly|Annual] --json
 pax8 doctor                                                  # diagnostics, not for data
