@@ -19,6 +19,7 @@ import {
   renderReplNavHint,
 } from "../../lib/output.js";
 import { saveLastListContext } from "../../lib/last-list.js";
+import { wireListDrillIn } from "../../lib/list-drill-in.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import {
@@ -56,7 +57,9 @@ const BILLING_TERM_HELP = BILLING_TERM_VALUES.join(", ");
 const SUBSCRIPTION_SORT_FIELDS = ["quantity", "startDate", "endDate", "createdAt"] as const;
 const SUBSCRIPTION_SORT_HELP = `Sort by field (${SUBSCRIPTION_SORT_FIELDS.join(", ")}); append :desc for descending (e.g. quantity:desc)`;
 
+// #418: leading `_num` column makes rows pickable by number in the REPL.
 const columns: Column[] = [
+  { key: "_num", header: "#" },
   {
     key: "id",
     header: "ID",
@@ -227,6 +230,14 @@ Examples:
       const sortFlag = allOpts.sort ? ` --sort ${allOpts.sort}` : "";
       const nextPageCommand = `pax8 subscriptions list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}${statusFlag}${billingTermFlag}${productFlag}${sortFlag}`;
 
+      // #418: row numbers continue across pages — wire numbered rows for
+      // the table renderer and the REPL's drill-in lookup.
+      const startNum = result.page.number * result.page.size;
+      const numbered = subs.map((row, i) => ({
+        ...row,
+        _num: String(startNum + i + 1),
+      }));
+
       if (ctx.outputFormat === "json") {
         const subsList = result.content;
         if (options.withActions) {
@@ -274,7 +285,7 @@ Examples:
         emptyReasons.push("This tenant has no subscriptions yet.");
       }
 
-      output(result.content, {
+      output(numbered, {
         format: ctx.outputFormat,
         columns,
         emptyState: {
@@ -318,6 +329,16 @@ Examples:
             },
           });
         }
+        // #418: pickable drill-in — type `3` to drill into subscription #3.
+        await wireListDrillIn({
+          rows: subs as { id: string }[],
+          resource: "subscriptions",
+          startNum,
+          getLabel: (row) => {
+            const r = row as Record<string, unknown>;
+            return String(r.productName ?? r.companyName ?? "Subscription");
+          },
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list subscriptions");

@@ -12,6 +12,7 @@ import {
   renderReplNavHint,
 } from "../../lib/output.js";
 import { saveLastListContext } from "../../lib/last-list.js";
+import { wireListDrillIn } from "../../lib/list-drill-in.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatDate, formatCurrency } from "../../lib/formatters.js";
@@ -113,14 +114,16 @@ Examples:
         return;
       }
 
-      const enriched = quotes.map((q) => ({
+      // #483: build the 1-based page envelope once for both JSON and footer.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      // #418: row numbers continue across pages.
+      const startNum = result.page.number * result.page.size;
+      const enriched = quotes.map((q, i) => ({
         ...q,
+        _num: String(startNum + i + 1),
         _total: quoteTotal(q),
         _items: q.lineItems?.length ?? 0,
       }));
-
-      // #483: build the 1-based page envelope once for both JSON and footer.
-      const pageEnvelope = buildPageEnvelope(result.page);
       const filterFlag = [
         allOpts.company ? `--company "${allOpts.company}"` : "",
         status ? `--status ${status}` : "",
@@ -142,7 +145,9 @@ Examples:
       // `expiresAt`. The legacy `createdOn` / `expiresOn` aliases are still
       // emitted on every row in `--json` output for backwards compatibility;
       // removal in v0.3.0.
+      // #418: leading `_num` column makes rows pickable by number in the REPL.
       const columns: Column[] = [
+        { key: "_num", header: "#" },
         { key: "id", header: "ID", width: 14, format: (v) => chalk.dim(String(v).slice(0, 12)) },
         { key: "companyId", header: "Company ID", width: 14, format: (v) => chalk.dim(String(v).slice(0, 12)) },
         { key: "status", header: "Status", width: 12 },
@@ -202,10 +207,24 @@ Examples:
         process.stderr.write(
           chalk.dim(`  Total on this page: ${formatCurrency(total)}\n`),
         );
+        // #418: pickable drill-in supersedes the previous hard-coded
+        // `Try next: pax8 quotes show <first>` hint. The drill-in
+        // helper handles the prompt; the static hint stays for users
+        // who already know the canonical command.
         const first = enriched[0];
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 quotes show ${first.id}`))}  ${chalk.dim("view quote details")}\n`);
-        process.stderr.write("\n");
+        process.stderr.write(chalk.dim("\n  Or: ") + chalk.cyan(replCmd(`pax8 quotes show ${first.id}`)) + chalk.dim(" — view quote details\n\n"));
+        await wireListDrillIn({
+          rows: quotes,
+          resource: "quotes",
+          startNum,
+          getLabel: (q) => {
+            // Quote schema doesn't carry a user-facing title field — use
+            // the `referenceCode` (e.g. "Q-2026-002") when present, fall
+            // back to the truncated id.
+            const code = (q as { referenceCode?: string }).referenceCode;
+            return code ?? `Quote ${String(q.id).slice(0, 8)}`;
+          },
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list quotes");
