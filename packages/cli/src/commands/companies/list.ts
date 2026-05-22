@@ -24,7 +24,7 @@ import {
   buildNextPageAction,
 } from "../../lib/output.js";
 import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/formatters.js";
-import { saveLastList } from "../../lib/last-list.js";
+import { saveLastList, saveLastListContext } from "../../lib/last-list.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
@@ -272,6 +272,23 @@ Examples:
         }))
       );
 
+      // #456: snapshot the argv + paging state so the REPL's `back` / `n` /
+      // `p` commands can resume browsing without retyping flags. The argv
+      // captures the user-facing command (`clients list --status Active
+      // --page 1 --size 25 ...`); the page envelope drives next/prev
+      // navigation. Built from process.argv so we preserve every flag
+      // the user actually typed.
+      const userArgv = process.argv.slice(2);
+      if (userArgv.length > 0 && userArgv[0] !== "back" && userArgv[0] !== "n" && userArgv[0] !== "p") {
+        await saveLastListContext({
+          command: userArgv,
+          page: {
+            number: userPage,
+            totalPages: result.page.totalPages,
+          },
+        });
+      }
+
       // Save pending actions for REPL number input (typing "3" drills into company #3).
       // #458/#469: route through getConfigDir() (so PAX8_CONFIG_DIR is honored)
       // and safeWriteFileSync (mode 0o600, O_NOFOLLOW) — this file contains
@@ -408,6 +425,20 @@ Examples:
           process.stderr.write(
             chalk.dim("  Add ") + chalk.cyan("--coverage") + chalk.dim(" to see portfolio gaps and revenue opportunities\n")
           );
+        }
+
+        // #456: surface REPL navigation affordances when running inside
+        // the REPL (PAX8_REPL=1). Pre-fix, the partner had to retype
+        // `clients list --page N` to page through; now `n`/`p`/`back`
+        // pull from the saved last-list-context.json.
+        if (process.env.PAX8_REPL === "1") {
+          const total = pageEnvelope.totalPages;
+          const cur = pageEnvelope.number;
+          const hints: string[] = [];
+          if (cur < total) hints.push(`${chalk.cyan("n")}=next`);
+          if (cur > 1) hints.push(`${chalk.cyan("p")}=prev`);
+          hints.push(`${chalk.cyan("back")}=re-run`);
+          process.stderr.write(chalk.dim(`  REPL: ${hints.join(" · ")}\n`));
         }
 
         // Interactive: pick a company to drill into
