@@ -221,8 +221,13 @@ Examples:
           });
         }
         // #418: pickable drill-in — type `26` to drill into row 26.
+        // Cast to the minimum drill-in shape: `wireListDrillIn` only needs
+        // `id: string`; everything else flows through `getLabel`.
+        // OrdersApi.list returns a union (Order[] | mock-shape[]) where
+        // `companyName` is required on the spec Order but optional on the
+        // mock, so a direct pass through would trip the strict-mode check.
         await wireListDrillIn({
-          rows: result.content,
+          rows: result.content as { id: string }[],
           resource: "orders",
           startNum,
           getLabel: (row) => {

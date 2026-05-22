@@ -218,8 +218,11 @@ Examples:
           resource: "quotes",
           startNum,
           getLabel: (q) => {
-            const subject = q.subject ?? q.title ?? `Quote ${String(q.id).slice(0, 8)}`;
-            return String(subject);
+            // Quote schema doesn't carry a user-facing title field — use
+            // the `referenceCode` (e.g. "Q-2026-002") when present, fall
+            // back to the truncated id.
+            const code = (q as { referenceCode?: string }).referenceCode;
+            return code ?? `Quote ${String(q.id).slice(0, 8)}`;
           },
         });
       }
