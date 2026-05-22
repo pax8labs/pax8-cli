@@ -10,7 +10,9 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  renderReplNavHint,
 } from "../../lib/output.js";
+import { saveLastListContext } from "../../lib/last-list.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
@@ -278,6 +280,18 @@ Examples:
           nextPageCommand,
           rowCount: result.content.length,
         });
+        renderReplNavHint(pageEnvelope);
+        const userArgv = process.argv.slice(2);
+        const first = userArgv[0];
+        if (userArgv.length > 0 && first !== "back" && first !== "n" && first !== "p") {
+          await saveLastListContext({
+            command: userArgv,
+            page: {
+              number: pageEnvelope.number,
+              totalPages: pageEnvelope.totalPages,
+            },
+          });
+        }
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list invoices");

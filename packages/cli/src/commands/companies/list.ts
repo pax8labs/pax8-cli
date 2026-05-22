@@ -22,6 +22,7 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  renderReplNavHint,
 } from "../../lib/output.js";
 import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/formatters.js";
 import { saveLastList, saveLastListContext } from "../../lib/last-list.js";
@@ -431,15 +432,7 @@ Examples:
         // the REPL (PAX8_REPL=1). Pre-fix, the partner had to retype
         // `clients list --page N` to page through; now `n`/`p`/`back`
         // pull from the saved last-list-context.json.
-        if (process.env.PAX8_REPL === "1") {
-          const total = pageEnvelope.totalPages;
-          const cur = pageEnvelope.number;
-          const hints: string[] = [];
-          if (cur < total) hints.push(`${chalk.cyan("n")}=next`);
-          if (cur > 1) hints.push(`${chalk.cyan("p")}=prev`);
-          hints.push(`${chalk.cyan("back")}=re-run`);
-          process.stderr.write(chalk.dim(`  REPL: ${hints.join(" · ")}\n`));
-        }
+        renderReplNavHint(pageEnvelope);
 
         // Interactive: pick a company to drill into
         const steps: NextStep[] = result.content.map(

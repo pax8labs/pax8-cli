@@ -9,7 +9,9 @@ import {
   type Column,
   buildPageEnvelope,
   renderPaginationFooter,
+  renderReplNavHint,
 } from "../../lib/output.js";
+import { saveLastListContext } from "../../lib/last-list.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatDate, formatCurrency } from "../../lib/formatters.js";
@@ -185,6 +187,18 @@ Examples:
           nextPageCommand,
           rowCount: enriched.length,
         });
+        renderReplNavHint(pageEnvelope);
+        const userArgv = process.argv.slice(2);
+        const first0 = userArgv[0];
+        if (userArgv.length > 0 && first0 !== "back" && first0 !== "n" && first0 !== "p") {
+          await saveLastListContext({
+            command: userArgv,
+            page: {
+              number: pageEnvelope.number,
+              totalPages: pageEnvelope.totalPages,
+            },
+          });
+        }
         process.stderr.write(
           chalk.dim(`  Total on this page: ${formatCurrency(total)}\n`),
         );

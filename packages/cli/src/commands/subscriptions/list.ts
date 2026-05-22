@@ -16,7 +16,9 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  renderReplNavHint,
 } from "../../lib/output.js";
+import { saveLastListContext } from "../../lib/last-list.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import {
@@ -302,6 +304,20 @@ Examples:
           nextPageCommand,
           rowCount: result.content.length,
         });
+        renderReplNavHint(pageEnvelope);
+        // #456: persist context for REPL back/n/p navigation. Guarded
+        // against re-entry from the REPL's own rewrite of those shortcuts.
+        const userArgv = process.argv.slice(2);
+        const first = userArgv[0];
+        if (userArgv.length > 0 && first !== "back" && first !== "n" && first !== "p") {
+          await saveLastListContext({
+            command: userArgv,
+            page: {
+              number: pageEnvelope.number,
+              totalPages: pageEnvelope.totalPages,
+            },
+          });
+        }
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list subscriptions");

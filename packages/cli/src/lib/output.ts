@@ -395,6 +395,24 @@ export function renderPaginationFooter(
 }
 
 /**
+ * #456: render the REPL navigation hint after a list command when
+ * running inside the REPL (`PAX8_REPL=1`). No-op outside the REPL —
+ * normal shell sessions shouldn't see the `n`/`p`/`back` affordance.
+ *
+ * Caller has already written the pagination footer + any
+ * command-specific hints; this adds a single-line hint advertising
+ * the saved-context shortcuts.
+ */
+export function renderReplNavHint(page: PageEnvelope): void {
+  if (process.env.PAX8_REPL !== "1") return;
+  const hints: string[] = [];
+  if (page.number < page.totalPages) hints.push(`${chalk.cyan("n")}=next`);
+  if (page.number > 1) hints.push(`${chalk.cyan("p")}=prev`);
+  hints.push(`${chalk.cyan("back")}=re-run`);
+  process.stderr.write(chalk.dim(`  REPL: ${hints.join(" · ")}\n`));
+}
+
+/**
  * Build the standard "fetch next page" nextActions entry, or `null` when
  * the supplied envelope is already on the last page. Callers compose
  * additional `nextActions` entries (e.g. "drill into the first row") on
