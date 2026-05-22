@@ -4,6 +4,7 @@
 import chalk from "chalk";
 import { createInterface } from "readline";
 import { spawn } from "child_process";
+import { resolveCliPath } from "./repl.js";
 
 export interface NextStep {
   key: string;
@@ -74,8 +75,29 @@ export async function promptNextSteps(
 
   process.stderr.write("\n");
 
+  // #457: reuse the active CLI entrypoint instead of hardcoding `pax8` on
+  // PATH. The REPL already does this via `resolveCliPath(process.argv[1])`
+  // (see lib/repl.ts) — drill-in from a non-PATH launch (`node dist/index.js`,
+  // a yarn -g install in an unusual prefix, etc.) was the only remaining
+  // call site that assumed `pax8` was discoverable.
+  let cliPath: string;
+  try {
+    cliPath = resolveCliPath(process.argv[1]);
+  } catch {
+    // Best-effort fallback to the legacy behavior when we can't resolve
+    // process.argv[1] (e.g. embedded callers in a future MCP wrapper).
+    return new Promise<void>((resolve) => {
+      const child = spawn("pax8", picked.command, {
+        stdio: "inherit",
+        env: process.env,
+      });
+      child.on("error", () => resolve());
+      child.on("close", () => resolve());
+    });
+  }
+
   return new Promise<void>((resolve, _reject) => {
-    const child = spawn("pax8", picked.command, {
+    const child = spawn("node", [cliPath, ...picked.command], {
       stdio: "inherit",
       env: process.env,
     });
