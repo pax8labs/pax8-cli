@@ -13,6 +13,7 @@ import {
   renderReplNavHint,
 } from "../../lib/output.js";
 import { saveLastListContext } from "../../lib/last-list.js";
+import { wireListDrillIn } from "../../lib/list-drill-in.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
@@ -152,7 +153,9 @@ Examples:
         return;
       }
 
+      // #418: leading `_num` column makes rows pickable by number in the REPL.
       const columns: Column[] = [
+        { key: "_num", header: "#" },
         {
           key: "id",
           header: "ID",
@@ -188,6 +191,12 @@ Examples:
 
       // #483: build the page envelope once for both JSON and footer.
       const pageEnvelope = buildPageEnvelope(result.page);
+      // #418: row numbers continue across pages.
+      const startNum = result.page.number * result.page.size;
+      const numbered = result.content.map((row, i) => ({
+        ...row,
+        _num: String(startNum + i + 1),
+      }));
       const filterFlag = [
         allOpts.company ? `--company "${allOpts.company}"` : "",
         allOpts.status ? `--status "${allOpts.status}"` : "",
@@ -250,7 +259,7 @@ Examples:
         emptyReasons.push("This is a fresh tenant with no historical billing yet.");
       }
 
-      output(result.content, {
+      output(numbered, {
         format: ctx.outputFormat,
         columns,
         emptyState: {
@@ -292,6 +301,16 @@ Examples:
             },
           });
         }
+        // #418: pickable drill-in.
+        await wireListDrillIn({
+          rows: result.content,
+          resource: "invoices",
+          startNum,
+          getLabel: (row) =>
+            String(
+              (row as { companyName?: string }).companyName ?? "Invoice",
+            ),
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list invoices");
