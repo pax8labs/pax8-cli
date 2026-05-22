@@ -108,6 +108,71 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
       args.shift();
     }
 
+    // #456: REPL list-navigation shortcuts. After a list command saves
+    // `last-list-context.json`, the user can type `back` to re-run it,
+    // or `n` / `p` to page forward/backward without retyping flags. The
+    // shortcut is rewritten to a full argv before the spawn — no special
+    // dispatch path — so the underlying list command runs unchanged.
+    if (args.length === 1 && (args[0] === "back" || args[0] === "n" || args[0] === "p")) {
+      try {
+        const ctxPath = pathJoin(getConfigDir(), "last-list-context.json");
+        const ctxRaw = JSON.parse(fs.readFileSync(ctxPath, "utf-8")) as Record<string, unknown>;
+        const cmd = ctxRaw.command;
+        const page = ctxRaw.page as Record<string, unknown> | undefined;
+        const validCmd =
+          Array.isArray(cmd) && cmd.length > 0 && cmd.every((s) => typeof s === "string");
+        const validPage =
+          page !== undefined &&
+          page !== null &&
+          typeof page.number === "number" &&
+          typeof page.totalPages === "number";
+        if (validCmd && validPage) {
+          const command = cmd as string[];
+          const pageNum = (page as { number: number }).number;
+          const totalPages = (page as { totalPages: number }).totalPages;
+          let target = pageNum;
+          if (args[0] === "n") {
+            if (pageNum >= totalPages) {
+              process.stderr.write(chalk.dim(`  Already on the last page (${pageNum} of ${totalPages}).\n\n`));
+              rl.prompt();
+              return;
+            }
+            target = pageNum + 1;
+          } else if (args[0] === "p") {
+            if (pageNum <= 1) {
+              process.stderr.write(chalk.dim(`  Already on the first page.\n\n`));
+              rl.prompt();
+              return;
+            }
+            target = pageNum - 1;
+          }
+          // Rewrite argv to the target page. For `back`, target === pageNum
+          // so the original page is re-run verbatim.
+          const out: string[] = [];
+          let replaced = false;
+          for (let i = 0; i < command.length; i++) {
+            if (command[i] === "--page" && i + 1 < command.length) {
+              out.push("--page", String(target));
+              i++;
+              replaced = true;
+            } else {
+              out.push(command[i]);
+            }
+          }
+          if (!replaced) out.push("--page", String(target));
+          args = out;
+        } else {
+          process.stderr.write(chalk.dim("  No recent list to navigate. Run a list command first.\n\n"));
+          rl.prompt();
+          return;
+        }
+      } catch {
+        process.stderr.write(chalk.dim("  No recent list to navigate. Run a list command first.\n\n"));
+        rl.prompt();
+        return;
+      }
+    }
+
     // Handle bare number input — check for pending actions from last list/recommendations
     if (args.length === 1 && /^\d+$/.test(args[0])) {
       try {
