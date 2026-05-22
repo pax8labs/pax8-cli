@@ -14,7 +14,9 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  renderReplNavHint,
 } from "../../lib/output.js";
+import { saveLastListContext } from "../../lib/last-list.js";
 import { formatDate } from "../../lib/formatters.js";
 import {
   enrichCompanyNames,
@@ -194,6 +196,18 @@ Examples:
           nextPageCommand,
           rowCount: result.content.length,
         });
+        renderReplNavHint(pageEnvelope);
+        const userArgv = process.argv.slice(2);
+        const first = userArgv[0];
+        if (userArgv.length > 0 && first !== "back" && first !== "n" && first !== "p") {
+          await saveLastListContext({
+            command: userArgv,
+            page: {
+              number: pageEnvelope.number,
+              totalPages: pageEnvelope.totalPages,
+            },
+          });
+        }
       }
     } catch (error) {
       // #199: the `/orders` endpoint is known to be slow against tenants with
