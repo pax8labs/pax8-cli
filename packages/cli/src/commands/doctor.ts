@@ -318,16 +318,55 @@ async function checkTelemetry(): Promise<CheckResult> {
 }
 
 async function checkCacheDir(): Promise<CheckResult> {
+  const noCache = process.env.PAX8_NO_CACHE === "1" || process.env.PAX8_NO_CACHE === "true";
+  let cacheEnabled = false;
+  let ttlHours = 24;
+  if (!noCache) {
+    try {
+      const { loadConfig } = await import("@pax8/core");
+      const cfg = await loadConfig();
+      cacheEnabled = cfg.cache?.enabled ?? false;
+      ttlHours = cfg.cache?.ttl_hours ?? 24;
+    } catch {
+      // config unreadable — treat as disabled
+    }
+  }
+
+  let entryCount = 0;
+  let totalBytes = 0;
+  try {
+    const files = await fs.readdir(CACHE_DIR);
+    const jsonFiles = files.filter((f) => f.endsWith(".json"));
+    entryCount = jsonFiles.length;
+    for (const f of jsonFiles) {
+      try {
+        const stat = await fs.stat(path.join(CACHE_DIR, f));
+        totalBytes += stat.size;
+      } catch {
+        // skip unreadable files
+      }
+    }
+  } catch {
+    // cache dir doesn't exist yet — that's fine
+  }
+
+  const kb = (totalBytes / 1024).toFixed(1);
+  const sizeStr = entryCount > 0 ? `, ${entryCount} entries (${kb} KB)` : ", empty";
+  const detail = noCache
+    ? "disabled via PAX8_NO_CACHE"
+    : cacheEnabled
+      ? `enabled — ${ttlHours}h TTL${sizeStr}`
+      : "disabled — set cache.enabled: true in ~/.pax8/config.yaml to enable";
+
   try {
     await fs.mkdir(CACHE_DIR, { recursive: true });
-    // Try writing a test file
     const testFile = path.join(CACHE_DIR, ".write-test");
     await fs.writeFile(testFile, "test");
     await fs.unlink(testFile);
-    return { name: "Cache directory writable", passed: true, detail: CACHE_DIR };
+    return { name: "Cache", passed: true, detail };
   } catch {
     return {
-      name: "Cache directory writable",
+      name: "Cache",
       passed: false,
       detail: `Cannot write to ${CACHE_DIR}`,
     };

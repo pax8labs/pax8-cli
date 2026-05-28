@@ -173,7 +173,7 @@ export async function buildContext(
       page_size: 50,
       confirm_destructive: true,
     },
-    cache: { enabled: true, ttl_hours: 24 },
+    cache: { enabled: false, ttl_hours: 24 },
     telemetry: { enabled: false },
   }));
 
@@ -219,7 +219,9 @@ export async function buildContext(
     // `cache.enabled: false` in `~/.pax8/config.yaml` still got caching with
     // the constructor's hard-coded 1h default. `cacheTtlMs: 0` disables the
     // FileCache entirely inside `Pax8Client`.
-    const cacheEnabled = config.cache?.enabled ?? true;
+    const envNoCache = process.env.PAX8_NO_CACHE;
+    const noCache = envNoCache === "1" || envNoCache === "true";
+    const cacheEnabled = !noCache && (config.cache?.enabled ?? false);
     const cacheTtlHours = config.cache?.ttl_hours ?? 24;
     const cacheTtlMs = cacheEnabled ? cacheTtlHours * 3_600_000 : 0;
 

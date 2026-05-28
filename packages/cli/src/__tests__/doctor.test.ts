@@ -39,9 +39,9 @@ describe("pax8 doctor", () => {
     expect(result.stdout).toContain("Skipped");
   });
 
-  it("reports cache directory writable", async () => {
+  it("reports cache status", async () => {
     const result = await runCliExpectSuccess(["doctor"], TABLE);
-    expect(result.stdout).toMatch(/✓.*Cache directory writable/);
+    expect(result.stdout).toMatch(/✓.*Cache/);
   });
 
   // Regression for #220: env-var auth and demo mode are equally valid
