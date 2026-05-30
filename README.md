@@ -6,7 +6,7 @@ An open-source CLI for managing Pax8 cloud marketplace operations. Built for MSP
 
 This is an early-stage open-source experiment. We're using engagement signals (installs, issues, command usage) to learn which capabilities are worth investing in further. Feedback, issues, and PRs are welcome.
 
-> **Pre-release.** `@pax8/cli` is not yet published to npm — `npm install -g @pax8/cli` will work once v0.1.0 ships. Until then, install from source: see [Quick Start → Running from source](#running-from-source).
+> **Pre-release.** `@pax8/cli` is not yet published to npm — `npm install -g @pax8/cli` works once v0.1.0 ships. Install from source today: see [Quick Start](#quick-start).
 
 ## Highlights
 
@@ -34,47 +34,59 @@ Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see t
 
 ## Quick Start
 
-> ***Pre-release: `@pax8/cli` is not yet on npm.*** Install from source today (see [Running from source](#running-from-source) below). The `npm install -g @pax8/cli` path will start working once v0.1.0 ships.
+Requires Node.js 20+ and [pnpm](https://pnpm.io/installation) 9+. Tested on macOS, Linux, and Windows under PowerShell.
 
-Tested on macOS, Linux, and Windows under PowerShell. Requires Node.js 20+ and [pnpm](https://pnpm.io/installation) 9+.
-
-### Running from source
-
-Install from source — copy-pasteable, under 5 minutes on a fresh checkout:
+### 1. Install and build
 
 ```bash
 git clone https://github.com/pax8labs/pax8-cli
 cd pax8-cli
 pnpm install
 pnpm build
+```
 
-# Try it without credentials (demo data, no API calls)
+### 2. Run it
+
+Three ways to invoke the CLI, pick whichever matches your workflow:
+
+**(a) Direct from `dist/`** — works after `pnpm build`, no further setup:
+
+```bash
 PAX8_DEMO=1 node packages/cli/dist/index.js dashboard
+```
 
-# Or expose `pax8` globally from your checkout so every example in this
-# README works as-is (the REPL and cache-warmer also need `pax8` on PATH)
-cd packages/cli && npm link
+**(b) `pax8` on PATH** *(recommended)* — makes every example in this README copy-pasteable, and is required for the REPL and cache-warmer:
+
+```bash
+cd packages/cli && npm link && cd ../..
 PAX8_DEMO=1 pax8 dashboard
 ```
 
-For watch mode, tests, and the rest of the contributor workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).
+**(c) Dev mode (no rebuild needed)** — runs the TypeScript sources directly via `tsx`; pass command args after `--`:
+
+```bash
+PAX8_DEMO=1 pnpm dev -- dashboard
+PAX8_DEMO=1 pnpm dev -- clients list
+```
+
+### 3. Authenticate (or stay in demo)
+
+```bash
+pax8 auth login                  # interactive prompt
+# ...or skip auth entirely:
+PAX8_DEMO=1 pax8 dashboard       # in-memory fixture, no API calls
+```
+
+For watch mode, tests, and the full contributor workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### From npm (coming soon)
 
-Once v0.1.0 ships, the documented path will be:
+Once v0.1.0 ships to npm, the documented path will be:
 
 ```bash
-# Install (not yet published — tracked in repo Status section above)
 npm install -g @pax8/cli
-
-# Authenticate
 pax8 auth login
-
-# See how your business is doing
 pax8 dashboard
-
-# Or try with demo data (no credentials needed)
-PAX8_DEMO=1 pax8 dashboard
 ```
 
 ## Demo Flow (90 seconds)
@@ -88,6 +100,8 @@ pax8 clients more "Acme Corp"            # Full customer summary
 ```
 
 ## Commands
+
+`pax8 --help` is the canonical inventory; every command and subcommand documents its flags via `pax8 <command> --help`. The sections below cover the most-used surface; the [More commands](#more-commands) section near the end lists the rest.
 
 ### Dashboard
 
@@ -173,11 +187,43 @@ pax8 products search "Microsoft 365"                   # Search catalog
 pax8 products show <id>                                # Product details + pricing
 ```
 
+### Reports
+
+Pax8-cost reporting surface — what's renewing, where your spend is concentrated, and grouped subscription rollups.
+
+```bash
+pax8 report renewals --within 90                       # Subscriptions ending in the next 90 days
+pax8 report concentration --by client --top 5          # Top customers by Pax8 cost
+pax8 report concentration --by vendor --json           # Concentration by vendor
+pax8 report subscriptions --by billing-term            # Active subs grouped by billing term
+pax8 report subscriptions --by vendor --json           # Pax8 cost rollup by vendor
+```
+
+All values are Pax8 cost (what Pax8 charges you), emitted as `{ amount, currency }` envelopes. For partner-side resale revenue, combine with sell-through pricing from your PSA.
+
 ### Diagnostics
 
 ```bash
-pax8 doctor                    # Node, auth, API endpoints (5/5), cache, telemetry
+pax8 doctor                    # Node, auth, API endpoints, cache, telemetry
 pax8 auth status               # Check credentials
+pax8 version                   # CLI version
+```
+
+### More commands
+
+The full surface also includes these less-prominent command groups — see `pax8 <group> --help` for flags and examples:
+
+```bash
+pax8 contacts list|show|create|update|delete           # Per-company contacts (Admin/Billing/Technical)
+pax8 quotes list|show|create|update|send|delete        # Sales quotes (v2 API)
+pax8 webhooks list|create|update|delete|enable|disable # Subscription endpoints
+pax8 webhooks logs|test|topics                         # Delivery history, fire test deliveries, list topics
+pax8 usage list|show                                   # Metered usage (Azure consumption, etc.)
+pax8 config init|show|set|path                         # Config file management
+pax8 init                                              # First-run setup wizard
+pax8 completions bash                                  # Shell completions (bash/zsh/fish/powershell)
+pax8 report-bug                                        # File a sanitized GitHub issue from the last failure (see Reporting bugs)
+pax8 telemetry enable|disable|status                   # Opt-in usage telemetry (see Telemetry)
 ```
 
 ## Output Formats
@@ -204,18 +250,48 @@ pax8 dashboard --json 2>/dev/null > today.json
 
 ## REPL Mode
 
-Run `pax8` with no arguments to enter the interactive REPL:
+Run the CLI with no arguments to enter the interactive REPL — works with any of the three invocation paths from [Quick Start](#2-run-it):
+
+```bash
+pax8                                    # if linked via npm link
+node packages/cli/dist/index.js         # from a built checkout
+pnpm dev                                # dev mode (tsx)
+```
+
+You'll see the Pax8 ASCII banner with a tagline, your CLI version, and a "Common commands" cheat sheet — then a `pax8>` prompt:
 
 ```
 $ pax8
+
+  ────────────────────────────────────────────────
+
+      ██████╗  █████╗ ██╗  ██╗ █████╗
+      ██╔══██╗██╔══██╗╚██╗██╔╝██╔══██╗
+      ██████╔╝███████║ ╚███╔╝ ╚█████╔╝
+      ██╔═══╝ ██╔══██║ ██╔██╗ ██╔══██╗
+      ██║     ██║  ██║██╔╝ ██╗╚█████╔╝
+      ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝ ╚════╝
+
+      C O M M A N D   L I N E
+
+  Common commands:
+    dashboard               Portfolio at a glance
+    subscriptions renewals  What's renewing in 30 days
+    recommendations         Upsell opportunities
+    invoices audit          Reconcile invoices vs subscriptions
+
+  Type a command, or help / exit
+
 pax8> dashboard
 pax8> clients list
 pax8> 3                          # Drill into client #3
+pax8> back                       # Re-run the last list command
+pax8> n                          # Next page; p for previous
 pax8> recommendations act        # Multi-select picker → batch order
 pax8> exit
 ```
 
-No `pax8` prefix needed. Numbered shortcuts work after list commands.
+No `pax8` prefix needed inside the REPL. Numbered shortcuts work after any list command (pick the row by position). The cheat-sheet adapts to your auth state: if you're not yet authenticated, you'll see `init --demo` / `auth login` / `doctor` instead of the common-commands list.
 
 ## Authentication
 
@@ -437,7 +513,7 @@ for (const r of report.items.slice(0, 5)) {
 }
 ```
 
-The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface. `computeMrr` / `computeGrowth` are retained in `@pax8/core` for embeddable reuse (v0.2 reporting work will rebuild a CLI-side reporting surface on top of them with Pax8-cost framing); only the previous `pax8 report mrr` / `pax8 report growth` CLI commands were removed.
+The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface. `computeMrr` / `computeGrowth` are retained in `@pax8/core` for embeddable reuse; the CLI-side reporting surface is now `pax8 report renewals|concentration|subscriptions` (Pax8-cost framed, emits `AmountCurrency` envelopes). The previous `pax8 report mrr` / `pax8 report growth` CLI commands were removed because they framed Pax8-cost data as partner-side MRR.
 
 ## Known Limitations
 
@@ -544,10 +620,14 @@ who only see `--json` output.
 
 ## Documentation
 
-- [Credential Setup Guide](docs/credential-setup.md)
-- [Product Requirements](docs/PRD.md)
-- [Build Prompt](docs/BUILD.md)
-- [Pax8 API Reference](https://devx.pax8.com/)
+- [Credential Setup Guide](docs/credential-setup.md) — get API credentials and configure the CLI
+- [Contributing](CONTRIBUTING.md) — dev setup, demo fixtures, tests, releases, DCO sign-off
+- [Support](SUPPORT.md) — troubleshooting, bug reports, security disclosure path
+- [Agents](AGENTS.md) — entry point for Cursor, aider, OpenCode, and other AI runtimes
+- [Product Requirements](docs/PRD.md) — internal product context
+- [UX Guide](docs/UX_GUIDE.md) — command patterns and agent-facing contract (contributor reference)
+- [`@pax8/core` library](packages/core/README.md) — using the business logic without the CLI
+- [Pax8 API Reference](https://devx.pax8.com/) — upstream API docs
 
 ## Contributing
 

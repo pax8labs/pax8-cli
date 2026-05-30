@@ -1,5 +1,9 @@
 # Autonomous Build Prompt — pax8-cli MVP
 
+> **Historical document.** This is the autonomous-build prompt used to scaffold the initial MVP. Dependency versions, command names, and command surface have evolved since — do not use this as a current build guide. For installing and building today, see the [README Quick Start](../../README.md#quick-start); for the contributor workflow see [CONTRIBUTING.md](../../CONTRIBUTING.md). Preserved here for project archaeology.
+
+---
+
 You are building `pax8-cli`, an open-source CLI for MSPs to manage Pax8 cloud marketplace operations.
 
 **Read `docs/PRD.md` for full product context. This document is your execution plan.**
