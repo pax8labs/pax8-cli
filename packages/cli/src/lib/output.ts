@@ -417,18 +417,56 @@ export function renderReplNavHint(page: PageEnvelope): void {
  * the supplied envelope is already on the last page. Callers compose
  * additional `nextActions` entries (e.g. "drill into the first row") on
  * top of this base.
+ *
+ * Emits BOTH a `command` display string and a structured `args` argv
+ * array — same shape as the `orderCommand` / `orderArgs` pair resolved
+ * in #462/#509. Agent runtimes must spawn `args.slice(1)` (first element
+ * is always `"pax8"`); the `command` string interpolates user-supplied
+ * flag values for human display only and is unsafe to hand to a shell.
+ * See AGENTS.md "Output flags" and `packages/claude-skill/skill.md` for
+ * the contract. Closes #562.
  */
 export function buildNextPageAction(
   page: PageEnvelope,
-  nextPageCommand: string,
+  nextPageArgs: readonly string[],
   resourceSingular: string,
-): { command: string; description: string } | null {
+): { command: string; args: string[]; description: string } | null {
   if (!hasNextPage(page)) return null;
   const plural = `${resourceSingular}s`;
   return {
-    command: nextPageCommand,
+    command: displayCommandFromArgs(nextPageArgs),
+    args: [...nextPageArgs],
     description: `Fetch the next page of ${plural} (page ${page.number + 1} of ${page.totalPages})`,
   };
+}
+
+/**
+ * Render an argv array as a human-readable command string. Quotes any
+ * argv element that contains whitespace or shell-meaningful characters
+ * so the rendered form is unambiguous to a reader. The output is for
+ * DISPLAY ONLY — agents must consume the `args` array directly and never
+ * `tokenize()` this string (the round-trip is lossy on edge cases like
+ * a single double-quote inside a name).
+ *
+ * Quotes only when needed so common cases stay readable: `pax8 orders
+ * list --page 2 --size 25` instead of `"pax8" "orders" "list" ...`.
+ *
+ * Exported for callsites that also need the display form for the
+ * pagination footer or other human-facing surfaces — same source of
+ * truth as the `command` field on `buildNextPageAction`'s result.
+ */
+export function displayCommandFromArgs(args: readonly string[]): string {
+  return args.map(displayQuoteArg).join(" ");
+}
+
+function displayQuoteArg(arg: string): string {
+  if (arg === "") return '""';
+  // Conservative whitelist — alnum + a handful of flag-friendly punctuation
+  // that never needs quoting. Anything else gets double-quoted with `"`
+  // escaped, matching the convention the README and human-facing footers
+  // already use elsewhere in the CLI.
+  if (/^[A-Za-z0-9_./:=,@+-]+$/.test(arg)) return arg;
+  return `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 /**
