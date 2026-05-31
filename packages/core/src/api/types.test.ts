@@ -11,14 +11,12 @@
  * These are fields that either:
  *
  *  - Leak Pax8's internal cost basis / margin / billing-engine internals
- *    (Tier 1 — Revenue/Competitive — per the Marketplace & Platform Data
- *    Risk Tiering standard at
- *    https://pax8.atlassian.net/wiki/spaces/PS1/pages/2748907531/Marketplace+Platform+Data+Risk+Tiering),
- *    OR
- *  - Were explicitly called out by reviewers as "must never see the light
- *    of day" (inline review comment on the CLI domain review: "let's also
- *    make sure `originalSubscriptionId` never sees the light of day. I
- *    don't want to double down on that massive mistake.").
+ *    (classified as competitive / revenue-sensitive under Pax8's marketplace
+ *    data-risk tiering), OR
+ *  - Were explicitly called out during the CLI domain review as fields that
+ *    must not appear on the CLI surface — historically these have been
+ *    upstream-schema artifacts that the API exposes for internal reasons but
+ *    that partners would interpret incorrectly if surfaced.
  *
  * The list below is **policy as code** — if a future PR adds one of these
  * field names to any exported Zod schema in this file (top-level OR
@@ -31,10 +29,6 @@
  *   1. Justify it in writing (which tier, which reviewer, which incident)
  *   2. Append to FORBIDDEN_FIELDS below with an inline comment
  *   3. The check is automatic from there.
- *
- * See also: docs/pm-review-response-2026-05.md §1 (field-tier audit) and
- * Pax8 CLI Domain Review at
- * https://pax8.atlassian.net/wiki/spaces/Foundation/pages/3069607971/Pax8+CLI+Domain+Review+Approval+Process+and+Key+Questions+for+Each+Section
  */
 
 import { describe, it, expect } from "vitest";

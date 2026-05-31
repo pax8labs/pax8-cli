@@ -611,7 +611,7 @@ taxonomy. Two things diverge from Pax8's canonical models — partners parsing
 | `type: "cross_sell"` + zero-sub company | OE `opportunityType: "Net-new"` | Both carried on the record |
 
 Both the CLI's product taxonomy and the `seat_gap` heuristic will sunset when
-Pax8's first-party Opportunity Explorer API ships (ARC-785, `GET /opportunities`).
+Pax8's first-party Opportunity Explorer API ships (`GET /opportunities`).
 The local taxonomy is replaced at that point — tracked under
 [#375](https://github.com/pax8labs/pax8-cli/issues/375). The module docstring
 at `packages/core/src/services/recommendations.ts` carries the same disclosure

@@ -77,7 +77,7 @@ function parseTopFlag(raw: unknown): number {
 
 const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
-// Cassie's locked sort (#521): estimatedMrrUplift DESC first, priority as
+// Locked sort (#521): estimatedMrrUplift DESC first, priority as
 // tiebreaker (high > medium > low), nulls last. The reasoning is that
 // priority tags are heuristic ("missing security = high") while uplift is
 // concrete dollars — a $5k/mo medium opportunity outranks a $500/mo high
@@ -147,15 +147,16 @@ Recommendation types:
   category for active-sub customers, and Net-new for zero-sub customers
   (carried on 'opportunityType'). The legacy 'type' field collapses both
   motions onto 'cross_sell' for v0.x; the full taxonomy migration is
-  deferred to v0.2 (#375) and ARC-785.
+  deferred to v0.2 (#375).
 
   seat_gap: a CLI-invented heuristic that flags cross-product seat
   mismatches (e.g. 100 email seats but only 30 backup seats). Identifies
   coverage gaps across a customer's stack — NOT the same as Pax8's
   canonical Seat Utilization metric, which measures single-product
-  assigned-vs-purchased seats. Closest OE surrogate is Upsell (carried
-  on 'opportunityType'); seat_gap will likely be retired or remapped
-  when OE's first-party API ships.
+  assigned-vs-purchased seats. Closest canonical Opportunity Explorer
+  surrogate is Upsell (carried on 'opportunityType'); seat_gap will
+  likely be retired or remapped when Pax8's first-party Opportunity
+  Explorer API ships.
 
 Estimate semantics:
   estimatedMrrUplift is an upper-bound estimate of the additional Pax8
@@ -208,7 +209,7 @@ JSON output (--json):
   that are NOT Pax8's canonical STAX taxonomy or Seat Utilization
   metric. See "Metric definitions" in README.md and the module
   docstring at packages/core/src/services/recommendations.ts. Will
-  sunset when OE's first-party /opportunities API ships (ARC-785, #375).
+  sunset when Pax8's first-party Opportunity Explorer API ships (#375).
 
 Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
@@ -286,7 +287,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       // Sort by estimatedMrrUplift DESC (concrete dollars beat heuristic
       // priority tags); tiebreak by priority (high > medium > low). Recs
       // with a null uplift sort LAST so the top of the list is always the
-      // partner's highest-dollar opportunities (Cassie / #521).
+      // partner's highest-dollar opportunities (#521).
       recs = sortRecommendations(recs);
 
       // Cap the count. `--top 0` opts out (unlimited); any positive int
