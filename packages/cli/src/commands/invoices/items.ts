@@ -8,6 +8,7 @@ import {
   type Column,
   buildPageEnvelope,
   renderPaginationFooter,
+  displayCommandFromArgs,
 } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -82,17 +83,20 @@ Examples:
       }
 
       // #483: wrap JSON output as { items, page } and standardize footer.
+      // #562: argv form for next-page nav. items doesn't emit nextActions
+      // today, so only the human pagination footer reads this display
+      // form — but standardize the construction anyway to make any
+      // future --with-actions rollout safe-by-default.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const filterFlag = [
-        options.company ? `--company "${options.company}"` : "",
-        options.month ? `--month ${options.month}` : "",
-        options.invoiceId ? `--invoice-id ${options.invoiceId}` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const nextPageCommand =
-        `pax8 invoices items --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
-        (filterFlag ? ` ${filterFlag}` : "");
+      const nextPageArgs: string[] = [
+        "pax8", "invoices", "items",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(options.company ? ["--company", String(options.company)] : []),
+        ...(options.month ? ["--month", String(options.month)] : []),
+        ...(options.invoiceId ? ["--invoice-id", String(options.invoiceId)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(

@@ -30,6 +30,8 @@ Pax8 cost math (only if you must roll it yourself): monthly term = `price × qua
 
 > **List-command JSON envelope (#483).** Every `--json` list command emits a wrapped envelope: `{ <resource>: [...], page: { number, size, totalElements, totalPages } }` (and `nextActions: [...]` when invoked with `--with-actions`). The resource key matches the resource name — `companies` for `clients list`, `subscriptions`, `invoices`, `items` for `invoices items`, `quotes`, `contacts`, `webhooks`, `logs` for `webhooks logs`, `topics`, `products`, `usage`, `renewals` for `subscriptions renewals`, `orders`, `recommendations`. `page.number` is 1-based (matches `--page`). Compare `<resource>.length` to `page.totalElements` to detect pagination — use `--page N --size M` to walk through results. `singlePageEnvelope` is emitted for endpoints without server pagination (webhooks list/logs/topics, usage list, products search, subscriptions renewals).
 
+> **nextActions argv contract (#562).** Each `nextActions[]` entry carries both `command` (display string) and `args` (argv array — first element is always `"pax8"`). **Spawn `args.slice(1)` directly via the Bash tool's argv form; never tokenize `command` and never pipe it to a shell.** Same shape and reasoning as the `orderArgs` / `orderCommand` pair for `recommendations list` (#462). The argv form contains user-supplied flag values (e.g. partner-typed `--product` or `--company`) in single argv slots so shell metacharacters can never break out.
+
 Rules: no clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, hide UUIDs. Only confirm writes — never reads.
 
 > `pax8 clients *` is the canonical (and only) command surface (per #317, #476). The previous `pax8 companies *` alias was removed pre-launch. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
@@ -46,9 +48,9 @@ For project background, install instructions, the human demo flow, and how this 
 
 ## Autonomous Build Mode
 
-This mode applies **only** when you're explicitly following `docs/BUILD.md` (or a similar mode-specific prompt). Default behavior is conservative — confirm before destructive or shared-state actions and surface uncertainty.
+This mode applies **only** when you're explicitly following `docs/history/BUILD.md` (or a similar mode-specific prompt). Default behavior is conservative — confirm before destructive or shared-state actions and surface uncertainty.
 
-When following `docs/BUILD.md`, operate fully autonomously with ZERO human interaction:
+When following `docs/history/BUILD.md`, operate fully autonomously with ZERO human interaction:
 
 - NEVER ask questions, for permission, or for confirmation.
 - NEVER stop to explain what you're about to do. Just do it.
@@ -112,7 +114,7 @@ Adding a new command? Lives at `packages/cli/src/commands/<resource>/<action>.ts
 - `README.md` — what the project is, install/quick-start, MCP comparison
 - `docs/UX_GUIDE.md` — command patterns, output contracts, agent-facing rules (canonical for conventions)
 - `docs/PRD.md` — product requirements and API gap analysis
-- `docs/BUILD.md` — autonomous build-mode execution plan
+- `docs/history/BUILD.md` — autonomous build-mode execution plan
 - `packages/core/README.md` — `@pax8/core` as a standalone embeddable library
 - `packages/claude-skill/skill.md` — agent-facing skill manifest + read/write safety contract
 - `CONTRIBUTING.md` — DCO sign-off, Conventional Commits, PR workflow

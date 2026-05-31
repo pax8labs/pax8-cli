@@ -45,9 +45,9 @@ describe("pax8 recommendations", () => {
     });
 
     // `--top 0` is the agent escape hatch — opt out of the cap entirely
-    // and stream every rec the engine produced. Cassie's spec is clear
-    // that this is the documented way to recover the pre-#521 unbounded
-    // shape for downstream tooling that wants it.
+    // and stream every rec the engine produced. Spec'd as the documented
+    // way to recover the pre-#521 unbounded shape for downstream tooling
+    // that wants it.
     it("--top 0 returns all recommendations (unlimited)", async () => {
       const result = await runCliExpectSuccess([
         "recommendations", "list", "--json", "--top", "0",
@@ -435,20 +435,20 @@ describe("pax8 recommendations", () => {
     });
 
     // Disclosure parity with `recommendations list` (which already calls out
-    // the CLI-local engine, STAX divergence, provisional framing, and
-    // ARC-785/#375 sunset). Mirroring that disclosure onto `act` closes a
-    // gap Randall Ellis raised in the domain review: bulk order placement
-    // against a CLI-side heuristic deserves the same up-front disclosure as
-    // the list command it inherits from.
+    // the CLI-local engine, STAX divergence, provisional framing, and the
+    // first-party Opportunity Explorer sunset path). Mirroring that
+    // disclosure onto `act` closes a gap surfaced in the domain review: bulk
+    // order placement against a CLI-side heuristic deserves the same
+    // up-front disclosure as the list command it inherits from.
     it("--help discloses the CLI-local heuristic nature and provisional engine status", async () => {
       const result = await runCliExpectSuccess(["recommendations", "act", "--help"]);
-      // Names the local engine vs canonical OE
+      // Names the local engine vs canonical Opportunity Explorer
       expect(result.stdout).toContain("CLI-side heuristics");
-      expect(result.stdout).toMatch(/canonical Opportunity Explorer|OE/);
+      expect(result.stdout).toMatch(/canonical Opportunity Explorer|Opportunity Explorer/);
       // STAX divergence callout (consistent with `recommendations list --help`)
       expect(result.stdout).toMatch(/STAX|seat_gap/);
-      // Provisional framing — names the OE first-party API + ARC-785/#375
-      expect(result.stdout).toMatch(/ARC-785|#375|first-party.*API/);
+      // Provisional framing — names the first-party Opportunity Explorer API
+      expect(result.stdout).toMatch(/#375|first-party.*Opportunity Explorer/);
       // Names that bulk action places REAL orders (not a dry run)
       expect(result.stdout).toMatch(/REAL orders|orders API/);
     });

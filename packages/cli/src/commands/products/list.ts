@@ -7,6 +7,7 @@ import {
   output,
   buildPageEnvelope,
   renderPaginationFooter,
+  displayCommandFromArgs,
 } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -51,11 +52,15 @@ Examples:
       }
 
       // #483: wrap JSON as { products, page } + standardize footer.
+      // #562: argv form for next-page nav.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const filterFlag = allOpts.vendor ? `--vendor "${allOpts.vendor}"` : "";
-      const nextPageCommand =
-        `pax8 products list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
-        (filterFlag ? ` ${filterFlag}` : "");
+      const nextPageArgs: string[] = [
+        "pax8", "products", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.vendor ? ["--vendor", String(allOpts.vendor)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(

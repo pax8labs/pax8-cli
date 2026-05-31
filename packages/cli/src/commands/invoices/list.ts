@@ -10,6 +10,7 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  displayCommandFromArgs,
   renderReplNavHint,
 } from "../../lib/output.js";
 import { saveLastListContext } from "../../lib/last-list.js";
@@ -197,24 +198,29 @@ Examples:
         ...row,
         _num: String(startNum + i + 1),
       }));
-      const filterFlag = [
-        allOpts.company ? `--company "${allOpts.company}"` : "",
-        allOpts.status ? `--status "${allOpts.status}"` : "",
-        allOpts.month ? `--month ${allOpts.month}` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const nextPageCommand =
-        `pax8 invoices list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
-        (filterFlag ? ` ${filterFlag}` : "");
+      // #562: argv form for the next-page invocation. Each filter value
+      // lands in its own argv slot.
+      const nextPageArgs: string[] = [
+        "pax8", "invoices", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.company ? ["--company", String(allOpts.company)] : []),
+        ...(allOpts.status ? ["--status", String(allOpts.status)] : []),
+        ...(allOpts.month ? ["--month", String(allOpts.month)] : []),
+        ...(allOpts.from ? ["--from", String(allOpts.from)] : []),
+        ...(allOpts.to ? ["--to", String(allOpts.to)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       if (ctx.outputFormat === "json") {
         const invoices = result.content;
         if (options.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          // #562: nextActions entries carry both `command` (display) and
+          // `args` (argv). Agents spawn args.slice(1).
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
           const pageAction = buildNextPageAction(
             pageEnvelope,
-            `${nextPageCommand} --json`,
+            [...nextPageArgs, "--json"],
             "invoice",
           );
           if (pageAction) nextActions.push(pageAction);
@@ -223,18 +229,24 @@ Examples:
               String((inv as Record<string, unknown>).status ?? "").toLowerCase() === "unpaid"
           );
           if (unpaid.length > 0) {
+            const showArgs = ["pax8", "invoices", "show", String(unpaid[0].id)];
             nextActions.push({
-              command: `pax8 invoices show ${unpaid[0].id}`,
+              command: displayCommandFromArgs(showArgs),
+              args: showArgs,
               description: `Review the first unpaid invoice (${unpaid.length} unpaid total)`,
             });
           } else if (invoices.length > 0) {
+            const showArgs = ["pax8", "invoices", "show", String(invoices[0].id)];
             nextActions.push({
-              command: `pax8 invoices show ${invoices[0].id}`,
+              command: displayCommandFromArgs(showArgs),
+              args: showArgs,
               description: "Drill into the most recent invoice",
             });
           }
+          const auditArgs = ["pax8", "invoices", "audit", "--json"];
           nextActions.push({
-            command: "pax8 invoices audit --json",
+            command: displayCommandFromArgs(auditArgs),
+            args: auditArgs,
             description: "Audit invoices against active subscriptions for billing discrepancies",
           });
           process.stdout.write(

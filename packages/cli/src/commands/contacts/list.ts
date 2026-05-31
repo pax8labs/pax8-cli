@@ -10,6 +10,7 @@ import {
   type Column,
   buildPageEnvelope,
   renderPaginationFooter,
+  displayCommandFromArgs,
 } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
@@ -75,8 +76,15 @@ Examples:
       }
 
       // #483: page envelope for JSON consumers + standardized footer.
+      // #562: argv form; --company value lands in its own argv slot.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const nextPageCommand = `pax8 contacts list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size} --company "${allOpts.company}"`;
+      const nextPageArgs: string[] = [
+        "pax8", "contacts", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        "--company", String(allOpts.company),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(
