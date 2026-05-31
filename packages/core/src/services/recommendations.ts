@@ -11,13 +11,12 @@
  * Network & Communications Commissioned). The CLI over-decomposes Security
  * into 4 categories and omits Communications, Network, and Operations
  * entirely. This was a deliberate simplification for the local recommendations
- * engine's security-focused cross-sell heuristic. When OE's first-party
- * recommendations API ships (ARC-785, `GET /opportunities`), this local
+ * engine's security-focused cross-sell heuristic. When Pax8's first-party
+ * Opportunity Explorer API ships (`GET /opportunities`), this local
  * taxonomy sunsets. Pax8's STAX taxonomy is itself being replaced by a new
- * L1/L2/L3 hierarchical taxonomy (PCM team) — the CLI
- * should align to whichever taxonomy the OE API uses at sunset time. See:
- * Product Category (STAX) Layout, Product Taxonomy & Ontology PRD, and the
- * v0.2 follow-up issue (#375).
+ * L1/L2/L3 hierarchical product-category model — the CLI
+ * should align to whichever taxonomy the upstream API uses at sunset time.
+ * See the v0.2 follow-up issue (#375).
  *
  * Separately from product categories, the `opportunityType` field on
  * `Recommendation` carries OE's canonical 5-type opportunity taxonomy
@@ -340,11 +339,12 @@ type SubscriptionInput = Omit<Partial<Subscription>, "status" | "billingTerm"> &
 
 /**
  * Pax8 Opportunity Explorer's canonical 5-type opportunity taxonomy.
- * Source: OX Help Center. Added as an additive axis on every recommendation
- * alongside the legacy `type` field, per the disclosure-over-rewrite pattern
- * from #298/#299. The full taxonomy alignment (CLI 7 product categories vs
- * STAX / PCM canon) is deferred to v0.2 (#375); this axis is the in-tree
- * portion of that alignment that can ship without waiting on ARC-785.
+ * Added as an additive axis on every recommendation alongside the legacy
+ * `type` field, per the disclosure-over-rewrite pattern from #298/#299.
+ * The full taxonomy alignment (CLI 7 product categories vs Pax8's canonical
+ * product-category model) is deferred to v0.2 (#375); this axis is the
+ * in-tree portion of that alignment that can ship without waiting on the
+ * first-party Opportunity Explorer API.
  */
 export type OpportunityType =
   | "Upsell"

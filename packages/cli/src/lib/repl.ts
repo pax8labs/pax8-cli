@@ -108,6 +108,71 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
       args.shift();
     }
 
+    // #456: REPL list-navigation shortcuts. After a list command saves
+    // `last-list-context.json`, the user can type `back` to re-run it,
+    // or `n` / `p` to page forward/backward without retyping flags. The
+    // shortcut is rewritten to a full argv before the spawn — no special
+    // dispatch path — so the underlying list command runs unchanged.
+    if (args.length === 1 && (args[0] === "back" || args[0] === "n" || args[0] === "p")) {
+      try {
+        const ctxPath = pathJoin(getConfigDir(), "last-list-context.json");
+        const ctxRaw = JSON.parse(fs.readFileSync(ctxPath, "utf-8")) as Record<string, unknown>;
+        const cmd = ctxRaw.command;
+        const page = ctxRaw.page as Record<string, unknown> | undefined;
+        const validCmd =
+          Array.isArray(cmd) && cmd.length > 0 && cmd.every((s) => typeof s === "string");
+        const validPage =
+          page !== undefined &&
+          page !== null &&
+          typeof page.number === "number" &&
+          typeof page.totalPages === "number";
+        if (validCmd && validPage) {
+          const command = cmd as string[];
+          const pageNum = (page as { number: number }).number;
+          const totalPages = (page as { totalPages: number }).totalPages;
+          let target = pageNum;
+          if (args[0] === "n") {
+            if (pageNum >= totalPages) {
+              process.stderr.write(chalk.dim(`  Already on the last page (${pageNum} of ${totalPages}).\n\n`));
+              rl.prompt();
+              return;
+            }
+            target = pageNum + 1;
+          } else if (args[0] === "p") {
+            if (pageNum <= 1) {
+              process.stderr.write(chalk.dim(`  Already on the first page.\n\n`));
+              rl.prompt();
+              return;
+            }
+            target = pageNum - 1;
+          }
+          // Rewrite argv to the target page. For `back`, target === pageNum
+          // so the original page is re-run verbatim.
+          const out: string[] = [];
+          let replaced = false;
+          for (let i = 0; i < command.length; i++) {
+            if (command[i] === "--page" && i + 1 < command.length) {
+              out.push("--page", String(target));
+              i++;
+              replaced = true;
+            } else {
+              out.push(command[i]);
+            }
+          }
+          if (!replaced) out.push("--page", String(target));
+          args = out;
+        } else {
+          process.stderr.write(chalk.dim("  No recent list to navigate. Run a list command first.\n\n"));
+          rl.prompt();
+          return;
+        }
+      } catch {
+        process.stderr.write(chalk.dim("  No recent list to navigate. Run a list command first.\n\n"));
+        rl.prompt();
+        return;
+      }
+    }
+
     // Handle bare number input — check for pending actions from last list/recommendations
     if (args.length === 1 && /^\d+$/.test(args[0])) {
       try {
@@ -167,7 +232,24 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
     // Pause the REPL readline while the child runs so stdin input
     // (like "y" for confirmations) doesn't leak back to the REPL.
     rl.pause();
-    const child = spawn("node", [cliPath, ...args], {
+    // #563: when the parent is invoked via `tsx` (the `pnpm dev` path
+    // documented in CONTRIBUTING.md), `cliPath` resolves to a `.ts`
+    // source file. Hardcoding `node` here meant the child crashed with
+    // ERR_MODULE_NOT_FOUND on every typed command in the dev REPL — and
+    // every contributor following the documented dev workflow lost the
+    // ability to test REPL changes locally, which let bugs like #561
+    // ship invisibly past CI (since the test suite runs against `dist/`).
+    //
+    // Fix: register the tsx ESM loader via `--import` so the child Node
+    // resolves the `.ts` entrypoint. The JS path (`dist/index.js` or a
+    // linked `pax8` binary) is unchanged. Using `process.execPath`
+    // instead of the literal `"node"` also makes nvm / asdf / custom-node
+    // setups robust without depending on `node` being on PATH.
+    const isTsEntrypoint = cliPath.endsWith(".ts") || cliPath.endsWith(".mts");
+    const childArgs = isTsEntrypoint
+      ? ["--import", "tsx/esm", cliPath, ...args]
+      : [cliPath, ...args];
+    const child = spawn(process.execPath, childArgs, {
       env: { ...process.env, FORCE_COLOR: "1", PAX8_REPL: "1" },
       stdio: "inherit",
     });

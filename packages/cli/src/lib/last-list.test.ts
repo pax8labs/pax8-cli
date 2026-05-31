@@ -5,7 +5,13 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { saveLastList, resolveFromLastList } from "./last-list.js";
+import {
+  saveLastList,
+  resolveFromLastList,
+  saveLastListContext,
+  loadLastListContext,
+  rewriteArgvForPage,
+} from "./last-list.js";
 
 describe("last-list", () => {
   let tmpDir: string;
@@ -84,5 +90,78 @@ describe("last-list", () => {
     await expect(
       saveLastList([{ index: 1, id: "x", name: "y" }])
     ).resolves.toBeUndefined();
+  });
+
+  // #456: REPL list-context navigation. The save/load pair drives the
+  // REPL's `back` / `n` / `p` shortcuts; the rewriter is the helper that
+  // mutates the saved argv to target a different page.
+  describe("list context (#456)", () => {
+    it("round-trips a saved command + page", async () => {
+      await saveLastListContext({
+        command: ["clients", "list", "--status", "Active", "--page", "2", "--size", "25"],
+        page: { number: 2, totalPages: 8 },
+      });
+      const loaded = await loadLastListContext();
+      expect(loaded).not.toBeNull();
+      expect(loaded!.command).toEqual([
+        "clients",
+        "list",
+        "--status",
+        "Active",
+        "--page",
+        "2",
+        "--size",
+        "25",
+      ]);
+      expect(loaded!.page).toEqual({ number: 2, totalPages: 8 });
+    });
+
+    it("returns null when no context has been saved", async () => {
+      expect(await loadLastListContext()).toBeNull();
+    });
+
+    it("returns null when the context file is corrupt", async () => {
+      await fs.writeFile(path.join(tmpDir, "last-list-context.json"), "{ broken", "utf-8");
+      expect(await loadLastListContext()).toBeNull();
+    });
+
+    it("returns null when the saved shape fails validation", async () => {
+      // Tampered file — missing `page`.
+      await fs.writeFile(
+        path.join(tmpDir, "last-list-context.json"),
+        JSON.stringify({ command: ["clients", "list"] }),
+        "utf-8",
+      );
+      expect(await loadLastListContext()).toBeNull();
+    });
+
+    it("rewrites --page when present", () => {
+      const out = rewriteArgvForPage(
+        ["clients", "list", "--status", "Active", "--page", "2", "--size", "25"],
+        5,
+      );
+      expect(out).toEqual([
+        "clients",
+        "list",
+        "--status",
+        "Active",
+        "--page",
+        "5",
+        "--size",
+        "25",
+      ]);
+    });
+
+    it("appends --page when the saved argv didn't carry one", () => {
+      const out = rewriteArgvForPage(["clients", "list"], 3);
+      expect(out).toEqual(["clients", "list", "--page", "3"]);
+    });
+
+    it("rewriting does not mutate the input argv", () => {
+      const input = ["clients", "list", "--page", "1"];
+      const out = rewriteArgvForPage(input, 7);
+      expect(input).toEqual(["clients", "list", "--page", "1"]);
+      expect(out).toEqual(["clients", "list", "--page", "7"]);
+    });
   });
 });

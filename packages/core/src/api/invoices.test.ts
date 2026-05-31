@@ -149,4 +149,108 @@ describe("InvoicesApi", () => {
 
     await expect(api.get(INVOICE_ID)).rejects.toThrow();
   });
+
+  // #393: branch-coverage push for InvoicesApi. The pre-fix module reported
+  // 38% branch coverage — the no-params path, the empty-content envelope,
+  // and the multi-branch `listItems` aggregate mode were never exercised.
+
+  it("list() with no params still issues a GET (covers the no-params branch)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedInvoices);
+    await api.list();
+    expect(client.get).toHaveBeenCalledWith("/invoices", {});
+  });
+
+  it("list() prefers an explicit `invoiceDate` over `month` when both are passed", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedInvoices);
+    await api.list({ month: "2026-01", invoiceDate: "2026-03" });
+    const params = (client.get as ReturnType<typeof vi.fn>).mock.calls[0][1] as Record<string, string>;
+    expect(params.invoiceDate).toBe("2026-03");
+    expect(params.month).toBeUndefined();
+  });
+
+  it("list() tolerates an empty-result envelope (no `content` field)", async () => {
+    // Pax8 omits `content` on the wire when there are zero invoices.
+    // The API client defensively injects `content: []` so the Zod parse
+    // doesn't blow up the caller.
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      page: { size: 50, totalElements: 0, totalPages: 0, number: 0 },
+    });
+    const result = await api.list({ status: "Unpaid" });
+    expect(result.content).toEqual([]);
+    expect(result.page.totalElements).toBe(0);
+  });
+
+  it("listItems() in object-mode with no invoiceId fans out across the company's invoices", async () => {
+    // Two invoices exist for the company; the aggregate path lists them
+    // and concatenates each one's items.
+    (client.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        page: { size: 100, totalElements: 2, totalPages: 1, number: 0 },
+        content: [
+          { ...sampleInvoice, id: "inv-1" },
+          { ...sampleInvoice, id: "inv-2" },
+        ],
+      })
+      .mockResolvedValueOnce({
+        page: { size: 200, totalElements: 1, totalPages: 1, number: 0 },
+        content: [{ ...sampleInvoiceItem, invoiceId: "inv-1" }],
+      })
+      .mockResolvedValueOnce({
+        page: { size: 200, totalElements: 1, totalPages: 1, number: 0 },
+        content: [{ ...sampleInvoiceItem, id: "item-2", invoiceId: "inv-2" }],
+      });
+
+    const result = await api.listItems({ companyId: COMPANY_ID });
+    expect(result.content).toHaveLength(2);
+    expect(result.page.totalElements).toBe(2);
+    // First call lists invoices; second + third fetch each invoice's items.
+    expect((client.get as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("/invoices");
+    expect((client.get as ReturnType<typeof vi.fn>).mock.calls[1][0]).toBe("/invoices/inv-1/items");
+    expect((client.get as ReturnType<typeof vi.fn>).mock.calls[2][0]).toBe("/invoices/inv-2/items");
+  });
+
+  it("listItems() with object-mode + explicit invoiceId short-circuits to that invoice's items", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedItems);
+    await api.listItems({ invoiceId: INVOICE_ID, page: 1, size: 20 });
+    // Only one upstream call — no fan-out when invoiceId is explicit.
+    expect((client.get as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    const [path, params] = (client.get as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(path).toBe(`/invoices/${INVOICE_ID}/items`);
+    expect(params).toEqual({ page: 1, size: 20 });
+  });
+
+  it("listItems() with no arguments returns an empty page (covers the `idOrParams ?? {}` fallback)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      page: { size: 100, totalElements: 0, totalPages: 0, number: 0 },
+      content: [],
+    });
+    const result = await api.listItems();
+    expect(result.content).toEqual([]);
+    // First call goes through the aggregate path's invoice listing.
+    expect((client.get as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("/invoices");
+  });
+
+  it("listItems() paginates the aggregated items array client-side", async () => {
+    // Fan out across one invoice that has 3 items; ask for page=1 size=2 — we
+    // expect to see items[2] (the third one) on the slice.
+    (client.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        page: { size: 100, totalElements: 1, totalPages: 1, number: 0 },
+        content: [{ ...sampleInvoice, id: "inv-multi" }],
+      })
+      .mockResolvedValueOnce({
+        page: { size: 200, totalElements: 3, totalPages: 1, number: 0 },
+        content: [
+          { ...sampleInvoiceItem, id: "i1" },
+          { ...sampleInvoiceItem, id: "i2" },
+          { ...sampleInvoiceItem, id: "i3" },
+        ],
+      });
+
+    const result = await api.listItems({ companyId: COMPANY_ID, page: 1, size: 2 });
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].id).toBe("i3");
+    expect(result.page.totalElements).toBe(3);
+    expect(result.page.totalPages).toBe(2);
+  });
 });

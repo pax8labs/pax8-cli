@@ -37,7 +37,7 @@ function parseBool(value: unknown, defaultValue: boolean): boolean {
  * for activation. The common case for the atomic path is one human runs
  * the new company; requiring partners to enumerate three types adds
  * verbosity without value. Partners needing separate contacts per type
- * can use `pax8 contacts create` after creation. See #330 and ARC-774.
+ * can use `pax8 contacts create` after creation. See #330.
  */
 function buildPrimaryContact(
   firstName: string,
@@ -59,7 +59,7 @@ function buildPrimaryContact(
 }
 
 export const companiesCreateCommand = new Command("create")
-  .description("Create a new client (Active by default via atomic contact creation per PAM-997)")
+  .description("Create a new client (Active by default via atomic contact creation)")
   .requiredOption("--name <name>", "Company name (required)")
   .option("--phone <phone>", "Company phone number (also used as the primary-contact phone on the default atomic path)")
   .option("--website <url>", "Company website")
@@ -103,8 +103,8 @@ export const companiesCreateCommand = new Command("create")
     "after",
     `
 Atomic-create behavior (default):
-  Per Pax8 API Reference and PAM-997, the same POST /companies accepts an
-  optional contacts: [...] array. Including a properly-typed primary contact
+  Per the Pax8 API Reference, POST /companies accepts an optional
+  contacts: [...] array. Including a properly-typed primary contact
   flips the new company from Inactive to Active at creation. The CLI builds
   the contact from --first-name, --last-name, --email, and --phone, and
   implicitly marks it as primary:true for all three ContactType values
@@ -175,7 +175,7 @@ Note:
             `Missing required contact flag(s): ${missing.join(", ")}`,
             [
               "POST /companies accepts an optional contacts[] array; the default atomic-create path requires the four contact scalars to construct a primary contact that activates the company.",
-              "Per PAM-997 / ARC-774: companies created without a primary Admin/Billing/Technical contact are Inactive and unusable.",
+              "Per the Pax8 companies API: companies created without a primary Admin/Billing/Technical contact are Inactive and unusable.",
             ],
             [
               'Pass --first-name, --last-name, --email, --phone (e.g. --first-name Maya --last-name Chen --email maya@example.com --phone "+1-303-555-0101")',

@@ -22,9 +22,11 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  displayCommandFromArgs,
+  renderReplNavHint,
 } from "../../lib/output.js";
 import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/formatters.js";
-import { saveLastList } from "../../lib/last-list.js";
+import { saveLastList, saveLastListContext } from "../../lib/last-list.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
@@ -272,6 +274,23 @@ Examples:
         }))
       );
 
+      // #456: snapshot the argv + paging state so the REPL's `back` / `n` /
+      // `p` commands can resume browsing without retyping flags. The argv
+      // captures the user-facing command (`clients list --status Active
+      // --page 1 --size 25 ...`); the page envelope drives next/prev
+      // navigation. Built from process.argv so we preserve every flag
+      // the user actually typed.
+      const userArgv = process.argv.slice(2);
+      if (userArgv.length > 0 && userArgv[0] !== "back" && userArgv[0] !== "n" && userArgv[0] !== "p") {
+        await saveLastListContext({
+          command: userArgv,
+          page: {
+            number: userPage,
+            totalPages: result.page.totalPages,
+          },
+        });
+      }
+
       // Save pending actions for REPL number input (typing "3" drills into company #3).
       // #458/#469: route through getConfigDir() (so PAX8_CONFIG_DIR is honored)
       // and safeWriteFileSync (mode 0o600, O_NOFOLLOW) — this file contains
@@ -287,7 +306,11 @@ Examples:
           JSON.stringify(
             result.content.map((_c, i) => ({
               key: String(startNum + i + 1),
-              command: `clients more ${startNum + i + 1}`,
+              // Must start with `pax8 ` — REPL dispatch at lib/repl.ts:191
+              // requires /^pax8\s+\w/ as defense-in-depth against a tampered
+              // pending-actions.json. Drop the prefix and the bare-number
+              // drill-in silently no-ops.
+              command: `pax8 clients more ${startNum + i + 1}`,
             })),
           ),
         );
@@ -296,24 +319,31 @@ Examples:
       const columns = coverageMap ? coverageColumns : baseColumns;
 
       // #483: build the 1-based page envelope once for both JSON and footer.
+      // #562: structured argv form for nextActions; each user-supplied
+      // filter value lands in its own argv slot.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const filterFlag = [
-        allOpts.status ? `--status ${allOpts.status}` : "",
-        allOpts.city ? `--city "${allOpts.city}"` : "",
-        allOpts.country ? `--country "${allOpts.country}"` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const nextPageCommand =
-        `pax8 clients list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
-        (filterFlag ? ` ${filterFlag}` : "");
+      const nextPageArgs: string[] = [
+        "pax8", "clients", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.status ? ["--status", String(allOpts.status)] : []),
+        ...(allOpts.city ? ["--city", String(allOpts.city)] : []),
+        ...(allOpts.country ? ["--country", String(allOpts.country)] : []),
+        ...(allOpts.state ? ["--state", String(allOpts.state)] : []),
+        ...(allOpts.zip ? ["--zip", String(allOpts.zip)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       if (ctx.outputFormat === "json") {
         if (allOpts.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          // #562: nextActions entries carry both `command` (display) and
+          // `args` (argv). Agents spawn args.slice(1); never tokenize the
+          // display string. Closes the shell-injection class that was
+          // resolved for orderCommand → orderArgs in #462.
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
           const pageAction = buildNextPageAction(
             pageEnvelope,
-            `${nextPageCommand} --json`,
+            [...nextPageArgs, "--json"],
             "client",
           );
           if (pageAction) nextActions.push(pageAction);
@@ -326,22 +356,28 @@ Examples:
               })
             : result.content;
           for (const c of ranked.slice(0, 3)) {
+            const moreArgs = ["pax8", "clients", "more", String(c.name)];
             nextActions.push({
-              command: `pax8 clients more "${c.name}"`,
+              command: displayCommandFromArgs(moreArgs),
+              args: moreArgs,
               description: `Drill into ${c.name}`,
             });
           }
           if (coverageMap) {
             const top = ranked.find((c) => (coverageMap!.get(String(c.id))?.estimatedUplift ?? 0) > 0);
             if (top) {
+              const recsArgs = ["pax8", "recommendations", "list", "--company", String(top.name), "--json"];
               nextActions.push({
-                command: `pax8 recommendations list --company "${top.name}" --json`,
+                command: displayCommandFromArgs(recsArgs),
+                args: recsArgs,
                 description: `Review growth opportunities for ${top.name}`,
               });
             }
           } else {
+            const coverageArgs = ["pax8", "clients", "list", "--coverage", "--json"];
             nextActions.push({
-              command: "pax8 clients list --coverage --json",
+              command: displayCommandFromArgs(coverageArgs),
+              args: coverageArgs,
               description: "Re-run with portfolio coverage analysis to surface gaps",
             });
           }
@@ -409,6 +445,12 @@ Examples:
             chalk.dim("  Add ") + chalk.cyan("--coverage") + chalk.dim(" to see portfolio gaps and revenue opportunities\n")
           );
         }
+
+        // #456: surface REPL navigation affordances when running inside
+        // the REPL (PAX8_REPL=1). Pre-fix, the partner had to retype
+        // `clients list --page N` to page through; now `n`/`p`/`back`
+        // pull from the saved last-list-context.json.
+        renderReplNavHint(pageEnvelope);
 
         // Interactive: pick a company to drill into
         const steps: NextStep[] = result.content.map(

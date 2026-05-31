@@ -16,7 +16,11 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  displayCommandFromArgs,
+  renderReplNavHint,
 } from "../../lib/output.js";
+import { saveLastListContext } from "../../lib/last-list.js";
+import { wireListDrillIn } from "../../lib/list-drill-in.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import {
@@ -54,7 +58,9 @@ const BILLING_TERM_HELP = BILLING_TERM_VALUES.join(", ");
 const SUBSCRIPTION_SORT_FIELDS = ["quantity", "startDate", "endDate", "createdAt"] as const;
 const SUBSCRIPTION_SORT_HELP = `Sort by field (${SUBSCRIPTION_SORT_FIELDS.join(", ")}); append :desc for descending (e.g. quantity:desc)`;
 
+// #418: leading `_num` column makes rows pickable by number in the REPL.
 const columns: Column[] = [
+  { key: "_num", header: "#" },
   {
     key: "id",
     header: "ID",
@@ -217,40 +223,70 @@ Examples:
       // envelope renumbers 1-based to match the `--page` flag the user
       // would type next. `--with-actions` additionally surfaces a
       // nextActions array (next-page hint + drill-in + renewal check).
+      //
+      // #562: build the next-page invocation as a structured argv array
+      // and derive the display string from it. Each user-supplied flag
+      // value (--company, --product, --sort, etc.) lands in its own argv
+      // slot — no string interpolation, no quote-breakout risk. The
+      // display form (`nextPageCommand`) goes only to the human footer;
+      // the argv (`nextPageArgs`) feeds buildNextPageAction so agents
+      // get a spawn-safe `args` field on the nextActions entry.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
-      const statusFlag = allOpts.status ? ` --status ${allOpts.status}` : "";
-      const billingTermFlag = allOpts.billingTerm ? ` --billing-term ${allOpts.billingTerm}` : "";
-      const productFlag = allOpts.product ? ` --product ${allOpts.product}` : "";
-      const sortFlag = allOpts.sort ? ` --sort ${allOpts.sort}` : "";
-      const nextPageCommand = `pax8 subscriptions list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}${statusFlag}${billingTermFlag}${productFlag}${sortFlag}`;
+      const nextPageArgs: string[] = [
+        "pax8", "subscriptions", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.company ? ["--company", String(allOpts.company)] : []),
+        ...(allOpts.status ? ["--status", String(allOpts.status)] : []),
+        ...(allOpts.billingTerm ? ["--billing-term", String(allOpts.billingTerm)] : []),
+        ...(allOpts.product ? ["--product", String(allOpts.product)] : []),
+        ...(allOpts.sort ? ["--sort", String(allOpts.sort)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
+
+      // #418: row numbers continue across pages — wire numbered rows for
+      // the table renderer and the REPL's drill-in lookup.
+      const startNum = result.page.number * result.page.size;
+      const numbered = subs.map((row, i) => ({
+        ...row,
+        _num: String(startNum + i + 1),
+      }));
 
       if (ctx.outputFormat === "json") {
         const subsList = result.content;
         if (options.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          // #562: every nextActions entry carries both a `command` display
+          // string and a structured `args` argv array. Agents spawn
+          // `args.slice(1)`; never tokenize `command`.
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
           const pageAction = buildNextPageAction(
             pageEnvelope,
-            `${nextPageCommand} --json`,
+            [...nextPageArgs, "--json"],
             "subscription",
           );
           if (pageAction) nextActions.push(pageAction);
           const trials = subsList.filter((s) => (s.status ?? "").toLowerCase() === "trial");
           const top = subsList[0];
           if (top) {
+            const showArgs = ["pax8", "subscriptions", "show", String(top.id)];
             nextActions.push({
-              command: `pax8 subscriptions show ${top.id}`,
+              command: displayCommandFromArgs(showArgs),
+              args: showArgs,
               description: `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`,
             });
           }
           if (trials.length > 0) {
+            const trialArgs = ["pax8", "subscriptions", "list", "--status", "Trial", "--json"];
             nextActions.push({
-              command: "pax8 subscriptions list --status Trial --json",
+              command: displayCommandFromArgs(trialArgs),
+              args: trialArgs,
               description: `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`,
             });
           }
+          const renewalsArgs = ["pax8", "subscriptions", "renewals", "--json", "--with-actions"];
           nextActions.push({
-            command: "pax8 subscriptions renewals --json --with-actions",
+            command: displayCommandFromArgs(renewalsArgs),
+            args: renewalsArgs,
             description: "Check upcoming renewals before they auto-renew",
           });
           process.stdout.write(
@@ -272,7 +308,7 @@ Examples:
         emptyReasons.push("This tenant has no subscriptions yet.");
       }
 
-      output(result.content, {
+      output(numbered, {
         format: ctx.outputFormat,
         columns,
         emptyState: {
@@ -301,6 +337,30 @@ Examples:
           resourceSingular: "subscription",
           nextPageCommand,
           rowCount: result.content.length,
+        });
+        renderReplNavHint(pageEnvelope);
+        // #456: persist context for REPL back/n/p navigation. Guarded
+        // against re-entry from the REPL's own rewrite of those shortcuts.
+        const userArgv = process.argv.slice(2);
+        const first = userArgv[0];
+        if (userArgv.length > 0 && first !== "back" && first !== "n" && first !== "p") {
+          await saveLastListContext({
+            command: userArgv,
+            page: {
+              number: pageEnvelope.number,
+              totalPages: pageEnvelope.totalPages,
+            },
+          });
+        }
+        // #418: pickable drill-in — type `3` to drill into subscription #3.
+        await wireListDrillIn({
+          rows: subs as { id: string }[],
+          resource: "subscriptions",
+          startNum,
+          getLabel: (row) => {
+            const r = row as Record<string, unknown>;
+            return String(r.productName ?? r.companyName ?? "Subscription");
+          },
         });
       }
     } catch (error) {

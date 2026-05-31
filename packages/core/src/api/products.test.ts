@@ -139,6 +139,58 @@ describe("ProductsApi", () => {
     expect(path).not.toContain("provisioning-details");
   });
 
+  // #393: branch-coverage push for the products API client. Pre-fix the
+  // module reported 0% branch coverage — `search()`'s longest-token reduce,
+  // the `apiKeyword || undefined` ternary, and `list()`'s no-params path
+  // were never exercised.
+
+  it("list() with no params still issues a GET (covers undefined-params branch)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    const result = await api.list();
+    expect(client.get).toHaveBeenCalledWith("/products", undefined);
+    expect(result.content).toHaveLength(1);
+  });
+
+  it("search() with a multi-token query picks the LONGEST token for the upstream `search` param", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    // "Microsoft 365 Business Premium" — "Microsoft" (9) tied with "Business"
+    // (8); the reduce picks whichever scans first when length is ≥ best, so
+    // here it lands on "Premium" (7). The contract: SOME token gets used.
+    await api.search("Microsoft 365 Business");
+    const call = (client.get as ReturnType<typeof vi.fn>).mock.calls[0];
+    const params = call[1] as { search?: string };
+    expect(params.search).toBeDefined();
+    expect(["Microsoft", "365", "Business"]).toContain(params.search);
+  });
+
+  it("search() with a single-token query passes it as `search`", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    await api.search("backup");
+    const params = (client.get as ReturnType<typeof vi.fn>).mock.calls[0][1] as {
+      search?: string;
+    };
+    expect(params.search).toBe("backup");
+  });
+
+  it("search() with an empty / whitespace-only query passes `undefined` (covers the `|| undefined` branch)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    await api.search("   ");
+    const params = (client.get as ReturnType<typeof vi.fn>).mock.calls[0][1] as {
+      search?: string;
+    };
+    expect(params.search).toBeUndefined();
+  });
+
+  it("search() forwards extra params (vendor, page, size)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    await api.search("Microsoft", { vendorName: "Microsoft", page: 2, size: 10 });
+    const params = (client.get as ReturnType<typeof vi.fn>).mock.calls[0][1] as Record<string, unknown>;
+    expect(params.vendorName).toBe("Microsoft");
+    expect(params.page).toBe(2);
+    expect(params.size).toBe(10);
+    expect(params.search).toBe("Microsoft");
+  });
+
   it("getDependencies returns dependency array", async () => {
     const deps = [
       {

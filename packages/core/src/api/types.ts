@@ -112,12 +112,11 @@ export type Address = z.infer<typeof AddressSchema>;
 /**
  * `companyId` mirrors the public API's current field name. Pax8 is
  * structurally moving away from the COMPANY noun in API contracts (per
- * PAE-2054 governance rule and the Client Archetype PRD). The user-
- * facing canonical term is `client`; the underlying API field name
- * may eventually become `accountId` rather than `clientId`, per Pax8's
- * account-archetype model. The CLI command surface uses `clients`
- * today (per #317); the data surface stays aligned with whatever the
- * wire actually carries.
+ * the Client Archetype governance review). The user-facing canonical
+ * term is `client`; the underlying API field name may eventually become
+ * `accountId` rather than `clientId`, per Pax8's account-archetype
+ * model. The CLI command surface uses `clients` today (per #317); the
+ * data surface stays aligned with whatever the wire actually carries.
  */
 /**
  * Wire shape for `GET /companies{,/{id}}`. Reads accept both the legacy
@@ -185,10 +184,10 @@ export type Company = z.infer<typeof CompanySchema>;
  * Inline contact shape for `POST /companies` atomic create. Mirrors the spec
  * body for the contacts-array element: same four scalars as the standalone
  * contact body (`firstName`, `lastName`, `email`, `phone`) plus the `types`
- * array of `{type, primary}` objects (`ContactTypeSchema`). Pre-PAM-997 this
- * shape did not exist; the create endpoint took company-only fields and
- * partners had to follow up with `POST /companies/{id}/contacts` for each
- * primary contact, leaving a window where the company was Inactive.
+ * array of `{type, primary}` objects (`ContactTypeSchema`). Before the
+ * atomic-create endpoint shipped, the create endpoint took company-only
+ * fields and partners had to follow up with `POST /companies/{id}/contacts`
+ * for each primary contact, leaving a window where the company was Inactive.
  *
  * Distinct from `CreateContactInputSchema` only because the atomic-create
  * variant cannot carry `companyId` (the company doesn't exist yet) — every
@@ -218,8 +217,8 @@ export type CreateCompanyContactInput = z.infer<typeof CreateCompanyContactInput
  * `ERROR_INVALID_INPUT` when no address flag is supplied (matches the spec's
  * `address` requirement at the UX layer).
  *
- * `contacts` is the atomic-create payload delivered under PAM-997 / PAM-1171
- * / ARC-774. Including a properly-typed primary contact (`primary: true` on
+ * `contacts` is the atomic-create payload for the Pax8 companies API.
+ * Including a properly-typed primary contact (`primary: true` on
  * all three `ContactType` values — Admin, Billing, Technical) flips the new
  * company from Inactive to Active at creation. Per the Pax8 API Reference:
  * "A Company is required to have a primary Contact for each Contact Type

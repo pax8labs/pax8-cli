@@ -243,6 +243,45 @@ describe("WebhooksApi", () => {
     expect(result).toHaveLength(1);
     expect(result[0].topic).toBe("subscription.created");
   });
+
+  // #393: branch-coverage push. The pre-fix module reported 57% branch
+  // coverage — `getTopicDefinitions`'s parity-drift branch (flat array
+  // shape) and the `setStatus(active=false)` toggle branch were never
+  // exercised.
+
+  it("getTopicDefinitions tolerates a flat-array response shape (staging parity drift)", async () => {
+    // Some staging deployments return the raw `TopicDefinition[]` shape
+    // without the `{ content, page }` envelope wrapper. The API client's
+    // `"content" in raw` branch must NOT trip in that case.
+    const topics = [
+      { topic: "invoice.paid", name: "Invoice Paid", description: "" },
+      { topic: "order.created", name: "Order Created", description: "" },
+    ];
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(topics);
+    const result = await api.getTopicDefinitions();
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.topic)).toEqual(["invoice.paid", "order.created"]);
+  });
+
+  it("setStatus forwards `active: false` (the disable branch)", async () => {
+    // Existing tests cover `active: true`; this pins the disable side of
+    // the toggle so a future refactor can't accidentally drop the flag.
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue(sampleWebhook);
+    await api.setStatus(WEBHOOK_ID, false);
+    const [path, body] = (client.post as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(path).toBe(`/webhooks/${WEBHOOK_ID}/status`);
+    expect(body).toEqual({ active: false });
+  });
+
+  it("testTopic URL-encodes the topic slug", async () => {
+    // A topic containing a literal `/` (e.g. some Pax8-side internal
+    // naming) must land as `%2F` on the wire so the path doesn't
+    // resolve to a different endpoint.
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    await api.testTopic(WEBHOOK_ID, "subscription/created");
+    const [path] = (client.post as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(path).toBe(`/webhooks/${WEBHOOK_ID}/topics/subscription%2Fcreated/test`);
+  });
 });
 
 // Wire-level regression guard for #322: with a real `Pax8Client` (no stubs)

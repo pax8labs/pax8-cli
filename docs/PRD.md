@@ -284,12 +284,24 @@ pax8 webhooks delete <id>
 
 ### Reports (computed — fills API gap)
 
+The original PRD enumerated four `pax8 report …` commands (mrr / renewals /
+growth / licenses) framed around partner-revenue MRR. That framing was
+retired pre-v0.1.0 review (#443 — Bret Pittenger reshape) because Pax8's
+internal Unified Semantic Layer (Voyager Alliance) reserves the
+"Partner Gross MRR" term for the partner's **cost paid to Pax8**, not
+their resale revenue. The current surface mirrors that taxonomy:
+
 ```
-pax8 report mrr [--by company|product|vendor]     # Monthly recurring revenue
-pax8 report renewals [--within <days>]             # Renewal calendar
-pax8 report growth [--months <n>]                  # MRR trend over time
-pax8 report licenses [--underutilized]             # License count analysis
+pax8 report subscriptions --by company|product|vendor  # Pax8-cost grouped
+pax8 report concentration                              # Customer-concentration risk
+pax8 report renewals [--within <days>]                 # Renewal calendar
+pax8 subscriptions renewals                            # Same surface, daily-workflow shape
+pax8 dashboard                                         # Portfolio Pax8-cost summary
 ```
+
+Historical `pax8 report mrr` and `pax8 report growth` were removed in
+#443; `computeMrr` / `computeGrowth` remain in `@pax8/core` for
+embeddable reuse (v0.2 reporting work).
 
 ### Configuration
 
@@ -412,7 +424,7 @@ These are limitations of the Pax8 API that the CLI works around with local compu
 |-----|-------------|----------------|
 | **No future-dated changes** | Local scheduler: `pax8 subscriptions schedule` stores intent, executes via cron at target date | `scheduler.ts` — SQLite or JSON state file, `pax8 scheduler run` for cron execution |
 | **No bulk/batch API** | Parallel executor with rate-limit awareness: `pax8 orders create --from bulk.yaml` | `bulk-executor.ts` — concurrent API calls with configurable parallelism (default 5), automatic backoff on 429 |
-| **No reporting/analytics** | Computed reports: `pax8 report mrr`, `pax8 report growth`, `pax8 report renewals` | `analytics.ts` — pulls raw subscription/invoice data, computes MRR/ARR/churn/growth client-side |
+| **No reporting/analytics** | Computed reports: `pax8 report subscriptions`, `pax8 report concentration`, `pax8 report renewals` (Pax8-cost framed per #443) | `analytics.ts` — pulls raw subscription/invoice data, computes Pax8 cost / renewal exposure / concentration client-side |
 | **No renewal intelligence** | `pax8 subscriptions renewals` — parses `commitmentTermEndDate` across all subscriptions | `renewal-tracker.ts` — aggregates subscription data, sorts by urgency, flags action-required items |
 | **No billing reconciliation** | `pax8 invoices audit` — diffs invoice line items against active subscription quantities | `invoice-auditor.ts` — cross-references invoice items with subscription state, flags discrepancies |
 | **No product search** | `pax8 products search` — local full-text search over cached product catalog | `cache.ts` — daily product catalog sync, fuzzy matching |
