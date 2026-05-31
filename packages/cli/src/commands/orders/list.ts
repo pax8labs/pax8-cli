@@ -14,7 +14,11 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  displayCommandFromArgs,
+  renderReplNavHint,
 } from "../../lib/output.js";
+import { saveLastListContext } from "../../lib/last-list.js";
+import { wireListDrillIn } from "../../lib/list-drill-in.js";
 import { formatDate } from "../../lib/formatters.js";
 import {
   enrichCompanyNames,
@@ -25,7 +29,9 @@ import { clampListSize, LIST_SIZE_CAP, warnSizeClamped } from "../../lib/validat
 // #385: timestamp column references the canonical `createdAt`. The legacy
 // `createdDate` alias is still emitted on every row in `--json` output for
 // backwards compatibility; removal in v0.3.0.
+// #418: leading `_num` column makes rows pickable by number in the REPL.
 const columns: Column[] = [
+  { key: "_num", header: "#" },
   { key: "id", header: "ID", format: (v) => chalk.dim(String(v).slice(0, 8)) },
   { key: "companyName", header: "Company" },
   { key: "orderedBy", header: "Ordered By" },
@@ -126,23 +132,45 @@ Examples:
       // #478 defect 1 / #483: surface pagination in the JSON envelope so
       // agents can see "page 1 of 1810 — 45208 orders" instead of silently
       // truncating the answer at row 25.
+      // #562: build the next-page invocation as a structured argv array;
+      // each user-supplied value lands in its own argv slot (no string
+      // interpolation, no quote-breakout risk). Display string is derived
+      // from the argv via displayCommandFromArgs for human-facing footers.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
-      const nextPageCommand = `pax8 orders list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}`;
+      const nextPageArgs: string[] = [
+        "pax8", "orders", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.company ? ["--company", String(allOpts.company)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
+
+      // #418: row numbers continue across pages (page 2 starts at 26, not 1)
+      // so the REPL's `<resource> show 26` lookup matches what the partner
+      // sees in the `#` column. `result.page.number` is 0-based on the wire.
+      const startNum = result.page.number * result.page.size;
+      const numbered = result.content.map((row, i) => ({
+        ...row,
+        _num: String(startNum + i + 1),
+      }));
 
       if (ctx.outputFormat === "json") {
         const orders = result.content;
         if (allOpts.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          // #562: every nextActions entry carries both `command` (display)
+          // and `args` (argv). Agents spawn args.slice(1).
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
           const pageAction = buildNextPageAction(
             pageEnvelope,
-            `${nextPageCommand} --json`,
+            [...nextPageArgs, "--json"],
             "order",
           );
           if (pageAction) nextActions.push(pageAction);
           if (orders.length > 0) {
+            const showArgs = ["pax8", "orders", "show", String(orders[0].id)];
             nextActions.push({
-              command: `pax8 orders show ${orders[0].id}`,
+              command: displayCommandFromArgs(showArgs),
+              args: showArgs,
               description: `Drill into the most recent order on this page`,
             });
           }
@@ -164,7 +192,7 @@ Examples:
         emptyReasons.push("This tenant hasn't placed any orders yet.");
       }
 
-      output(result.content, {
+      output(numbered, {
         format: ctx.outputFormat,
         columns,
         emptyState: {
@@ -193,6 +221,35 @@ Examples:
           resourceSingular: "order",
           nextPageCommand,
           rowCount: result.content.length,
+        });
+        renderReplNavHint(pageEnvelope);
+        const userArgv = process.argv.slice(2);
+        const first = userArgv[0];
+        if (userArgv.length > 0 && first !== "back" && first !== "n" && first !== "p") {
+          await saveLastListContext({
+            command: userArgv,
+            page: {
+              number: pageEnvelope.number,
+              totalPages: pageEnvelope.totalPages,
+            },
+          });
+        }
+        // #418: pickable drill-in — type `26` to drill into row 26.
+        // Cast to the minimum drill-in shape: `wireListDrillIn` only needs
+        // `id: string`; everything else flows through `getLabel`.
+        // OrdersApi.list returns a union (Order[] | mock-shape[]) where
+        // `companyName` is required on the spec Order but optional on the
+        // mock, so a direct pass through would trip the strict-mode check.
+        await wireListDrillIn({
+          rows: result.content as { id: string }[],
+          resource: "orders",
+          startNum,
+          getLabel: (row) => {
+            const name = String(
+              (row as { companyName?: string }).companyName ?? "Order",
+            );
+            return name;
+          },
         });
       }
     } catch (error) {

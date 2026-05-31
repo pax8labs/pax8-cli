@@ -20,7 +20,7 @@ export const ConfigSchema = z.object({
     .default({}),
   cache: z
     .object({
-      enabled: z.boolean().default(true),
+      enabled: z.boolean().default(false),
       ttl_hours: z.number().default(24),
     })
     .default({}),

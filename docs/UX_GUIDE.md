@@ -459,7 +459,44 @@ If you add a new list command and the sort order isn't obvious from the API docs
 
 ---
 
-## 13. Checklist for a new command
+## 13. Response caching
+
+### Overview
+
+Response caching is **opt-in**. By default no API responses are written to disk. To enable caching, add the following to `~/.pax8/config.yaml`:
+
+```yaml
+cache:
+  enabled: true
+  ttl_hours: 24   # optional, default is 24
+```
+
+When enabled, successful `GET` responses are stored under `~/.pax8/cache/` and served from disk until the TTL expires. Writes (`orders create`, `subscriptions cancel`, etc.) clear the entire cache via `invalidateCacheAfterWrite()`.
+
+### Env vars
+
+| Env var | Effect |
+|---|---|
+| `PAX8_NO_CACHE=1` | Disable caching for a single invocation, overriding `config.yaml` |
+
+### User-facing commands
+
+```
+pax8 cache status   # show enabled/disabled, TTL, dir, entry count and size
+pax8 cache clear    # remove all cached responses
+```
+
+`pax8 doctor` also reports cache status (enabled/disabled, dir size) as one of its checks.
+
+### For contributors
+
+- Caching is implemented in `Pax8Client` via `packages/core/src/services/cache.ts`. Passing `cacheTtlMs: 0` to the constructor disables it entirely (sets `this.cache = null`).
+- `buildContext()` in `packages/cli/src/lib/context.ts` reads `config.cache.enabled` and `config.cache.ttl_hours` and derives `cacheTtlMs`. It also checks `PAX8_NO_CACHE`.
+- Do not add per-command cache bypass flags. Use `PAX8_NO_CACHE=1` as the escape hatch.
+
+---
+
+## 14. Checklist for a new command
 
 Before opening the PR:
 
