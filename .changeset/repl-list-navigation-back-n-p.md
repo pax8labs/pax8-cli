@@ -4,7 +4,7 @@
 
 REPL list navigation: `back`, `n`, `p` now resume the last list session without retyping flags. Closes #456.
 
-Pre-fix, the REPL flow `clients list` → type `26` → drill into the company → end up back at `pax8>` left the user with no way to continue browsing except retyping `clients list --page 3`. Cassie surfaced this as a daily-workflow paper-cut. Three new REPL shortcuts:
+Pre-fix, the REPL flow `clients list` → type `26` → drill into the company → end up back at `pax8>` left the user with no way to continue browsing except retyping `clients list --page 3`. Surfaced as a daily-workflow paper-cut during partner walkthrough. Three new REPL shortcuts:
 
 - `back` — re-runs the last list command at the same page (handy after a drill-in: the prior listing is one keystroke away).
 - `n` — pages forward (next page of the last list).

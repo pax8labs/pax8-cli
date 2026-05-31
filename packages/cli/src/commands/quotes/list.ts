@@ -10,6 +10,7 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   renderReplNavHint,
+  displayCommandFromArgs,
 } from "../../lib/output.js";
 import { saveLastListContext } from "../../lib/last-list.js";
 import { wireListDrillIn } from "../../lib/list-drill-in.js";
@@ -124,15 +125,16 @@ Examples:
         _total: quoteTotal(q),
         _items: q.lineItems?.length ?? 0,
       }));
-      const filterFlag = [
-        allOpts.company ? `--company "${allOpts.company}"` : "",
-        status ? `--status ${status}` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const nextPageCommand =
-        `pax8 quotes list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
-        (filterFlag ? ` ${filterFlag}` : "");
+      // #562: argv form for next-page nav; user-supplied filter values
+      // land in their own argv slots.
+      const nextPageArgs: string[] = [
+        "pax8", "quotes", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.company ? ["--company", String(allOpts.company)] : []),
+        ...(status ? ["--status", String(status)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       if (ctx.outputFormat === "json") {
         process.stdout.write(
