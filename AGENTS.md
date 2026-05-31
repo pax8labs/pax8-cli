@@ -93,7 +93,7 @@ If unsure whether a command counts as a write, default to confirming. Better one
 | `--csv` | When the operator asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
-| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `invoices audit`) always include `nextActions` inline. |
+| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Each `nextActions[]` entry carries both `command` (display string, never tokenize this) and `args` (argv array — spawn `args.slice(1)` directly, never via a shell) per #562. Available on every list command and on single-object commands (`dashboard`, `invoices audit`) which always include `nextActions` inline. |
 
 ## Result size
 
