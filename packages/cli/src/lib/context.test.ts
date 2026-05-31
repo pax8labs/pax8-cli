@@ -334,6 +334,35 @@ describe("buildContext", () => {
       }
     });
 
+    it("PAX8_NO_CACHE=1 overrides config.cache.enabled and passes cacheTtlMs=0", async () => {
+      delete process.env.PAX8_DEMO;
+      process.env.PAX8_NO_CACHE = "1";
+      const core = await import("@pax8/core");
+      const loadSpy = vi.spyOn(core, "loadConfig").mockResolvedValue({
+        version: "1.0",
+        defaults: { output_format: "table", page_size: 50, confirm_destructive: true },
+        cache: { enabled: true, ttl_hours: 6 },
+        telemetry: { enabled: false },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial config for tests
+      } as any);
+      const getCredSpy = vi
+        .spyOn(core.CredentialStore.prototype, "getCredentials")
+        .mockResolvedValue({ clientId: "id-x", clientSecret: "secret-y" });
+      const ctorSpy = vi.spyOn(core, "Pax8Client");
+
+      try {
+        await buildContext({ json: true });
+        expect(ctorSpy).toHaveBeenCalledTimes(1);
+        const opts = ctorSpy.mock.calls[0][0];
+        expect(opts.cacheTtlMs).toBe(0);
+      } finally {
+        delete process.env.PAX8_NO_CACHE;
+        loadSpy.mockRestore();
+        getCredSpy.mockRestore();
+        ctorSpy.mockRestore();
+      }
+    });
+
     it("passes cacheTtlMs=0 when config.cache.enabled is false", async () => {
       delete process.env.PAX8_DEMO;
       const core = await import("@pax8/core");
