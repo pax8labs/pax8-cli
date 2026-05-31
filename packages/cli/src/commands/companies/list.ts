@@ -22,6 +22,7 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  displayCommandFromArgs,
   renderReplNavHint,
 } from "../../lib/output.js";
 import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/formatters.js";
@@ -305,7 +306,11 @@ Examples:
           JSON.stringify(
             result.content.map((_c, i) => ({
               key: String(startNum + i + 1),
-              command: `clients more ${startNum + i + 1}`,
+              // Must start with `pax8 ` — REPL dispatch at lib/repl.ts:191
+              // requires /^pax8\s+\w/ as defense-in-depth against a tampered
+              // pending-actions.json. Drop the prefix and the bare-number
+              // drill-in silently no-ops.
+              command: `pax8 clients more ${startNum + i + 1}`,
             })),
           ),
         );
@@ -314,24 +319,31 @@ Examples:
       const columns = coverageMap ? coverageColumns : baseColumns;
 
       // #483: build the 1-based page envelope once for both JSON and footer.
+      // #562: structured argv form for nextActions; each user-supplied
+      // filter value lands in its own argv slot.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const filterFlag = [
-        allOpts.status ? `--status ${allOpts.status}` : "",
-        allOpts.city ? `--city "${allOpts.city}"` : "",
-        allOpts.country ? `--country "${allOpts.country}"` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const nextPageCommand =
-        `pax8 clients list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}` +
-        (filterFlag ? ` ${filterFlag}` : "");
+      const nextPageArgs: string[] = [
+        "pax8", "clients", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.status ? ["--status", String(allOpts.status)] : []),
+        ...(allOpts.city ? ["--city", String(allOpts.city)] : []),
+        ...(allOpts.country ? ["--country", String(allOpts.country)] : []),
+        ...(allOpts.state ? ["--state", String(allOpts.state)] : []),
+        ...(allOpts.zip ? ["--zip", String(allOpts.zip)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       if (ctx.outputFormat === "json") {
         if (allOpts.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          // #562: nextActions entries carry both `command` (display) and
+          // `args` (argv). Agents spawn args.slice(1); never tokenize the
+          // display string. Closes the shell-injection class that was
+          // resolved for orderCommand → orderArgs in #462.
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
           const pageAction = buildNextPageAction(
             pageEnvelope,
-            `${nextPageCommand} --json`,
+            [...nextPageArgs, "--json"],
             "client",
           );
           if (pageAction) nextActions.push(pageAction);
@@ -344,22 +356,28 @@ Examples:
               })
             : result.content;
           for (const c of ranked.slice(0, 3)) {
+            const moreArgs = ["pax8", "clients", "more", String(c.name)];
             nextActions.push({
-              command: `pax8 clients more "${c.name}"`,
+              command: displayCommandFromArgs(moreArgs),
+              args: moreArgs,
               description: `Drill into ${c.name}`,
             });
           }
           if (coverageMap) {
             const top = ranked.find((c) => (coverageMap!.get(String(c.id))?.estimatedUplift ?? 0) > 0);
             if (top) {
+              const recsArgs = ["pax8", "recommendations", "list", "--company", String(top.name), "--json"];
               nextActions.push({
-                command: `pax8 recommendations list --company "${top.name}" --json`,
+                command: displayCommandFromArgs(recsArgs),
+                args: recsArgs,
                 description: `Review growth opportunities for ${top.name}`,
               });
             }
           } else {
+            const coverageArgs = ["pax8", "clients", "list", "--coverage", "--json"];
             nextActions.push({
-              command: "pax8 clients list --coverage --json",
+              command: displayCommandFromArgs(coverageArgs),
+              args: coverageArgs,
               description: "Re-run with portfolio coverage analysis to surface gaps",
             });
           }

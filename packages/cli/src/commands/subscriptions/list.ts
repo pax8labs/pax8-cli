@@ -16,6 +16,7 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  displayCommandFromArgs,
   renderReplNavHint,
 } from "../../lib/output.js";
 import { saveLastListContext } from "../../lib/last-list.js";
@@ -222,13 +223,26 @@ Examples:
       // envelope renumbers 1-based to match the `--page` flag the user
       // would type next. `--with-actions` additionally surfaces a
       // nextActions array (next-page hint + drill-in + renewal check).
+      //
+      // #562: build the next-page invocation as a structured argv array
+      // and derive the display string from it. Each user-supplied flag
+      // value (--company, --product, --sort, etc.) lands in its own argv
+      // slot — no string interpolation, no quote-breakout risk. The
+      // display form (`nextPageCommand`) goes only to the human footer;
+      // the argv (`nextPageArgs`) feeds buildNextPageAction so agents
+      // get a spawn-safe `args` field on the nextActions entry.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
-      const statusFlag = allOpts.status ? ` --status ${allOpts.status}` : "";
-      const billingTermFlag = allOpts.billingTerm ? ` --billing-term ${allOpts.billingTerm}` : "";
-      const productFlag = allOpts.product ? ` --product ${allOpts.product}` : "";
-      const sortFlag = allOpts.sort ? ` --sort ${allOpts.sort}` : "";
-      const nextPageCommand = `pax8 subscriptions list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}${statusFlag}${billingTermFlag}${productFlag}${sortFlag}`;
+      const nextPageArgs: string[] = [
+        "pax8", "subscriptions", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.company ? ["--company", String(allOpts.company)] : []),
+        ...(allOpts.status ? ["--status", String(allOpts.status)] : []),
+        ...(allOpts.billingTerm ? ["--billing-term", String(allOpts.billingTerm)] : []),
+        ...(allOpts.product ? ["--product", String(allOpts.product)] : []),
+        ...(allOpts.sort ? ["--sort", String(allOpts.sort)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       // #418: row numbers continue across pages — wire numbered rows for
       // the table renderer and the REPL's drill-in lookup.
@@ -241,29 +255,38 @@ Examples:
       if (ctx.outputFormat === "json") {
         const subsList = result.content;
         if (options.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          // #562: every nextActions entry carries both a `command` display
+          // string and a structured `args` argv array. Agents spawn
+          // `args.slice(1)`; never tokenize `command`.
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
           const pageAction = buildNextPageAction(
             pageEnvelope,
-            `${nextPageCommand} --json`,
+            [...nextPageArgs, "--json"],
             "subscription",
           );
           if (pageAction) nextActions.push(pageAction);
           const trials = subsList.filter((s) => (s.status ?? "").toLowerCase() === "trial");
           const top = subsList[0];
           if (top) {
+            const showArgs = ["pax8", "subscriptions", "show", String(top.id)];
             nextActions.push({
-              command: `pax8 subscriptions show ${top.id}`,
+              command: displayCommandFromArgs(showArgs),
+              args: showArgs,
               description: `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`,
             });
           }
           if (trials.length > 0) {
+            const trialArgs = ["pax8", "subscriptions", "list", "--status", "Trial", "--json"];
             nextActions.push({
-              command: "pax8 subscriptions list --status Trial --json",
+              command: displayCommandFromArgs(trialArgs),
+              args: trialArgs,
               description: `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`,
             });
           }
+          const renewalsArgs = ["pax8", "subscriptions", "renewals", "--json", "--with-actions"];
           nextActions.push({
-            command: "pax8 subscriptions renewals --json --with-actions",
+            command: displayCommandFromArgs(renewalsArgs),
+            args: renewalsArgs,
             description: "Check upcoming renewals before they auto-renew",
           });
           process.stdout.write(

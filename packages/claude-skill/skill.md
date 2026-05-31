@@ -68,7 +68,7 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 | `--csv` | User asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
-| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Available on `recommendations list`, `subscriptions renewals`, `webhooks list`, `webhooks logs`. Single-object commands (`dashboard`, `invoices audit`) always include `nextActions` inline. `recommendations list` always wraps (#521); `--with-actions` adds `nextActions` + `unmatchedProducts` on top. |
+| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Each `nextActions[]` entry carries both `command` (display string) and `args` (argv array — spawn `args.slice(1)` via Bash tool's argv form, never tokenize `command`) per #562. Available on every list command and on single-object commands (`dashboard`, `invoices audit`) which always include `nextActions` inline. `recommendations list` always wraps (#521); `--with-actions` adds `nextActions` + `unmatchedProducts` on top. |
 
 Result size: list commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost rollups, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 
