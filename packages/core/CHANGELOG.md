@@ -1,5 +1,37 @@
 # @pax8/core
 
+## 0.4.0
+
+### Patch Changes
+
+- [#555](https://github.com/pax8labs/pax8-cli/pull/555) [`c56eb06`](https://github.com/pax8labs/pax8-cli/commit/c56eb060d996c3ac248487ad3ab3ad22d5127315) Thanks [@jidulberger](https://github.com/jidulberger)! - Branch coverage push on the three `@pax8/core` API clients flagged in the partner-readiness audit. Closes [#393](https://github.com/pax8labs/pax8-cli/issues/393).
+
+  Coverage delta (branches):
+  - `packages/core/src/api/products.ts` — **0% → 100%**
+  - `packages/core/src/api/invoices.ts` — **38% → 69%**
+  - `packages/core/src/api/webhooks.ts` — **57% → 71%**
+
+  Products clears the AC threshold (≥ 85%); invoices and webhooks fall short of the 85% target but capture the load-bearing branches the audit specifically flagged:
+  - products: `list()`'s no-params path, `search()`'s longest-token reduce + multi/single/empty query paths + the `apiKeyword || undefined` ternary, vendor pass-through.
+  - invoices: `list()`'s no-params path, `month` ↔ `invoiceDate` precedence, empty-content envelope, `listItems()` aggregate fan-out across companies + explicit-invoiceId short-circuit + no-args fallback + client-side pagination of aggregated items.
+  - webhooks: `getTopicDefinitions` flat-array parity-drift branch, `setStatus(active=false)` toggle branch, `testTopic` URL-encoding of topic slugs with `/`.
+
+  The remaining ~14-16% gap on invoices/webhooks lives in nullish-coalescing micro-branches (`opts.page ?? 0`, `pageSize ?? items.length`, etc.) where the marginal value of an explicit test isn't worth the maintenance overhead. Open a follow-up issue if a future coverage-gate raise needs them.
+
+  Full suite: 2150 passing (+6 from this PR).
+
+- [#567](https://github.com/pax8labs/pax8-cli/pull/567) [`9842846`](https://github.com/pax8labs/pax8-cli/commit/98428464403624b833a2af8b63d62ed1137e97e2) Thanks [@jidulberger](https://github.com/jidulberger)! - Fix test regression introduced by [#557](https://github.com/pax8labs/pax8-cli/issues/557) (opt-in caching). Two assertions in `packages/core/src/config/loader.test.ts` still expected `cache.enabled` to default to `true`, but [#557](https://github.com/pax8labs/pax8-cli/issues/557) intentionally flipped the default to `false` (opt-in caching) without updating the matching test expectations. Tests now match the shipped behavior. No code change to the loader itself — the production behavior is correct, only the test was stale.
+
+  This was blocking CI on every PR opened after [#557](https://github.com/pax8labs/pax8-cli/issues/557) landed, because PR build matrices evaluate the merge commit against `main` and inherit `main`'s broken test suite.
+
+- [#569](https://github.com/pax8labs/pax8-cli/pull/569) [`2f3b657`](https://github.com/pax8labs/pax8-cli/commit/2f3b6571842cc3080351bbfd3d24d62d131b6848) Thanks [@jidulberger](https://github.com/jidulberger)! - Pre-launch scrub: remove internal Pax8 system references that [#461](https://github.com/pax8labs/pax8-cli/issues/461)/[#489](https://github.com/pax8labs/pax8-cli/issues/489) missed. No behavior change; only comments, help text, and one private URL.
+  - **Internal Jira-style ticket prefixes** (`ARC-`, `PAE-`, `PAM-`) — present in user-facing `--help` text on `pax8 recommendations list / act` and `pax8 clients create`, plus a dozen code comments across `packages/cli` and `packages/core`. Partners running `--help` saw "ARC-785" / "PAM-997" with no context; rewrote the text to be self-contained (e.g. "Pax8's first-party Opportunity Explorer API ships" instead of "ARC-785, `GET /opportunities`"). The companion test assertion in `companies.test.ts` that checked for `"PAM-997"` in `--help` output now checks for `"Pax8 API Reference"` to match the new wording.
+  - **Reviewer names** (`Cassie`) — leaked through into source comments and one changeset; replaced with generic "domain review" / "partner walkthrough" framing.
+  - **Private Atlassian URLs** — `packages/core/src/api/types.test.ts` had two `pax8.atlassian.net` links in its preamble (Marketplace Data Risk Tiering doc, CLI Domain Review approval doc). Public viewers would 403; replaced with paraphrased descriptions.
+  - **Stale doc reference** — `docs/pm-review-response-2026-05.md` cited in `types.test.ts` doesn't exist in the repo. Removed.
+
+  Historical per-package CHANGELOGs (`packages/cli/CHANGELOG.md`, `packages/core/CHANGELOG.md`) deliberately left alone — they're append-only release-note records.
+
 ## 0.3.0
 
 ### Minor Changes

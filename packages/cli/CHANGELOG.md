@@ -1,5 +1,119 @@
 # @pax8/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- [#556](https://github.com/pax8labs/pax8-cli/pull/556) [`2c03e84`](https://github.com/pax8labs/pax8-cli/commit/2c03e84d1fa4ef38868f5675eb634c0f41b3647e) Thanks [@jidulberger](https://github.com/jidulberger)! - Roll out pickable drill-in across `subscriptions list`, `orders list`, `invoices list`, and `quotes list`. Type a row number at the REPL prompt to drill into that row's detail view — same pattern `clients list` and `recommendations list` already shipped. Closes [#418](https://github.com/pax8labs/pax8-cli/issues/418).
+
+  Each command now:
+  - Numbers rows in a leading `#` column (continues across pages — page 2 starts at 26).
+  - Persists the index → resource ID map to `~/.pax8/last-list.json` so `subscriptions show 3` resolves the same way `clients show 3` already does.
+  - Writes `~/.pax8/pending-actions.json` keyed by row number so the REPL's bare-number-input branch dispatches `<resource> show <id>` for the picked row.
+  - Renders the `promptNextSteps` inline pick prompt below the table (no-op outside a TTY, so subprocess / agent invocations see nothing on stderr).
+
+  Extracted the wiring into `lib/list-drill-in.ts:wireListDrillIn()` so the four commands become a single call instead of 30 lines of copy-paste each. The helper handles all three caches + the prompt; the caller supplies the rows, resource name, page-offset, and a label resolver function. Existing `clients list` left alone for this PR (its drill-in path is intertwined with the `--coverage` analysis branch and warrants a separate scoped refactor).
+
+  Quotes additionally renames its previous static `Try next:` block to a one-liner `Or: pax8 quotes show <id>` advisory so the pickable prompt becomes the primary affordance.
+
+- [#565](https://github.com/pax8labs/pax8-cli/pull/565) [`be19118`](https://github.com/pax8labs/pax8-cli/commit/be191182f79067710678b67cccbe39a2f3da866d) Thanks [@jidulberger](https://github.com/jidulberger)! - **Breaking for agent consumers of `nextActions[]`** — every entry now carries both a `command` display string and a structured `args` argv array (matches the `orderArgs` / `orderCommand` pair resolved for recommendations in [#462](https://github.com/pax8labs/pax8-cli/issues/462)/[#509](https://github.com/pax8labs/pax8-cli/issues/509)). Agents must spawn `args.slice(1)` directly via their tool's argv form; the `command` field is for human display only and should never be tokenized or piped to a shell. Closes [#562](https://github.com/pax8labs/pax8-cli/issues/562).
+
+  Pre-fix, `pax8 subscriptions list --product <value> --json --with-actions` interpolated `<value>` straight into `nextActions[0].command` — an agent that handed the display string to a shell faced the same shell-injection class that `orderCommand` had before its `orderArgs` cousin shipped. The full surface affected: every list command's `nextActions` page-action plus the drill-in / filter / audit suggestions composed on top.
+
+  Code changes:
+  - `buildNextPageAction` in `lib/output.ts` now takes a `readonly string[]` argv instead of a pre-built string, and returns `{ command, args, description }`.
+  - New exported helper `displayCommandFromArgs(args)` renders an argv into a readable command line, quoting only when needed; same source of truth as the `command` field returned by `buildNextPageAction`.
+  - Eight list commands rebuilt their `nextPageCommand` construction as argv: `clients list`, `subscriptions list`, `orders list`, `invoices list`, `invoices items`, `products list`, `quotes list`, `contacts list`. Each individual `nextActions.push({ ... })` callsite also now emits the `args` field alongside `command`.
+  - New contract test at `packages/cli/src/__tests__/next-actions-argv-contract.test.ts` asserts every nextActions entry carries `command` + `args[0] === "pax8"` AND that a malicious `--product` value lands as a single argv slot, not interpolated.
+
+  Documentation updates:
+  - `AGENTS.md` and `packages/claude-skill/skill.md`: `--with-actions` row updated to direct agents at `args` over `command`.
+  - `CLAUDE.md`: new "nextActions argv contract ([#562](https://github.com/pax8labs/pax8-cli/issues/562))" note alongside the existing list-envelope ([#483](https://github.com/pax8labs/pax8-cli/issues/483)) note.
+
+  No behavior change for human REPL / table users — the display strings rendered in pagination footers are unchanged (derived from the same argv via `displayCommandFromArgs`).
+
+- [#549](https://github.com/pax8labs/pax8-cli/pull/549) [`94bc016`](https://github.com/pax8labs/pax8-cli/commit/94bc0169b97d12590fd83795bedb66318f493471) Thanks [@jidulberger](https://github.com/jidulberger)! - REPL list navigation: `back`, `n`, `p` now resume the last list session without retyping flags. Closes [#456](https://github.com/pax8labs/pax8-cli/issues/456).
+
+  Pre-fix, the REPL flow `clients list` → type `26` → drill into the company → end up back at `pax8>` left the user with no way to continue browsing except retyping `clients list --page 3`. Surfaced as a daily-workflow paper-cut during partner walkthrough. Three new REPL shortcuts:
+  - `back` — re-runs the last list command at the same page (handy after a drill-in: the prior listing is one keystroke away).
+  - `n` — pages forward (next page of the last list).
+  - `p` — pages backward.
+
+  `clients list` is the first surface wired up. After each render in REPL mode (`PAX8_REPL=1`) the command writes `last-list-context.json` containing the argv it ran with and the resolved `{ number, totalPages }` envelope, and the REPL reads that file when `n`/`p`/`back` is typed. Argv rewriting handles both the "user typed `--page N`" case (replace) and the implicit-default case (append). Each list footer in REPL mode prints a one-line `REPL: n=next · p=prev · back=re-run` hint so the affordance is discoverable.
+
+  Boundary checks: `n` at the last page and `p` at the first page print a dim "Already on the last/first page" message and re-prompt instead of clobbering state. Missing or corrupt `last-list-context.json` triggers a clean "No recent list to navigate" message — never a spawn with garbage argv.
+
+  Shape validation on the loaded context (`loadLastListContext`) defensively rejects tampered files — a tampered or truncated context can't surface an unexpected argv. Wired through `safeWriteFileSync` so the cache file is mode `0o600` and refuses to follow symlinks (same posture as the pre-existing `last-list.json` + `pending-actions.json` writes).
+
+  This wires `clients list` only as the proof-of-pattern; the same `saveLastListContext()` call belongs on `subscriptions list`, `invoices list`, `orders list`, `quotes list`, `contacts list`, `webhooks list`, etc. — tracked separately so each rollout can be reviewed cleanly.
+
+  Helpers exposed in `lib/last-list.ts` for the rollout: `saveLastListContext`, `loadLastListContext`, `rewriteArgvForPage`, plus the `LastListContext` interface. 7 new unit tests cover round-trip, corruption, shape validation, and argv rewriting (replace + append + no-mutate).
+
+### Patch Changes
+
+- [#568](https://github.com/pax8labs/pax8-cli/pull/568) [`242fbed`](https://github.com/pax8labs/pax8-cli/commit/242fbed0058786aff69364d770b76d418b9c742c) Thanks [@jidulberger](https://github.com/jidulberger)! - Pre-launch documentation cleanup, no code changes:
+  - **`README.md`** — restructured Quick Start into explicit "Install / Run / Authenticate" steps with three documented invocation paths (`node dist/index.js`, `npm link`'d `pax8`, `pnpm dev`); de-duplicated the pre-release banner (was repeated three times); expanded the Commands section to surface `contacts`, `quotes`, `webhooks`, `usage`, `config`, `report`, `init`, `completions`, `version`, `report-bug`, `telemetry` (the existing surface but only the prominent commands were documented); fixed the `report mrr` / `report growth` paragraph that still said "v0.2 reporting work will rebuild" when `pax8 report renewals|concentration|subscriptions` already shipped; rebuilt the REPL Mode section to show the welcome banner and document `back` / `n` / `p` shortcuts; replaced the Documentation section's BUILD.md link with current contributor / partner-facing pointers.
+  - **`SUPPORT.md`** — added `pax8 version` and `PAX8_DEMO=1` reproduction tips to "Try first".
+  - **`CHANGELOG.md`** — converted the root file from a duplicate-of-truth into a pointer to the changesets-managed per-package CHANGELOGs (`packages/cli/CHANGELOG.md`, `packages/core/CHANGELOG.md`). The v0.1.0 release entry stays for archaeology; the unmaintained "Unreleased" section that was lagging behind 0.2.x / 0.3.0 is gone.
+  - **`docs/BUILD.md` → `docs/history/BUILD.md`** — moved the autonomous-build prompt out of the user-facing docs path. Added a "Historical document" banner explaining what it is. Updated the two references in `CLAUDE.md`.
+  - **`docs/release/CHECKLIST.md`** — new working doc for the public OSS launch, structured by phase (decisions, code/test gates, infra, release mechanics, comms, post-launch ops). The release plan lives in chat-transcript context; this file is the executable form.
+
+- [#553](https://github.com/pax8labs/pax8-cli/pull/553) [`f95ea91`](https://github.com/pax8labs/pax8-cli/commit/f95ea91489606fc2e9725086434292cac010a18a) Thanks [@jidulberger](https://github.com/jidulberger)! - Extend the REPL `back` / `n` / `p` list navigation from [#456](https://github.com/pax8labs/pax8-cli/issues/456) across the rest of the list command surface. `subscriptions list`, `orders list`, `invoices list`, and `quotes list` now all save the `last-list-context.json` snapshot after each render and surface the `REPL: n=next · p=prev · back=re-run` footer hint when running under `PAX8_REPL=1`. Closes the rollout slice of [#456](https://github.com/pax8labs/pax8-cli/issues/456) that [#549](https://github.com/pax8labs/pax8-cli/issues/549) explicitly deferred.
+
+  Implementation extracts the `if (process.env.PAX8_REPL === "1") { ... }` block from `companies/list.ts` into a shared `renderReplNavHint(pageEnvelope)` helper in `lib/output.ts` so each command is a one-line addition rather than a copy-paste of the hint rendering. The context-save block stays inline (a few lines per command, with the same `back`/`n`/`p` re-entry guard the original [#549](https://github.com/pax8labs/pax8-cli/issues/549) code used).
+
+  No behavior change outside the REPL — `PAX8_REPL` env var gates both the hint and the context save's affordance. Full suite green: 2135 passing.
+
+- [#547](https://github.com/pax8labs/pax8-cli/pull/547) [`047751f`](https://github.com/pax8labs/pax8-cli/commit/047751ff0c61d3b7e9cd3d05932cc9bb7edda7bc) Thanks [@jidulberger](https://github.com/jidulberger)! - `promptNextSteps()` now reuses the active CLI entrypoint when drilling into a numbered option, matching the REPL's behavior. Closes [#457](https://github.com/pax8labs/pax8-cli/issues/457).
+
+  Pre-fix, the inline numeric-pick prompt rendered by `clients list`, `subscriptions renewals`, `contacts list`, `usage list`, and several others called `spawn("pax8", ...)` — which silently no-ops or fails when the CLI is launched via `node packages/cli/dist/index.js`, a yarn `-g` install in a non-standard prefix, or a linked local binary that isn't on `$PATH`. The REPL itself had the right pattern via `resolveCliPath(process.argv[1])` (see `lib/repl.ts`); this aligns the drill-in path with that.
+
+  Implementation: `lib/next-step.ts` now imports `resolveCliPath` from `lib/repl.ts` and spawns `node <cliPath> <args>` instead of `pax8 <args>`. A best-effort fallback to the legacy `spawn("pax8", ...)` shape is kept for the edge case where `process.argv[1]` is empty (e.g. a future embedded caller in an MCP wrapper).
+
+- [#548](https://github.com/pax8labs/pax8-cli/pull/548) [`04435c2`](https://github.com/pax8labs/pax8-cli/commit/04435c24697de6371495a86c4b29358da76e0bd8) Thanks [@jidulberger](https://github.com/jidulberger)! - `docs/PRD.md`: update the post-[#443](https://github.com/pax8labs/pax8-cli/issues/443) reshape so the document matches the
+  current `pax8 report subscriptions` / `pax8 report concentration` /
+  `pax8 report renewals` surface instead of the retired `pax8 report mrr` /
+  `pax8 report growth` framing. Closes [#460](https://github.com/pax8labs/pax8-cli/issues/460).
+
+  `AGENTS.md` and `README.md` were already clean of stale `report mrr` /
+  `PAX8_API_TIMEOUT` references; the lingering README mention is
+  explicitly historical and conforms to [#460](https://github.com/pax8labs/pax8-cli/issues/460)'s AC [#3](https://github.com/pax8labs/pax8-cli/issues/3). No code change.
+
+- [#564](https://github.com/pax8labs/pax8-cli/pull/564) [`696215c`](https://github.com/pax8labs/pax8-cli/commit/696215cdf61ea6bf9da42bfc7b98785823907169) Thanks [@jidulberger](https://github.com/jidulberger)! - Fix REPL bare-number drill-in regression: typing a row number after a list command silently did nothing. The REPL dispatch regex at `lib/repl.ts:191` requires `command` strings in `pending-actions.json` to start with `pax8 ` (defense-in-depth from [#506](https://github.com/pax8labs/pax8-cli/issues/506), so a tampered cache file can't dispatch arbitrary subcommands), but `clients list` and the `list-drill-in.ts` helper (rolled out across `subscriptions / orders / invoices / quotes list` per [#418](https://github.com/pax8labs/pax8-cli/issues/418)/[#556](https://github.com/pax8labs/pax8-cli/issues/556)) wrote the unprefixed form `clients more 3` / `<resource> show <id>`. The regex never matched and the bare-number input fell through to `node cliPath 3`, which the CLI rejected as `unknown command '3'`. Prefix both writers with `pax8 ` to honor the contract. Closes [#561](https://github.com/pax8labs/pax8-cli/issues/561).
+
+  Adds a contract test in `repl.integration.test.ts` that reads `pending-actions.json` after `clients list` and asserts every entry's `command` matches the same `/^pax8\s+\w/` regex the production dispatch checks — so a future writer that drops the prefix is caught at the same condition.
+
+- [#566](https://github.com/pax8labs/pax8-cli/pull/566) [`ec7e5dd`](https://github.com/pax8labs/pax8-cli/commit/ec7e5dd3d9cdf412968f9f47ba47b9bbd8b00e32) Thanks [@jidulberger](https://github.com/jidulberger)! - Fix the dev-mode REPL: typing any command after launching via `pnpm dev` no longer crashes the child with `ERR_MODULE_NOT_FOUND`. The REPL's spawn at `lib/repl.ts:235` hardcoded `node` even when the parent was running under `tsx`, so `cliPath` (a `.ts` source file in dev mode) was handed to a vanilla `node` that couldn't resolve TypeScript. Detect a `.ts` entrypoint and register the tsx ESM loader via Node's `--import` hook so the child resolves the same way the parent does. Also switch the spawn target from the string `"node"` to `process.execPath` so nvm / asdf / custom-node setups don't need `node` on PATH. Closes [#563](https://github.com/pax8labs/pax8-cli/issues/563).
+
+  The masking effect: contributors who followed `CONTRIBUTING.md`'s documented dev workflow (`PAX8_DEMO=1 pnpm dev`) couldn't test REPL behavior locally — every typed command crashed before the dispatch handler ran. Combined with the test suite only exercising `dist/index.js`, this let dispatch-layer bugs like [#561](https://github.com/pax8labs/pax8-cli/issues/561) (REPL bare-number drill-in dead) ship invisibly past CI. The dev-mode regression test added here (`runReplViaTsx` harness in `repl.integration.test.ts`) is the second layer of the contract — both invocation paths must dispatch a typed command without a module-resolution error.
+
+- [#569](https://github.com/pax8labs/pax8-cli/pull/569) [`2f3b657`](https://github.com/pax8labs/pax8-cli/commit/2f3b6571842cc3080351bbfd3d24d62d131b6848) Thanks [@jidulberger](https://github.com/jidulberger)! - Pre-launch scrub: remove internal Pax8 system references that [#461](https://github.com/pax8labs/pax8-cli/issues/461)/[#489](https://github.com/pax8labs/pax8-cli/issues/489) missed. No behavior change; only comments, help text, and one private URL.
+  - **Internal Jira-style ticket prefixes** (`ARC-`, `PAE-`, `PAM-`) — present in user-facing `--help` text on `pax8 recommendations list / act` and `pax8 clients create`, plus a dozen code comments across `packages/cli` and `packages/core`. Partners running `--help` saw "ARC-785" / "PAM-997" with no context; rewrote the text to be self-contained (e.g. "Pax8's first-party Opportunity Explorer API ships" instead of "ARC-785, `GET /opportunities`"). The companion test assertion in `companies.test.ts` that checked for `"PAM-997"` in `--help` output now checks for `"Pax8 API Reference"` to match the new wording.
+  - **Reviewer names** (`Cassie`) — leaked through into source comments and one changeset; replaced with generic "domain review" / "partner walkthrough" framing.
+  - **Private Atlassian URLs** — `packages/core/src/api/types.test.ts` had two `pax8.atlassian.net` links in its preamble (Marketplace Data Risk Tiering doc, CLI Domain Review approval doc). Public viewers would 403; replaced with paraphrased descriptions.
+  - **Stale doc reference** — `docs/pm-review-response-2026-05.md` cited in `types.test.ts` doesn't exist in the repo. Removed.
+
+  Historical per-package CHANGELOGs (`packages/cli/CHANGELOG.md`, `packages/core/CHANGELOG.md`) deliberately left alone — they're append-only release-note records.
+
+- [#554](https://github.com/pax8labs/pax8-cli/pull/554) [`3a5cca4`](https://github.com/pax8labs/pax8-cli/commit/3a5cca401fabece3f9ef8f49106ac3af8a3d2af4) Thanks [@jidulberger](https://github.com/jidulberger)! - Add subprocess smoke coverage for `pax8 init`, `pax8 completions`, and the `coffee` / `moo` easter eggs — the four CLI surfaces previously listed in the partner-readiness audit as having zero test references. Closes [#395](https://github.com/pax8labs/pax8-cli/issues/395).
+
+  `packages/cli/src/__tests__/smoke-misc.test.ts` (new file, 9 tests):
+  - `init` — `--help` output, default-config creation in a tmp `PAX8_CONFIG_DIR`, `--demo` / `--demo off` toggle round-trip via the on-disk config file.
+  - `completions` — bash + zsh script generation, plus the `--help` smoke.
+  - `coffee` — asserts the final "Your coffee is ready" line lands on stdout (the 6-second progress-bar simulation runs end-to-end; per-test timeout bumped to 15s rather than globally so the rest of the smoke suite stays fast).
+  - `moo` — asserts the ASCII cow's `(oo)` fingerprint + the quoted fortune-line pattern.
+
+  `time-quip` is an internal helper (no command surface) and isn't covered here — it's already exercised indirectly by the welcome-screen tests. `report-bug` was on the original issue list but already had thorough coverage in `report-bug.test.ts`; no additions needed.
+
+  Full suite: 2144 passing (+9 from this PR).
+
+- [#545](https://github.com/pax8labs/pax8-cli/pull/545) [`3716e8a`](https://github.com/pax8labs/pax8-cli/commit/3716e8acf28687e516eada27eac9dc1ceee6fb4b) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 usage list --help` now explicitly documents the pagination contract — that each per-subscription `/v1/subscriptions/{id}/usage-summaries` fetch accepts `page` / `size`, the default is 50, the max is `LIST_SIZE_CAP` (1000) with stderr-clamp warning per [#518](https://github.com/pax8labs/pax8-cli/issues/518), and the fan-out behavior when `--company` or no filter is used (each subscription paged independently, results concatenated). Closes [#397](https://github.com/pax8labs/pax8-cli/issues/397).
+
+  No behavior change — the flags were always exposed and the cap already enforced. This makes the contract explicit in the Notes block so partners with high-usage subscriptions don't get surprised by truncation. [#483](https://github.com/pax8labs/pax8-cli/issues/483) also added the `{ usage, page }` JSON envelope on this command earlier today.
+
+- Updated dependencies [[`c56eb06`](https://github.com/pax8labs/pax8-cli/commit/c56eb060d996c3ac248487ad3ab3ad22d5127315), [`9842846`](https://github.com/pax8labs/pax8-cli/commit/98428464403624b833a2af8b63d62ed1137e97e2), [`2f3b657`](https://github.com/pax8labs/pax8-cli/commit/2f3b6571842cc3080351bbfd3d24d62d131b6848)]:
+  - @pax8/core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
