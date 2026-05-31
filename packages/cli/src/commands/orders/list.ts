@@ -14,6 +14,7 @@ import {
   buildPageEnvelope,
   renderPaginationFooter,
   buildNextPageAction,
+  displayCommandFromArgs,
   renderReplNavHint,
 } from "../../lib/output.js";
 import { saveLastListContext } from "../../lib/last-list.js";
@@ -131,9 +132,18 @@ Examples:
       // #478 defect 1 / #483: surface pagination in the JSON envelope so
       // agents can see "page 1 of 1810 — 45208 orders" instead of silently
       // truncating the answer at row 25.
+      // #562: build the next-page invocation as a structured argv array;
+      // each user-supplied value lands in its own argv slot (no string
+      // interpolation, no quote-breakout risk). Display string is derived
+      // from the argv via displayCommandFromArgs for human-facing footers.
       const pageEnvelope = buildPageEnvelope(result.page);
-      const companyFlag = allOpts.company ? ` --company "${allOpts.company}"` : "";
-      const nextPageCommand = `pax8 orders list --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}${companyFlag}`;
+      const nextPageArgs: string[] = [
+        "pax8", "orders", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.company ? ["--company", String(allOpts.company)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
 
       // #418: row numbers continue across pages (page 2 starts at 26, not 1)
       // so the REPL's `<resource> show 26` lookup matches what the partner
@@ -147,16 +157,20 @@ Examples:
       if (ctx.outputFormat === "json") {
         const orders = result.content;
         if (allOpts.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          // #562: every nextActions entry carries both `command` (display)
+          // and `args` (argv). Agents spawn args.slice(1).
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
           const pageAction = buildNextPageAction(
             pageEnvelope,
-            `${nextPageCommand} --json`,
+            [...nextPageArgs, "--json"],
             "order",
           );
           if (pageAction) nextActions.push(pageAction);
           if (orders.length > 0) {
+            const showArgs = ["pax8", "orders", "show", String(orders[0].id)];
             nextActions.push({
-              command: `pax8 orders show ${orders[0].id}`,
+              command: displayCommandFromArgs(showArgs),
+              args: showArgs,
               description: `Drill into the most recent order on this page`,
             });
           }
