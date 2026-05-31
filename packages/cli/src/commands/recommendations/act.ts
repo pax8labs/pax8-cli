@@ -203,8 +203,8 @@ Notes — what this command acts on:
   (unit price × seat count) and is NOT equivalent to Pax8's PMRR
   (Potential MRR) metric. Treat order-placement decisions accordingly.
 
-  This local engine will be retired or remapped when OE's first-party
-  /opportunities API ships (ARC-785, #375).
+  This local engine will be retired or remapped when Pax8's first-party
+  Opportunity Explorer API ships (#375).
 
 What this command does:
   Bulk action submits REAL orders to Pax8 via the orders API — one POST

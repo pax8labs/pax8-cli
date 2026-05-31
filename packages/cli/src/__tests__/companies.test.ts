@@ -381,7 +381,7 @@ describe("pax8 clients", () => {
 
   describe("clients create — atomic contact creation (#330)", () => {
     it("atomic-path happy: posts contacts[0] with primary:true on all three types", async () => {
-      // Per Pax8 API Reference + PAM-997: passing a properly-typed primary
+      // Per the Pax8 API Reference: passing a properly-typed primary
       // contact in the `contacts: [...]` array on POST /companies flips the
       // new company from Inactive to Active at creation. The CLI implicitly
       // constructs the three-types-primary contact from the four flags.
@@ -517,7 +517,7 @@ describe("pax8 clients", () => {
       expect(result.stdout).toContain("--email");
       expect(result.stdout).toContain("--company-only");
       // Help text should reference the spec source so partners can verify
-      expect(result.stdout).toContain("PAM-997");
+      expect(result.stdout).toContain("Pax8 API Reference");
     });
   });
 
