@@ -305,7 +305,11 @@ Examples:
           JSON.stringify(
             result.content.map((_c, i) => ({
               key: String(startNum + i + 1),
-              command: `clients more ${startNum + i + 1}`,
+              // Must start with `pax8 ` — REPL dispatch at lib/repl.ts:191
+              // requires /^pax8\s+\w/ as defense-in-depth against a tampered
+              // pending-actions.json. Drop the prefix and the bare-number
+              // drill-in silently no-ops.
+              command: `pax8 clients more ${startNum + i + 1}`,
             })),
           ),
         );

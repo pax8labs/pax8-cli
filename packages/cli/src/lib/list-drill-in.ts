@@ -73,8 +73,14 @@ export async function wireListDrillIn<T extends DrillInRow>(
   );
 
   // (2) pending-actions.json — REPL bare-number-input lookup. Each entry's
-  // `command` is interpreted by `lib/repl.ts:111-160` as a templated
+  // `command` is interpreted by `lib/repl.ts:177-227` as a templated
   // command to run when the user types the matching key.
+  //
+  // The `pax8 ` prefix is load-bearing: the REPL dispatch check at
+  // repl.ts:191 is `/^pax8\s+\w/.test(picked.command)` (defense-in-depth
+  // against a tampered pending-actions.json from #506). Without the
+  // prefix the regex fails, the dispatch silently no-ops, and the bare-
+  // number drill-in stays dead.
   try {
     const dir = getConfigDir();
     mkdirSync(dir, { recursive: true });
@@ -83,7 +89,7 @@ export async function wireListDrillIn<T extends DrillInRow>(
       JSON.stringify(
         rows.map((row, i) => ({
           key: String(startNum + i + 1),
-          command: `${resource} show ${String(row.id)}`,
+          command: `pax8 ${resource} show ${String(row.id)}`,
         })),
       ),
     );
