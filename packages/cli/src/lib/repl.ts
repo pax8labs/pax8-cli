@@ -232,7 +232,24 @@ export async function startRepl(createProgram: () => Command): Promise<void> {
     // Pause the REPL readline while the child runs so stdin input
     // (like "y" for confirmations) doesn't leak back to the REPL.
     rl.pause();
-    const child = spawn("node", [cliPath, ...args], {
+    // #563: when the parent is invoked via `tsx` (the `pnpm dev` path
+    // documented in CONTRIBUTING.md), `cliPath` resolves to a `.ts`
+    // source file. Hardcoding `node` here meant the child crashed with
+    // ERR_MODULE_NOT_FOUND on every typed command in the dev REPL — and
+    // every contributor following the documented dev workflow lost the
+    // ability to test REPL changes locally, which let bugs like #561
+    // ship invisibly past CI (since the test suite runs against `dist/`).
+    //
+    // Fix: register the tsx ESM loader via `--import` so the child Node
+    // resolves the `.ts` entrypoint. The JS path (`dist/index.js` or a
+    // linked `pax8` binary) is unchanged. Using `process.execPath`
+    // instead of the literal `"node"` also makes nvm / asdf / custom-node
+    // setups robust without depending on `node` being on PATH.
+    const isTsEntrypoint = cliPath.endsWith(".ts") || cliPath.endsWith(".mts");
+    const childArgs = isTsEntrypoint
+      ? ["--import", "tsx/esm", cliPath, ...args]
+      : [cliPath, ...args];
+    const child = spawn(process.execPath, childArgs, {
       env: { ...process.env, FORCE_COLOR: "1", PAX8_REPL: "1" },
       stdio: "inherit",
     });
