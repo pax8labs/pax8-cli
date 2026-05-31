@@ -7,6 +7,8 @@ Looking for help with `pax8-cli`? Here's where to start.
 - **`pax8 doctor`** — runs diagnostics on your setup (Node version, credentials, API reachability, config file)
 - **`pax8 <command> --help`** — every command documents its flags and gives runnable examples
 - **`pax8 --verbose <command>`** — prints the API path and method to stderr; helpful for troubleshooting
+- **`pax8 version`** — print the installed CLI version (include in every bug report)
+- **`PAX8_DEMO=1 pax8 <command>`** — reproduce against an in-memory fixture to confirm whether the issue is your data or the CLI
 
 ## Bug reports and feature requests
 
