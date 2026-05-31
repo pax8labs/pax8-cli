@@ -2,40 +2,18 @@
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## Source of truth
 
-### Added
+Per-package CHANGELOGs are the canonical release record. They are generated and updated automatically by [Changesets](https://github.com/changesets/changesets) on every release PR — see [CONTRIBUTING.md → Releases](CONTRIBUTING.md#releases) for the workflow.
 
-- **Vocabulary alignment with Pax8 canonical terms** (#298) — Pax8-internal research surfaced six places where CLI vocabulary diverges from canonical Pax8 vocabulary. Help-text disclaimers added to clarify scope: `pax8 subscriptions renewals` (renewal exposure ≠ Revenue at Risk Predictor), `pax8 recommendations list` (cross_sell collapses multiple Opportunity Explorer types; seat_gap is a CLI-invented heuristic, not Seat Utilization; estimatedMrrUplift is upper-bound, not PMRR), `pax8 invoices audit` (partner-side reconciliation, not vendor-side), and `pax8 subscriptions show` (`provisioningStatus` is the API's coarse-grained state, not internal pipeline detail). README "Metric definitions" expanded with renewal-exposure and coverage-gap sections.
-- **`Company.externalId`** surfaced in `pax8 companies show` (table + `--json`). Partner-side identifier returned by the API, useful for bridging Pax8 ↔ PSA records (#273).
-- **`Subscription.currencyCode`** surfaced in `pax8 subscriptions list/show`. Always present in `--json`; appended to the price column in table view only when the value is non-`USD`, to keep the common case uncluttered (#273).
-- **Per-command e2e UX matrix** (`e2e/per-command.test.ts` + `e2e/command-inventory.ts`): every CLI command runs through a fixed set of layers under `PAX8_DEMO=1` — smoke (exits 0, no stack traces), cross-cutting invariants (no `undefined` / `[object Object]` / debug-token leaks), per-command semantic checks (expected/forbidden output fragments), JSON contract (`--json` parses, required fields per spec, minRows for list shapes), and `--help` (exits 0, mentions command name). The inventory is the single source of truth — adding a new command means adding one entry. Catalogued bugs are marked `knownBroken` with issue links rather than papering over with weakened assertions, so regressions stay visible in CI output (#193 / #207).
+- [`@pax8/cli` changelog](packages/cli/CHANGELOG.md) — user-facing CLI
+- [`@pax8/core` changelog](packages/core/CHANGELOG.md) — embeddable business-logic library
 
-### Changed
+`@pax8/claude-skill` is not versioned independently.
 
-- **`Product.vendor`** removed from the schema — it duplicated `vendorName`. Only `vendorName` remains, matching the public API (#273).
-- **`--json` field names aligned with the public Pax8 API** — `InvoiceItem.subtotal` → `subTotal`, `InvoiceItem.unitPrice` → `price`, `Company.modified` → `updatedDate`, `Quote.expirationDate` → `expiresOn`, `Quote.createdDate` → `createdOn`. Breaking for `--json` consumers; acceptable pre-1.0 since partners reading both surfaces no longer have to translate. The `--expiration-date` CLI flag on `pax8 quotes create`/`update` is intentionally unchanged — flag vocabulary and field vocabulary are separate concerns (#273).
-- **Display labels** — `report-bug` no-prior-error now exits 0 with a manual-file-a-bug pointer instead of exiting 1 silently; the with-context flow (sanitize, prompt, submit) is unchanged (#209).
-- **`auth status --json`** now emits valid JSON (`{ authenticated, mode, clientIdMasked? }`) and respects the agent-first non-TTY contract; previously it printed human-formatted text regardless of `--json` (#210).
+The entries below predate Changesets adoption and are retained for historical context. After 0.1.0, consult the per-package files.
 
-### Deprecated
-
-- **`mrrAtRisk` / `arrAtRisk` / `totalMrrAtRisk` / `totalArrAtRisk`** renamed to `mrrRenewing` / `arrRenewing` / `totalMrrRenewing` / `totalArrRenewing` (#298). The original "at risk" naming silently conflated with Pax8's patent-filed Revenue at Risk Predictor (an ML churn-likelihood model); the CLI metric is a temporal filter (subscriptions renewing within a window), not a churn-risk prediction. New canonical names emit alongside the old names with identical values for one minor version cycle so existing scripts don't break; the deprecated aliases will be removed in a future minor release. Surfaces affected: `pax8 subscriptions renewals --json`, `pax8 dashboard --json` (renewals block), and the `RenewalReport` / `RenewalItem` types in `@pax8/core`. Human-render copy updated (e.g. "MRR at risk" → "MRR renewing"). Recommendation engine `seat_gap` titles also re-worded ("uncovered seats" → "mismatched seats") to disambiguate from Pax8's canonical Seat Utilization metric.
-- **`pax8 webhooks create --events`** renamed to `--topics` to match the API field name (`webhookTopics`) and the CLI's own `Webhook.topics[]` output. `--events` continues to function as a deprecated alias and prints a one-line deprecation notice on stderr; it will be removed in v1.0. Passing both `--topics` and `--events` is rejected with `ERROR_INVALID_INPUT` (#273).
-- **`pax8 status`** renamed to `pax8 dashboard`. The previous name collided semantically with `pax8 auth status` (an auth-credential check) and was generically named for what is actually a portfolio dashboard. `pax8 status` continues to function as a deprecated alias and prints a one-line deprecation notice on stderr (`warning: \`status\` is deprecated; use \`dashboard\`. Will be removed in v1.0.`); it is hidden from `pax8 --help`. Same deprecation pattern as the `--events` → `--topics` rename above; will be removed in v1.0.
-
-### Fixed
-
-- **`orders show <id>`** — rendered "Company: undefined" and an empty Line Items section. Now joins `companyId` → company name (matching `subscriptions show`/`invoices show` pattern) and resolves `orderItems[].productId` → product name; adds per-line-item unit price column. Same enrichment in human and `--json` output (#194).
-- **`<group> show <id> --json`** — every show command (`subscriptions`, `invoices`, `quotes`, `usage`, `products`, `contacts`) wrapped the singular resource in a length-1 array (`[{...}]`) instead of emitting a single object — agent-contract violation that broke `--json | jq '.id'` style scripting (#208).
-- **`pax8 cost sim` README examples** used shorthand product names ("M365 Business Premium", "AvePoint Cloud Backup") that didn't prefix-match the demo catalog. First-run users walking the docs hit "Product not found" (#211).
-- **List-table rendering** (`pax8 companies list`, etc.) — dropped per-row inter-row dividers and the duplicated 50-line per-row drill-in footer; lists now render cleanly with one drill-in hint at the bottom of the table (#192).
-
-### Internal
-
-- Scheduled API-drift watcher (`.github/workflows/api-watch.yml`) opens maintainer issues when `ERROR_API_VALIDATION` spikes are detected in telemetry. First layer of the api-resilience plan tracked at #176 (#178).
-- Added `windows-latest` to the CI matrix; the test suite now runs on Windows under PowerShell on every PR. Added `fail-fast: false` so a Windows-only regression doesn't mask Ubuntu signal. Coverage step gated to `ubuntu-latest` + Node 22 only (#186 / #188).
-- **`e2e/test-utils.ts`** — `runCli()` now uses an isolated `PAX8_CONFIG_DIR` (mkdtemp) per call so e2e tests don't inherit the developer's `~/.pax8/last-error.json` between cases (load-bearing for the new `report-bug` live-run; general hygiene).
+---
 
 ## [0.1.0] — 2026-05-06
 

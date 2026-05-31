@@ -48,9 +48,9 @@ For project background, install instructions, the human demo flow, and how this 
 
 ## Autonomous Build Mode
 
-This mode applies **only** when you're explicitly following `docs/BUILD.md` (or a similar mode-specific prompt). Default behavior is conservative — confirm before destructive or shared-state actions and surface uncertainty.
+This mode applies **only** when you're explicitly following `docs/history/BUILD.md` (or a similar mode-specific prompt). Default behavior is conservative — confirm before destructive or shared-state actions and surface uncertainty.
 
-When following `docs/BUILD.md`, operate fully autonomously with ZERO human interaction:
+When following `docs/history/BUILD.md`, operate fully autonomously with ZERO human interaction:
 
 - NEVER ask questions, for permission, or for confirmation.
 - NEVER stop to explain what you're about to do. Just do it.
@@ -114,7 +114,7 @@ Adding a new command? Lives at `packages/cli/src/commands/<resource>/<action>.ts
 - `README.md` — what the project is, install/quick-start, MCP comparison
 - `docs/UX_GUIDE.md` — command patterns, output contracts, agent-facing rules (canonical for conventions)
 - `docs/PRD.md` — product requirements and API gap analysis
-- `docs/BUILD.md` — autonomous build-mode execution plan
+- `docs/history/BUILD.md` — autonomous build-mode execution plan
 - `packages/core/README.md` — `@pax8/core` as a standalone embeddable library
 - `packages/claude-skill/skill.md` — agent-facing skill manifest + read/write safety contract
 - `CONTRIBUTING.md` — DCO sign-off, Conventional Commits, PR workflow
