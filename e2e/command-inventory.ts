@@ -166,9 +166,12 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     type: "auth",
     demo: {
       // Under PAX8_DEMO=1 this should report demo mode somewhere in output.
-      expectedFragments: [/demo|not authenticated|authenticated/i],
+      // Field/label renamed in #573 from "authenticated" to
+      // "credentialsPresent" / "Credentials present" — the command only
+      // checks for files on disk, never hits /v1/token.
+      expectedFragments: [/demo|credentials present|no credentials stored/i],
     },
-    jsonContract: { objectRequiredFields: ["authenticated", "mode"] },
+    jsonContract: { objectRequiredFields: ["credentialsPresent", "mode"] },
   },
   // ── config ────────────────────────────────────────────────────────────────
   {
