@@ -42,10 +42,10 @@ jobs:
 
       # Publish gate (see #370): we intentionally do NOT pass a `publish:`
       # command here, so this action only opens/updates the "chore: release"
-      # PR and never invokes `npm publish`. Versions have been auto-bumped
-      # past anything we've shipped (CHANGELOG headings for 0.2.0/0.3.0 exist
-      # but the registry has nothing), and we want a deliberate human signal
-      # before the first real publish.
+      # PR and never invokes `npm publish`. Nothing has been published to the
+      # registry yet, and we want a deliberate human signal before the first
+      # real publish. Per-package versions are held at 0.1.0 through the
+      # pre-release window.
       #
       # When the team is ready to ship the first release, restore the
       # `publish: pnpm changeset publish` input below and merge — the next

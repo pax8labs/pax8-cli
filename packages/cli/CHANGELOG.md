@@ -1,6 +1,13 @@
 # @pax8/cli
 
-## 0.4.0
+<!--
+  Pre-release window: all entries below accumulate under 0.1.0 until the first
+  public release (publish gate: #370). The phantom 0.2.0 / 0.3.0 / 0.4.0
+  version headings written by `changeset version` PRs have been collapsed.
+  Substance preserved; only the section headings were removed.
+-->
+
+## Unreleased
 
 ### Minor Changes
 
@@ -114,8 +121,6 @@
 - Updated dependencies [[`c56eb06`](https://github.com/pax8labs/pax8-cli/commit/c56eb060d996c3ac248487ad3ab3ad22d5127315), [`9842846`](https://github.com/pax8labs/pax8-cli/commit/98428464403624b833a2af8b63d62ed1137e97e2), [`2f3b657`](https://github.com/pax8labs/pax8-cli/commit/2f3b6571842cc3080351bbfd3d24d62d131b6848)]:
   - @pax8/core@0.4.0
 
-## 0.3.0
-
 ### Minor Changes
 
 - [#543](https://github.com/pax8labs/pax8-cli/pull/543) [`e7ef4a7`](https://github.com/pax8labs/pax8-cli/commit/e7ef4a72a15ec7e491e4c948ae571a0340ffc8df) Thanks [@jidulberger](https://github.com/jidulberger)! - **Breaking** (`--json` shape across every list command, pre-publish): every `--json` list command now emits a wrapped envelope `{ <resource>: [...], page: { number, size, totalElements, totalPages } }` instead of a flat array. Per [#370](https://github.com/pax8labs/pax8-cli/issues/370) the package isn't published yet, so no deprecation cycle is owed; consumers switch `JSON.parse(out)` → `JSON.parse(out).<resource>`. Closes [#483](https://github.com/pax8labs/pax8-cli/issues/483).
@@ -190,8 +195,6 @@
 
 - Updated dependencies [[`e7ef4a7`](https://github.com/pax8labs/pax8-cli/commit/e7ef4a72a15ec7e491e4c948ae571a0340ffc8df), [`74cd0e4`](https://github.com/pax8labs/pax8-cli/commit/74cd0e44120aebe49baa0f154cffb6d039840b38)]:
   - @pax8/core@0.3.0
-
-## 0.2.0
 
 ### Minor Changes
 
@@ -445,8 +448,6 @@
 - Updated dependencies [[`830774a`](https://github.com/pax8labs/pax8-cli/commit/830774a8845058541f6cc01afc16dc147694cdbe), [`3796bf9`](https://github.com/pax8labs/pax8-cli/commit/3796bf9f1028bef64bf6cc6fcb24042466644740), [`2788c73`](https://github.com/pax8labs/pax8-cli/commit/2788c73c6fcd83aba6f1d9aa32fb25e2e374f963), [`788c83a`](https://github.com/pax8labs/pax8-cli/commit/788c83a01906095882bc53110ee8df285eb9da20), [`bcd6fec`](https://github.com/pax8labs/pax8-cli/commit/bcd6fecc81ff470124382bae3bddd82afb27cb32), [`d20b113`](https://github.com/pax8labs/pax8-cli/commit/d20b1137ec74e81c9745f5f8f76484086a2f44e8), [`93a7405`](https://github.com/pax8labs/pax8-cli/commit/93a7405e34556d62ef89dcfe1c2b13c693d5de95), [`45fe0d1`](https://github.com/pax8labs/pax8-cli/commit/45fe0d1db00d678c73b709a6137f2e64d69038f6), [`5617161`](https://github.com/pax8labs/pax8-cli/commit/561716145e254eaf91d75c00c8b6e371c8856c22), [`75591cb`](https://github.com/pax8labs/pax8-cli/commit/75591cb57b4b8cda6ada2cddde179c53890719e6), [`d71a0f2`](https://github.com/pax8labs/pax8-cli/commit/d71a0f2e600332167587a2fffbf4198a32fa9e8b), [`d88ce13`](https://github.com/pax8labs/pax8-cli/commit/d88ce13c6a0b2166f70c3d87b2320376286d0c06), [`32cb6c8`](https://github.com/pax8labs/pax8-cli/commit/32cb6c82f920358660a027d52151a5a0656f9339), [`99ff0a2`](https://github.com/pax8labs/pax8-cli/commit/99ff0a2a78b63998ca05c8fded9b41b885bdb0d3), [`224f16a`](https://github.com/pax8labs/pax8-cli/commit/224f16a6030b8d89bfe67d1ba989b49d0fae8130), [`8590150`](https://github.com/pax8labs/pax8-cli/commit/8590150a98e9779e1b17d9fc4dd0f0c9b587b1f2)]:
   - @pax8/core@0.2.0
 
-## 0.3.0
-
 ### Minor Changes
 
 - [#353](https://github.com/pax8labs/pax8-cli/pull/353) [`5faf8a3`](https://github.com/pax8labs/pax8-cli/commit/5faf8a3b91688651afd1a12097c89e28ce65a20a) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 contacts {create,update}`: align request bodies with the public OpenAPI contract.
@@ -590,8 +591,6 @@
 
 - Updated dependencies [[`a6cea7f`](https://github.com/pax8labs/pax8-cli/commit/a6cea7fea15bbe63efa9aaf2223737057c44f6d9), [`758eb98`](https://github.com/pax8labs/pax8-cli/commit/758eb98ed058e53a8961defb7492ecf710ebb6f2), [`5faf8a3`](https://github.com/pax8labs/pax8-cli/commit/5faf8a3b91688651afd1a12097c89e28ce65a20a), [`8108ea0`](https://github.com/pax8labs/pax8-cli/commit/8108ea096d2ea82d24fc4cbb8f374952976fe9be), [`87dd835`](https://github.com/pax8labs/pax8-cli/commit/87dd8350cf2ec89232bd527d6284421cc05dcaf1), [`d3d8316`](https://github.com/pax8labs/pax8-cli/commit/d3d8316998343e11d3c0057bb44add7cbeff55e7), [`828444e`](https://github.com/pax8labs/pax8-cli/commit/828444e5669e1f05a674fafec8ea72428ff3f9a1), [`629011f`](https://github.com/pax8labs/pax8-cli/commit/629011f861cf8c052e9eaea00bc360e0b58b42e1), [`1dcf2d9`](https://github.com/pax8labs/pax8-cli/commit/1dcf2d9beb25cb78bd39b2be184111aa189225a3), [`e307132`](https://github.com/pax8labs/pax8-cli/commit/e3071321aaf0dd6a4a36bbe76882b8ccd47f28f4), [`41c13e6`](https://github.com/pax8labs/pax8-cli/commit/41c13e6677b5781236c2ba21bde56d4464d40057), [`db00533`](https://github.com/pax8labs/pax8-cli/commit/db005336a163b6028d7d75a5628d6a9f0d824278), [`18e2e1f`](https://github.com/pax8labs/pax8-cli/commit/18e2e1f3e64e110be3d470e736c60941555aa1a8), [`3b9026b`](https://github.com/pax8labs/pax8-cli/commit/3b9026ba3b56cf6b2f331b4aa5982d6631dfd6b0), [`cc7b004`](https://github.com/pax8labs/pax8-cli/commit/cc7b0046e6d87173d554c54b9e2f32e0c1b4ac5e), [`aaa56e1`](https://github.com/pax8labs/pax8-cli/commit/aaa56e12355abf8d247346b5d1f4e70ab1af3192), [`e507f77`](https://github.com/pax8labs/pax8-cli/commit/e507f7702b1b9e281534ef396d91fc61cca87ede), [`e179b35`](https://github.com/pax8labs/pax8-cli/commit/e179b35b9ea4fe0bfd5cad4339ca183e5666c6c2)]:
   - @pax8/core@0.3.0
-
-## 0.2.0
 
 ### Minor Changes
 
