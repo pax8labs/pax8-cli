@@ -70,12 +70,12 @@ describe("auth status", () => {
     return stdoutWrite.mock.calls.map((c) => String(c[0])).join("");
   }
 
-  it("emits JSON with authenticated:true and mode:demo under --json + PAX8_DEMO=1", async () => {
+  it("emits JSON with credentialsPresent:true and mode:demo under --json + PAX8_DEMO=1", async () => {
     process.env.PAX8_DEMO = "1";
     await makeProgram().parseAsync(["node", "pax8", "auth", "status", "--json"]);
     const out = captured().trim();
     const parsed = JSON.parse(out);
-    expect(parsed).toEqual({ authenticated: true, mode: "demo" });
+    expect(parsed).toEqual({ credentialsPresent: true, mode: "demo" });
   });
 
   it("emits human-formatted text in TTY mode without --json (demo)", async () => {
@@ -84,7 +84,7 @@ describe("auth status", () => {
     const out = captured();
     // Human output uses the checkmark + "demo mode" copy; no JSON braces.
     expect(out).toContain("demo mode");
-    expect(out).not.toContain('"authenticated"');
+    expect(out).not.toContain('"credentialsPresent"');
   });
 
   it("auto-emits JSON when stdout is non-TTY (agent-first contract)", async () => {
@@ -96,11 +96,11 @@ describe("auth status", () => {
     await makeProgram().parseAsync(["node", "pax8", "auth", "status"]);
     const out = captured().trim();
     const parsed = JSON.parse(out);
-    expect(parsed.authenticated).toBe(true);
+    expect(parsed.credentialsPresent).toBe(true);
     expect(parsed.mode).toBe("demo");
   });
 
-  it("emits authenticated:true mode:live when creds are present (--json)", async () => {
+  it("emits credentialsPresent:true mode:live when creds are present (--json)", async () => {
     delete process.env.PAX8_DEMO;
     getCredentialsMock.mockResolvedValue({
       clientId: "abcdefghij1234567890",
@@ -109,19 +109,34 @@ describe("auth status", () => {
     await makeProgram().parseAsync(["node", "pax8", "auth", "status", "--json"]);
     const out = captured().trim();
     const parsed = JSON.parse(out);
-    expect(parsed.authenticated).toBe(true);
+    expect(parsed.credentialsPresent).toBe(true);
     expect(parsed.mode).toBe("live");
     // Mask should be present and must NOT include the full secret.
     expect(parsed.clientIdMasked).toBeDefined();
     expect(out).not.toContain("secret-value");
   });
 
-  it("emits authenticated:false mode:live when no creds are stored (--json)", async () => {
+  it("emits credentialsPresent:false mode:live when no creds are stored (--json)", async () => {
     delete process.env.PAX8_DEMO;
     getCredentialsMock.mockResolvedValue(null);
     await makeProgram().parseAsync(["node", "pax8", "auth", "status", "--json"]);
     const out = captured().trim();
     const parsed = JSON.parse(out);
-    expect(parsed).toEqual({ authenticated: false, mode: "live" });
+    expect(parsed).toEqual({ credentialsPresent: false, mode: "live" });
+  });
+
+  // #573: `auth status` only checks files on disk. The TTY human output for
+  // the credentials-present branch must point the user at `pax8 doctor` for
+  // an actual API-backed verification, so a user with rotated/revoked creds
+  // doesn't take "credentials present" as a green light.
+  it("hints at pax8 doctor when credentials are present (live, TTY)", async () => {
+    delete process.env.PAX8_DEMO;
+    getCredentialsMock.mockResolvedValue({
+      clientId: "abcdefghij1234567890",
+      clientSecret: "secret-value",
+    });
+    await makeProgram().parseAsync(["node", "pax8", "auth", "status"]);
+    const out = captured();
+    expect(out).toContain("pax8 doctor");
   });
 });
