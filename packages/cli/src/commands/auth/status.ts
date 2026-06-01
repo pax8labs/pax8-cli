@@ -7,20 +7,30 @@ import { CredentialStore } from "@pax8/core";
 import { replCmd } from "../../lib/confirm.js";
 import { getOutputFormat } from "../../lib/context.js";
 
+// `auth status` reports whether credentials are present on disk — it does NOT
+// hit the API. A user with rotated or revoked credentials would see
+// `credentialsPresent: true` here until the next real call to `/token` fails.
+// For an actual authentication check, run `pax8 doctor`, which mints a token
+// against the Pax8 API. The field name is deliberately literal so the JSON
+// shape can't mislead an agent or script consumer (#573).
 interface AuthStatusJson {
-  authenticated: boolean;
+  credentialsPresent: boolean;
   mode: "demo" | "live";
   clientIdMasked?: string;
 }
 
 export const authStatusCommand = new Command("status")
-  .description("Show current authentication status")
+  .description("Check whether credentials are stored locally (does not validate against the API; run `pax8 doctor` for that)")
   .addHelpText(
     "after",
     `
 Examples:
   pax8 auth status
-  pax8 auth status --json`
+  pax8 auth status --json
+
+Notes:
+  This command only checks for credentials on disk. To verify they actually
+  authenticate against the Pax8 API, run \`pax8 doctor\`.`
   )
   .action(async (_options, command: Command) => {
     const allOpts = command.optsWithGlobals();
@@ -30,7 +40,7 @@ Examples:
     if (isDemo) {
       if (format === "json") {
         const payload: AuthStatusJson = {
-          authenticated: true,
+          credentialsPresent: true,
           mode: "demo",
         };
         process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
@@ -39,7 +49,7 @@ Examples:
 
       process.stdout.write("\n");
       process.stdout.write(
-        chalk.green("  ✓ Authenticated (demo mode)\n")
+        chalk.green("  ✓ Credentials present (demo mode)\n")
       );
       process.stdout.write(chalk.dim("  Mode: Demo\n"));
       process.stdout.write(
@@ -54,7 +64,7 @@ Examples:
 
     if (format === "json") {
       const payload: AuthStatusJson = {
-        authenticated: !!creds,
+        credentialsPresent: !!creds,
         mode: "live",
       };
       if (creds) {
@@ -75,13 +85,18 @@ Examples:
           ? creds.clientId.slice(0, 4) + "…" + creds.clientId.slice(-4)
           : "****";
 
-      process.stdout.write(chalk.green("  ✓ Authenticated\n"));
+      process.stdout.write(chalk.green("  ✓ Credentials present\n"));
       process.stdout.write(chalk.dim(`  Client ID: ${masked}\n`));
       process.stdout.write(
         chalk.dim("  Secret: ••••••••\n")
       );
+      process.stdout.write(
+        chalk.dim(
+          `\n  This only checks files on disk. Run ${replCmd("pax8 doctor")} to verify against the API.\n`
+        )
+      );
     } else {
-      process.stdout.write(chalk.red("  ✗ Not authenticated\n"));
+      process.stdout.write(chalk.red("  ✗ No credentials stored\n"));
       process.stdout.write(
         chalk.dim(
           `\n  Run: ${replCmd("pax8 auth login")} --client-id <id> --client-secret <secret>\n`

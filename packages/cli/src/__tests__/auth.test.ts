@@ -156,17 +156,20 @@ describe("pax8 auth", () => {
     // Subprocess stdout is non-TTY, so per the agent-first contract (#210)
     // `auth status` auto-emits JSON. We assert on the structured shape and
     // separately verify the human path via the explicit format helpers.
+    // Field renamed from `authenticated` to `credentialsPresent` in #573 —
+    // the previous name implied an API-backed validity check the command
+    // doesn't actually perform.
     it("emits JSON in non-TTY (agent-first default)", async () => {
       const result = await runCliExpectSuccess(["auth", "status"]);
       const parsed = JSON.parse(result.stdout);
-      expect(parsed.authenticated).toBe(true);
+      expect(parsed.credentialsPresent).toBe(true);
       expect(parsed.mode).toBe("demo");
     });
 
     it("emits JSON when --json is passed explicitly", async () => {
       const result = await runCliExpectSuccess(["auth", "status", "--json"]);
       const parsed = JSON.parse(result.stdout);
-      expect(parsed).toEqual({ authenticated: true, mode: "demo" });
+      expect(parsed).toEqual({ credentialsPresent: true, mode: "demo" });
     });
   });
 
