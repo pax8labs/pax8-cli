@@ -24,7 +24,7 @@ This redacts UUIDs, emails, paths, and tokens before opening the issue draft.
 
 ## Security issues
 
-Don't file public issues for security vulnerabilities. See [SECURITY.md](SECURITY.md) for the disclosure path (security@pax8.com, 48-hour acknowledgment).
+Don't file public issues for security vulnerabilities. See [SECURITY.md](SECURITY.md) for the disclosure path (Pax8's Vulnerability Disclosure Program webform).
 
 ## Questions, ideas, troubleshooting
 

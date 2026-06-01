@@ -189,7 +189,7 @@ The release workflow publishes via [npm OIDC trusted publishing](https://docs.np
 
 ## Security Reports
 
-Do **not** open a GitHub Issue for security vulnerabilities. Report them via the process in [SECURITY.md](SECURITY.md) (email to `security@pax8.com`).
+Do **not** open a GitHub Issue for security vulnerabilities. Report them via the process in [SECURITY.md](SECURITY.md) (Pax8's Vulnerability Disclosure Program webform).
 
 ### Static analysis (CodeQL)
 
