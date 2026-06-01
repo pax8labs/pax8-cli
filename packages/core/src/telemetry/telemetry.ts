@@ -10,7 +10,11 @@ import { loadConfig, saveConfig, getConfigDir } from "../config/loader.js";
 import type { Pax8ErrorCode } from "../errors/codes.js";
 import { safeWriteFileSync } from "../security/safe-write.js";
 
-// PostHog project API key (public, write-only — safe to embed)
+// PostHog project API key — public-by-design (write-only, IP-rate-limited,
+// cannot read project data). Same category as a Sentry public DSN, Segment
+// write key, or Mixpanel project token; not a server credential, safe to
+// commit. See PostHog's own docs:
+// https://posthog.com/docs/product-analytics/troubleshooting#is-it-ok-for-my-api-key-to-be-exposed-and-public
 const POSTHOG_API_KEY = "phc_XKIa0EPGDACY1p4Cczk6IWXFa3n9";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
