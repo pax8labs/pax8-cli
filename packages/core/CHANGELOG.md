@@ -1,6 +1,13 @@
 # @pax8/core
 
-## 0.4.0
+<!--
+  Pre-release window: all entries below accumulate under 0.1.0 until the first
+  public release (publish gate: #370). The phantom 0.2.0 / 0.3.0 / 0.4.0
+  version headings written by `changeset version` PRs have been collapsed.
+  Substance preserved; only the section headings were removed.
+-->
+
+## Unreleased
 
 ### Patch Changes
 
@@ -32,8 +39,6 @@
 
   Historical per-package CHANGELOGs (`packages/cli/CHANGELOG.md`, `packages/core/CHANGELOG.md`) deliberately left alone — they're append-only release-note records.
 
-## 0.3.0
-
 ### Minor Changes
 
 - [#544](https://github.com/pax8labs/pax8-cli/pull/544) [`74cd0e4`](https://github.com/pax8labs/pax8-cli/commit/74cd0e44120aebe49baa0f154cffb6d039840b38) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 subscriptions list` now exposes the server-side `billingTerm`, `productId`, and `sort` filters the public OpenAPI has always supported. Closes [#398](https://github.com/pax8labs/pax8-cli/issues/398).
@@ -59,8 +64,6 @@
   Mock fixtures (`packages/core/src/mock/mock-client.ts`) updated to the spec shape too, so `PAX8_DEMO=1` and the real API now exercise the same code path. **Breaking** to `provisioningDetails` JSON shape (was a single object with `productId/vendorPrerequisites/fields`; now a `ProvisioningDetail[]` array) — pre-publish, no deprecation owed.
 
   Threading provision details into orders / subscriptions write paths per Fred's "safest bet is to always add provision details to each line item" guidance is tracked separately as Candidate H Option B.
-
-## 0.2.0
 
 ### Minor Changes
 
@@ -234,8 +237,6 @@
 
   Closes [#458](https://github.com/pax8labs/pax8-cli/issues/458), [#469](https://github.com/pax8labs/pax8-cli/issues/469), [#475](https://github.com/pax8labs/pax8-cli/issues/475), [#459](https://github.com/pax8labs/pax8-cli/issues/459).
 
-## 0.3.0
-
 ### Minor Changes
 
 - [#353](https://github.com/pax8labs/pax8-cli/pull/353) [`5faf8a3`](https://github.com/pax8labs/pax8-cli/commit/5faf8a3b91688651afd1a12097c89e28ce65a20a) Thanks [@jidulberger](https://github.com/jidulberger)! - `pax8 contacts {create,update}`: align request bodies with the public OpenAPI contract.
@@ -371,8 +372,6 @@
   - `--events` continues to work as a deprecated alias for `--topics`.
 
   Per-topic `filters` are accepted by the spec but not yet exposed on the CLI surface — each topic ships with an empty filter array, which the server treats as "deliver every event for this topic". A structured filter-authoring UX is tracked separately.
-
-## 0.2.0
 
 ### Minor Changes
 
