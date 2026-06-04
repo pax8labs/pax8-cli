@@ -198,12 +198,12 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("discrepancies");
-      expect(data[0]).toHaveProperty("totalOvercharge");
-      expect(data[0]).toHaveProperty("totalUndercharge");
-      expect(data[0]).toHaveProperty("netImpact");
-      expect(data[0]).toHaveProperty("itemsAudited");
-      expect(data[0].discrepancies.length).toBeGreaterThan(0);
+      expect(data).toHaveProperty("discrepancies");
+      expect(data).toHaveProperty("totalOvercharge");
+      expect(data).toHaveProperty("totalUndercharge");
+      expect(data).toHaveProperty("netImpact");
+      expect(data).toHaveProperty("itemsAudited");
+      expect(data.discrepancies.length).toBeGreaterThan(0);
     });
 
     it("each discrepancy has required fields", async () => {
@@ -213,7 +213,7 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      const disc = data[0].discrepancies[0];
+      const disc = data.discrepancies[0];
       expect(disc).toHaveProperty("companyName");
       expect(disc).toHaveProperty("productName");
       expect(disc).toHaveProperty("invoicedQuantity");

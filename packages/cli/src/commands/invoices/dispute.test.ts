@@ -24,8 +24,7 @@ describe("invoices dispute (closed-loop counterpart to audit)", () => {
   it("happy path: files a dispute draft from a discrepancy ID in demo mode", async () => {
     // First run audit to grab a real discrepancy ID
     const auditResult = await runCliExpectSuccess(["invoices", "audit", "--json"]);
-    const audit = JSON.parse(auditResult.stdout);
-    const report = Array.isArray(audit) ? audit[0] : audit;
+    const report = JSON.parse(auditResult.stdout);
     expect(report.discrepancies.length).toBeGreaterThan(0);
     const discId = report.discrepancies[0].discrepancyId;
     expect(discId).toMatch(/^disc-[a-f0-9]{12}$/);
@@ -57,7 +56,7 @@ describe("invoices dispute (closed-loop counterpart to audit)", () => {
     // skipped (the test runner's 15s timeout would catch a regression).
     const auditResult = await runCliExpectSuccess(["invoices", "audit", "--json"]);
     const report = JSON.parse(auditResult.stdout);
-    const discId = (Array.isArray(report) ? report[0] : report).discrepancies[0].discrepancyId;
+    const discId = report.discrepancies[0].discrepancyId;
 
     const result = await runCliExpectSuccess(
       ["invoices", "dispute", "--discrepancy", discId, "--yes", "--json"],
@@ -71,7 +70,7 @@ describe("invoices dispute (closed-loop counterpart to audit)", () => {
   it("--idempotency-key replays a prior dispute byte-for-byte", async () => {
     const auditResult = await runCliExpectSuccess(["invoices", "audit", "--json"]);
     const report = JSON.parse(auditResult.stdout);
-    const discId = (Array.isArray(report) ? report[0] : report).discrepancies[0].discrepancyId;
+    const discId = report.discrepancies[0].discrepancyId;
 
     const key = "dispute-idem-1234-4abc-8def-0123456789ab";
 
@@ -132,8 +131,7 @@ describe("invoices dispute (closed-loop counterpart to audit)", () => {
 
   it("audit --json surfaces the dispute command in nextActions", async () => {
     const result = await runCliExpectSuccess(["invoices", "audit", "--json"]);
-    const audit = JSON.parse(result.stdout);
-    const report = Array.isArray(audit) ? audit[0] : audit;
+    const report = JSON.parse(result.stdout);
     expect(report.nextActions).toBeDefined();
     for (const action of report.nextActions) {
       expect(action.command).toMatch(/^pax8 invoices dispute --discrepancy disc-[a-f0-9]{12}/);

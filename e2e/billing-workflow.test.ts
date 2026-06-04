@@ -41,9 +41,7 @@ describe("E2E: Billing workflow — invoice and audit", () => {
 
   it("pax8 invoices audit --json produces valid JSON with discrepancies array", async () => {
     const result = await runCliExpectSuccess(["invoices", "audit", "--json"]);
-    const raw = JSON.parse(result.stdout);
-    // output() wraps in array; unwrap if needed
-    const data = Array.isArray(raw) ? raw[0] : raw;
+    const data = JSON.parse(result.stdout);
     expect(data).toHaveProperty("discrepancies");
     expect(Array.isArray(data.discrepancies)).toBe(true);
     expect(data).toHaveProperty("totalOvercharge");
