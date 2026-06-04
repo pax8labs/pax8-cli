@@ -53,12 +53,19 @@ jobs:
           version: pnpm changeset version
           commit: "chore: release"
           title: "chore: release"
-        # npm OIDC trusted publishing: when this workflow has `id-token: write`
-        # and the @pax8 scope has the publishing repo+workflow registered as a
-        # trusted publisher at https://www.npmjs.com/settings/pax8/packages,
-        # `npm publish` exchanges the OIDC token for an ephemeral publish token
-        # automatically — no NPM_TOKEN secret required.
+        # First-publish bootstrap: npm trusted-publisher OIDC requires the
+        # target package to already exist on the registry, so it can't sign
+        # the very first `npm publish`. We pass a short-lived granular token
+        # via `NODE_AUTH_TOKEN` for the 0.1.0 bootstrap publish only. Once
+        # `@pax8/cli` and `@pax8/core` exist on the registry, configure
+        # trusted publishers per-package (Settings → Trusted publishing),
+        # enable "Require 2FA and disallow tokens" in Settings → Publishing
+        # access, then open a follow-up PR that removes `NODE_AUTH_TOKEN`
+        # from this env block and revokes/deletes the `NPM_TOKEN` secret.
+        # Until that follow-up lands, OIDC and the token coexist — the npm
+        # CLI prefers OIDC when available and falls back to the token.
         # https://docs.npmjs.com/trusted-publishers
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
