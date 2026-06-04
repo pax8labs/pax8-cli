@@ -1,13 +1,13 @@
 # @pax8/core
 
 <!--
-  Pre-release window: all entries below accumulate under 0.1.0 until the first
-  public release (publish gate: #370). The phantom 0.2.0 / 0.3.0 / 0.4.0
-  version headings written by `changeset version` PRs have been collapsed.
-  Substance preserved; only the section headings were removed.
+  Pre-release window: entries below accumulated under 0.1.0 until the first
+  public release (publish gate: #370 — opened 2026-06-04). The phantom
+  0.2.0 / 0.3.0 / 0.4.0 version headings written by `changeset version` PRs
+  during the pre-release window were collapsed; substance preserved.
 -->
 
-## Unreleased
+## 0.1.0 — 2026-06-04
 
 ### Patch Changes
 
