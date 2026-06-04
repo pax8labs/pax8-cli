@@ -1,13 +1,13 @@
 # @pax8/cli
 
 <!--
-  Pre-release window: all entries below accumulate under 0.1.0 until the first
-  public release (publish gate: #370). The phantom 0.2.0 / 0.3.0 / 0.4.0
-  version headings written by `changeset version` PRs have been collapsed.
-  Substance preserved; only the section headings were removed.
+  Pre-release window: entries below accumulated under 0.1.0 until the first
+  public release (publish gate: #370 — opened 2026-06-04). The phantom
+  0.2.0 / 0.3.0 / 0.4.0 version headings written by `changeset version` PRs
+  during the pre-release window were collapsed; substance preserved.
 -->
 
-## Unreleased
+## 0.1.0 — 2026-06-04
 
 ### Minor Changes
 
@@ -57,6 +57,10 @@
   Helpers exposed in `lib/last-list.ts` for the rollout: `saveLastListContext`, `loadLastListContext`, `rewriteArgvForPage`, plus the `LastListContext` interface. 7 new unit tests cover round-trip, corruption, shape validation, and argv rewriting (replace + append + no-mutate).
 
 ### Patch Changes
+
+- [#580](https://github.com/pax8labs/pax8-cli/pull/580) — `invoices audit --json` now returns the audit report as a plain object instead of a single-element array. Consumers that wrote `Array.isArray(x) ? x[0] : x` to defend against the legacy shape can drop the unwrap. Affects both the populated and empty-state paths; the empty-state object also gains `itemsAudited: 0` to match the populated key set. Surfaced during the pre-release e2e walkthrough of the golden-path command table.
+
+- [#577](https://github.com/pax8labs/pax8-cli/pull/577) — `auth status --json` renames `authenticated` → `credentialsPresent`. The previous name implied a network-validated session, but the command only checks credential files on disk; the new name makes the offline scope explicit. Use `pax8 auth check` (or `pax8 doctor`) for the network-validated check that actually exchanges credentials with `/v1/token`. Closes [#573](https://github.com/pax8labs/pax8-cli/issues/573).
 
 - [#568](https://github.com/pax8labs/pax8-cli/pull/568) [`242fbed`](https://github.com/pax8labs/pax8-cli/commit/242fbed0058786aff69364d770b76d418b9c742c) Thanks [@jidulberger](https://github.com/jidulberger)! - Pre-launch documentation cleanup, no code changes:
   - **`README.md`** — restructured Quick Start into explicit "Install / Run / Authenticate" steps with three documented invocation paths (`node dist/index.js`, `npm link`'d `pax8`, `pnpm dev`); de-duplicated the pre-release banner (was repeated three times); expanded the Commands section to surface `contacts`, `quotes`, `webhooks`, `usage`, `config`, `report`, `init`, `completions`, `version`, `report-bug`, `telemetry` (the existing surface but only the prominent commands were documented); fixed the `report mrr` / `report growth` paragraph that still said "v0.2 reporting work will rebuild" when `pax8 report renewals|concentration|subscriptions` already shipped; rebuilt the REPL Mode section to show the welcome banner and document `back` / `n` / `p` shortcuts; replaced the Documentation section's BUILD.md link with current contributor / partner-facing pointers.

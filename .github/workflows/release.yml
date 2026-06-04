@@ -40,21 +40,16 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # Publish gate (see #370): we intentionally do NOT pass a `publish:`
-      # command here, so this action only opens/updates the "chore: release"
-      # PR and never invokes `npm publish`. Nothing has been published to the
-      # registry yet, and we want a deliberate human signal before the first
-      # real publish. Per-package versions are held at 0.1.0 through the
-      # pre-release window.
-      #
-      # When the team is ready to ship the first release, restore the
-      # `publish: pnpm changeset publish` input below and merge — the next
-      # push to main will publish whatever the open "chore: release" PR has
-      # already version-bumped to.
-      - name: Create release PR (publish gated — see #370)
+      # Publish gate opened 2026-06-04 (closes #370). Pushing to main now
+      # invokes `pnpm changeset publish`, which publishes whichever package
+      # versions in main exceed what's on the registry. The first publish
+      # ships 0.1.0 for `@pax8/cli` and `@pax8/core`. Subsequent pushes do
+      # nothing until a "chore: release" PR (opened by the action below
+      # when a changeset is present) bumps versions and is merged.
+      - name: Publish (gate opened in #370)
         uses: changesets/action@63a615b9cd06ba9a3e6d13796c7fbcb080a60a0b # v1.8.0
         with:
-          # publish: pnpm changeset publish  # gated — enable when ready to ship
+          publish: pnpm changeset publish
           version: pnpm changeset version
           commit: "chore: release"
           title: "chore: release"
