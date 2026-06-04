@@ -34,9 +34,9 @@ the same as Pax8's internal vendor reconciliation, which compares
 vendor-billed amounts against Pax8's records (vendor-side).
 
 JSON output (--json):
-  Returns a single-element array (legacy shape) wrapping the audit report:
+  Returns the audit report as a plain object:
 
-  [{
+  {
     "discrepancies": [{
       "companyId": string,
       "companyName": string,
@@ -51,8 +51,9 @@ JSON output (--json):
     "totalOvercharge": number,
     "totalUndercharge": number,
     "netImpact": number,
+    "itemsAudited": number,
     "nextActions": [{ "command": string, "description": string }]
-  }]`
+  }`
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
@@ -94,7 +95,13 @@ JSON output (--json):
       // If no invoices/items, short circuit
       if (allItems.length === 0) {
         if (ctx.outputFormat === "json") {
-          output([{ discrepancies: [], totalOvercharge: 0, totalUndercharge: 0, netImpact: 0 }], { format: "json" });
+          process.stdout.write(
+            JSON.stringify(
+              { discrepancies: [], totalOvercharge: 0, totalUndercharge: 0, netImpact: 0, itemsAudited: 0 },
+              null,
+              2,
+            ) + "\n",
+          );
         } else if (ctx.outputFormat !== "quiet") {
           const monthLabel = options.month ? formatMonthLabel(options.month) : "current";
           process.stdout.write(`\n  ${chalk.green("✓")} No invoices found for ${monthLabel} period.\n\n`);
@@ -141,9 +148,12 @@ JSON output (--json):
             command: `pax8 invoices dispute --discrepancy ${d.discrepancyId}${options.month ? ` --month ${options.month}` : ""}`,
             description: `File a dispute for ${d.companyName} — ${d.productName} (${d.type}, Δ${d.delta > 0 ? "+" : ""}${d.delta})`,
           }));
-        output(
-          [{ ...report, discrepancies: stampedDiscrepancies, nextActions }],
-          { format: "json" },
+        process.stdout.write(
+          JSON.stringify(
+            { ...report, discrepancies: stampedDiscrepancies, nextActions },
+            null,
+            2,
+          ) + "\n",
         );
         return;
       }
