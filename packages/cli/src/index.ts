@@ -7,6 +7,7 @@ import chalk from "chalk";
 declare const __CLI_VERSION__: string;
 import { registerAuthCommands } from "./commands/auth/index.js";
 import { registerConfigCommands } from "./commands/config/index.js";
+import { registerDemoCommands } from "./commands/demo/index.js";
 import { registerCompaniesCommands } from "./commands/companies/index.js";
 import { registerSubscriptionsCommands } from "./commands/subscriptions/index.js";
 import { registerProductsCommands } from "./commands/products/index.js";
@@ -97,6 +98,7 @@ export function createProgram(): Command {
   // Register command groups
   registerAuthCommands(program);
   registerConfigCommands(program);
+  registerDemoCommands(program);
   registerCompaniesCommands(program);
   registerSubscriptionsCommands(program);
   registerProductsCommands(program);
