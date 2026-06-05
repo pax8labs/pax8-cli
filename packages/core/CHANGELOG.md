@@ -1,5 +1,11 @@
 # @pax8/core
 
+## 0.1.2
+
+### Patch Changes
+
+- [#592](https://github.com/pax8labs/pax8-cli/pull/592) [`04aebb8`](https://github.com/pax8labs/pax8-cli/commit/04aebb8f0df7d933d60d92628b1e1e43107049ef) Thanks [@jidulberger](https://github.com/jidulberger)! - Fix the `Pax8Client` quick-example in the README. The previous example used `client.subscriptions.listAll({...})` and `client.companies.listAll()` — methods that don't exist on the published sub-clients. The actual API is `client.subscriptions.list({...})` returning a `{ content, page }` envelope. Corrected the example, clarified the envelope shape, and listed the sub-clients that share the surface. Closes [#591](https://github.com/pax8labs/pax8-cli/issues/591).
+
 <!--
   Pre-release window: entries below accumulated under 0.1.0 until the first
   public release (publish gate: #370 — opened 2026-06-04). The phantom
