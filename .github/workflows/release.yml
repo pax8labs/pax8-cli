@@ -53,22 +53,16 @@ jobs:
           version: pnpm changeset version
           commit: "chore: release"
           title: "chore: release"
-        # First-publish bootstrap: npm trusted-publisher OIDC requires the
-        # target package to already exist on the registry, so it can't sign
-        # the very first `npm publish`. We pass a short-lived granular token
-        # via `NPM_TOKEN` for the 0.1.0 bootstrap publish only. `NPM_TOKEN`
-        # is the specific env var `changesets/action` checks to decide
-        # between token auth and OIDC — `NODE_AUTH_TOKEN` (the
-        # `actions/setup-node` convention) doesn't influence that branch,
-        # so the action would fall through to OIDC and fail without a
-        # trusted publisher. Once `@pax8/cli` and `@pax8/core` exist on
-        # the registry, configure trusted publishers per-package (Settings
-        # → Trusted publishing), enable "Require 2FA and disallow tokens"
-        # in Settings → Publishing access, then open a follow-up PR that
-        # removes `NPM_TOKEN` from this env block and revokes/deletes the
-        # `NPM_TOKEN` repo secret.
+        # npm OIDC trusted publishing: when this workflow has `id-token: write`
+        # and each `@pax8` package has the publishing repo+workflow registered
+        # as a trusted publisher (Settings → Trusted publishing on each
+        # package's npm page), `npm publish` exchanges the OIDC token for
+        # an ephemeral publish token automatically — no NPM_TOKEN secret
+        # required. Both packages must have trusted publisher configured
+        # before this workflow can publish; the 0.1.0 bootstrap was done
+        # manually with `pnpm publish --otp` since trusted publishers
+        # require the target package to already exist on the registry.
         # https://docs.npmjs.com/trusted-publishers
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
