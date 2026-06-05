@@ -18,6 +18,13 @@ import { safeWriteFileSync } from "../security/safe-write.js";
 const POSTHOG_API_KEY = "phc_XKIa0EPGDACY1p4Cczk6IWXFa3n9E7htSxcVIg70rRp";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
+// Portfolio-distinguishing tag. The Pax8 OSS telemetry project receives
+// events from multiple CLIs (currently `pax8-cli` and `pax8-cta`); every
+// event carries an `app` property so dashboards can filter or pivot by
+// source. Keep this string stable — renaming it breaks every saved
+// insight or alert in PostHog that filters on `app = "pax8-cli"`.
+const APP_NAME = "pax8-cli";
+
 export interface TelemetryEvent {
   event: "command_executed";
   command: string;
@@ -270,6 +277,7 @@ export class Telemetry {
           distinctId: this.anonymousId,
           event: event.event,
           properties: {
+            app: APP_NAME,
             command: event.command,
             flags: event.flags,
             duration_ms: event.duration_ms,
