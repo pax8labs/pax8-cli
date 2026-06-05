@@ -1,5 +1,15 @@
 # @pax8/cli
 
+## 0.1.3
+
+### Patch Changes
+
+- [#595](https://github.com/pax8labs/pax8-cli/pull/595) [`afc4ee9`](https://github.com/pax8labs/pax8-cli/commit/afc4ee9ac6537ff78642df564b4ec6ac25efca38) Thanks [@jidulberger](https://github.com/jidulberger)! - Add `pax8 demo on|off|status` for persistent demo-mode toggle.
+
+  Mirrors the `pax8-cta demo on` pattern so partners can use the same mental model across both Pax8 CLIs. Persists to `~/.pax8/config.yaml` (`demo: true|false`) so demo state survives across `npx` invocations.
+
+  `PAX8_DEMO` env var still wins when set — `pax8 demo status` shows which source determined the current state and warns when env will override config. Closes [#594](https://github.com/pax8labs/pax8-cli/issues/594).
+
 ## 0.1.2
 
 ### Patch Changes

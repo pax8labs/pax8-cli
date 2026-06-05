@@ -1,6 +1,6 @@
 {
   "name": "@pax8/cli",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Pax8 open source CLI for MSPs to manage cloud marketplace operations",
   "type": "module",
   "bin": {
