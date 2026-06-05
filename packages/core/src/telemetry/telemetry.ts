@@ -15,7 +15,7 @@ import { safeWriteFileSync } from "../security/safe-write.js";
 // write key, or Mixpanel project token; not a server credential, safe to
 // commit. See PostHog's own docs:
 // https://posthog.com/docs/product-analytics/troubleshooting#is-it-ok-for-my-api-key-to-be-exposed-and-public
-const POSTHOG_API_KEY = "phc_XKIa0EPGDACY1p4Cczk6IWXFa3n9";
+const POSTHOG_API_KEY = "phc_XKIa0EPGDACY1p4Cczk6IWXFa3n9E7htSxcVIg70rRp";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
 export interface TelemetryEvent {
