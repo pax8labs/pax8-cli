@@ -19,9 +19,9 @@ This clears the persistent demo flag in ~/.pax8/config.yaml. The
 PAX8_DEMO env var still wins when set — see ${replCmd("pax8 demo status")}.`
   )
   .action(async () => {
-    const config = await loadConfig().catch(() => ({
-      version: "1.0" as const,
-    }));
+    // loadConfig() returns the full default Config when the file is absent
+    // (ENOENT branch in core's loader), so no catch is needed here.
+    const config = await loadConfig();
     // Setting to `false` rather than deleting keeps the field explicit
     // in the saved YAML — partners reading their config file should see
     // demo: false rather than an absent field they have to infer.

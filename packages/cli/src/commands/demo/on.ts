@@ -19,9 +19,11 @@ Persistent across CLI invocations. The PAX8_DEMO env var always wins
 when set — see ${replCmd("pax8 demo status")} to inspect precedence.`
   )
   .action(async () => {
-    const config = await loadConfig().catch(() => ({
-      version: "1.0" as const,
-    }));
+    // loadConfig() returns the full default Config when the file is absent
+    // (ENOENT branch in core's loader), so no catch is needed here. Other
+    // errors (permission denied, malformed YAML, etc.) bubble up as real
+    // failures — they're not "use default" cases.
+    const config = await loadConfig();
     await saveConfig({ ...config, demo: true });
 
     process.stdout.write(
