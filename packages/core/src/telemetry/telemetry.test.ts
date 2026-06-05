@@ -478,3 +478,34 @@ describe("Telemetry — salted distinct_id (M-2)", () => {
     }
   });
 });
+
+// Guards against the class of bug where the hardcoded PostHog public
+// token gets silently mutated — truncated by a copy-paste, redacted by
+// a docs scrub, replaced by an empty placeholder, etc. PostHog's
+// ingest API silently drops events with malformed tokens, so a
+// regression here is invisible until someone notices their dashboard
+// is empty. Read the literal directly from the source file so the
+// test isn't fooled by an export shape change.
+describe("PostHog write-token (source-file shape guard)", () => {
+  it("POSTHOG_API_KEY in telemetry.ts matches the public-token format", async () => {
+    const src = await fs.readFile(
+      path.join(import.meta.dirname, "telemetry.ts"),
+      "utf-8",
+    );
+    const match = src.match(/const POSTHOG_API_KEY = "([^"]+)";/);
+    expect(match, "POSTHOG_API_KEY const not found in telemetry.ts").not.toBeNull();
+    const token = match![1];
+    // PostHog public project tokens are `phc_` + 43 base62 chars = 47 total.
+    expect(token).toMatch(/^phc_[A-Za-z0-9]{43}$/);
+  });
+
+  it("POSTHOG_HOST in telemetry.ts is the US ingest endpoint", async () => {
+    const src = await fs.readFile(
+      path.join(import.meta.dirname, "telemetry.ts"),
+      "utf-8",
+    );
+    const match = src.match(/const POSTHOG_HOST = "([^"]+)";/);
+    expect(match, "POSTHOG_HOST const not found in telemetry.ts").not.toBeNull();
+    expect(match![1]).toMatch(/^https:\/\/(us|eu)\.i\.posthog\.com$/);
+  });
+});
