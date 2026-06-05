@@ -7,7 +7,22 @@
   during the pre-release window were collapsed; substance preserved.
 -->
 
+## 0.1.1 — 2026-06-05
+
+Bootstrap-cycle fixes; no functional changes. `0.1.1` is the de-facto initial public release of `@pax8/cli` on npm — see the note at the end of this entry for why `0.1.0` doesn't exist on the registry.
+
+### Fixed
+
+- **`dependencies['@pax8/core']` correctly references the concrete version.** The first publish attempt for `@pax8/cli@0.1.0` used `npm publish` instead of `pnpm publish` and shipped `"@pax8/core": "workspace:*"` literally — a pnpm workspace protocol that no consumer can resolve. `pnpm publish` rewrites `workspace:*` to the concrete version at pack time; that's what `0.1.1` ships.
+- **`README.md` included in the published tarball.** The first publish attempt lacked a package-level README. `packages/cli/README.md` now exists and is automatically included alongside `LICENSE` and `dist/`.
+
+### Note about `@pax8/cli@0.1.0`
+
+`@pax8/cli@0.1.0` was published and unpublished within minutes on 2026-06-04 due to the two issues above. Per npm policy, the `0.1.0` version slot is permanently retired and cannot be republished. `0.1.1` is the de-facto initial public release. `@pax8/core@0.1.0` is unaffected and remains the canonical version of the SDK package — `@pax8/cli@0.1.1` depends on `@pax8/core@0.1.0`.
+
 ## 0.1.0 — 2026-06-04
+
+> **Note:** `@pax8/cli@0.1.0` was published and unpublished within minutes on 2026-06-04 due to packaging issues (see `0.1.1` above). The version slot is permanently retired on npm. The entries below describe the substance of the initial public release; the actual artifact shipped is `0.1.1`.
 
 ### Minor Changes
 
