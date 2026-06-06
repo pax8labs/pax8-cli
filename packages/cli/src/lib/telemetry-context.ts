@@ -80,3 +80,42 @@ export function consumeTelemetryFields(): Record<string, unknown> {
 export function _resetTelemetryFields(): void {
   pending = {};
 }
+
+/**
+ * Metadata about the command currently being executed. Stashed by the
+ * program-level `preAction` hook so the failure path (`handleCommandError`)
+ * can emit a `command_executed { success: false }` event without needing
+ * the Commander `actionCommand` it doesn't have direct access to. Cleared
+ * by either the `postAction` hook (success path) or `handleCommandError`
+ * (failure path) so it never leaks across commands in a long-lived REPL
+ * parent process.
+ */
+export interface ActiveCommandContext {
+  command: string;
+  subcommand: string;
+  flags: string[];
+  startTime: number;
+}
+
+let active: ActiveCommandContext | null = null;
+
+export function setActiveCommand(ctx: ActiveCommandContext): void {
+  active = ctx;
+}
+
+/**
+ * Read + clear the active command context. Returns `null` if no command
+ * is currently active (e.g. a Commander parse error before any action
+ * dispatched). Caller is responsible for clearing — this consume pattern
+ * matches `consumeTelemetryFields`.
+ */
+export function consumeActiveCommand(): ActiveCommandContext | null {
+  const out = active;
+  active = null;
+  return out;
+}
+
+/** Test hook — reset without consuming. */
+export function _resetActiveCommand(): void {
+  active = null;
+}

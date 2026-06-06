@@ -30,7 +30,7 @@ import { initCommand } from "./commands/init.js";
 import { reportBugCommand } from "./commands/report-bug.js";
 import { handleCommandError, flushTelemetryBeforeExit } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
-import { consumeTelemetryFields } from "./lib/telemetry-context.js";
+import { consumeTelemetryFields, setActiveCommand, consumeActiveCommand } from "./lib/telemetry-context.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
@@ -130,7 +130,21 @@ export function createProgram(): Command {
   // Time-based quip hook and demo mode banner
   program.hook("preAction", async (_thisCommand, actionCommand) => {
     // Record start time for duration tracking
-    commandStartTimes.set(actionCommand, Date.now());
+    const now = Date.now();
+    commandStartTimes.set(actionCommand, now);
+
+    // Stash the active command in telemetry-context so the failure path
+    // (`handleCommandError`) can emit a `command_executed { success: false }`
+    // event with the right command metadata. Without this, Commander's
+    // postAction hook only fires for the success path and failures get
+    // no telemetry attribution.
+    const subcommand = getFullCommandName(actionCommand);
+    setActiveCommand({
+      command: subcommand.split(".")[0] ?? subcommand,
+      subcommand,
+      flags: extractCommandFlags(actionCommand),
+      startTime: now,
+    });
 
     const quip = getTimeQuip();
     if (quip) {
@@ -156,6 +170,11 @@ export function createProgram(): Command {
 
   // ── Telemetry: track successful command execution ──────────────────
   program.hook("postAction", async (_thisCommand, actionCommand) => {
+    // Action completed without throwing → clear the active-command
+    // sentinel so `handleCommandError` doesn't accidentally re-emit
+    // the same command as a failure event later in the process
+    // lifetime (notably in long-lived REPL parents).
+    consumeActiveCommand();
     try {
       const telemetry = getTelemetry();
       // Always consume so a leftover from a (rare) early-returning handler
@@ -242,12 +261,9 @@ async function main(): Promise<void> {
   } else {
     const program = createProgram();
     await program.parseAsync(process.argv).catch(async (err) => {
-      // The canonical command_executed failure event is emitted by the
-      // postAction hook above; handleCommandError + the uncaughtException /
-      // unhandledRejection handlers flush via flushTelemetryBeforeExit().
-      // The catch here just ensures the buffer is drained on the parseAsync
-      // boundary before propagating to handleCommandError.
-      await flushTelemetryBeforeExit();
+      // `handleCommandError` itself emits the `command_executed`
+      // failure event (using the active command stashed by preAction
+      // in telemetry-context) and flushes before exit.
       await handleCommandError(err);
     });
   }

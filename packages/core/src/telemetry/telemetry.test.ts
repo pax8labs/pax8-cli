@@ -334,6 +334,11 @@ describe("Telemetry — revenue bucketing (M-2)", () => {
     expect(captures).toHaveLength(1);
     const props = captures[0].properties;
 
+    // Portfolio tag: distinguishes pax8-cli events from pax8-cta in the
+    // shared PostHog project. If this regresses, every saved insight or
+    // alert that filters on `app = "pax8-cli"` silently breaks.
+    expect(props.app).toBe("pax8-cli");
+
     // Raw fields MUST be gone from the PostHog payload.
     expect(props).not.toHaveProperty("order_total_dollars");
     expect(props).not.toHaveProperty("order_mrr_impact");
@@ -476,5 +481,49 @@ describe("Telemetry — salted distinct_id (M-2)", () => {
     } finally {
       fsSync.unlinkSync(blocker);
     }
+  });
+});
+
+// Guards against the class of bug where the hardcoded PostHog public
+// token gets silently mutated — truncated by a copy-paste, redacted by
+// a docs scrub, replaced by an empty placeholder, etc. PostHog's
+// ingest API silently drops events with malformed tokens, so a
+// regression here is invisible until someone notices their dashboard
+// is empty. Read the literal directly from the source file so the
+// test isn't fooled by an export shape change.
+describe("PostHog write-token (source-file shape guard)", () => {
+  it("POSTHOG_API_KEY in telemetry.ts matches the public-token format", async () => {
+    const src = await fs.readFile(
+      path.join(import.meta.dirname, "telemetry.ts"),
+      "utf-8",
+    );
+    const match = src.match(/const POSTHOG_API_KEY = "([^"]+)";/);
+    expect(match, "POSTHOG_API_KEY const not found in telemetry.ts").not.toBeNull();
+    const token = match![1];
+    // PostHog public project tokens are `phc_` + 43 base62 chars = 47 total.
+    expect(token).toMatch(/^phc_[A-Za-z0-9]{43}$/);
+  });
+
+  it("POSTHOG_HOST in telemetry.ts is the US ingest endpoint", async () => {
+    const src = await fs.readFile(
+      path.join(import.meta.dirname, "telemetry.ts"),
+      "utf-8",
+    );
+    const match = src.match(/const POSTHOG_HOST = "([^"]+)";/);
+    expect(match, "POSTHOG_HOST const not found in telemetry.ts").not.toBeNull();
+    expect(match![1]).toMatch(/^https:\/\/(us|eu)\.i\.posthog\.com$/);
+  });
+
+  it("APP_NAME in telemetry.ts identifies this CLI in the shared portfolio project", async () => {
+    const src = await fs.readFile(
+      path.join(import.meta.dirname, "telemetry.ts"),
+      "utf-8",
+    );
+    const match = src.match(/const APP_NAME = "([^"]+)";/);
+    expect(match, "APP_NAME const not found in telemetry.ts").not.toBeNull();
+    // Stability gate: renaming this string breaks every saved PostHog
+    // insight or alert in the shared portfolio project that filters on
+    // `app = "pax8-cli"`. The test is here to make that breakage loud.
+    expect(match![1]).toBe("pax8-cli");
   });
 });

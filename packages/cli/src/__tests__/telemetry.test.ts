@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import { runCli, runCliExpectSuccess } from "./test-utils.js";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -83,6 +83,60 @@ describe("pax8 telemetry", () => {
         PAX8_CONFIG_DIR: tmpDir,
       });
       expect(result.stdout).toContain("Telemetry disabled");
+    });
+  });
+
+  describe("failure-event emission (#145)", () => {
+    // Reads the JSONL backup written by `flush()` so tests don't depend on
+    // a live PostHog network call.
+    const readEvents = async (
+      dir: string,
+    ): Promise<Array<Record<string, unknown>>> => {
+      const today = new Date().toISOString().slice(0, 10);
+      const jsonl = path.join(dir, "telemetry", `${today}.jsonl`);
+      try {
+        const content = await fs.readFile(jsonl, "utf-8");
+        return content
+          .split("\n")
+          .filter((line) => line.trim().length > 0)
+          .map((line) => JSON.parse(line));
+      } catch {
+        return [];
+      }
+    };
+
+    it("action-throw fires a command_executed { success: false } event with the right command + error_code", async () => {
+      await runCliExpectSuccess(["telemetry", "enable"], { PAX8_CONFIG_DIR: tmpDir });
+
+      // `invoices audit --month <bad>` throws synchronously from the action
+      // via `validateMonth`. The action's own try/catch routes it to
+      // `handleCommandError`, which should now emit the failure event
+      // before flushing + exiting.
+      const result = await runCli(
+        ["invoices", "audit", "--month", "garbage", "--json"],
+        { PAX8_CONFIG_DIR: tmpDir, PAX8_DEMO: "1" },
+      );
+      expect(result.exitCode).not.toBe(0);
+
+      const events = await readEvents(tmpDir);
+      const failure = events.find(
+        (e) => e.success === false && e.subcommand === "invoices.audit",
+      );
+      expect(failure, `expected an invoices.audit failure event in ${JSON.stringify(events)}`).toBeDefined();
+      expect(failure!.error_code).toBe("ERROR_INVALID_INPUT");
+      expect(failure!.command).toBe("invoices");
+      expect(Array.isArray(failure!.flags)).toBe(true);
+    });
+
+    it("opt-out users (telemetry disabled) emit nothing on failure", async () => {
+      // No `telemetry enable` — telemetry is disabled by default.
+      const result = await runCli(
+        ["invoices", "audit", "--month", "garbage", "--json"],
+        { PAX8_CONFIG_DIR: tmpDir, PAX8_DEMO: "1" },
+      );
+      expect(result.exitCode).not.toBe(0);
+      const events = await readEvents(tmpDir);
+      expect(events).toHaveLength(0);
     });
   });
 });
