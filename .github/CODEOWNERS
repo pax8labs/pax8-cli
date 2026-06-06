@@ -1,0 +1,5 @@
+# Auto-assigned reviewers for every PR. GitHub's CODEOWNERS file.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-policies/customizing-your-repository/about-code-owners
+
+# Default owners — every PR opens with these two as required reviewers.
+* @jidulberger @cbrownpax8

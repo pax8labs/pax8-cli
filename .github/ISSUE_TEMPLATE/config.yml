@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/pax8labs/pax8-cli/blob/main/SECURITY.md
+    about: Use the private disclosure flow described in SECURITY.md — don't open a public issue for a security report.
+  - name: Question or general discussion
+    url: https://github.com/pax8labs/pax8-cli/blob/main/SUPPORT.md
+    about: Read SUPPORT.md for the right channel — many questions are answered there or in the README.
+  - name: Documentation pointer
+    url: https://github.com/pax8labs/pax8-cli#readme
+    about: Quick start, full command surface, agent-first contracts.
