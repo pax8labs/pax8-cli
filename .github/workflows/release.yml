@@ -47,7 +47,7 @@ jobs:
       # nothing until a "chore: release" PR (opened by the action below
       # when a changeset is present) bumps versions and is merged.
       - name: Publish (gate opened in #370)
-        uses: changesets/action@63a615b9cd06ba9a3e6d13796c7fbcb080a60a0b # v1.8.0
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           publish: pnpm changeset publish
           version: pnpm changeset version
