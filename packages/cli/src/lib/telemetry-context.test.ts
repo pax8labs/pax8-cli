@@ -6,6 +6,9 @@ import {
   setTelemetryFields,
   consumeTelemetryFields,
   _resetTelemetryFields,
+  setActiveCommand,
+  consumeActiveCommand,
+  _resetActiveCommand,
 } from "./telemetry-context.js";
 
 describe("telemetry-context", () => {
@@ -52,5 +55,47 @@ describe("telemetry-context", () => {
     const second = consumeTelemetryFields();
     expect(first).toEqual({ recs_presented: 1 });
     expect(second).toEqual({ order_seats: 2 });
+  });
+
+  describe("active command context (failure-event attribution)", () => {
+    beforeEach(() => {
+      _resetActiveCommand();
+    });
+
+    it("consume returns null when no command is active", () => {
+      expect(consumeActiveCommand()).toBeNull();
+    });
+
+    it("set and consume return the stashed context", () => {
+      setActiveCommand({
+        command: "invoices",
+        subcommand: "invoices.audit",
+        flags: ["--month", "--json"],
+        startTime: 1000,
+      });
+      expect(consumeActiveCommand()).toEqual({
+        command: "invoices",
+        subcommand: "invoices.audit",
+        flags: ["--month", "--json"],
+        startTime: 1000,
+      });
+    });
+
+    it("consume clears state — a second consume returns null", () => {
+      setActiveCommand({
+        command: "dashboard",
+        subcommand: "dashboard",
+        flags: [],
+        startTime: 0,
+      });
+      expect(consumeActiveCommand()).not.toBeNull();
+      expect(consumeActiveCommand()).toBeNull();
+    });
+
+    it("set replaces any earlier active command (no accumulation)", () => {
+      setActiveCommand({ command: "a", subcommand: "a", flags: [], startTime: 0 });
+      setActiveCommand({ command: "b", subcommand: "b", flags: [], startTime: 0 });
+      expect(consumeActiveCommand()?.command).toBe("b");
+    });
   });
 });

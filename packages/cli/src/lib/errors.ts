@@ -13,6 +13,7 @@ import {
   ERROR_AUTH_EXPIRED,
   ERROR_COMPANY_NOT_FOUND,
   ERROR_INTERNAL,
+  ERROR_INVALID_INPUT,
   ERROR_NOT_AUTHORIZED,
   ERROR_PRODUCT_NOT_FOUND,
   ERROR_RATE_LIMITED,
@@ -26,6 +27,7 @@ import {
 } from "@pax8/core";
 import { replCmd } from "./confirm.js";
 import { redactEnvelope, redactString } from "./redactor.js";
+import { consumeActiveCommand } from "./telemetry-context.js";
 
 declare const __CLI_VERSION__: string;
 
@@ -366,6 +368,63 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
   };
 }
 
+/**
+ * Map an arbitrary thrown value to a canonical `Pax8ErrorCode` for the
+ * failure-event payload. Mirrors the error-code surface that the
+ * human-readable / JSON error envelope writes elsewhere in this file
+ * (`codeForApiError`, the ZodError → ERROR_API_VALIDATION mapping, etc.)
+ * for the cases the telemetry layer needs to distinguish coarsely.
+ */
+function deriveErrorCodeForTelemetry(err: unknown): Pax8ErrorCode {
+  if (err instanceof CliError && err.code) return err.code;
+  // Commander parse errors carry `code` strings like
+  // "commander.unknownCommand" or "commander.missingArgument". Treat
+  // them all as user-input problems rather than internal failures.
+  if (typeof err === "object" && err !== null && "code" in err) {
+    const code = (err as { code?: unknown }).code;
+    if (typeof code === "string" && code.startsWith("commander.")) {
+      return ERROR_INVALID_INPUT;
+    }
+  }
+  return ERROR_INTERNAL;
+}
+
+/**
+ * Emit the `command_executed { success: false }` event before the CLI
+ * exits. Reads the active command stashed in telemetry-context by the
+ * program-level `preAction` hook; returns silently when there's no
+ * active context (Commander parse errors that throw before any action
+ * dispatches — those would also need `loadEnabled()` to run here, which
+ * we deliberately skip to avoid adding an async tick before
+ * `flushTelemetryBeforeExit`. That gap is tracked separately).
+ *
+ * Buffers only — the existing `flushTelemetryBeforeExit` call later in
+ * this function drains this event before `process.exit`. Telemetry
+ * must never crash the CLI, so anything that throws here is swallowed.
+ */
+function emitFailureEvent(error: unknown): void {
+  try {
+    const telemetry = getTelemetry();
+    if (!telemetry.isEnabled()) return;
+    const active = consumeActiveCommand();
+    telemetry.track({
+      event: "command_executed",
+      command: active?.command ?? "unknown",
+      subcommand: active?.subcommand ?? "unknown",
+      flags: active?.flags ?? [],
+      duration_ms: active ? Date.now() - active.startTime : 0,
+      success: false,
+      error_code: deriveErrorCodeForTelemetry(error),
+      cli_version: typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0",
+      node_version: process.version,
+      os: process.platform,
+      demo_mode: false,
+    });
+  } catch {
+    // Telemetry must never crash the CLI.
+  }
+}
+
 export async function handleCommandError(
   error: unknown,
   spinner?: Ora,
@@ -379,6 +438,12 @@ export async function handleCommandError(
       // Spinner may already be stopped
     }
   }
+
+  // Buffer the failure event before any envelope-write or exit-flush.
+  // The flush at the end of this function drains it. Synchronous to
+  // avoid adding ticks before `flushTelemetryBeforeExit` — the
+  // order-of-operations test in errors.test.ts pins that contract.
+  emitFailureEvent(error);
 
   // Persist the structured envelope so `pax8 report-bug` has something to
   // report. Write happens *before* any exit logic. This is decoupled from the
