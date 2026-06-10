@@ -15,6 +15,7 @@
     "provenance": true
   },
   "scripts": {
+    "preinstall": "node ./scripts/check-prerequisites.js",
     "build": "tsup",
     "dev": "tsx src/index.ts"
   },
