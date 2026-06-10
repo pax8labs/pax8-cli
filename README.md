@@ -4,9 +4,7 @@ An open-source CLI for managing Pax8 cloud marketplace operations. Built for MSP
 
 ## Status
 
-This is an early-stage open-source experiment. We're using engagement signals (installs, issues, command usage) to learn which capabilities are worth investing in further. Feedback, issues, and PRs are welcome.
-
-> **Pre-release.** `@pax8/cli` is not yet published to npm — `npm install -g @pax8/cli` works once v0.1.0 ships. Install from source today: see [Quick Start](#quick-start).
+Published on npm as `@pax8/cli`. We're using engagement signals (installs, issues, command usage) to learn which capabilities are worth investing in further. Feedback, issues, and PRs are welcome.
 
 ## Highlights
 
@@ -34,69 +32,49 @@ Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see t
 
 ## Quick Start
 
-Requires Node.js 20+ and [pnpm](https://pnpm.io/installation) 9+. Tested on macOS, Linux, and Windows under PowerShell.
+**Node.js 20+ is the only prerequisite.** No global install needed — use `npx` to run instantly.
 
-### 1. Install and build
-
-```bash
-git clone https://github.com/pax8labs/pax8-cli
-cd pax8-cli
-pnpm install
-pnpm build
-```
-
-### 2. Run it
-
-Three ways to invoke the CLI, pick whichever matches your workflow:
-
-**(a) Direct from `dist/`** — works after `pnpm build`, no further setup:
+### Try with demo data (no credentials)
 
 ```bash
-PAX8_DEMO=1 node packages/cli/dist/index.js dashboard
+PAX8_DEMO=1 npx -y -p @pax8/cli pax8 dashboard
 ```
 
-**(b) `pax8` on PATH** *(recommended)* — makes every example in this README copy-pasteable, and is required for the REPL and cache-warmer:
+### Use with live Pax8 API
 
 ```bash
-cd packages/cli && npm link && cd ../..
-PAX8_DEMO=1 pax8 dashboard
+npx -y -p @pax8/cli pax8 auth login
+npx -y -p @pax8/cli pax8 dashboard
 ```
 
-**(c) Dev mode (no rebuild needed)** — runs the TypeScript sources directly via `tsx`; pass command args after `--`:
-
-```bash
-PAX8_DEMO=1 pnpm dev -- dashboard
-PAX8_DEMO=1 pnpm dev -- clients list
-```
-
-### 3. Authenticate (or stay in demo)
-
-```bash
-pax8 auth login                  # interactive prompt
-# ...or skip auth entirely:
-PAX8_DEMO=1 pax8 dashboard       # in-memory fixture, no API calls
-```
-
-For watch mode, tests, and the full contributor workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### From npm (coming soon)
-
-Once v0.1.0 ships to npm, the documented path will be:
+### Install permanently (optional)
 
 ```bash
 npm install -g @pax8/cli
-pax8 auth login
 pax8 dashboard
 ```
 
+> **Permission denied?** If `npm install -g` fails with `EACCES` (permission denied), do not use `sudo`. Either use `npx` instead, or install Node via a version manager (nvm or fnm) so the global prefix lives in your home directory. See [Troubleshooting](#troubleshooting) for details.
+
 ## Demo Flow (90 seconds)
 
+Run with demo data by prefixing `PAX8_DEMO=1`:
+
 ```bash
-pax8 dashboard                           # Pax8 monthly cost, renewals, growth opportunities
-pax8 recommendations list                # Cross-sell and seat gap opportunities
-pax8 recommendations act                 # Multi-select picker → batch order
-pax8 clients list                        # Browse customers (type # to drill in)
-pax8 clients more "Acme Corp"            # Full customer summary
+PAX8_DEMO=1 pax8 dashboard               # Pax8 monthly cost, renewals, growth opportunities
+PAX8_DEMO=1 pax8 recommendations list    # Cross-sell and seat gap opportunities
+PAX8_DEMO=1 pax8 recommendations act     # Walk through and place orders (y/s/q)
+PAX8_DEMO=1 pax8 clients list            # Browse customers (type # to drill in)
+PAX8_DEMO=1 pax8 clients show "Acme"    # Full customer summary
+```
+
+Or if you installed globally:
+
+```bash
+pax8 init --demo                         # Enable demo mode persistently
+pax8 dashboard
+pax8 recommendations list
+pax8 recommendations act
 ```
 
 ## Commands
@@ -107,6 +85,7 @@ pax8 clients more "Acme Corp"            # Full customer summary
 
 ```bash
 pax8 dashboard                 # Quick snapshot: Pax8 monthly cost, renewals, recs, trials
+>>>>>>> c6331ae (docs: fix install instructions and verify npm package is published)
 pax8 dashboard --all           # Full dashboard with top customers and details
 pax8 dashboard --renewals      # Focus on upcoming renewals
 pax8 dashboard --growth        # Focus on growth opportunities
@@ -135,18 +114,18 @@ pax8 subscriptions list --status Active                # Filter by status
 pax8 subscriptions show <id> --history                 # Details + change history
 pax8 subscriptions renewals                            # Upcoming renewals (30d default)
 pax8 subscriptions renewals --within 7d                # Urgent renewals
-pax8 subscriptions renewals --company "Acme Corp"      # Renewals for one customer
+pax8 subscriptions renewals --company "Acme Corp"      # Renewals for one company
 ```
 
 ### Recommendations
 
 ```bash
 pax8 recommendations list                              # All growth opportunities
-pax8 recommendations list --company "Acme Corp"        # For one customer
+pax8 recommendations list --company "Acme Corp"        # For one company
 pax8 recommendations list --product "AvePoint"         # Filter by product
 pax8 recommendations list --priority high              # High priority only
-pax8 recommendations act                               # Multi-select picker → batch order
-pax8 recommendations act --company "Acme Corp"         # Act on one customer
+pax8 recommendations act                               # Walk through and order
+pax8 recommendations act --company "Acme Corp"         # Act on one company
 pax8 recommendations act --product "backup"            # Add backup everywhere
 pax8 recommendations act --yes                         # Non-interactive: place all matches
 ```
@@ -177,7 +156,7 @@ Model the financial impact of a SKU swap, quantity change, or new-product add be
 pax8 invoices list                                     # All invoices
 pax8 invoices list --company "Acme Corp" --status Unpaid
 pax8 invoices audit                                    # Flag billing discrepancies
-pax8 invoices audit --company "Acme Corp"              # Audit one customer
+pax8 invoices audit --company "Acme Corp"              # Audit one company
 ```
 
 ### Products
@@ -287,7 +266,7 @@ pax8> clients list
 pax8> 3                          # Drill into client #3
 pax8> back                       # Re-run the last list command
 pax8> n                          # Next page; p for previous
-pax8> recommendations act        # Multi-select picker → batch order
+pax8> recommendations act        # Walk through recs
 pax8> exit
 ```
 
@@ -324,14 +303,21 @@ pax8 doctor   # confirms the active API base in its output
 
 ## Demo Mode
 
-Try everything without API credentials:
+Run any command against sample data without API credentials by prefixing with `PAX8_DEMO=1`:
 
 ```bash
 PAX8_DEMO=1 pax8 dashboard
 PAX8_DEMO=1 pax8 recommendations act
 ```
 
-Or enable persistently: `pax8 init --demo`
+Alternatively, enable demo mode persistently in your config:
+
+```bash
+pax8 init --demo
+pax8 dashboard              # Now runs with sample data by default
+```
+
+Disable demo mode with `pax8 init --demo off`.
 
 ## Claude AI Integration
 
@@ -367,8 +353,38 @@ All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependen
 ## Performance
 
 - **API caching** — repeat calls return in ~80ms (1-hour TTL)
-- **Parallel fetching** — dashboard loads companies, subscriptions, and products simultaneously
+- **Parallel fetching** — dashboard loads clients, subscriptions, and products simultaneously
 - **Product name enrichment** — resolves UUIDs to human-readable names automatically
+
+## Troubleshooting
+
+### `command not found: pax8` or `npx: command not found`
+
+**Cause:** Node.js is not installed on your system.
+
+**Solution:** Install [Node.js 20+](https://nodejs.org/) from nodejs.org.
+
+### `npm ERR! code EACCES` during `npm install -g`
+
+**Cause:** npm doesn't have permission to write to the global installation directory (usually because it's owned by root).
+
+**Solution:** Do not use `sudo`. Instead:
+
+- Use `npx` to run without a global install: `npx -y -p @pax8/cli pax8 <command>`
+- Or install Node via a version manager:
+  - [nvm](https://github.com/nvm-sh/nvm) (Node Version Manager for macOS/Linux)
+  - [fnm](https://github.com/Schniz/fnm) (Fast Node Manager, works on Windows/macOS/Linux)
+- Or set an npm prefix in your home directory: `npm config set prefix ~/.npm && export PATH=~/.npm/bin:$PATH`
+
+### Issues getting started?
+
+Run the diagnostic command to check your setup:
+
+```bash
+pax8 doctor
+```
+
+This verifies Node.js version, authentication, API connectivity, cache, and telemetry. If all checks pass, try running a command like `pax8 dashboard` to confirm end-to-end functionality.
 
 ## Development
 
