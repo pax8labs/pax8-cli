@@ -30,9 +30,20 @@ Every command supports `--json`, so humans and AI agents use the same tool.
 
 Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see the [Pax8 MCP docs](https://devx.pax8.com/docs/mcp-server). Use this CLI when you want a richer command surface (recommendations, invoice audit, Pax8 cost analytics, demo mode) or when you're scripting against a stable, versioned interface. Use the Pax8 MCP when you want zero-install access via Claude, Cursor, Copilot, or VS Code and you don't need the CLI-specific capabilities.
 
+## Prerequisites: Node.js
+
+Run `node --version` in your terminal.
+
+- If it prints **v20** or newer, you're set — skip to [Quick Start](#quick-start).
+- If it prints an older version, or you see `command not found`, install Node.js first:
+  - **Easiest:** download the Node.js LTS installer from [nodejs.org](https://nodejs.org) and run it.
+  - **Or, if you use Homebrew:** `brew install node` (this installs current Node, which is fine — it's well past v20).
+
+Once installed, close this terminal, open a new one, and run `node --version` again to confirm it prints v20 or newer.
+
 ## Quick Start
 
-**Node.js 20+ is the only prerequisite.** No global install needed — use `npx` to run instantly.
+Don't have Node 20+? See [Prerequisites](#prerequisites-nodejs) first.
 
 ### Try with demo data (no credentials)
 
@@ -85,7 +96,6 @@ pax8 recommendations act
 
 ```bash
 pax8 dashboard                 # Quick snapshot: Pax8 monthly cost, renewals, recs, trials
->>>>>>> c6331ae (docs: fix install instructions and verify npm package is published)
 pax8 dashboard --all           # Full dashboard with top customers and details
 pax8 dashboard --renewals      # Focus on upcoming renewals
 pax8 dashboard --growth        # Focus on growth opportunities
