@@ -364,6 +364,14 @@ All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependen
 
 **Solution:** Install [Node.js 20+](https://nodejs.org/) from nodejs.org.
 
+### `command not found: pax8` after installing Node.js
+
+**Cause:** Your terminal session started before Node.js was installed, so its `PATH` doesn't yet include npm's binary directory.
+
+**Solution:** Close the terminal and open a new one, then re-run the command. Most shells only read `PATH` at startup, so a freshly opened terminal will pick up the new installation. To reload in place without opening a new window, run `exec $SHELL`.
+
+**Still not found in a new shell?** Run `node --version`. If it prints `v20.x` or newer but `pax8` or `npx` still aren't found, this is a real `PATH` problem rather than a stale shell — your Node install put its binaries somewhere that isn't on `PATH` (common with version managers that need extra shell config). If `node --version` also fails, the install didn't complete; reinstall from [nodejs.org](https://nodejs.org/).
+
 ### `npm ERR! code EACCES` during `npm install -g`
 
 **Cause:** npm doesn't have permission to write to the global installation directory (usually because it's owned by root).
