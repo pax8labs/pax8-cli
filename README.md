@@ -109,23 +109,23 @@ pax8 clients create --name "Acme" --city Denver --state CO --zip 80202 --phone "
 
 ```bash
 pax8 subscriptions list                                # All subscriptions
-pax8 subscriptions list --client "Acme Corp"           # Filter by client
+pax8 subscriptions list --company "Acme Corp"          # Filter by company
 pax8 subscriptions list --status Active                # Filter by status
 pax8 subscriptions show <id> --history                 # Details + change history
 pax8 subscriptions renewals                            # Upcoming renewals (30d default)
 pax8 subscriptions renewals --within 7d                # Urgent renewals
-pax8 subscriptions renewals --client "Acme Corp"       # Renewals for one client
+pax8 subscriptions renewals --company "Acme Corp"      # Renewals for one company
 ```
 
 ### Recommendations
 
 ```bash
 pax8 recommendations list                              # All growth opportunities
-pax8 recommendations list --client "Acme Corp"         # For one client
+pax8 recommendations list --company "Acme Corp"        # For one company
 pax8 recommendations list --product "AvePoint"         # Filter by product
 pax8 recommendations list --priority high              # High priority only
 pax8 recommendations act                               # Walk through and order
-pax8 recommendations act --client "Acme Corp"          # Act on one client
+pax8 recommendations act --company "Acme Corp"         # Act on one company
 pax8 recommendations act --product "backup"            # Add backup everywhere
 pax8 recommendations act --yes                         # Non-interactive: place all matches
 ```
@@ -134,7 +134,7 @@ pax8 recommendations act --yes                         # Non-interactive: place 
 
 ```bash
 pax8 orders list                                       # Recent orders
-pax8 orders create --client "Acme" --product "M365 Business Premium" --quantity 10
+pax8 orders create --company "Acme" --product "M365 Business Premium" --quantity 10
 pax8 orders show <id>                                  # Check order status
 ```
 
@@ -154,9 +154,9 @@ Model the financial impact of a SKU swap, quantity change, or new-product add be
 
 ```bash
 pax8 invoices list                                     # All invoices
-pax8 invoices list --client "Acme Corp" --status Unpaid
+pax8 invoices list --company "Acme Corp" --status Unpaid
 pax8 invoices audit                                    # Flag billing discrepancies
-pax8 invoices audit --client "Acme Corp"               # Audit one client
+pax8 invoices audit --company "Acme Corp"              # Audit one company
 ```
 
 ### Products
