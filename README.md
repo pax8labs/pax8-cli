@@ -299,6 +299,8 @@ export PAX8_CLIENT_SECRET=your-client-secret
 
 Generate API credentials in the [Pax8 Integrations Hub](https://app.pax8.com). For detailed setup instructions, see the [Credential Setup Guide](docs/credential-setup.md). A copy-pasteable starter is in [`.env.example`](.env.example).
 
+Pass `--browser` to `pax8 auth login` to open the [credentials page](https://app.pax8.com/integrations/credentials) in your default browser before the prompt — you still paste the Client ID and Secret into the terminal (the flag doesn't eliminate the secret, just the click-through to find the page). Falls back to printing the URL on headless / SSH boxes.
+
 ### Pointing at a non-prod environment
 
 By default, the CLI talks to `https://api.pax8.com/v1`. Partners testing against a sandbox or staging environment can override the base URL without code changes:

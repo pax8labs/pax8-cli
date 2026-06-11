@@ -5,10 +5,11 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getConfigDir } from "@pax8/core";
 import { confirm } from "../lib/confirm.js";
+import { openUrl } from "../lib/open-url.js";
 import { redactEnvelope, type BugReportEnvelope } from "../lib/redactor.js";
 
 const execFileP = promisify(execFile);
@@ -89,40 +90,6 @@ export function buildIssueTitle(env: BugReportEnvelope): string {
   const msg = (env.message ?? "").trim().split("\n")[0] ?? "";
   const truncated = msg.length > 60 ? msg.slice(0, 60).trimEnd() + "…" : msg;
   return `[${code}] ${truncated}`.trim();
-}
-
-/**
- * Cross-platform "open this URL in the user's default browser" using only
- * Node's built-in `child_process` — deliberately avoids the `open` npm
- * package since this is the only call site and the platform commands are
- * stable.
- */
-async function openUrl(url: string): Promise<void> {
-  const platform = process.platform;
-  let cmd: string;
-  let args: string[];
-  if (platform === "darwin") {
-    cmd = "open";
-    args = [url];
-  } else if (platform === "win32") {
-    // `start` is a cmd.exe builtin; `""` is the empty title arg required when
-    // the URL contains characters cmd would otherwise treat as a title.
-    cmd = "cmd";
-    args = ["/c", "start", "", url];
-  } else {
-    cmd = "xdg-open";
-    args = [url];
-  }
-  await new Promise<void>((resolve) => {
-    const child = spawn(cmd, args, {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.on("error", () => resolve());
-    child.unref();
-    // Don't await — detached. Resolve next tick so the caller can return.
-    setImmediate(resolve);
-  });
 }
 
 /**

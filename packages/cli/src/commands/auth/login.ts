@@ -19,6 +19,15 @@ import {
   resolveDemoModeWithSourceAsync,
   disableDemoHint,
 } from "../../lib/context.js";
+import { openUrl } from "../../lib/open-url.js";
+
+/**
+ * Pax8 Integrations Hub credentials page. `--browser` opens this URL so the
+ * user can create / copy an API credential without having to find the link
+ * themselves. The page is documented in the Authentication section of the
+ * README and the Credential Setup Guide.
+ */
+const CREDENTIALS_URL = "https://app.pax8.com/integrations/credentials";
 
 function authMissingError(): CliError {
   return new CliError(
@@ -60,6 +69,10 @@ export const authLoginCommand = new Command("login")
   .description("Authenticate with Pax8 API credentials")
   .option("--client-id <id>", "Pax8 client ID")
   .option("--client-secret <secret>", "Pax8 client secret")
+  .option(
+    "--browser",
+    "open the Pax8 credentials page in your default browser before prompting",
+  )
   .addHelpText(
     "after",
     `
@@ -67,6 +80,11 @@ Examples:
   # Interactive (recommended — prompts for the secret without echoing it
   # to shell history)
   pax8 auth login
+
+  # Opens the Pax8 credentials page in your default browser, then prompts
+  # for the values you just copied. Falls back to printing the URL if no
+  # browser is available (headless / SSH).
+  pax8 auth login --browser
 
   pax8 auth login --json
 
@@ -179,6 +197,35 @@ PAX8_CLIENT_SECRET environment variable.`
       options.clientId ?? process.env.PAX8_CLIENT_ID;
     let clientSecret: string | undefined =
       options.clientSecret ?? process.env.PAX8_CLIENT_SECRET;
+
+    // `--browser` opens the credentials page so the user doesn't have to find
+    // the link themselves, then falls through to the normal interactive
+    // prompt below. Only meaningful when we still need credentials — if
+    // flags / env vars already supplied them, there's nothing to paste so
+    // opening a browser would be confusing. Scope is deliberately small:
+    // open URL, fall back to printing it on failure, continue the existing
+    // paste flow (#610). Not OAuth — that's #609.
+    if (options.browser && (!clientId || !clientSecret)) {
+      process.stderr.write(
+        chalk.cyan(
+          `\n  Opening the Pax8 Integrations Hub credentials page in your default browser.\n` +
+            `  Create or copy an API credential there, then paste the Client ID and Secret below.\n` +
+            `  Page: ${CREDENTIALS_URL}\n\n`,
+        ),
+      );
+      const opened = await openUrl(CREDENTIALS_URL);
+      if (!opened) {
+        // Headless / SSH / no opener installed — never block on the browser.
+        // Print the URL plainly so the user can open it themselves, then
+        // continue straight into the interactive prompt.
+        process.stderr.write(
+          chalk.yellow(
+            `  Could not launch a browser automatically. Open this URL manually:\n` +
+              `    ${CREDENTIALS_URL}\n\n`,
+          ),
+        );
+      }
+    }
 
     // Interactive fallback: prompt only when stdin is a TTY and credentials
     // weren't supplied via flags or env vars. Non-TTY without credentials

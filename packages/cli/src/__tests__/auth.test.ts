@@ -247,6 +247,136 @@ describe("pax8 auth", () => {
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr + result.stdout).toMatch(/Missing credentials|client-id/);
     });
+
+    // --- #610: `--browser` flag --------------------------------------------
+
+    it("advertises --browser in help with a one-line description (#610)", async () => {
+      const result = await runCliExpectSuccess(["auth", "login", "--help"]);
+      expect(result.stdout).toContain("--browser");
+      // Affirmatively name what gets opened so the help line is actionable.
+      expect(result.stdout.toLowerCase()).toMatch(/browser/);
+    });
+
+    it("with --browser, invokes the opener with the credentials URL (#610)", async () => {
+      // Stub the opener via PAX8_OPEN_URL_LOG: openUrl() appends the URL to
+      // the file path instead of spawning a real `open` / `xdg-open`. Lets
+      // us assert the opener was called with the right URL from a subprocess
+      // test without launching a browser on the CI box.
+      const logPath = path.join(os.tmpdir(), `pax8-open-url-${Date.now()}.log`);
+      try {
+        await runCli(["auth", "login", "--browser"], {
+          PAX8_DEMO: "",
+          PAX8_CLIENT_ID: "",
+          PAX8_CLIENT_SECRET: "",
+          PAX8_OPEN_URL_LOG: logPath,
+        });
+        const logged = await fs.readFile(logPath, "utf-8");
+        expect(logged.trim()).toBe(
+          "https://app.pax8.com/integrations/credentials",
+        );
+      } finally {
+        await fs.rm(logPath, { force: true });
+      }
+    });
+
+    it("with --browser, prints a 'what to do there' hint pointing at the credentials page (#610)", async () => {
+      const logPath = path.join(os.tmpdir(), `pax8-open-url-${Date.now()}.log`);
+      try {
+        const result = await runCli(["auth", "login", "--browser"], {
+          PAX8_DEMO: "",
+          PAX8_CLIENT_ID: "",
+          PAX8_CLIENT_SECRET: "",
+          PAX8_OPEN_URL_LOG: logPath,
+        });
+        // One-line "what we're opening / what to do" message lands on
+        // stderr per the stdout-is-data contract.
+        expect(result.stderr).toContain(
+          "https://app.pax8.com/integrations/credentials",
+        );
+        expect(result.stderr.toLowerCase()).toMatch(/paste|client id/);
+      } finally {
+        await fs.rm(logPath, { force: true });
+      }
+    });
+
+    it("with --browser, the prompt flow continues after the opener returns (#610)", async () => {
+      // Subprocess stdin is non-TTY, so the interactive prompt block is
+      // skipped — but the post-open code still runs and falls through to
+      // the missing-creds error path. Asserting that we get the normal
+      // missing-creds error (not a hang, not a crash) proves the flow
+      // continued past the browser-open step rather than blocking on it.
+      const logPath = path.join(os.tmpdir(), `pax8-open-url-${Date.now()}.log`);
+      try {
+        const result = await runCli(["auth", "login", "--browser"], {
+          PAX8_DEMO: "",
+          PAX8_CLIENT_ID: "",
+          PAX8_CLIENT_SECRET: "",
+          PAX8_OPEN_URL_LOG: logPath,
+        });
+        expect(result.exitCode).not.toBe(0);
+        expect(result.stderr + result.stdout).toMatch(
+          /Missing credentials|client-id/,
+        );
+      } finally {
+        await fs.rm(logPath, { force: true });
+      }
+    });
+
+    it("with --browser and a no-opener fallback, prints the URL plainly and continues (#610)", async () => {
+      // PAX8_OPEN_URL_SUCCESS=0 makes the stubbed opener report failure
+      // (headless / SSH / missing-binary simulation). The CLI must print
+      // the URL plainly on stderr and proceed — never block, never crash.
+      const logPath = path.join(os.tmpdir(), `pax8-open-url-${Date.now()}.log`);
+      try {
+        const result = await runCli(["auth", "login", "--browser"], {
+          PAX8_DEMO: "",
+          PAX8_CLIENT_ID: "",
+          PAX8_CLIENT_SECRET: "",
+          PAX8_OPEN_URL_LOG: logPath,
+          PAX8_OPEN_URL_SUCCESS: "0",
+        });
+        // URL is printed (twice — once in the intro line, once in the
+        // fallback hint — both fine).
+        expect(result.stderr).toContain(
+          "https://app.pax8.com/integrations/credentials",
+        );
+        expect(result.stderr.toLowerCase()).toMatch(
+          /could not launch|open this url manually/,
+        );
+        // Flow proceeds to the normal missing-creds error (no hang).
+        expect(result.exitCode).not.toBe(0);
+        expect(result.stderr + result.stdout).toMatch(
+          /Missing credentials|client-id/,
+        );
+      } finally {
+        await fs.rm(logPath, { force: true });
+      }
+    });
+
+    it("--browser is a no-op short-circuit under demo mode (no opener call) (#610)", async () => {
+      // Demo mode short-circuits the whole login flow before the
+      // browser-open block, so the opener must not be called even with
+      // --browser. Matches the demo contract — every flag is a no-op
+      // short-circuit under PAX8_DEMO=1.
+      const logPath = path.join(os.tmpdir(), `pax8-open-url-${Date.now()}.log`);
+      try {
+        await runCliExpectSuccess(["auth", "login", "--browser"], {
+          PAX8_OPEN_URL_LOG: logPath,
+        });
+        // Either the file doesn't exist (preferred) or it's empty — both
+        // prove the opener was not called.
+        const exists = await fs
+          .stat(logPath)
+          .then(() => true)
+          .catch(() => false);
+        if (exists) {
+          const logged = await fs.readFile(logPath, "utf-8");
+          expect(logged).toBe("");
+        }
+      } finally {
+        await fs.rm(logPath, { force: true });
+      }
+    });
   });
 
   describe("auth status", () => {
