@@ -68,7 +68,14 @@ describe("pax8 auth", () => {
       expect(result.stderr).toMatch(/credentials were NOT saved/);
     });
 
-    it("emits a `disable demo` nextAction when creds are supplied under demo mode", async () => {
+    it("`nextActions` entries are spawnable argv — no shell metacharacters (#612)", async () => {
+      // Pinned by #612 after claude-review on #608 flagged that the
+      // two-step "unset PAX8_DEMO && pax8 auth login" entries violated
+      // the #562 argv contract — agents consume `args` directly and
+      // never tokenize `command` or pipe it to a shell. Every entry's
+      // `command` must be a single `pax8 …` invocation; the `notice`
+      // field above (asserted by the earlier test in this block) is
+      // where the disable-demo guidance lives now.
       const result = await runCliExpectSuccess([
         "auth",
         "login",
@@ -79,7 +86,19 @@ describe("pax8 auth", () => {
       ]);
       const parsed = JSON.parse(result.stdout);
       const actions = parsed.nextActions as Array<{ command: string }>;
-      expect(actions.some((a) => /unset PAX8_DEMO/.test(a.command))).toBe(true);
+      // Every command starts with `pax8 ` — no leading `unset`, `cd`, etc.
+      for (const a of actions) {
+        expect(a.command, `nextAction ${JSON.stringify(a)} must start with "pax8 "`).toMatch(/^pax8 /);
+      }
+      // No shell metacharacters anywhere in any command — &&, ||, ;,
+      // pipe, redirect, command substitution, backticks.
+      const shellMetaRe = /(&&|\|\||;|[|<>$`])/;
+      for (const a of actions) {
+        expect(
+          shellMetaRe.test(a.command),
+          `nextAction ${JSON.stringify(a)} contains shell metacharacters; agents cannot spawn this safely`,
+        ).toBe(false);
+      }
     });
 
     it("bare `auth login` in demo mode adds a dim source hint to the human banner", async () => {
