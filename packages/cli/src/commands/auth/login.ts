@@ -205,7 +205,13 @@ PAX8_CLIENT_SECRET environment variable.`
     // opening a browser would be confusing. Scope is deliberately small:
     // open URL, fall back to printing it on failure, continue the existing
     // paste flow (#610). Not OAuth — that's #609.
-    if (options.browser && (!clientId || !clientSecret)) {
+    //
+    // Skip in `--json` mode: launching a GUI browser during a machine-driven
+    // invocation (agent, CI) is surprising, and the paste prompt that follows
+    // would just error with `Missing credentials` anyway since `--json` mode
+    // implies non-interactive use. The agent caller gets the structured
+    // missing-creds error without a stray browser window.
+    if (options.browser && (!clientId || !clientSecret) && !jsonMode) {
       process.stderr.write(
         chalk.cyan(
           `\n  Opening the Pax8 Integrations Hub credentials page in your default browser.\n` +

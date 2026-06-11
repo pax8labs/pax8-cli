@@ -262,6 +262,11 @@ describe("pax8 auth", () => {
       // the file path instead of spawning a real `open` / `xdg-open`. Lets
       // us assert the opener was called with the right URL from a subprocess
       // test without launching a browser on the CI box.
+      //
+      // PAX8_OUTPUT_FORMAT=table forces the human/table path: subprocess
+      // stdout is non-TTY, so `getOutputFormat()` would otherwise resolve
+      // to `json`, and the `--browser` block is gated on `!jsonMode` so an
+      // agent passing `--json` never gets a stray GUI browser.
       const logPath = path.join(os.tmpdir(), `pax8-open-url-${Date.now()}.log`);
       try {
         await runCli(["auth", "login", "--browser"], {
@@ -269,6 +274,7 @@ describe("pax8 auth", () => {
           PAX8_CLIENT_ID: "",
           PAX8_CLIENT_SECRET: "",
           PAX8_OPEN_URL_LOG: logPath,
+          PAX8_OUTPUT_FORMAT: "table",
         });
         const logged = await fs.readFile(logPath, "utf-8");
         expect(logged.trim()).toBe(
@@ -287,6 +293,7 @@ describe("pax8 auth", () => {
           PAX8_CLIENT_ID: "",
           PAX8_CLIENT_SECRET: "",
           PAX8_OPEN_URL_LOG: logPath,
+          PAX8_OUTPUT_FORMAT: "table",
         });
         // One-line "what we're opening / what to do" message lands on
         // stderr per the stdout-is-data contract.
@@ -312,6 +319,7 @@ describe("pax8 auth", () => {
           PAX8_CLIENT_ID: "",
           PAX8_CLIENT_SECRET: "",
           PAX8_OPEN_URL_LOG: logPath,
+          PAX8_OUTPUT_FORMAT: "table",
         });
         expect(result.exitCode).not.toBe(0);
         expect(result.stderr + result.stdout).toMatch(
@@ -334,6 +342,7 @@ describe("pax8 auth", () => {
           PAX8_CLIENT_SECRET: "",
           PAX8_OPEN_URL_LOG: logPath,
           PAX8_OPEN_URL_SUCCESS: "0",
+          PAX8_OUTPUT_FORMAT: "table",
         });
         // URL is printed (twice — once in the intro line, once in the
         // fallback hint — both fine).
@@ -373,6 +382,38 @@ describe("pax8 auth", () => {
           const logged = await fs.readFile(logPath, "utf-8");
           expect(logged).toBe("");
         }
+      } finally {
+        await fs.rm(logPath, { force: true });
+      }
+    });
+
+    it("--browser + --json does NOT open a browser (no GUI from agent invocations) (#610)", async () => {
+      // Agents and CI scripts pass `--json` for machine-readable output.
+      // Spawning a GUI browser during a machine-driven invocation is
+      // surprising and useless — there's no human to paste into the prompt.
+      // The flow should fall straight through to the structured
+      // missing-creds error without ever calling the opener.
+      const logPath = path.join(os.tmpdir(), `pax8-open-url-${Date.now()}.log`);
+      try {
+        const result = await runCli(["auth", "login", "--browser", "--json"], {
+          PAX8_DEMO: "",
+          PAX8_CLIENT_ID: "",
+          PAX8_CLIENT_SECRET: "",
+          PAX8_OPEN_URL_LOG: logPath,
+        });
+        // Opener was not invoked.
+        const exists = await fs
+          .stat(logPath)
+          .then(() => true)
+          .catch(() => false);
+        if (exists) {
+          const logged = await fs.readFile(logPath, "utf-8");
+          expect(logged).toBe("");
+        }
+        // And the flow proceeded to the normal missing-creds error path.
+        expect(result.exitCode).not.toBe(0);
+        const haystack = result.stderr + result.stdout;
+        expect(haystack).toMatch(/Missing credentials|ERROR_AUTH_MISSING/);
       } finally {
         await fs.rm(logPath, { force: true });
       }

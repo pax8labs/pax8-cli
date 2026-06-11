@@ -50,13 +50,20 @@ export async function openUrl(
     spawner?: Spawner;
     platform?: NodeJS.Platform;
     /**
-     * Test hook: when truthy (default reads `PAX8_OPEN_URL_LOG`), the URL
+     * Test-only hook: when set (default reads `PAX8_OPEN_URL_LOG`), the URL
      * that would have been opened is appended to that file path instead of
      * spawning a process. Returns the value of `PAX8_OPEN_URL_SUCCESS`
      * (`"0"` simulates a failed opener, anything else simulates success).
-     * Internal — not part of the public CLI contract.
+     *
+     * INTERNAL — not part of the public CLI contract. The `PAX8_OPEN_URL_LOG`
+     * / `PAX8_OPEN_URL_SUCCESS` env vars exist solely so subprocess tests
+     * can stub the opener across the process boundary (where `opts.spawner`
+     * injection isn't reachable). Unit tests inside this package should use
+     * `opts.spawner` / `opts.platform` / `opts.logPath` directly. These
+     * env vars MUST NOT be documented in the UX guide or README, and code
+     * outside this file should never read or set them.
      */
-     logPath?: string | null;
+    logPath?: string | null;
   } = {},
 ): Promise<boolean> {
   const logPath = opts.logPath ?? process.env.PAX8_OPEN_URL_LOG ?? null;
@@ -66,7 +73,7 @@ export async function openUrl(
     } catch {
       // Don't let a logging-side failure cascade.
     }
-    return process.env.PAX8_OPEN_URL_SUCCESS === "0" ? false : true;
+    return process.env.PAX8_OPEN_URL_SUCCESS !== "0";
   }
   const { cmd, args } = resolveOpener(opts.platform);
   const spawner = opts.spawner ?? ((c, a, o) => spawn(c, a, o));
