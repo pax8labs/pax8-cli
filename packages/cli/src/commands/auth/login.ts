@@ -157,22 +157,18 @@ PAX8_CLIENT_SECRET environment variable.`
                       `Disable demo mode and re-run \`pax8 auth login\` to log in for real.`,
                   }
                 : {}),
+              // Every `nextActions[].command` MUST be a spawnable single
+              // `pax8 …` invocation per the #562 agent contract — never
+              // shell syntax. The earlier two-step disable-demo entries
+              // ("unset PAX8_DEMO && pax8 auth login") were strings an
+              // agent could not execute; the `notice` field above already
+              // conveys the same instruction in human-readable form
+              // (#612).
               nextActions: [
                 {
                   command: "pax8 dashboard --json",
                   description: "Run a portfolio summary against the demo data set",
                 },
-                ...(credsAttempted && demoSource
-                  ? [
-                      {
-                        command:
-                          demoSource === "env"
-                            ? "unset PAX8_DEMO && pax8 auth login"
-                            : "pax8 demo off && pax8 auth login",
-                        description: "Disable demo mode and log in for real",
-                      },
-                    ]
-                  : []),
               ],
             },
             null,

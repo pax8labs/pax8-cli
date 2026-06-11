@@ -149,18 +149,6 @@ export function resolveDemoMode(config: { demo?: boolean }): boolean {
   return config.demo === true;
 }
 
-export async function resolveDemoModeAsync(): Promise<boolean> {
-  const envDemo = process.env.PAX8_DEMO;
-  if (envDemo === "1" || envDemo === "true") return true;
-  if (envDemo === "0" || envDemo === "false") return false;
-  try {
-    const config = await loadConfig();
-    return config.demo === true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Like `resolveDemoModeAsync` but also returns *where* demo mode came from
  * (`env` | `config` | `null`). Callers that need to tell users how to turn
@@ -169,6 +157,11 @@ export async function resolveDemoModeAsync(): Promise<boolean> {
  *
  * Same precedence as `resolveDemoMode`: env literal wins (`1`/`true`/`0`/
  * `false`), then `config.demo`. Returns `source: null` when demo is off.
+ *
+ * The canonical single source of the env-then-config ladder for async call
+ * sites. `resolveDemoModeAsync` delegates here so the precedence logic
+ * lives in exactly one place — drift across inline copies of this ladder
+ * was the original bug the comment on `resolveDemoMode` warns about (#614).
  */
 export type DemoSource = "env" | "config" | null;
 export async function resolveDemoModeWithSourceAsync(): Promise<{
@@ -180,11 +173,15 @@ export async function resolveDemoModeWithSourceAsync(): Promise<{
   if (envDemo === "0" || envDemo === "false") return { isDemo: false, source: null };
   try {
     const cfg = await loadConfig();
-    if ("demo" in cfg && cfg.demo === true) return { isDemo: true, source: "config" };
+    if (cfg.demo === true) return { isDemo: true, source: "config" };
   } catch {
     // Config unreadable — fall through; treat as demo off.
   }
   return { isDemo: false, source: null };
+}
+
+export async function resolveDemoModeAsync(): Promise<boolean> {
+  return (await resolveDemoModeWithSourceAsync()).isDemo;
 }
 
 /**
