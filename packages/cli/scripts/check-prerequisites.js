@@ -1,31 +1,19 @@
 #!/usr/bin/env node
 /**
- * Preinstall check for @pax8/cli
- * Verifies Node.js and Git are available before installation proceeds
+ * Preinstall check for @pax8/cli.
+ *
+ * Fails the install with a clear error if Node.js is older than the required
+ * floor. `package.json`'s `engines.node` will also nag, but a hard preinstall
+ * fail is the strongest signal — it stops the install before partial state
+ * lands under `node_modules`.
+ *
+ * Intentionally narrow scope: this checks Node only. An earlier draft also
+ * required git, but the CLI does not shell out to git at runtime (no
+ * `execSync("git …")` anywhere in `src/`), so requiring git would block npm
+ * installs on locked-down endpoints — managed Windows servers, minimal CI
+ * containers — for a dependency the runtime doesn't use. If a future feature
+ * does shell out to git, add the check then with a runtime-driven rationale.
  */
-
-import { execSync } from 'child_process';
-
-let hasErrors = false;
-
-function checkCommand(command, versionFlag = '--version') {
-  try {
-    execSync(`${command} ${versionFlag}`, { stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function getVersion(command, versionFlag = '--version') {
-  try {
-    const output = execSync(`${command} ${versionFlag}`, { encoding: 'utf8' }).trim();
-    const match = output.match(/v?(\d+\.\d+\.\d+)/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
 
 function compareVersions(version, required) {
   const v = version.split('.').map(Number);
@@ -37,35 +25,16 @@ function compareVersions(version, required) {
   return true;
 }
 
-// Check Node.js
 const nodeVersion = process.versions.node;
 const requiredNodeVersion = '20.0.0';
 
 if (!compareVersions(nodeVersion, requiredNodeVersion)) {
   console.error(
-    `\n❌ Node.js version ${requiredNodeVersion}+ required, but ${nodeVersion} is installed\n` +
-    `   Install Node.js from: https://nodejs.org/\n`
+    `\n❌ Node.js ${requiredNodeVersion}+ required, but ${nodeVersion} is installed.\n` +
+    `   Install Node.js from: https://nodejs.org/\n` +
+    `   See README "Prerequisites: Node.js" for OS-specific install shortcuts.\n`
   );
-  hasErrors = true;
-} else {
-  console.log(`✓ Node.js ${nodeVersion}`);
-}
-
-// Check Git
-if (!checkCommand('git')) {
-  console.error(
-    `\n❌ Git is not installed or not in PATH\n` +
-    `   Install Git from: https://git-scm.com/\n`
-  );
-  hasErrors = true;
-} else {
-  const gitVersion = getVersion('git');
-  console.log(`✓ Git ${gitVersion}`);
-}
-
-if (hasErrors) {
-  console.error(`Please install the missing prerequisites and try again.\n`);
   process.exit(1);
 }
 
-console.log('\n✓ All prerequisites met\n');
+console.log(`✓ Node.js ${nodeVersion}`);
