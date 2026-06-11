@@ -7,7 +7,18 @@ import { promisify } from "node:util";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const exec = promisify(execFile);
+const execFileAsync = promisify(execFile);
+
+// On Windows, `npm` is a `.cmd` shim that `execFile` cannot spawn
+// directly (only true binaries work without a shell). `shell: true`
+// routes through cmd.exe / sh on the respective platform so the
+// shim resolves. All args here are static — no shell-injection
+// surface. On macOS/Linux this is a slightly slower no-op (one
+// extra shell process); the cost is negligible for a single test.
+const NPM_OPTS = {
+  shell: true as const,
+  maxBuffer: 4 * 1024 * 1024,
+};
 
 // __dirname equivalent for ESM.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -29,10 +40,10 @@ const CLI_PKG = path.resolve(HERE, "../..");
  */
 describe("publish artifacts", () => {
   it("npm pack tarball includes scripts/check-prerequisites.js (preinstall hook prereq) (#624)", async () => {
-    const { stdout, stderr } = await exec("npm", ["pack", "--dry-run", "--json"], {
+    const { stdout, stderr } = await execFileAsync("npm", ["pack", "--dry-run", "--json"], {
       cwd: CLI_PKG,
       env: process.env,
-      maxBuffer: 4 * 1024 * 1024,
+      ...NPM_OPTS,
     });
     // `npm pack --json` emits a JSON array on stdout with one entry per
     // package; each entry carries `files: [{ path, size, mode }, …]`.
