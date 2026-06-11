@@ -124,6 +124,27 @@ export function createProgram(): Command {
   program.addCommand(mooCommand, { hidden: true });
   program.addCommand(coffeeCommand, { hidden: true });
 
+  // #598: make Commander's own parse errors (unknown command, missing
+  // required argument, unknown option, invalid choice, --help, --version)
+  // throw instead of short-circuiting via Commander's internal
+  // `process.exit()`. Without this, the parseAsync.catch in main() never
+  // sees them, the program-level preAction hook never runs, and the
+  // failure-event telemetry wired up in #597 stays blind to the most
+  // common typo / friction surfaces.
+  //
+  // We also redirect Commander's own stderr error writes to a no-op so
+  // the user doesn't see "error: unknown command 'X'" from Commander
+  // followed by our own envelope rendering the same thing. `handleCommandError`
+  // is now the single owner of the user-visible error surface for these.
+  // (--help / --version still write to stdout via Commander before
+  // throwing — those are content the user asked for, not error output.)
+  program.exitOverride();
+  program.configureOutput({
+    outputError: () => {
+      /* suppressed — handleCommandError owns the user-facing render */
+    },
+  });
+
   // ── Telemetry: record start time before every command ───────────────
   const commandStartTimes = new WeakMap<CommandType, number>();
 

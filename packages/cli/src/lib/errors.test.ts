@@ -470,8 +470,14 @@ describe("handleCommandError flushes telemetry before exit (#145)", () => {
       callOrder.push("exit-throw");
     });
 
-    // Yield to let the async function run up to the await on flush.
-    await new Promise((r) => setImmediate(r));
+    // Yield until flushAndShutdown is invoked (or we give up). The number of
+    // pre-flush awaits inside handleCommandError grew in #598 (parse-error
+    // path now hydrates the telemetry-enabled state before tracking), so a
+    // single setImmediate is no longer enough. The contract this test pins
+    // is the *order* (flush before exit), not the exact tick count.
+    for (let i = 0; i < 10 && callOrder.length === 0; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
     expect(callOrder).toEqual(["flushAndShutdown:start"]);
     expect(exitSpy).not.toHaveBeenCalled();
 
