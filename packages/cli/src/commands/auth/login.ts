@@ -101,7 +101,7 @@ PAX8_CLIENT_SECRET environment variable.`
     }
 
     if (isDemo) {
-      // Detect the silent-no-op trap (#TBD): user supplied credentials, but
+      // Detect the silent-no-op trap (#607): user supplied credentials, but
       // demo mode is active so we'd save nothing and every subsequent command
       // would hit the mock client. Previously this exited 0 with no signal,
       // leaving users convinced they'd authenticated. Now we surface the
