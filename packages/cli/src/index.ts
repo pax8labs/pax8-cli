@@ -138,12 +138,25 @@ export function createProgram(): Command {
   // is now the single owner of the user-visible error surface for these.
   // (--help / --version still write to stdout via Commander before
   // throwing — those are content the user asked for, not error output.)
-  program.exitOverride();
-  program.configureOutput({
-    outputError: () => {
-      /* suppressed — handleCommandError owns the user-facing render */
-    },
-  });
+  //
+  // Critically, Commander 12 does NOT propagate `exitOverride` or
+  // `configureOutput` from the root program to subcommands — each Command
+  // has its own `_exitCallback` and `_outputConfiguration`. A missing
+  // required argument on `pax8 subscriptions show` would otherwise still
+  // call `process.exit()` from the subcommand directly, bypassing our
+  // handler. So we walk the entire command tree and apply both. Verified
+  // against Commander 12.1.0; cross-version assumption pinned by a
+  // subcommand parse-error test in telemetry.test.ts.
+  const applyExitOverride = (cmd: Command): void => {
+    cmd.exitOverride();
+    cmd.configureOutput({
+      outputError: () => {
+        /* suppressed — handleCommandError owns the user-facing render */
+      },
+    });
+    for (const sub of cmd.commands) applyExitOverride(sub);
+  };
+  applyExitOverride(program);
 
   // ── Telemetry: record start time before every command ───────────────
   const commandStartTimes = new WeakMap<CommandType, number>();

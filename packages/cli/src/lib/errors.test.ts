@@ -450,12 +450,21 @@ describe("handleCommandError flushes telemetry before exit (#145)", () => {
     const tel = getTelemetry();
 
     // Order-of-operations spy: flushAndShutdown must complete before exit.
+    // We wait on a deterministic Promise resolved from inside the mock,
+    // not a fixed tick budget — #598 added an awaited `loadEnabled()` in
+    // the no-active-command path that resolves on a poll-phase tick, not
+    // a setImmediate, so any tick-counting check is timing-dependent.
     const callOrder: string[] = [];
     let resolveFlush: () => void = () => {};
+    let resolveFlushStarted: () => void = () => {};
+    const flushStarted = new Promise<void>((r) => {
+      resolveFlushStarted = r;
+    });
     const flushSpy = vi
       .spyOn(tel, "flushAndShutdown")
       .mockImplementation(() => {
         callOrder.push("flushAndShutdown:start");
+        resolveFlushStarted();
         return new Promise<void>((resolve) => {
           resolveFlush = () => {
             callOrder.push("flushAndShutdown:end");
@@ -470,14 +479,8 @@ describe("handleCommandError flushes telemetry before exit (#145)", () => {
       callOrder.push("exit-throw");
     });
 
-    // Yield until flushAndShutdown is invoked (or we give up). The number of
-    // pre-flush awaits inside handleCommandError grew in #598 (parse-error
-    // path now hydrates the telemetry-enabled state before tracking), so a
-    // single setImmediate is no longer enough. The contract this test pins
-    // is the *order* (flush before exit), not the exact tick count.
-    for (let i = 0; i < 10 && callOrder.length === 0; i++) {
-      await new Promise((r) => setImmediate(r));
-    }
+    // Block until the mock has actually been invoked (deterministic signal).
+    await flushStarted;
     expect(callOrder).toEqual(["flushAndShutdown:start"]);
     expect(exitSpy).not.toHaveBeenCalled();
 

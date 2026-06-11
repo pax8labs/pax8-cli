@@ -172,6 +172,37 @@ describe("pax8 telemetry", () => {
       expect(failure!.command).toBe("unknown");
     });
 
+    it("Commander parse error on a SUBCOMMAND also fires a failure event (#598)", async () => {
+      // The exitOverride() + outputError config on the root program must
+      // inherit to subcommands so a missing-required-arg on
+      // `subscriptions show` (or any other subcommand) reaches our
+      // handler the same way a root-level unknown command does. This is
+      // the cross-version assumption worth pinning — Commander v12
+      // propagates `_exitCallback` / `_outputConfiguration` via
+      // `copyInheritedSettings` at dispatch, but it's exactly the kind
+      // of thing that could regress on a future Commander bump.
+      await runCliExpectSuccess(["telemetry", "enable"], { PAX8_CONFIG_DIR: tmpDir });
+
+      // `subscriptions show` requires a positional `<id>` arg. Without
+      // it, Commander throws `commander.missingArgument`.
+      const result = await runCli(["subscriptions", "show"], {
+        PAX8_CONFIG_DIR: tmpDir,
+      });
+      expect(result.exitCode).not.toBe(0);
+      // Verify Commander's bare `error: …` stderr line was suppressed —
+      // our envelope owns the surface now.
+      expect(result.stderr).not.toMatch(/^error: missing required argument/m);
+
+      const events = await readEvents(tmpDir);
+      const failure = events.find(
+        (e) => e.success === false && e.error_code === "ERROR_INVALID_INPUT",
+      );
+      expect(
+        failure,
+        `expected a subcommand parse-error failure event in ${JSON.stringify(events)}`,
+      ).toBeDefined();
+    });
+
     it("Commander --help and --version do NOT emit failure events (#598)", async () => {
       // exitOverride makes Commander throw for --help / --version too,
       // but those are user-requested content (not errors). The

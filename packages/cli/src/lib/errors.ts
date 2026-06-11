@@ -355,6 +355,22 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
     return env;
   }
 
+  // Commander parse errors (unknown command, missing argument, etc.)
+  // reach this code path under #598's exitOverride. They look like plain
+  // `Error` instances but carry a `code` like `commander.unknownCommand`.
+  // Without this branch the envelope would label them `ERROR_INTERNAL`,
+  // contradicting the telemetry path (which correctly maps them to
+  // `ERROR_INVALID_INPUT`) and signaling "the CLI broke" to agents that
+  // would otherwise correct the typo. The help-redirect recovery step
+  // points at the only action that always applies.
+  if (isCommanderParseError(error)) {
+    return {
+      code: ERROR_INVALID_INPUT,
+      message: prefix + (error as Error).message,
+      recoverySteps: ["Run `pax8 --help` to see available commands and flags."],
+    };
+  }
+
   if (error instanceof Error) {
     return {
       code: ERROR_INTERNAL,
@@ -369,23 +385,47 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
 }
 
 /**
+ * Returns the `code` string from a Commander `CommanderError`, or null
+ * for anything else. Centralized so the telemetry path, the envelope
+ * builder, and the help-exit detection all read the same field the same
+ * way — and so the type narrowing happens in one place.
+ */
+function commanderErrorCode(err: unknown): string | null {
+  if (typeof err !== "object" || err === null) return null;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code !== "string") return null;
+  return code.startsWith("commander.") ? code : null;
+}
+
+/**
+ * True for Commander parse failures (unknown command, missing argument,
+ * invalid option-argument, etc.) — but NOT for the help/version success
+ * exits, which are intentionally separate (see `isCommanderSuccessExit`).
+ */
+function isCommanderParseError(err: unknown): boolean {
+  const code = commanderErrorCode(err);
+  if (code === null) return false;
+  if (
+    code === "commander.helpDisplayed" ||
+    code === "commander.help" ||
+    code === "commander.version"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Map an arbitrary thrown value to a canonical `Pax8ErrorCode` for the
- * failure-event payload. Mirrors the error-code surface that the
- * human-readable / JSON error envelope writes elsewhere in this file
- * (`codeForApiError`, the ZodError → ERROR_API_VALIDATION mapping, etc.)
- * for the cases the telemetry layer needs to distinguish coarsely.
+ * failure-event payload. Mirrors `buildErrorEnvelope` so the telemetry
+ * `error_code` and the agent-facing envelope `code` agree (#598
+ * follow-up — they previously disagreed for Commander parse errors,
+ * with telemetry correct but the envelope labeling typos as
+ * `ERROR_INTERNAL`).
  */
 function deriveErrorCodeForTelemetry(err: unknown): Pax8ErrorCode {
   if (err instanceof CliError && err.code) return err.code;
-  // Commander parse errors carry `code` strings like
-  // "commander.unknownCommand" or "commander.missingArgument". Treat
-  // them all as user-input problems rather than internal failures.
-  if (typeof err === "object" && err !== null && "code" in err) {
-    const code = (err as { code?: unknown }).code;
-    if (typeof code === "string" && code.startsWith("commander.")) {
-      return ERROR_INVALID_INPUT;
-    }
-  }
+  if (isCommanderParseError(err)) return ERROR_INVALID_INPUT;
   return ERROR_INTERNAL;
 }
 
@@ -455,9 +495,7 @@ async function emitFailureEvent(error: unknown): Promise<void> {
  * #598's telemetry path fires.
  */
 function isCommanderSuccessExit(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const code = (err as { code?: unknown }).code;
-  if (typeof code !== "string") return false;
+  const code = commanderErrorCode(err);
   return (
     code === "commander.helpDisplayed" ||
     code === "commander.help" ||
