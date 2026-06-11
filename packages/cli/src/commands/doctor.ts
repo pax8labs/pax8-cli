@@ -7,7 +7,12 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { replCmd } from "../lib/confirm.js";
 import { CredentialStore, getConfigDir, getDefaultBaseUrl } from "@pax8/core";
-import { getOutputFormat, resolveDemoModeAsync } from "../lib/context.js";
+import {
+  getOutputFormat,
+  resolveDemoModeAsync,
+  resolveDemoModeWithSourceAsync,
+  disableDemoHint,
+} from "../lib/context.js";
 
 // Build-time injected by tsup (see packages/cli/tsup.config.ts). At runtime
 // inside `pax8 doctor --json` we surface this in the structured envelope so
@@ -85,9 +90,20 @@ async function checkConfigFile(): Promise<CheckResult> {
 }
 
 async function checkAuth(): Promise<CheckResult> {
-  const isDemo = await isDemoMode();
+  const { isDemo, source: demoSource } = await resolveDemoModeWithSourceAsync();
   if (isDemo) {
-    return { name: "Authentication configured", passed: true, detail: "Demo mode" };
+    // Tell the user *where* demo mode came from. Without this, a partner
+    // who pinned demo via `pax8 init --demo` (or `pax8 demo on`) sees
+    // "Demo mode" on doctor, runs `auth login`, gets a green checkmark,
+    // and then can't figure out why every command still returns sample
+    // data. The hint names the right disable command for the source.
+    const sourceTag = demoSource ? ` (source: ${demoSource})` : "";
+    const disableTag = demoSource ? ` — disable with: ${disableDemoHint(demoSource)}` : "";
+    return {
+      name: "Authentication configured",
+      passed: true,
+      detail: `Demo mode${sourceTag}${disableTag}`,
+    };
   }
 
   const store = new CredentialStore();

@@ -14,7 +14,11 @@ import { ask } from "../../lib/prompts.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
-import { getOutputFormat } from "../../lib/context.js";
+import {
+  getOutputFormat,
+  resolveDemoModeWithSourceAsync,
+  disableDemoHint,
+} from "../../lib/context.js";
 
 function authMissingError(): CliError {
   return new CliError(
@@ -80,7 +84,7 @@ PAX8_CLIENT_SECRET environment variable.`
     const allOpts = command.optsWithGlobals();
     const outputFormat = getOutputFormat(allOpts);
     const jsonMode = outputFormat === "json";
-    const isDemo = process.env.PAX8_DEMO === "1";
+    const { isDemo, source: demoSource } = await resolveDemoModeWithSourceAsync();
 
     // Warn (don't reject) when --client-secret is passed as a flag: the value
     // lands in shell history and process listings. We still honor the flag —
@@ -97,6 +101,27 @@ PAX8_CLIENT_SECRET environment variable.`
     }
 
     if (isDemo) {
+      // Detect the silent-no-op trap (#TBD): user supplied credentials, but
+      // demo mode is active so we'd save nothing and every subsequent command
+      // would hit the mock client. Previously this exited 0 with no signal,
+      // leaving users convinced they'd authenticated. Now we surface the
+      // conflict loudly on stderr and embed a `notice` in the JSON envelope.
+      const credsAttempted =
+        options.clientId !== undefined ||
+        options.clientSecret !== undefined ||
+        !!process.env.PAX8_CLIENT_ID ||
+        !!process.env.PAX8_CLIENT_SECRET;
+
+      if (credsAttempted && demoSource) {
+        process.stderr.write(
+          chalk.yellow(
+            `\n  ⚠ Demo mode is active (source: ${demoSource}) — credentials were NOT saved.\n` +
+              `    Every command will continue to return sample data.\n` +
+              `    To log in with real credentials, ${disableDemoHint(demoSource)} and re-run \`pax8 auth login\`.\n\n`,
+          ),
+        );
+      }
+
       // #471: success banner must not pollute stdout — `pax8 auth login --json | jq`
       // previously got ANSI text and parsing failed. Human banner goes to stderr;
       // `--json` mode emits a structured envelope on stdout.
@@ -106,11 +131,30 @@ PAX8_CLIENT_SECRET environment variable.`
             {
               status: "authenticated",
               mode: "demo",
+              demoSource,
+              ...(credsAttempted && demoSource
+                ? {
+                    notice:
+                      `Demo mode is active (source: ${demoSource}); credentials were NOT saved. ` +
+                      `Disable demo mode and re-run \`pax8 auth login\` to log in for real.`,
+                  }
+                : {}),
               nextActions: [
                 {
                   command: "pax8 dashboard --json",
                   description: "Run a portfolio summary against the demo data set",
                 },
+                ...(credsAttempted && demoSource
+                  ? [
+                      {
+                        command:
+                          demoSource === "env"
+                            ? "unset PAX8_DEMO && pax8 auth login"
+                            : "pax8 demo off && pax8 auth login",
+                        description: "Disable demo mode and log in for real",
+                      },
+                    ]
+                  : []),
               ],
             },
             null,
@@ -121,7 +165,12 @@ PAX8_CLIENT_SECRET environment variable.`
       }
 
       process.stderr.write(
-        chalk.green("\n  ✓ Authenticated (demo mode)\n\n")
+        chalk.green("\n  ✓ Authenticated (demo mode)\n") +
+          (demoSource
+            ? chalk.dim(
+                `    (demo source: ${demoSource} — disable with: ${disableDemoHint(demoSource)})\n\n`,
+              )
+            : "\n"),
       );
       return;
     }

@@ -2,7 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import * as os from "node:os";
 import { runCli, runCliExpectFailure, runCliExpectSuccess } from "./test-utils.js";
+
+/**
+ * Builds an isolated config dir with `demo: true` written into config.yaml.
+ * Returns the dir path; callers must pass it as `PAX8_CONFIG_DIR` and also
+ * unset `PAX8_DEMO` (the test harness sets it to "1" by default) so the
+ * config-source branch is exercised rather than the env-source branch.
+ */
+async function makeConfigPinnedDemoDir(): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-demo-config-"));
+  await fs.writeFile(
+    path.join(dir, "config.yaml"),
+    "version: '1.0'\ndemo: true\n",
+    "utf-8",
+  );
+  return dir;
+}
 
 describe("pax8 auth", () => {
   describe("auth login", () => {
@@ -23,19 +42,97 @@ describe("pax8 auth", () => {
       expect(result.stdout).toContain("Examples:");
     });
 
-    it("accepts credentials via flags (non-interactive path)", async () => {
+    it("accepts credentials via flags (non-interactive path) — under demo mode, surfaces conflict", async () => {
       // Demo mode short-circuits before validation, but the flag-parsing
       // path still runs — proves the non-interactive contract is intact.
+      // Regression for the silent-no-op trap: when credentials are supplied
+      // but demo mode is active, the user previously saw a green-check
+      // "authenticated" with no signal that creds weren't saved. Now we
+      // emit a stderr warning and embed a `notice` in the JSON envelope.
       const result = await runCliExpectSuccess([
         "auth",
         "login",
         "--client-id",
-        "test-id",
+        "test-id-with-valid-chars",
         "--client-secret",
-        "test-secret",
+        "test-secret-with-valid-chars",
       ]);
       const parsed = JSON.parse(result.stdout);
       expect(parsed.status).toBe("authenticated");
+      expect(parsed.mode).toBe("demo");
+      expect(parsed.demoSource).toBe("env");
+      expect(parsed.notice).toMatch(/demo mode/i);
+      expect(parsed.notice).toMatch(/not saved/i);
+      // Loud stderr warning so interactive users notice the conflict.
+      expect(result.stderr).toMatch(/Demo mode is active/);
+      expect(result.stderr).toMatch(/credentials were NOT saved/);
+    });
+
+    it("emits a `disable demo` nextAction when creds are supplied under demo mode", async () => {
+      const result = await runCliExpectSuccess([
+        "auth",
+        "login",
+        "--client-id",
+        "test-id-with-valid-chars",
+        "--client-secret",
+        "test-secret-with-valid-chars",
+      ]);
+      const parsed = JSON.parse(result.stdout);
+      const actions = parsed.nextActions as Array<{ command: string }>;
+      expect(actions.some((a) => /unset PAX8_DEMO/.test(a.command))).toBe(true);
+    });
+
+    it("bare `auth login` in demo mode adds a dim source hint to the human banner", async () => {
+      const result = await runCliExpectSuccess(["auth", "login"], {
+        PAX8_OUTPUT_FORMAT: "table",
+      });
+      // The dim chalk styling drops the actual codes in non-TTY, but the
+      // literal text is preserved.
+      expect(result.stderr).toContain("Authenticated");
+      expect(result.stderr).toContain("demo source: env");
+    });
+
+    it("bare `auth login` in demo mode (no creds) does NOT emit a notice", async () => {
+      const result = await runCliExpectSuccess(["auth", "login"]);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.status).toBe("authenticated");
+      expect(parsed.notice).toBeUndefined();
+    });
+
+    it("detects `source: config` when PAX8_DEMO is unset but config.demo is true", async () => {
+      // Reproduces Dori's likely entry path: `pax8 init --demo` (or
+      // `pax8 demo on`) pinned `demo: true` in config.yaml. Without the
+      // config-source branch, `auth login` would attempt real cred entry
+      // — but every downstream command still hits the mock client because
+      // `buildContext()` honors config.demo. The fix is to detect this
+      // here too so the user sees the conflict at login time.
+      const dir = await makeConfigPinnedDemoDir();
+      try {
+        const result = await runCliExpectSuccess(
+          [
+            "auth",
+            "login",
+            "--client-id",
+            "real-id-1234",
+            "--client-secret",
+            "real-secret-5678",
+          ],
+          {
+            PAX8_DEMO: "",
+            PAX8_CONFIG_DIR: dir,
+            PAX8_CLIENT_ID: "",
+            PAX8_CLIENT_SECRET: "",
+          },
+        );
+        const parsed = JSON.parse(result.stdout);
+        expect(parsed.mode).toBe("demo");
+        expect(parsed.demoSource).toBe("config");
+        expect(parsed.notice).toMatch(/source: config/);
+        expect(result.stderr).toMatch(/source: config/);
+        expect(result.stderr).toMatch(/pax8 demo off/);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
     });
 
     // Regression for #471: human banner ("✓ Authenticated (demo mode)") must
@@ -169,7 +266,39 @@ describe("pax8 auth", () => {
     it("emits JSON when --json is passed explicitly", async () => {
       const result = await runCliExpectSuccess(["auth", "status", "--json"]);
       const parsed = JSON.parse(result.stdout);
-      expect(parsed).toEqual({ credentialsPresent: true, mode: "demo" });
+      expect(parsed.credentialsPresent).toBe(true);
+      expect(parsed.mode).toBe("demo");
+      expect(parsed.demoSource).toBe("env");
+    });
+
+    it("surfaces demoSource:config + disable hint when config.demo:true", async () => {
+      const dir = await makeConfigPinnedDemoDir();
+      try {
+        const result = await runCliExpectSuccess(["auth", "status", "--json"], {
+          PAX8_DEMO: "",
+          PAX8_CONFIG_DIR: dir,
+        });
+        const parsed = JSON.parse(result.stdout);
+        expect(parsed.mode).toBe("demo");
+        expect(parsed.demoSource).toBe("config");
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("includes a disable hint in human output (config source)", async () => {
+      const dir = await makeConfigPinnedDemoDir();
+      try {
+        const result = await runCliExpectSuccess(["auth", "status"], {
+          PAX8_DEMO: "",
+          PAX8_CONFIG_DIR: dir,
+          PAX8_OUTPUT_FORMAT: "table",
+        });
+        expect(result.stdout).toContain("Demo source: config");
+        expect(result.stdout).toContain("pax8 demo off");
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
     });
   });
 
