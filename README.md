@@ -36,7 +36,7 @@ Run `node --version` in your terminal.
 
 - If it prints **v20** or newer, you're set — skip to [Quick Start](#quick-start).
 - If it prints an older version, or you see `command not found`, install Node.js. Use the GUI installer by default; the package-manager one-liners below are just shortcuts if you already use one.
-  - **Default, every OS, assumes nothing:** download the Node.js LTS installer from [nodejs.org](https://nodejs.org) and run it.
+  - **For any OS:** download the Node.js LTS installer from [nodejs.org](https://nodejs.org) and run it.
   - **Windows, if you already use winget** (built into Windows 10/11): `winget install OpenJS.NodeJS.LTS`.
   - **Windows, if you already use Chocolatey:** `choco install nodejs-lts`.
   - **macOS or Linux, if you already use Homebrew:** `brew install node` (installs current Node).
