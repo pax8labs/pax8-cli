@@ -217,6 +217,154 @@ describe("pax8 telemetry", () => {
       ).toBeDefined();
     });
 
+    // #621: `credentialed` flag — both success and failure paths.
+    //
+    // The contract: `credentialed = true` iff `CredentialStore.hasCredentials()`
+    // is true (env vars OR file). Independent of `demo_mode`. Tests run under
+    // `PAX8_DEMO=1` because the existing pattern in this file does — demo
+    // is independent of the credentialed signal, and using it keeps every
+    // test on the same fast in-memory path the rest of the suite uses.
+    //
+    // Important: `runCli` inherits `process.env`, so a developer running
+    // these locally with real `PAX8_CLIENT_ID` / `PAX8_CLIENT_SECRET` in
+    // their shell would see the "no creds" tests fail. We pass empty
+    // strings for those env vars in the no-creds cases — `getFromEnv()`
+    // in credential-store.ts requires both to be truthy, so the empty
+    // string disables the env-var path without unsetting (which
+    // execFile's env merge doesn't support).
+    describe("credentialed flag (#621)", () => {
+      const NO_CREDS_ENV = { PAX8_CLIENT_ID: "", PAX8_CLIENT_SECRET: "" };
+
+      it("success path emits credentialed: true when env vars are set", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], {
+          PAX8_CONFIG_DIR: tmpDir,
+          ...NO_CREDS_ENV,
+        });
+
+        await runCliExpectSuccess(["clients", "list", "--json"], {
+          PAX8_CONFIG_DIR: tmpDir,
+          PAX8_CLIENT_ID: "test-client-id",
+          PAX8_CLIENT_SECRET: "test-client-secret",
+        });
+
+        const events = await readEvents(tmpDir);
+        const success = events.find(
+          (e) => e.success === true && e.subcommand === "clients.list",
+        );
+        expect(
+          success,
+          `expected a clients.list success event in ${JSON.stringify(events)}`,
+        ).toBeDefined();
+        expect(success!.credentialed).toBe(true);
+      });
+
+      it("success path emits credentialed: true when a credentials file exists", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], {
+          PAX8_CONFIG_DIR: tmpDir,
+          ...NO_CREDS_ENV,
+        });
+        // Write a credentials file directly into the temp config dir.
+        // hasCredentials() only stats the path — it doesn't read or parse,
+        // so any content is fine.
+        await fs.writeFile(
+          path.join(tmpDir, "credentials.json"),
+          JSON.stringify({ clientId: "x", clientSecret: "y" }),
+          { mode: 0o600 },
+        );
+
+        await runCliExpectSuccess(["clients", "list", "--json"], {
+          PAX8_CONFIG_DIR: tmpDir,
+          ...NO_CREDS_ENV,
+        });
+
+        const events = await readEvents(tmpDir);
+        const success = events.find(
+          (e) => e.success === true && e.subcommand === "clients.list",
+        );
+        expect(
+          success,
+          `expected a clients.list success event in ${JSON.stringify(events)}`,
+        ).toBeDefined();
+        expect(success!.credentialed).toBe(true);
+      });
+
+      it("success path emits credentialed: false when no env vars and no file", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], {
+          PAX8_CONFIG_DIR: tmpDir,
+          ...NO_CREDS_ENV,
+        });
+
+        await runCliExpectSuccess(["clients", "list", "--json"], {
+          PAX8_CONFIG_DIR: tmpDir,
+          ...NO_CREDS_ENV,
+        });
+
+        const events = await readEvents(tmpDir);
+        const success = events.find(
+          (e) => e.success === true && e.subcommand === "clients.list",
+        );
+        expect(
+          success,
+          `expected a clients.list success event in ${JSON.stringify(events)}`,
+        ).toBeDefined();
+        expect(success!.credentialed).toBe(false);
+      });
+
+      it("failure path emits credentialed: true when env vars are set", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], {
+          PAX8_CONFIG_DIR: tmpDir,
+          ...NO_CREDS_ENV,
+        });
+
+        // Same shape as the action-throw test above — invoices audit
+        // with a bad --month flag throws ERROR_INVALID_INPUT from the
+        // action, which routes through emitFailureEvent.
+        const result = await runCli(
+          ["invoices", "audit", "--month", "garbage", "--json"],
+          {
+            PAX8_CONFIG_DIR: tmpDir,
+            PAX8_DEMO: "1",
+            PAX8_CLIENT_ID: "test-client-id",
+            PAX8_CLIENT_SECRET: "test-client-secret",
+          },
+        );
+        expect(result.exitCode).not.toBe(0);
+
+        const events = await readEvents(tmpDir);
+        const failure = events.find(
+          (e) => e.success === false && e.subcommand === "invoices.audit",
+        );
+        expect(
+          failure,
+          `expected an invoices.audit failure event in ${JSON.stringify(events)}`,
+        ).toBeDefined();
+        expect(failure!.credentialed).toBe(true);
+      });
+
+      it("failure path emits credentialed: false when no env vars and no file", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], {
+          PAX8_CONFIG_DIR: tmpDir,
+          ...NO_CREDS_ENV,
+        });
+
+        const result = await runCli(
+          ["invoices", "audit", "--month", "garbage", "--json"],
+          { PAX8_CONFIG_DIR: tmpDir, PAX8_DEMO: "1", ...NO_CREDS_ENV },
+        );
+        expect(result.exitCode).not.toBe(0);
+
+        const events = await readEvents(tmpDir);
+        const failure = events.find(
+          (e) => e.success === false && e.subcommand === "invoices.audit",
+        );
+        expect(
+          failure,
+          `expected an invoices.audit failure event in ${JSON.stringify(events)}`,
+        ).toBeDefined();
+        expect(failure!.credentialed).toBe(false);
+      });
+    });
+
     it("Commander --help and --version do NOT emit failure events (#598)", async () => {
       // exitOverride makes Commander throw for --help / --version too,
       // but those are user-requested content (not errors). The

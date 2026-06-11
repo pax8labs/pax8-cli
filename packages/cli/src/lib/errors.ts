@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   ApiError,
+  CredentialStore,
   ERROR_API_TIMEOUT,
   ERROR_API_VALIDATION,
   ERROR_AUTH_EXPIRED,
@@ -466,6 +467,19 @@ async function emitFailureEvent(error: unknown): Promise<void> {
       }
     }
     if (!telemetry.isEnabled()) return;
+    // #621: emit credential-store state on failure events too so we can
+    // measure auth-login failure rates and the broken `credentialed:
+    // false, demo_mode: false` cohort. Same primitive as the success
+    // path; bounded fs.access + env-var read. The parse-error branch
+    // above already pays one async tick for loadEnabled(); this is the
+    // same shape of bounded I/O. Wrapped in try so a config-dir issue
+    // can't break the failure-event emit.
+    let credentialed = false;
+    try {
+      credentialed = await new CredentialStore().hasCredentials();
+    } catch {
+      // Telemetry must never crash the CLI.
+    }
     telemetry.track({
       event: "command_executed",
       command: active?.command ?? "unknown",
@@ -478,6 +492,7 @@ async function emitFailureEvent(error: unknown): Promise<void> {
       node_version: process.version,
       os: process.platform,
       demo_mode: false,
+      credentialed,
     });
   } catch {
     // Telemetry must never crash the CLI.
