@@ -46,6 +46,20 @@ export interface TelemetryEvent {
   node_version: string;
   os: string;
   demo_mode: boolean;
+  /**
+   * True when `CredentialStore.hasCredentials()` returned true at emit time
+   * — either `PAX8_CLIENT_ID` + `PAX8_CLIENT_SECRET` are set in env or a
+   * credentials.json file exists under the config dir. Independent of
+   * `demo_mode`: a partner can be `credentialed: true, demo_mode: true`
+   * (creds saved but explicitly running demo) or any other combination.
+   *
+   * Optional (rather than required) so other call sites that construct a
+   * `TelemetryEvent` directly aren't forced to compute it; the two
+   * canonical emit sites (success in `cli/src/index.ts` postAction and
+   * failure in `cli/src/lib/errors.ts` `emitFailureEvent`) both populate
+   * it. See #621.
+   */
+  credentialed?: boolean;
   /** Full subcommand path, e.g. "recommendations.list" */
   subcommand?: string;
   /** For order create, did the order actually succeed */
