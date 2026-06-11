@@ -38,6 +38,7 @@ import {
   getTelemetry,
   getDefaultBaseUrl,
   getConfigDir,
+  CredentialStore,
 } from "@pax8/core";
 import { resolveDemoModeAsync } from "./lib/context.js";
 import type { Command as CommandType } from "commander";
@@ -220,6 +221,20 @@ export function createProgram(): Command {
       const subcommand = getFullCommandName(actionCommand);
       const flags = extractCommandFlags(actionCommand);
       const isDemo = await resolveDemoModeAsync();
+      // #621: emit credential-store state independently of demo_mode so we
+      // can answer "what share of partners transition from demo to real
+      // auth" and similar onboarding-funnel questions. Same primitive
+      // welcome.ts and `auth status` use; sub-millisecond stat + env-var
+      // read. Computed AFTER the action ran so a successful `auth login`
+      // emits `credentialed: true`.
+      let credentialed = false;
+      try {
+        credentialed = await new CredentialStore().hasCredentials();
+      } catch {
+        // Telemetry must never crash the CLI. hasCredentials() already
+        // swallows fs errors, but defense-in-depth in case PAX8_CONFIG_DIR
+        // validation throws synchronously.
+      }
 
       // Single canonical event for every command run (#146). Handlers
       // contribute aggregate counters via setTelemetryFields(); they no
@@ -235,6 +250,7 @@ export function createProgram(): Command {
         node_version: process.version,
         os: process.platform,
         demo_mode: isDemo,
+        credentialed,
         ...handlerProps,
       });
 
