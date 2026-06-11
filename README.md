@@ -35,11 +35,13 @@ Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see t
 Run `node --version` in your terminal.
 
 - If it prints **v20** or newer, you're set — skip to [Quick Start](#quick-start).
-- If it prints an older version, or you see `command not found`, install Node.js first:
-  - **Easiest:** download the Node.js LTS installer from [nodejs.org](https://nodejs.org) and run it.
-  - **Or, if you use Homebrew:** `brew install node` (this installs current Node, which is fine — it's well past v20).
+- If it prints an older version, or you see `command not found`, install Node.js. Use the GUI installer by default; the package-manager one-liners below are just shortcuts if you already use one.
+  - **Default, every OS, assumes nothing:** download the Node.js LTS installer from [nodejs.org](https://nodejs.org) and run it.
+  - **Windows, if you already use winget** (built into Windows 10/11): `winget install OpenJS.NodeJS.LTS`.
+  - **Windows, if you already use Chocolatey:** `choco install nodejs-lts`.
+  - **macOS or Linux, if you already use Homebrew:** `brew install node` (installs current Node — fine, well past the v20 floor).
 
-Once installed, close this terminal, open a new one, and run `node --version` again to confirm it prints v20 or newer.
+Once installed — whichever path you took — close this terminal, open a new one, and run `node --version` again. All of these paths leave your existing shell with a stale `PATH`; a fresh shell is what picks up the new `node` binary.
 
 ## Quick Start
 
