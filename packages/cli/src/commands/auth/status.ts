@@ -5,7 +5,12 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { CredentialStore } from "@pax8/core";
 import { replCmd } from "../../lib/confirm.js";
-import { getOutputFormat } from "../../lib/context.js";
+import {
+  getOutputFormat,
+  resolveDemoModeWithSourceAsync,
+  disableDemoHint,
+  type DemoSource,
+} from "../../lib/context.js";
 
 // `auth status` reports whether credentials are present on disk — it does NOT
 // hit the API. A user with rotated or revoked credentials would see
@@ -13,9 +18,15 @@ import { getOutputFormat } from "../../lib/context.js";
 // For an actual authentication check, run `pax8 doctor`, which mints a token
 // against the Pax8 API. The field name is deliberately literal so the JSON
 // shape can't mislead an agent or script consumer (#573).
+//
+// `demoSource` is populated only when `mode === "demo"`. It tells consumers
+// (and the human view) *where* demo mode was configured so they can disable
+// it without guessing — same root cause as the silent-no-op trap fixed in
+// `auth login`.
 interface AuthStatusJson {
   credentialsPresent: boolean;
   mode: "demo" | "live";
+  demoSource?: DemoSource;
   clientIdMasked?: string;
 }
 
@@ -35,13 +46,14 @@ Notes:
   .action(async (_options, command: Command) => {
     const allOpts = command.optsWithGlobals();
     const format = getOutputFormat(allOpts);
-    const isDemo = process.env.PAX8_DEMO === "1";
+    const { isDemo, source: demoSource } = await resolveDemoModeWithSourceAsync();
 
     if (isDemo) {
       if (format === "json") {
         const payload: AuthStatusJson = {
           credentialsPresent: true,
           mode: "demo",
+          demoSource,
         };
         process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
         return;
@@ -55,6 +67,13 @@ Notes:
       process.stdout.write(
         chalk.dim("  All commands return mock data\n")
       );
+      if (demoSource) {
+        process.stdout.write(
+          chalk.dim(
+            `  Demo source: ${demoSource} — disable with: ${disableDemoHint(demoSource)}\n`,
+          ),
+        );
+      }
       process.stdout.write("\n");
       return;
     }

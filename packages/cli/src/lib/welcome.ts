@@ -54,9 +54,9 @@ export async function showWelcomeScreen(): Promise<void> {
   const authed = await isAuthenticated();
 
   // Column width is sized to the longest command across both branches
-  // (`subscriptions renewals` = 22 chars). +2 for trailing padding so the
+  // (`PAX8_DEMO=1 pax8 dash…` = 26 chars). +2 for trailing padding so the
   // descriptions line up cleanly under either layout.
-  const COL = 24;
+  const COL = 28;
   const cmd = (name: string): string => chalk.cyan(name.padEnd(COL));
 
   const commandBlock = authed
@@ -70,9 +70,15 @@ export async function showWelcomeScreen(): Promise<void> {
         `    ${cmd("help")}${chalk.dim("All commands · doctor for setup checks")}`,
       ]
     : [
+        // First-run options. Order matters: the ephemeral one-shot demo is
+        // listed first because it's the safer entry-point — it doesn't pin
+        // demo mode in config and so it can't silently override a later
+        // `auth login`. `init --demo` stays available but is annotated as
+        // persistent so first-run users understand what they're enabling.
         `  ${chalk.dim("Try it:")}`,
-        `    ${cmd("init --demo")}${chalk.dim("Sample data, no auth required")}`,
+        `    ${cmd("PAX8_DEMO=1 pax8 dashboard")}${chalk.dim("Sample data, one-shot (no setup)")}`,
         `    ${cmd("auth login")}${chalk.dim("Connect your Pax8 partner account")}`,
+        `    ${cmd("init --demo")}${chalk.dim("Pin demo mode (persistent — disable with `demo off`)")}`,
         "",
         `  ${chalk.dim("Stuck?")}`,
         `    ${cmd("doctor")}${chalk.dim("Check your setup")}`,

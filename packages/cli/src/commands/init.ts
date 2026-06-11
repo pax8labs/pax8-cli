@@ -22,7 +22,11 @@ Examples:
   pax8 init                Create default config at <config-dir>/config.yaml
   pax8 init --force        Overwrite an existing config with defaults
   pax8 init --demo         Enable demo mode persistently (no credentials needed)
-  pax8 init --demo off     Disable demo mode and return to live API`
+  pax8 demo off            Disable demo mode and return to live API
+
+For one-shot demo runs (no persistence), prefer:
+  PAX8_DEMO=1 pax8 dashboard       (macOS/Linux)
+  $env:PAX8_DEMO="1"; pax8 dashboard   (PowerShell)`
   )
   .action(async (options) => {
     try {
@@ -50,10 +54,15 @@ Examples:
           config.demo = true;
           await saveConfig(config);
           process.stdout.write(
-            chalk.green(`\n  ✓ Demo mode enabled. Try: ${replCmd("pax8 clients list")}\n`)
+            chalk.green(`\n  ✓ Demo mode enabled (persistent). Try: ${replCmd("pax8 clients list")}\n`)
           );
+          // Wording matches `auth status`, `auth login`, and `doctor` — all
+          // four point at `pax8 demo off`. Previously this one said
+          // `pax8 init --demo off`, which works but creates two ways to say
+          // the same thing and made the "where's demo coming from?" debug
+          // path harder to follow.
           process.stdout.write(
-            chalk.dim(`  Disable with: ${replCmd("pax8 init --demo off")}\n\n`)
+            chalk.dim(`  Disable with: ${replCmd("pax8 demo off")}\n\n`)
           );
         }
         return;

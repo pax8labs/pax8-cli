@@ -161,6 +161,43 @@ export async function resolveDemoModeAsync(): Promise<boolean> {
   }
 }
 
+/**
+ * Like `resolveDemoModeAsync` but also returns *where* demo mode came from
+ * (`env` | `config` | `null`). Callers that need to tell users how to turn
+ * demo off — `auth login`, `auth status`, `doctor` — use this so the hint
+ * names the right thing (`unset PAX8_DEMO` vs `pax8 demo off`).
+ *
+ * Same precedence as `resolveDemoMode`: env literal wins (`1`/`true`/`0`/
+ * `false`), then `config.demo`. Returns `source: null` when demo is off.
+ */
+export type DemoSource = "env" | "config" | null;
+export async function resolveDemoModeWithSourceAsync(): Promise<{
+  isDemo: boolean;
+  source: DemoSource;
+}> {
+  const envDemo = process.env.PAX8_DEMO;
+  if (envDemo === "1" || envDemo === "true") return { isDemo: true, source: "env" };
+  if (envDemo === "0" || envDemo === "false") return { isDemo: false, source: null };
+  try {
+    const cfg = await loadConfig();
+    if ("demo" in cfg && cfg.demo === true) return { isDemo: true, source: "config" };
+  } catch {
+    // Config unreadable — fall through; treat as demo off.
+  }
+  return { isDemo: false, source: null };
+}
+
+/**
+ * The shell-friendly instruction for turning off demo mode, given its
+ * source. Surfaced verbatim in user-facing copy from `auth login`,
+ * `auth status`, and `doctor`. Centralized so the wording stays consistent.
+ */
+export function disableDemoHint(source: Exclude<DemoSource, null>): string {
+  return source === "env"
+    ? "unset PAX8_DEMO (or run with `PAX8_DEMO=0`)"
+    : `run \`${replCmd("pax8 demo off")}\``;
+}
+
 export async function buildContext(
   options: GlobalOptions,
 ): Promise<CommandContext> {

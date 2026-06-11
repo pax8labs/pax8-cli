@@ -75,7 +75,13 @@ describe("auth status", () => {
     await makeProgram().parseAsync(["node", "pax8", "auth", "status", "--json"]);
     const out = captured().trim();
     const parsed = JSON.parse(out);
-    expect(parsed).toEqual({ credentialsPresent: true, mode: "demo" });
+    // `demoSource` was added so users can see *where* demo mode came from
+    // and how to disable it. For PAX8_DEMO=1, the source is `env`.
+    expect(parsed).toEqual({
+      credentialsPresent: true,
+      mode: "demo",
+      demoSource: "env",
+    });
   });
 
   it("emits human-formatted text in TTY mode without --json (demo)", async () => {

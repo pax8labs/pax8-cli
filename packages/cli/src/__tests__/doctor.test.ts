@@ -33,6 +33,35 @@ describe("pax8 doctor", () => {
     expect(result.stdout).toContain("Demo mode");
   });
 
+  it("names the demo source + disable hint in the auth check (env)", async () => {
+    // Without this, a partner who pinned demo via `pax8 init --demo` (or
+    // `PAX8_DEMO=1` in a shell rc) sees "Demo mode" and has no idea how
+    // to exit it. The hint names the exact disable command.
+    const result = await runCliExpectSuccess(["doctor"], TABLE);
+    expect(result.stdout).toContain("source: env");
+    expect(result.stdout).toContain("unset PAX8_DEMO");
+  });
+
+  it("names the demo source as `config` when config.demo:true (no env)", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-doctor-cfg-"));
+    try {
+      await fs.writeFile(
+        path.join(dir, "config.yaml"),
+        "version: '1.0'\ndemo: true\n",
+        "utf-8",
+      );
+      const result = await runCliExpectSuccess(["doctor"], {
+        ...TABLE,
+        PAX8_DEMO: "",
+        PAX8_CONFIG_DIR: dir,
+      });
+      expect(result.stdout).toContain("source: config");
+      expect(result.stdout).toContain("pax8 demo off");
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("reports token fetch skipped in demo mode", async () => {
     const result = await runCliExpectSuccess(["doctor"], TABLE);
     expect(result.stdout).toMatch(/✓.*Token fetch/);
