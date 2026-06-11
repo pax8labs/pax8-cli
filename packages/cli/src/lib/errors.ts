@@ -355,6 +355,22 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
     return env;
   }
 
+  // Commander parse errors (unknown command, missing argument, etc.)
+  // reach this code path under #598's exitOverride. They look like plain
+  // `Error` instances but carry a `code` like `commander.unknownCommand`.
+  // Without this branch the envelope would label them `ERROR_INTERNAL`,
+  // contradicting the telemetry path (which correctly maps them to
+  // `ERROR_INVALID_INPUT`) and signaling "the CLI broke" to agents that
+  // would otherwise correct the typo. The help-redirect recovery step
+  // points at the only action that always applies.
+  if (isCommanderParseError(error)) {
+    return {
+      code: ERROR_INVALID_INPUT,
+      message: prefix + (error as Error).message,
+      recoverySteps: ["Run `pax8 --help` to see available commands and flags."],
+    };
+  }
+
   if (error instanceof Error) {
     return {
       code: ERROR_INTERNAL,
@@ -369,44 +385,87 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
 }
 
 /**
+ * Returns the `code` string from a Commander `CommanderError`, or null
+ * for anything else. Centralized so the telemetry path, the envelope
+ * builder, and the help-exit detection all read the same field the same
+ * way — and so the type narrowing happens in one place.
+ */
+function commanderErrorCode(err: unknown): string | null {
+  if (typeof err !== "object" || err === null) return null;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code !== "string") return null;
+  return code.startsWith("commander.") ? code : null;
+}
+
+/**
+ * True for Commander parse failures (unknown command, missing argument,
+ * invalid option-argument, etc.) — but NOT for the help/version success
+ * exits, which are intentionally separate (see `isCommanderSuccessExit`).
+ */
+function isCommanderParseError(err: unknown): boolean {
+  const code = commanderErrorCode(err);
+  if (code === null) return false;
+  if (
+    code === "commander.helpDisplayed" ||
+    code === "commander.help" ||
+    code === "commander.version"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Map an arbitrary thrown value to a canonical `Pax8ErrorCode` for the
- * failure-event payload. Mirrors the error-code surface that the
- * human-readable / JSON error envelope writes elsewhere in this file
- * (`codeForApiError`, the ZodError → ERROR_API_VALIDATION mapping, etc.)
- * for the cases the telemetry layer needs to distinguish coarsely.
+ * failure-event payload. Mirrors `buildErrorEnvelope` so the telemetry
+ * `error_code` and the agent-facing envelope `code` agree (#598
+ * follow-up — they previously disagreed for Commander parse errors,
+ * with telemetry correct but the envelope labeling typos as
+ * `ERROR_INTERNAL`).
  */
 function deriveErrorCodeForTelemetry(err: unknown): Pax8ErrorCode {
   if (err instanceof CliError && err.code) return err.code;
-  // Commander parse errors carry `code` strings like
-  // "commander.unknownCommand" or "commander.missingArgument". Treat
-  // them all as user-input problems rather than internal failures.
-  if (typeof err === "object" && err !== null && "code" in err) {
-    const code = (err as { code?: unknown }).code;
-    if (typeof code === "string" && code.startsWith("commander.")) {
-      return ERROR_INVALID_INPUT;
-    }
-  }
+  if (isCommanderParseError(err)) return ERROR_INVALID_INPUT;
   return ERROR_INTERNAL;
 }
 
 /**
  * Emit the `command_executed { success: false }` event before the CLI
  * exits. Reads the active command stashed in telemetry-context by the
- * program-level `preAction` hook; returns silently when there's no
- * active context (Commander parse errors that throw before any action
- * dispatches — those would also need `loadEnabled()` to run here, which
- * we deliberately skip to avoid adding an async tick before
- * `flushTelemetryBeforeExit`. That gap is tracked separately).
+ * program-level `preAction` hook.
+ *
+ * For action-throw failures, `preAction` ran first and already called
+ * `telemetry.loadEnabled()`, so `isEnabled()` is hot.
+ *
+ * For Commander parse errors (#598 — unknown command, missing argument,
+ * etc.), `preAction` never fires because Commander throws during parse,
+ * before any action dispatches. The active-command sentinel is null and
+ * the telemetry SDK has never loaded its enabled state. We detect that
+ * case and pay one extra `loadEnabled()` async tick — the cost is
+ * irrelevant on an already-failed parse, and without it the failure
+ * event would silently never reach the JSONL backup or PostHog.
  *
  * Buffers only — the existing `flushTelemetryBeforeExit` call later in
- * this function drains this event before `process.exit`. Telemetry
- * must never crash the CLI, so anything that throws here is swallowed.
+ * `handleCommandError` drains this event before `process.exit`.
+ * Telemetry must never crash the CLI, so anything that throws here is
+ * swallowed.
  */
-function emitFailureEvent(error: unknown): void {
+async function emitFailureEvent(error: unknown): Promise<void> {
   try {
     const telemetry = getTelemetry();
-    if (!telemetry.isEnabled()) return;
     const active = consumeActiveCommand();
+    // No active sentinel = parse-time failure; preAction didn't run, so
+    // the enabled state was never loaded. Load it now (bounded async).
+    if (!active) {
+      try {
+        await telemetry.loadEnabled();
+      } catch {
+        // Best-effort. If config is unreadable, isEnabled() stays false
+        // and we'll silently no-op below, which is the same outcome as
+        // the pre-#598 behavior.
+      }
+    }
+    if (!telemetry.isEnabled()) return;
     telemetry.track({
       event: "command_executed",
       command: active?.command ?? "unknown",
@@ -425,11 +484,51 @@ function emitFailureEvent(error: unknown): void {
   }
 }
 
+/**
+ * Commander throws structured errors for `--help` and `--version` after
+ * writing the requested content to stdout. Those are NOT failures — the
+ * user got what they asked for. Map them to a clean exit 0 with no
+ * stderr envelope, no telemetry, no report-bug pointer.
+ *
+ * Other CommanderError codes (`commander.unknownCommand`,
+ * `commander.missingArgument`, etc.) flow through the normal handler so
+ * #598's telemetry path fires.
+ */
+function isCommanderSuccessExit(err: unknown): boolean {
+  const code = commanderErrorCode(err);
+  return (
+    code === "commander.helpDisplayed" ||
+    code === "commander.help" ||
+    code === "commander.version"
+  );
+}
+
 export async function handleCommandError(
   error: unknown,
   spinner?: Ora,
   context?: string,
 ): Promise<never> {
+  // Commander's --help / --version land here under #598's exitOverride.
+  // They already wrote the requested content to stdout; this path must
+  // not render an error envelope, emit a failure telemetry event, or
+  // exit non-zero. Flush any buffered telemetry from earlier in the
+  // process (e.g. a preAction hook that already loaded the SDK) and
+  // exit cleanly.
+  if (isCommanderSuccessExit(error)) {
+    if (spinner) {
+      try {
+        spinner.stop();
+      } catch {
+        // Spinner may already be stopped
+      }
+    }
+    consumeActiveCommand(); // clear sentinel so no postAction-stale carryover
+    await flushTelemetryBeforeExit();
+    process.exit(0);
+    // Honor never-return contract when process.exit is mocked
+    throw new Error("process.exit intercepted");
+  }
+
   // Stop spinner if active
   if (spinner) {
     try {
@@ -440,10 +539,12 @@ export async function handleCommandError(
   }
 
   // Buffer the failure event before any envelope-write or exit-flush.
-  // The flush at the end of this function drains it. Synchronous to
-  // avoid adding ticks before `flushTelemetryBeforeExit` — the
-  // order-of-operations test in errors.test.ts pins that contract.
-  emitFailureEvent(error);
+  // The flush at the end of this function drains it. Note `emitFailureEvent`
+  // is now async (#598) because the parse-error branch needs to call
+  // `telemetry.loadEnabled()` — preAction never ran for those failures, so
+  // the SDK's enabled state was never hydrated. The added tick is bounded
+  // to the no-active-command path; action-throw failures are unchanged.
+  await emitFailureEvent(error);
 
   // Persist the structured envelope so `pax8 report-bug` has something to
   // report. Write happens *before* any exit logic. This is decoupled from the
@@ -566,6 +667,18 @@ export async function handleCommandError(
         );
       }
     }
+  } else if (isCommanderParseError(error)) {
+    // Mirror the `recoverySteps` the envelope carries (#598 review
+    // follow-up) so the human path doesn't drop the hint that --json
+    // consumers already see. Without this, a partner typing `pax8 bogus`
+    // saw only the bare message in their terminal while agents got the
+    // full structured envelope.
+    process.stderr.write(
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe((error as Error).message)}\n`),
+    );
+    process.stderr.write(
+      chalk.yellow(`    → Run ${chalk.cyan(replCmd("pax8 --help"))} to see available commands and flags.\n\n`),
+    );
   } else if (error instanceof Error) {
     process.stderr.write(
       chalk.red.bold(`\n  ✗ ${prefix}  ${safe(error.message)}\n\n`)
