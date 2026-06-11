@@ -667,6 +667,18 @@ export async function handleCommandError(
         );
       }
     }
+  } else if (isCommanderParseError(error)) {
+    // Mirror the `recoverySteps` the envelope carries (#598 review
+    // follow-up) so the human path doesn't drop the hint that --json
+    // consumers already see. Without this, a partner typing `pax8 bogus`
+    // saw only the bare message in their terminal while agents got the
+    // full structured envelope.
+    process.stderr.write(
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe((error as Error).message)}\n`),
+    );
+    process.stderr.write(
+      chalk.yellow(`    → Run ${chalk.cyan(replCmd("pax8 --help"))} to see available commands and flags.\n\n`),
+    );
   } else if (error instanceof Error) {
     process.stderr.write(
       chalk.red.bold(`\n  ✗ ${prefix}  ${safe(error.message)}\n\n`)

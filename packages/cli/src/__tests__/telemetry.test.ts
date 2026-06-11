@@ -172,6 +172,20 @@ describe("pax8 telemetry", () => {
       expect(failure!.command).toBe("unknown");
     });
 
+    it("human render of a Commander parse error includes the `pax8 --help` hint (#598)", async () => {
+      // claude-review follow-up: the envelope's recoverySteps now name the
+      // help command, but the human path was previously dropping it for
+      // Commander parse errors (they fell through to the generic Error
+      // arm that prints only the message). Pin the symmetric behavior so
+      // interactive users see the same hint as agents consuming --json.
+      const result = await runCli(["bogus-command-that-does-not-exist"], {
+        PAX8_OUTPUT_FORMAT: "table",
+      });
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toMatch(/unknown command/);
+      expect(result.stderr).toMatch(/pax8 --help/);
+    });
+
     it("Commander parse error on a SUBCOMMAND also fires a failure event (#598)", async () => {
       // The exitOverride() + outputError config on the root program must
       // inherit to subcommands so a missing-required-arg on
