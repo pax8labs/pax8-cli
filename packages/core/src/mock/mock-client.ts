@@ -43,6 +43,7 @@ import type {
   WebhookTopicDefinition,
 } from "./demo-data.js";
 import { ApiError, NotFoundError } from "../api/errors.js";
+import { ALL_SUBS_PAGE_SIZE } from "../api/constants.js";
 import {
   QuoteSchema,
   type CreateOrderInput,
@@ -278,6 +279,30 @@ class SubscriptionsResource {
     }
     const page = paginate(filtered, params);
     return page;
+  }
+
+  /**
+   * Mock counterpart to `SubscriptionsApi.streamAll` — walks pages of the
+   * in-memory fixture and yields them as `PaginatedResponse<Subscription>`
+   * envelopes. Same precedence and shape as the real API path so demo-mode
+   * exercises the same caller logic. See `api/subscriptions.ts` for the
+   * full contract.
+   */
+  async *streamAll(filter?: {
+    companyId?: string;
+    status?: string;
+    billingTerm?: string;
+    productId?: string;
+    sort?: string;
+  }): AsyncIterableIterator<PaginatedResponse<Subscription>> {
+    let page = 0;
+    let totalPages = 1;
+    while (page < totalPages) {
+      const result = await this.list({ ...filter, page, size: ALL_SUBS_PAGE_SIZE });
+      yield result;
+      totalPages = result.page.totalPages;
+      page = result.page.number + 1;
+    }
   }
 
   async get(id: string): Promise<Subscription> {

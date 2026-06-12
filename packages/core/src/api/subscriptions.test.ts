@@ -57,6 +57,116 @@ describe("SubscriptionsApi", () => {
     expect(result.content[0].quantity).toBe(45);
   });
 
+  describe("streamAll (#613)", () => {
+    function makePage(opts: {
+      number: number;
+      totalPages: number;
+      totalElements: number;
+      contentSize: number;
+    }) {
+      const content = Array.from({ length: opts.contentSize }, (_, i) => ({
+        ...sampleSubscription,
+        // Distinct IDs per row so the test can assert ordering / count.
+        id: `${SUB_ID.slice(0, -4)}${(opts.number * 1000 + i).toString().padStart(4, "0")}`,
+      }));
+      return {
+        page: {
+          size: 1000,
+          totalElements: opts.totalElements,
+          totalPages: opts.totalPages,
+          number: opts.number,
+        },
+        content,
+      };
+    }
+
+    it("walks every page until totalPages is reached", async () => {
+      // 3-page portfolio: pages 0, 1, 2 with 1000+1000+250 = 2250 subs.
+      const page0 = makePage({ number: 0, totalPages: 3, totalElements: 2250, contentSize: 1000 });
+      const page1 = makePage({ number: 1, totalPages: 3, totalElements: 2250, contentSize: 1000 });
+      const page2 = makePage({ number: 2, totalPages: 3, totalElements: 2250, contentSize: 250 });
+      const getMock = client.get as ReturnType<typeof vi.fn>;
+      getMock
+        .mockResolvedValueOnce(page0)
+        .mockResolvedValueOnce(page1)
+        .mockResolvedValueOnce(page2);
+
+      const pages = [];
+      for await (const p of api.streamAll()) {
+        pages.push(p);
+      }
+
+      expect(pages).toHaveLength(3);
+      expect(pages.flatMap((p) => p.content)).toHaveLength(2250);
+      // Page 0 must be fetched first, then 1, then 2 — verifies the
+      // sequential page-walker hasn't been mis-wired to e.g. always fetch
+      // page 0.
+      expect(getMock).toHaveBeenNthCalledWith(1, "/subscriptions", { page: 0, size: 1000 });
+      expect(getMock).toHaveBeenNthCalledWith(2, "/subscriptions", { page: 1, size: 1000 });
+      expect(getMock).toHaveBeenNthCalledWith(3, "/subscriptions", { page: 2, size: 1000 });
+    });
+
+    it("stops after a single request when totalPages is 1", async () => {
+      const onePage = makePage({ number: 0, totalPages: 1, totalElements: 42, contentSize: 42 });
+      const getMock = client.get as ReturnType<typeof vi.fn>;
+      getMock.mockResolvedValueOnce(onePage);
+
+      const pages = [];
+      for await (const p of api.streamAll()) {
+        pages.push(p);
+      }
+
+      expect(pages).toHaveLength(1);
+      expect(getMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("yields zero pages when totalPages is 0 (empty portfolio)", async () => {
+      const empty = {
+        page: { size: 1000, totalElements: 0, totalPages: 0, number: 0 },
+        content: [],
+      };
+      (client.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce(empty);
+
+      const pages = [];
+      for await (const p of api.streamAll()) {
+        pages.push(p);
+      }
+
+      // totalPages=0 means the while-loop exits after page 0 fires once.
+      // The empty page still gets yielded so callers see a definite
+      // "yes I checked, the answer is zero" rather than no yield at all.
+      expect(pages).toHaveLength(1);
+      expect(pages[0].content).toEqual([]);
+    });
+
+    it("propagates filter params verbatim on every page", async () => {
+      const page0 = makePage({ number: 0, totalPages: 2, totalElements: 1100, contentSize: 1000 });
+      const page1 = makePage({ number: 1, totalPages: 2, totalElements: 1100, contentSize: 100 });
+      const getMock = client.get as ReturnType<typeof vi.fn>;
+      getMock.mockResolvedValueOnce(page0).mockResolvedValueOnce(page1);
+
+      const pages = [];
+      for await (const p of api.streamAll({ status: "Active", companyId: COMPANY_ID })) {
+        pages.push(p);
+      }
+
+      // Both page calls carry the filter — agents pushing a server-side
+      // filter to reduce wire bytes depend on this.
+      expect(getMock).toHaveBeenNthCalledWith(1, "/subscriptions", {
+        status: "Active",
+        companyId: COMPANY_ID,
+        page: 0,
+        size: 1000,
+      });
+      expect(getMock).toHaveBeenNthCalledWith(2, "/subscriptions", {
+        status: "Active",
+        companyId: COMPANY_ID,
+        page: 1,
+        size: 1000,
+      });
+    });
+  });
+
   it("get returns a single subscription", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleSubscription);
 
