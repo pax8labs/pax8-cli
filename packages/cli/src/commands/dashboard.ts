@@ -3,18 +3,48 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext, warnIfTruncated } from "../lib/context.js";
+import { buildContext } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
-import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
+import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
-import type { Subscription, Company, Product, Order, RenewalReport, Recommendation } from "@pax8/core";
+import type { Subscription, Company, Product, Order, RenewalReport, Recommendation, PaginatedResponse } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Materialize every page of subscriptions from a `streamAll()` iterator
+ * into a single array. Used by dashboard (and Phase 2 — the other three
+ * aggregator commands) to get the full portfolio without the silent
+ * page-limit truncation #613 was tracking.
+ *
+ * Calls `onProgress(loaded, total)` after each page so the caller can
+ * keep its spinner honest on large portfolios. `total` is read from the
+ * first page's `page.totalElements` and held stable across the iteration
+ * (the server reports the same value on every page).
+ *
+ * The future `pax8 subscriptions export` command will consume the same
+ * `streamAll()` iterator directly — writing each page to stdout/file as
+ * it arrives without materializing. This helper exists because dashboard
+ * needs the full array for its multi-pass computations
+ * (`computePortfolioStats`, `getUpcomingRenewals`, `getRecommendations`,
+ * trial/active filters); export does not.
+ */
+async function collectAllSubscriptions(
+  stream: AsyncIterableIterator<PaginatedResponse<Subscription>>,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<Subscription[]> {
+  const all: Subscription[] = [];
+  for await (const result of stream) {
+    all.push(...result.content);
+    onProgress?.(all.length, result.page.totalElements);
+  }
+  return all;
+}
 
 // Internal name `cost` reflects what these numbers actually are: the
 // partner's monthly cost to Pax8 (price × quantity, amortized monthly).
@@ -172,18 +202,33 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
     const spinner = createSpinner("Loading dashboard...").start();
 
     try {
-      const [companiesSettled, subsSettled, productsSettled, ordersSettled] = await Promise.allSettled([
+      // Fetch companies/products/orders in parallel with the subscription
+      // stream. Subscriptions are the heaviest resource and now walk every
+      // page via `streamAll()` (#613) so partners with >1000 subs no longer
+      // get silently truncated portfolio totals. The other three resources
+      // stay single-page — none of dashboard's outputs grow with their
+      // count past the first 200 (companies are used as a name lookup,
+      // products for recommendations enrichment, orders for the recent-
+      // activity window).
+      const [companiesSettled, productsSettled, ordersSettled, subsSettled] = await Promise.allSettled([
         ctx.api.companies.list({ size: 200 }),
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE }),
         ctx.api.products.list({ size: 200 }),
         ctx.api.orders.list({ size: 200 }),
+        collectAllSubscriptions(ctx.api.subscriptions.streamAll(), (loaded, total) => {
+          if (total > 1000) {
+            // Only update the spinner when there's a real portfolio to
+            // count down — small portfolios load fast enough that the
+            // running-tally text just flickers.
+            spinner.text = `Loading dashboard... (${loaded.toLocaleString()} of ${total.toLocaleString()} subscriptions)`;
+          }
+        }),
       ]);
 
       const emptyPage = { number: 0, totalPages: 0, totalElements: 0 };
       const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as Company[], page: { ...emptyPage } };
-      const subsResult = subsSettled.status === 'fulfilled' ? subsSettled.value : { content: [] as Subscription[], page: { ...emptyPage } };
       const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as Product[], page: { ...emptyPage } };
       const ordersResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [] as Order[], page: { ...emptyPage } };
+      const allSubs: Subscription[] = subsSettled.status === 'fulfilled' ? subsSettled.value : [];
 
       if (companiesSettled.status === 'rejected') {
         process.stderr.write(chalk.yellow("  ⚠ Could not load companies\n"));
@@ -200,9 +245,6 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         companyNames.set(c.id, c.name);
       }
 
-      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
-
-      const allSubs = subsResult.content;
       enrichCompanyNames(companyNames, allSubs);
       await enrichProductNames(ctx, allSubs);
 
