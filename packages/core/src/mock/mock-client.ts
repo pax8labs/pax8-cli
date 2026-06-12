@@ -43,6 +43,7 @@ import type {
   WebhookTopicDefinition,
 } from "./demo-data.js";
 import { ApiError, NotFoundError } from "../api/errors.js";
+import { ALL_SUBS_PAGE_SIZE } from "../api/constants.js";
 import {
   QuoteSchema,
   type CreateOrderInput,
@@ -297,7 +298,7 @@ class SubscriptionsResource {
     let page = 0;
     let totalPages = 1;
     while (page < totalPages) {
-      const result = await this.list({ ...filter, page, size: 1000 });
+      const result = await this.list({ ...filter, page, size: ALL_SUBS_PAGE_SIZE });
       yield result;
       totalPages = result.page.totalPages;
       page = result.page.number + 1;

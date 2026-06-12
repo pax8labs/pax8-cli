@@ -3,6 +3,7 @@
 
 import type { Pax8Client } from "./client.js";
 import { z } from "zod";
+import { ALL_SUBS_PAGE_SIZE } from "./constants.js";
 import {
   SubscriptionSchema,
   SubscriptionHistorySchema,
@@ -56,12 +57,12 @@ export class SubscriptionsApi {
    * render `Loaded 1,000 of 5,000 …`. Matches the shape `list()` returns,
    * so the swap is mechanical.
    *
-   * Page size is fixed at 1000 — the API's documented max via
-   * `LIST_SIZE_CAP`. Smaller sizes are pointless: the goal is to minimize
-   * round-trips, and fewer items per page just means more sequential HTTP
-   * calls. The first page request takes the usual round-trip; subsequent
-   * pages benefit from the same auth-token reuse the singleton client
-   * already provides.
+   * Page size is fixed at `ALL_SUBS_PAGE_SIZE` (1000) — the API's
+   * documented max per page. Smaller sizes are pointless: the goal is to
+   * minimize round-trips, and fewer items per page just means more
+   * sequential HTTP calls. The first page request takes the usual round-
+   * trip; subsequent pages benefit from the same auth-token reuse the
+   * singleton client already provides.
    *
    * No safety cap: today's aggregator callers materialize the full set
    * anyway (10s of MB for the largest realistic MSP portfolio), and the
@@ -79,7 +80,7 @@ export class SubscriptionsApi {
     let page = 0;
     let totalPages = 1;
     while (page < totalPages) {
-      const result = await this.list({ ...filter, page, size: 1000 });
+      const result = await this.list({ ...filter, page, size: ALL_SUBS_PAGE_SIZE });
       yield result;
       totalPages = result.page.totalPages;
       page = result.page.number + 1;
