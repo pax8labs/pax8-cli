@@ -40,7 +40,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run Claude Code review
-        uses: anthropics/claude-code-action@0b1b62002952733671bde978d429b50b51c51c85 # v1.0.136
+        uses: anthropics/claude-code-action@ebcdfe6dc6bb7511eb63e59e07df256dbcf59a2e # v1.0.145
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           additional_permissions: |
