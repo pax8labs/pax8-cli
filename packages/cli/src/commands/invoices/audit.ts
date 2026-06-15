@@ -3,17 +3,18 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { buildContext, warnIfTruncated } from "../../lib/context.js";
+import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
-import { ALL_SUBS_PAGE_SIZE, auditInvoices } from "@pax8/core";
+import { auditInvoices } from "@pax8/core";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { discrepancyId } from "./dispute.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { validateMonth } from "../../lib/validate.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 
 export const invoicesAuditCommand = new Command("audit")
   .description("Audit invoices against active subscriptions")
@@ -73,13 +74,20 @@ JSON output (--json):
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
 
-      // Fetch invoices and active subscriptions in parallel
-      const [invoicesResult, subsResult] = await Promise.all([
+      // #613 Phase 2: walk every page of subscriptions so the audit
+      // reconciles against the full portfolio. Pre-#628 the call was
+      // `subscriptions.list({ companyId, size: ALL_SUBS_PAGE_SIZE })`,
+      // which silently truncated reconciliation for partners with
+      // >1000 subs (or >1000 subs at a single filtered company on the
+      // upper end of "large").
+      const [invoicesResult, allSubs] = await Promise.all([
         ctx.api.invoices.list({ month: options.month, companyId, size: 200 }),
-        ctx.api.subscriptions.list({ companyId, size: ALL_SUBS_PAGE_SIZE }),
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ companyId }),
+          spinner,
+          "invoice audit",
+        ),
       ]);
-
-      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
       // Fetch items for each invoice in parallel
       const allItems = (
@@ -115,7 +123,7 @@ JSON output (--json):
       // The auditor matches on subscriptionId first, falling back to companyId+productId.
       // Invoice items don't have subscriptionId, so we map subscriptions to use
       // companyId+productId matching by omitting the id field and setting subscriptionId undefined.
-      const normalizedSubs = subsResult.content.map((s) => {
+      const normalizedSubs = allSubs.map((s) => {
         const { id, ...rest } = s;
         return {
           ...rest,

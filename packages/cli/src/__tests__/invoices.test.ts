@@ -191,6 +191,22 @@ describe("pax8 invoices", () => {
   });
 
   describe("invoices audit", () => {
+    // #613 Phase 2: at the large fixture (5000 subs across 5 pages), audit
+    // must walk every page so it reconciles invoices against the full
+    // subscription set — not just the first 1000. Pre-fix the stderr
+    // truncation warning was the only signal a user had that the audit was
+    // partial; post-fix there's no truncation and no warning.
+    it("at large scale audits against the full portfolio — no truncation warning (#613)", async () => {
+      const result = await runCliExpectSuccess(["invoices", "audit", "--json"], {
+        PAX8_DEMO_SCALE: "large",
+      });
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("itemsAudited");
+      // The truncation warning that fired pre-fix must not be in stderr —
+      // pre-fix it was the only signal users got that their audit was partial.
+      expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
+    });
+
     it("produces audit report in JSON", async () => {
       const result = await runCliExpectSuccess([
         "invoices",

@@ -7,7 +7,6 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  ALL_SUBS_PAGE_SIZE,
   auditInvoices,
   ERROR_INVALID_INPUT,
   ERROR_INTERNAL,
@@ -18,6 +17,7 @@ import {
 } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
+import { collectAllSubscriptions } from "../../lib/subs-stream.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
@@ -158,9 +158,15 @@ async function findDiscrepancy(
 ): Promise<DiscrepancyShape> {
   // Audit the relevant slice
   const companyId = opts.company ? await resolveCompanyId(ctx, opts.company) : undefined;
-  const [invoicesResult, subsResult] = await Promise.all([
+  // #613 Phase 2: `findDiscrepancy` re-runs the audit logic to look up
+  // a specific discrepancy by id. It must see the same subscription set
+  // `invoices audit` does, otherwise a dispute against a discrepancy
+  // produced by audit might fail to find it here. Paginate so a partner
+  // with >1000 subs at a single company (rare but possible) doesn't have
+  // the dispute path silently disagree with the audit path.
+  const [invoicesResult, normalizedSubsRaw] = await Promise.all([
     ctx.api.invoices.list({ month: opts.month, companyId, size: 200 }),
-    ctx.api.subscriptions.list({ companyId, size: ALL_SUBS_PAGE_SIZE }),
+    collectAllSubscriptions(ctx.api.subscriptions.streamAll({ companyId })),
   ]);
   const allItems = (
     await Promise.all(
@@ -170,7 +176,7 @@ async function findDiscrepancy(
     )
   ).flatMap((r) => r.content);
 
-  const normalizedSubs = subsResult.content.map((s) => {
+  const normalizedSubs = normalizedSubsRaw.map((s) => {
     const { id: _id, ...rest } = s;
     return { ...rest, subscriptionId: undefined, unitPrice: s.price };
   });

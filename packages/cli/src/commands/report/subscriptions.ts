@@ -3,7 +3,6 @@
 
 import { Command } from "commander";
 import {
-  ALL_SUBS_PAGE_SIZE,
   ERROR_INVALID_INPUT,
   subscriptionMrr,
   type AmountCurrency,
@@ -11,6 +10,7 @@ import {
   type Subscription,
 } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { CliError, handleCommandError } from "../../lib/errors.js";
@@ -141,16 +141,27 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
 
-      const [subsResult, companiesResult, productsResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId }),
+      // #613 Phase 2: walk every page so the report aggregates over the
+      // full subscription set. Pre-#628 the call was
+      // `subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId })`,
+      // which silently truncated vendor / client / product group totals
+      // for partners with >1000 subs (or >1000 subs at a single filtered
+      // company). The grouped sums and the `groupName` rows would all
+      // reflect the first-page sample instead of the portfolio.
+      const [allSubs, companiesResult, productsResult] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ companyId }),
+          spinner,
+          "subscription report",
+        ),
         ctx.api.companies.list({ size: 200 }),
         ctx.api.products.list({ size: 500 }).catch(() => null),
       ]);
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) companyNames.set(c.id, c.name);
-      enrichCompanyNames(companyNames, subsResult.content);
-      await enrichProductNames(ctx, subsResult.content as Record<string, unknown>[]);
+      enrichCompanyNames(companyNames, allSubs);
+      await enrichProductNames(ctx, allSubs as Record<string, unknown>[]);
 
       const productVendor = new Map<string, string>();
       if (productsResult) {
@@ -163,7 +174,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       const vendorFilter = options.vendor?.toLowerCase();
 
-      const activeSubs = (subsResult.content as Subscription[]).filter(
+      const activeSubs = (allSubs as Subscription[]).filter(
         (s) => s.status === "Active",
       );
 

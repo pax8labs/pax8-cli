@@ -3,8 +3,9 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
+import { getUpcomingRenewals } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -119,19 +120,21 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       const companyId = options.company
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
-      const result = await ctx.api.subscriptions.list({
-        size: ALL_SUBS_PAGE_SIZE,
-        companyId,
-      });
+      // #613 Phase 2: walk every page so renewals are computed over the
+      // full portfolio. Pre-#628 the call truncated at 1000 subs.
+      const allSubs = await collectSubsWithSpinner(
+        ctx.api.subscriptions.streamAll({ companyId }),
+        spinner,
+        "renewals",
+      );
 
       const companyNames = await buildCompanyNameMap(
         ctx,
-        result.content as { companyId?: string }[],
+        allSubs as { companyId?: string }[],
         { quiet: Boolean(allOpts.quiet), resourceLabel: "renewal" },
       );
-      enrichCompanyNames(companyNames, result.content);
-      await enrichProductNames(ctx, result.content as Record<string, unknown>[]);
-      const allSubs = result.content;
+      enrichCompanyNames(companyNames, allSubs);
+      await enrichProductNames(ctx, allSubs as Record<string, unknown>[]);
 
       spinner.stop();
 
