@@ -3,7 +3,8 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation, ERROR_INVALID_INPUT } from "@pax8/core";
+import { getRecommendations, type Recommendation, ERROR_INVALID_INPUT } from "@pax8/core";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { ask } from "../../lib/prompts.js";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -239,8 +240,19 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
     const spinner = createSpinner("Analyzing portfolios...").start();
 
     try {
-      const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
+      // #613 Phase 2: `recommendations act` runs the same engine
+      // (`getRecommendations`) as `recommendations list`. Both must
+      // analyze the full active portfolio or partners see opportunities
+      // in `list` that `act` silently won't offer to write — the
+      // divergence claude-review on #629 caught. Keep the two paths
+      // consistent by using the same `streamAll({status:"Active"})`
+      // shape `list` now does.
+      const [subs, companiesResult] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ status: "Active" }),
+          spinner,
+          "recommendations",
+        ),
         ctx.api.companies.list({ size: 200 }),
       ]);
 
@@ -249,7 +261,6 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         companyNames.set(c.id, c.name);
       }
 
-      const subs = subsResult.content;
       await enrichProductNames(ctx, subs);
       enrichCompanyNames(companyNames, subs);
 

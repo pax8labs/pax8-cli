@@ -13,12 +13,12 @@ import {
   BillingTermSchema,
   ERROR_INVALID_INPUT,
   simulateCostChange,
-  ALL_SUBS_PAGE_SIZE,
   type BillingTerm,
   type SimulationInput,
   type SimulationResult,
 } from "@pax8/core";
 import type { Subscription } from "@pax8/core";
+import { collectAllSubscriptions } from "../../lib/subs-stream.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { validateEnum } from "../../lib/validate.js";
@@ -150,11 +150,14 @@ JSON output (--json):
       //   (b) pull the current quantity/price/billingTerm for the "current" leg
       let companySubs: Subscription[] = [];
       try {
-        const subsResult = await ctx.api.subscriptions.list({
-          companyId: company.id,
-          size: ALL_SUBS_PAGE_SIZE,
-        });
-        companySubs = subsResult.content;
+        // #613 Phase 2: walk every page so the simulation compares
+        // against the full current portfolio for this company. Single-page
+        // truncation could miss the matching current sub if the company
+        // had >1000 subs (rare, but the fix is identical to the other
+        // aggregator conversions in this PR).
+        companySubs = await collectAllSubscriptions(
+          ctx.api.subscriptions.streamAll({ companyId: company.id }),
+        );
       } catch {
         // Best-effort: if the subscriptions list fails, we can still
         // simulate against an empty current state (i.e. add-new).

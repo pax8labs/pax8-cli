@@ -3,7 +3,6 @@
 
 import { Command } from "commander";
 import {
-  ALL_SUBS_PAGE_SIZE,
   ERROR_INVALID_INPUT,
   subscriptionMrr,
   type AmountCurrency,
@@ -13,6 +12,7 @@ import {
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { CliError, handleCommandError } from "../../lib/errors.js";
 import { formatCompanyName, formatCurrency } from "../../lib/formatters.js";
 import { enrichCompanyNames, enrichProductNames } from "../../lib/enrich-subscriptions.js";
@@ -193,16 +193,22 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         );
       }
 
-      const [subsResult, companiesResult, productsResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE }),
+      // #613 Phase 2: walk every page so concentration math sees the
+      // full portfolio. Pre-#628 the call truncated at 1000 subs.
+      const [allSubs, companiesResult, productsResult] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll(),
+          spinner,
+          "concentration report",
+        ),
         ctx.api.companies.list({ size: 200 }),
         ctx.api.products.list({ size: 500 }).catch(() => null),
       ]);
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) companyNames.set(c.id, c.name);
-      enrichCompanyNames(companyNames, subsResult.content);
-      await enrichProductNames(ctx, subsResult.content as Record<string, unknown>[]);
+      enrichCompanyNames(companyNames, allSubs);
+      await enrichProductNames(ctx, allSubs as Record<string, unknown>[]);
 
       const productVendor = new Map<string, string>();
       if (productsResult) {
@@ -213,7 +219,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       spinner.stop();
 
-      const activeSubs = subsResult.content.filter(
+      const activeSubs = allSubs.filter(
         (s: Subscription) => s.status === "Active",
       );
       const portfolioCurrency =

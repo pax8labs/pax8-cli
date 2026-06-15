@@ -3,7 +3,6 @@
 
 import { Command } from "commander";
 import {
-  ALL_SUBS_PAGE_SIZE,
   ERROR_INVALID_INPUT,
   getUpcomingRenewals,
   type AmountCurrency,
@@ -13,6 +12,7 @@ import {
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { CliError, handleCommandError } from "../../lib/errors.js";
 import {
   formatCompanyName,
@@ -165,15 +165,21 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
 
-      const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId }),
+      // #613 Phase 2: walk every page so renewal aggregation sees the
+      // full portfolio. Pre-#628 the call truncated at 1000 subs.
+      const [allSubs, companiesResult] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ companyId }),
+          spinner,
+          "renewals report",
+        ),
         ctx.api.companies.list({ size: 200 }),
       ]);
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) companyNames.set(c.id, c.name);
-      enrichCompanyNames(companyNames, subsResult.content);
-      await enrichProductNames(ctx, subsResult.content as Record<string, unknown>[]);
+      enrichCompanyNames(companyNames, allSubs);
+      await enrichProductNames(ctx, allSubs as Record<string, unknown>[]);
 
       // Build a productId -> vendorName map so we can attach vendor info to
       // each renewal row. We fetch the full product catalog (size 500) once;
@@ -192,12 +198,12 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       spinner.stop();
 
-      const report = getUpcomingRenewals(subsResult.content, withinDays);
+      const report = getUpcomingRenewals(allSubs, withinDays);
 
       // Resolve currency from the first active sub that carries one — same
       // convention dashboard uses post-#440. Mixed-currency portfolios are
       // out of scope for v0.x.
-      const activeSubs = subsResult.content.filter(
+      const activeSubs = allSubs.filter(
         (s: Subscription) => s.status === "Active",
       );
       const portfolioCurrency =
@@ -211,7 +217,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         // Find the underlying sub to read productId (RenewalItem doesn't
         // carry it). Fall back to "" if not found (shouldn't happen, but
         // keeps the vendor enrichment best-effort).
-        const sub = subsResult.content.find(
+        const sub = allSubs.find(
           (s: Subscription) => s.id === item.subscriptionId,
         );
         const productId = sub?.productId ?? "";

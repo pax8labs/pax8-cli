@@ -14,7 +14,7 @@ import {
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
-import { ALL_SUBS_PAGE_SIZE } from "@pax8/core";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { replCmd } from "../../lib/confirm.js";
 import {
   output,
@@ -196,10 +196,16 @@ Examples:
       if (wantsCoverage) {
         spinner.text = "Analyzing portfolio coverage...";
 
-        // Fetch all subscriptions for the listed companies
+        // Fetch all subscriptions for the listed companies. #613 Phase 2:
+        // walk every page so portfolio-coverage stats reflect the full
+        // active portfolio across the listed companies, not just the
+        // first page.
         const companyIds = result.content.map((c) => String(c.id));
-        const subsResult = await ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" });
-        const subs = subsResult.content;
+        const subs = await collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ status: "Active" }),
+          spinner,
+          "portfolio coverage",
+        );
 
         // Enrich product names
         await enrichProductNames(ctx, subs);
