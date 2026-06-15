@@ -358,6 +358,25 @@ describe("pax8 report concentration", () => {
 });
 
 describe("pax8 report subscriptions", () => {
+  // #613 Phase 2: pre-fix the report grouped subs by vendor / client /
+  // product / billing-term using only the first page of subscriptions
+  // (1000 cap), so partner-cost group sums silently undercounted for
+  // any portfolio bigger than that. The large fixture (5000 subs, 3752
+  // active) is the smallest realistic exercise of the bug. Asserting
+  // `totalActiveSubscriptions > 1000` (the page size) is the count-
+  // derived check claude-review on #629 specifically called out as
+  // stronger than the warning-absence assertion alone — a regression
+  // that returns only page 1 would fail loudly here.
+  it("at large scale aggregates over the full portfolio (#613)", async () => {
+    const result = await runCliExpectSuccess(
+      ["report", "subscriptions", "--by", "vendor", "--json"],
+      { PAX8_DEMO_SCALE: "large" },
+    );
+    const data = JSON.parse(result.stdout);
+    expect(data.totalActiveSubscriptions).toBeGreaterThan(1000);
+    expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
+  });
+
   for (const groupBy of [
     "client",
     "vendor",

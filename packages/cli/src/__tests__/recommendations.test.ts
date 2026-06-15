@@ -16,12 +16,21 @@ describe("pax8 recommendations", () => {
   // the only signal of partial analysis; post-fix there's none.
   describe("full-portfolio analysis (#613 Phase 2)", () => {
     it("`recommendations list` at large scale runs without a truncation warning", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"], {
-        PAX8_DEMO_SCALE: "large",
-      });
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list", "--json", "--top", "0"],
+        { PAX8_DEMO_SCALE: "large" },
+      );
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("recommendations");
       expect(data).toHaveProperty("totalAvailable");
+      // Count-derived assertion (claude-review on #629): a regression
+      // that returns only page 1 would emit no truncation warning, so
+      // warning-absence alone isn't a strong check. At large scale the
+      // engine should surface meaningfully more opportunities than a
+      // single-page fixture could yield — 50 is a generous lower bound
+      // for a 1000-customer fixture but well above what page 1 alone
+      // could produce.
+      expect(data.totalAvailable).toBeGreaterThan(50);
       expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
     });
 
