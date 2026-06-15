@@ -41,7 +41,7 @@
   },
   "pnpm": {
     "overrides": {
-      "vite": "^8.0.5",
+      "vite": "^8.0.16",
       "picomatch": "^4.0.4",
       "brace-expansion": "^5.0.6",
       "yaml": "^2.8.3",
