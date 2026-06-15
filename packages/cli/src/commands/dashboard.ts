@@ -10,41 +10,12 @@ import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.j
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
 import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
-import type { Subscription, Company, Product, Order, RenewalReport, Recommendation, PaginatedResponse } from "@pax8/core";
+import type { Subscription, Company, Product, Order, RenewalReport, Recommendation } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
+import { collectSubsWithSpinner } from "../lib/subs-stream.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Materialize every page of subscriptions from a `streamAll()` iterator
- * into a single array. Used by dashboard (and Phase 2 — the other three
- * aggregator commands) to get the full portfolio without the silent
- * page-limit truncation #613 was tracking.
- *
- * Calls `onProgress(loaded, total)` after each page so the caller can
- * keep its spinner honest on large portfolios. `total` is read from the
- * first page's `page.totalElements` and held stable across the iteration
- * (the server reports the same value on every page).
- *
- * The future `pax8 subscriptions export` command will consume the same
- * `streamAll()` iterator directly — writing each page to stdout/file as
- * it arrives without materializing. This helper exists because dashboard
- * needs the full array for its multi-pass computations
- * (`computePortfolioStats`, `getUpcomingRenewals`, `getRecommendations`,
- * trial/active filters); export does not.
- */
-async function collectAllSubscriptions(
-  stream: AsyncIterableIterator<PaginatedResponse<Subscription>>,
-  onProgress?: (loaded: number, total: number) => void,
-): Promise<Subscription[]> {
-  const all: Subscription[] = [];
-  for await (const result of stream) {
-    all.push(...result.content);
-    onProgress?.(all.length, result.page.totalElements);
-  }
-  return all;
-}
 
 // Internal name `cost` reflects what these numbers actually are: the
 // partner's monthly cost to Pax8 (price × quantity, amortized monthly).
@@ -214,14 +185,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         ctx.api.companies.list({ size: 200 }),
         ctx.api.products.list({ size: 200 }),
         ctx.api.orders.list({ size: 200 }),
-        collectAllSubscriptions(ctx.api.subscriptions.streamAll(), (loaded, total) => {
-          if (total > 1000) {
-            // Only update the spinner when there's a real portfolio to
-            // count down — small portfolios load fast enough that the
-            // running-tally text just flickers.
-            spinner.text = `Loading dashboard... (${loaded.toLocaleString()} of ${total.toLocaleString()} subscriptions)`;
-          }
-        }),
+        collectSubsWithSpinner(ctx.api.subscriptions.streamAll(), spinner, "dashboard"),
       ]);
 
       const emptyPage = { number: 0, totalPages: 0, totalElements: 0 };

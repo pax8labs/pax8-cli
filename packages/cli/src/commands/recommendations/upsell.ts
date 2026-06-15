@@ -4,12 +4,12 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import {
-  ALL_SUBS_PAGE_SIZE,
   ERROR_INVALID_INPUT,
   findUpsellCohort,
   type UpsellCohortReport,
 } from "@pax8/core";
-import { buildContext, warnIfTruncated } from "../../lib/context.js";
+import { buildContext } from "../../lib/context.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
@@ -88,19 +88,25 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
     const spinner = createSpinner("Finding upsell cohort...").start();
 
     try {
-      const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
+      // #613 Phase 2: walk every page of active subscriptions so the
+      // upsell cohort is computed over the full portfolio. Pre-#628 the
+      // call was `subscriptions.list({size: ALL_SUBS_PAGE_SIZE, …})`,
+      // which silently truncated for partners with >1000 active subs and
+      // hid upsell candidates that lived past page 1.
+      const [subs, companiesResult] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ status: "Active" }),
+          spinner,
+          "upsell cohort",
+        ),
         ctx.api.companies.list({ size: 200 }),
       ]);
-
-      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) {
         companyNames.set(c.id, c.name);
       }
 
-      const subs = subsResult.content;
       await enrichProductNames(ctx, subs);
       enrichCompanyNames(companyNames, subs);
 

@@ -4,13 +4,13 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import {
-  ALL_SUBS_PAGE_SIZE,
   getConfigDir,
   getRecommendations,
   safeWriteFileSync,
   type Recommendation,
 } from "@pax8/core";
-import { buildContext, warnIfTruncated, type CommandContext } from "../../lib/context.js";
+import { buildContext, type CommandContext } from "../../lib/context.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -247,12 +247,19 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       // #483: page through ALL companies (not the first 200) so the
       // recommendations engine reasons over the full customer set on
       // portfolios bigger than the legacy 200-customer cap.
-      const [subsResult, allCompanies] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
+      // #613 Phase 2: same for subscriptions — pre-#628 the call was
+      // `subscriptions.list({size: ALL_SUBS_PAGE_SIZE, status: "Active"})`
+      // which truncated to the first 1000 active subs for partners with
+      // bigger portfolios, hiding cross-sell / coverage-gap opportunities
+      // that lived past page 1.
+      const [subs, allCompanies] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ status: "Active" }),
+          spinner,
+          "recommendations",
+        ),
         fetchAllCompanies(ctx),
       ]);
-
-      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
 
       // Build company name lookup from the full set.
       const companyNames = new Map<string, string>();
@@ -261,7 +268,6 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       }
 
       // Enrich subscriptions with product names (individual lookups, cached)
-      const subs = subsResult.content;
       await enrichProductNames(ctx, subs);
 
       // Also enrich company names on subscriptions

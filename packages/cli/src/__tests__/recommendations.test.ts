@@ -9,6 +9,42 @@ import YAML from "yaml";
 import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 recommendations", () => {
+  // #613 Phase 2: both `recommendations list` and `recommendations upsell`
+  // now walk every page of active subscriptions via `streamAll()` so
+  // cross-sell / coverage-gap opportunities past the first 1000 active
+  // subs are no longer hidden. Pre-fix the stderr truncation warning was
+  // the only signal of partial analysis; post-fix there's none.
+  describe("full-portfolio analysis (#613 Phase 2)", () => {
+    it("`recommendations list` at large scale runs without a truncation warning", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json"], {
+        PAX8_DEMO_SCALE: "large",
+      });
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("recommendations");
+      expect(data).toHaveProperty("totalAvailable");
+      expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
+    });
+
+    it("`recommendations upsell` at large scale runs without a truncation warning", async () => {
+      const result = await runCliExpectSuccess(
+        [
+          "recommendations",
+          "upsell",
+          "--from-product",
+          "Microsoft 365 Business Basic",
+          "--to-product",
+          "Microsoft 365 Business Premium",
+          "--json",
+        ],
+        { PAX8_DEMO_SCALE: "large" },
+      );
+      // Output is a CohortReport-shaped JSON envelope — just verify it
+      // parses and the truncation warning is absent.
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
+    });
+  });
+
   describe("recommendations list", () => {
     // #521: JSON output is now ALWAYS a wrapped envelope
     // `{ recommendations: [...], totalAvailable: number }`, even without

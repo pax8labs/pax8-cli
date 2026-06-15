@@ -22,21 +22,6 @@ import type { Config } from "@pax8/core";
 import { CliError } from "./errors.js";
 import { replCmd } from "./confirm.js";
 
-/**
- * Emit a stderr warning when a paginated result hits the page size limit,
- * indicating that results may be incomplete.
- */
-export function warnIfTruncated(
-  result: { content: unknown[] },
-  pageSize: number,
-): void {
-  if (result.content.length >= pageSize) {
-    process.stderr.write(
-      `\n  ⚠ Returned ${result.content.length} subscriptions (page limit) — results may be incomplete. Use --size to increase.\n`,
-    );
-  }
-}
-
 export interface ApiClient {
   companies: CompaniesApi;
   subscriptions: SubscriptionsApi;
