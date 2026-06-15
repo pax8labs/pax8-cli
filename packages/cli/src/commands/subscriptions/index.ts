@@ -7,6 +7,7 @@ import { subscriptionsShowCommand } from "./show.js";
 import { subscriptionsUpdateCommand } from "./update.js";
 import { subscriptionsCancelCommand } from "./cancel.js";
 import { subscriptionsRenewalsCommand } from "./renewals.js";
+import { subscriptionsExportCommand } from "./export.js";
 
 export function registerSubscriptionsCommands(program: Command): void {
   const subs = new Command("subscriptions").description(
@@ -18,6 +19,7 @@ export function registerSubscriptionsCommands(program: Command): void {
   subs.addCommand(subscriptionsUpdateCommand);
   subs.addCommand(subscriptionsCancelCommand);
   subs.addCommand(subscriptionsRenewalsCommand);
+  subs.addCommand(subscriptionsExportCommand);
 
   program.addCommand(subs);
 }
