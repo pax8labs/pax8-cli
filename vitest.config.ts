@@ -40,6 +40,12 @@ export default defineConfig({
       "./vitest.test-isolation-setup.ts",
       "./vitest.coverage-setup.ts",
     ],
+    // #620 Variant B: per-test mkdtemp PAX8_CONFIG_DIR so concurrent
+    // tests can't collide on the orders-fixture file (or any other
+    // demo-mode persisted state under PAX8_CONFIG_DIR). Runs in each
+    // worker and registers global beforeEach/afterEach hooks; see the
+    // file header for the design rationale.
+    setupFiles: ["./vitest.per-test-config-dir-setup.ts"],
     coverage: {
       // Custom provider wraps the standard v8 provider and additionally
       // ingests subprocess coverage profiles. See vitest.coverage-provider.ts.
