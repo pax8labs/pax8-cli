@@ -64,7 +64,7 @@ export async function runCli(
       // flakes any test grepping stderr (#620). A test that
       // specifically wants to exercise the quip can override by passing
       // `PAX8_DISABLE_QUIP: ""` in `env`.
-      env: { PAX8_DISABLE_QUIP: "1", ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...finalEnv },
+      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", PAX8_DISABLE_QUIP: "1", ...finalEnv },
       timeout: 15000,
       // Default execFile maxBuffer is 1 MB. The streaming-export tests
       // and any future scale-matrix test that exercises `subscriptions
@@ -99,7 +99,7 @@ export async function runCliWithInput(
     const child = spawn("node", [CLI_PATH, ...args], {
       // Same time-quip suppression as `runCli` — see #620 and the
       // comment on the env block there.
-      env: { PAX8_DISABLE_QUIP: "1", ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...env },
+      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", PAX8_DISABLE_QUIP: "1", ...env },
     });
 
     let stdout = "";
