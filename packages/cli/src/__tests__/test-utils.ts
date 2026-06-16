@@ -56,7 +56,15 @@ export async function runCli(
   };
   try {
     const result = await exec("node", [CLI_PATH, ...args], {
-      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...finalEnv },
+      // PAX8_DISABLE_QUIP=1 suppresses the time-based easter-egg quip
+      // (`getTimeQuip` in `commands/easter-eggs/time-quip.ts`). Without
+      // this, CI matrix runs that happen to execute at 2-5 AM UTC
+      // (the late-night quip), Monday before 9 AM, Friday after 4:30
+      // PM, or the last two days of the month emit a stderr line that
+      // flakes any test grepping stderr (#620). A test that
+      // specifically wants to exercise the quip can override by passing
+      // `PAX8_DISABLE_QUIP: ""` in `env`.
+      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", PAX8_DISABLE_QUIP: "1", ...finalEnv },
       timeout: 15000,
       // Default execFile maxBuffer is 1 MB. The streaming-export tests
       // and any future scale-matrix test that exercises `subscriptions
@@ -89,7 +97,9 @@ export async function runCliWithInput(
 ): Promise<CliResult> {
   return new Promise((resolveResult) => {
     const child = spawn("node", [CLI_PATH, ...args], {
-      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...env },
+      // Same time-quip suppression as `runCli` — see #620 and the
+      // comment on the env block there.
+      env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", PAX8_DISABLE_QUIP: "1", ...env },
     });
 
     let stdout = "";

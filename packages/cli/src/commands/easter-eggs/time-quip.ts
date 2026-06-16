@@ -6,8 +6,18 @@ import chalk from "chalk";
 /**
  * Returns a snarky time-based quip, or null if the current time isn't notable.
  * Call this before command output to occasionally surprise the user.
+ *
+ * Subprocess tests set `PAX8_DISABLE_QUIP=1` (via `runCli` in
+ * `test-utils.ts`) so the time-of-day stderr line never lands in
+ * assertion targets. Without that bypass, CI matrix runs that happen to
+ * execute between 02:00–05:00 UTC (the "go to bed" quip), Monday before
+ * 9 AM local, Friday after 4:30 PM, or the last two days of the month
+ * flake any stderr-grep assertion in the suite. The flag is intentionally
+ * internal — not documented in the UX guide or README — and only the
+ * test harness should set it. See #620 for the original flake report.
  */
 export function getTimeQuip(): string | null {
+  if (process.env.PAX8_DISABLE_QUIP === "1") return null;
   const now = new Date();
   const hour = now.getHours();
   const day = now.getDay(); // 0 = Sunday
