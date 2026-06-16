@@ -8,7 +8,8 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, Pax8 cost
 
 | User asks about | Run this |
 |---|---|
-| overview / status / how am I doing | `pax8 dashboard --json 2>/dev/null` |
+| daily action list / morning brief / what should I do today | `pax8 today --json 2>/dev/null` — composite of urgent renewals (≤7d) + invoice audit findings + high-priority growth recs + expiring trials + upcoming renewals (8-30d). Returns `{ asOf, items[], summary, nextActions[] }`. Each `items[].action` carries `command` (display string) AND `args` (argv array — spawn `args.slice(1)`, never tokenize `command`). Lead with `summary.totalItems` and the section counts; route the user to the highest-priority `items[]` entry first. |
+| overview / status / how am I doing | `pax8 today --json 2>/dev/null` for the do-list (what needs doing); `pax8 dashboard --json 2>/dev/null` for the full snapshot (top customers, monthly cost, portfolio composition). Use `today` for "what's happening / what needs doing" and `dashboard` for "give me the numbers." |
 | clients / companies / customers | `pax8 clients list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |

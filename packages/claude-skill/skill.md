@@ -22,6 +22,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 invoices audit` — read-only computation, no writes
 - `pax8 cost sim` — what-if pricing simulation, no writes
 - `pax8 dashboard`, `pax8 dashboard --all|--renewals|--growth`
+- `pax8 today` — morning brief / do-list (composite of dashboard + renewals + audit + recs + trials)
 - `pax8 doctor` — diagnostics only
 - `pax8 webhooks logs <id>` — delivery history (read-only)
 
@@ -77,6 +78,16 @@ Result size: list commands default to `--size 25`. For portfolio-wide analysis (
 > `pax8 clients *` is the canonical (and only) command surface. The previous `pax8 companies *` alias was removed pre-launch (#476). JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned to the wire.
 
 ```
+pax8 today --json
+  # Composite do-list: urgent renewals (≤7d) + invoice audit discrepancies +
+  # high-priority growth opportunities + expiring trials + upcoming renewals
+  # (8-30d). Cap of 10 items total, max 3 per section.
+  # Returns { asOf, items[], summary, nextActions[] }.
+  # items[].action.{command, args} — spawn args.slice(1) (#562 argv contract).
+  # summary.{totalItems, urgentRenewals, auditDiscrepancies, growthOpportunities,
+  #          expiringTrials, upcomingRenewals, monthlyImpact, dollarsOnTable, truncated}
+  # items[].kind ∈ { renewal-urgent, audit-overcharge, audit-undercharge,
+  #                  growth-high, trial-expiring, renewal-upcoming }
 pax8 dashboard [--all|--customers|--renewals|--growth] --json
 pax8 clients list --json
 pax8 clients show <id|name> --json
@@ -112,6 +123,21 @@ The CLI computes the partner's Pax8 monthly / annual cost for you in `pax8 dashb
 - Group by `companyId`; resolve names from `clients list`.
 
 ## Workflow recipes
+
+### Morning brief / "what should I do today?"
+```
+pax8 today --json
+```
+Returns a composite `{ asOf, items[], summary, nextActions[] }` envelope synthesizing the dashboard, renewal-tracker, invoice-auditor, recommendations engine, and trial detector into a single ranked do-list. Lead with `summary.totalItems` and the section counts (`urgentRenewals`, `auditDiscrepancies`, `growthOpportunities`, `expiringTrials`) — partners care more about "what's the workload" than the items individually.
+
+The "act on item N" loop:
+
+1. Pick the highest-priority `items[]` entry — items are pre-sorted: urgent renewals → audit → growth → trials → upcoming renewals. Each item carries a `kind` (`renewal-urgent` | `audit-overcharge` | `audit-undercharge` | `growth-high` | `trial-expiring` | `renewal-upcoming`) and a `priority` (`high` | `medium` | `low`).
+2. Every `item.action` carries `command` (display string) and `args` (argv array, first element `"pax8"`). **Spawn `item.action.args.slice(1)` directly via the Bash tool's argv form** — never tokenize `item.action.command` and never pipe it to a shell (#562). The argv form holds user-supplied flag values (company names, product names) in single argv slots so shell metacharacters cannot break out.
+3. If the resolved action is a write (`recommendations act`, `invoices dispute`, `orders create`, etc.), show the user the preview and wait for explicit approval before executing — the read/write contract above still applies.
+4. `summary.truncated` reports how many items are hidden by the composite or per-section caps; drill into the section-level command (`subscriptions renewals --within 7d`, `invoices audit`, `recommendations list --priority high`, `subscriptions list --status Trial`) when the user wants the full set.
+
+`monthlyImpact` aggregates the urgent renewals + growth uplifts (the two impact-bearing categories that don't double-count). `dollarsOnTable` sums |dollarImpact| across audit items — over- and undercharges both count as money the partner should be moving.
 
 ### Renewal triage
 ```

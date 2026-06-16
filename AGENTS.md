@@ -12,7 +12,8 @@ When asked anything about Pax8 data, your first action should be a shell call. N
 
 | Question | Run this |
 |---|---|
-| overview / status / how am I doing | `pax8 dashboard --json 2>/dev/null` |
+| daily action list / morning brief / what should I do today | `pax8 today --json 2>/dev/null` — composite of urgent renewals (≤7d) + invoice audit findings + high-priority growth recs + expiring trials + upcoming renewals (8-30d). Returns `{ asOf, items[], summary, nextActions[] }`. Each `items[].action` carries `command` (display string) AND `args` (argv array — spawn `args.slice(1)`, never tokenize `command`). Lead with `summary.totalItems` and the section counts; route the operator to the highest-priority `items[]` entry first. |
+| overview / status / how am I doing | `pax8 today --json 2>/dev/null` for the do-list (what needs doing); `pax8 dashboard --json 2>/dev/null` for the full snapshot (top customers, monthly cost, portfolio composition). Use `today` for "what's happening / what needs doing" and `dashboard` for "give me the numbers." |
 | clients / companies / customers | `pax8 clients list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
@@ -58,6 +59,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 invoices audit` — read-only computation, no writes
 - `pax8 cost sim` — what-if pricing simulation, no writes
 - `pax8 dashboard`, `pax8 dashboard --all|--renewals|--growth|--customers`
+- `pax8 today` — morning brief / daily do-list (composite of dashboard + renewals + audit + recs + trials)
 - `pax8 doctor` — diagnostics only
 - `pax8 webhooks logs <id>` — delivery history (read-only)
 
@@ -100,6 +102,17 @@ If unsure whether a command counts as a write, default to confirming. Better one
 List commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the operator asked for "top 5."
 
 ## Workflow recipes
+
+### Morning brief / "what should I do today?"
+```
+pax8 today --json
+```
+Returns a composite `{ asOf, items[], summary, nextActions[] }` envelope. Lead with `summary.totalItems` and the section counts (`urgentRenewals`, `auditDiscrepancies`, `growthOpportunities`, `expiringTrials`). The "act on item N" loop:
+
+1. Pick the highest-priority `items[]` entry — items are pre-sorted: urgent renewals → audit → growth → trials → upcoming renewals.
+2. Each `item.action` carries `command` (display) and `args` (argv). **Spawn `item.action.args.slice(1)` directly via the Bash tool's argv form** — never tokenize `item.action.command` and never pipe it to a shell (#562).
+3. If the resolved action is a write command (`recommendations act`, `invoices dispute`, etc.), show the operator the preview and wait for explicit approval before executing — the write contract still applies.
+4. `summary.truncated` tells you how many items are hidden by the composite/per-section caps; drill into the matching section-level command (`subscriptions renewals --within 7d`, `invoices audit`, `recommendations list`) when the user wants the full set.
 
 ### Renewal triage
 ```
@@ -173,5 +186,6 @@ The CLI is self-describing — agents that want to enumerate their own surface s
 - `pax8 <resource> --help` and `pax8 <resource> <action> --help` — per-command flag and argument detail.
 - `pax8 doctor --json` — environment, auth, API reachability, cache, and telemetry state in a single structured payload. Use it as a one-shot health check, not a per-call probe.
 - `pax8 dashboard --json` — portfolio snapshot (Pax8 cost, renewals, recs, trials) with `nextActions` inline.
+- `pax8 today --json` — composite do-list (urgent renewals + audit + growth + trials) with section-keyed `items[].kind`, per-item `action.{command,args}` (argv contract #562), and a `summary{}` block for at-a-glance routing. Default opener for "what should I do?" / "morning brief" intents.
 
 A first-class `pax8 agents` command — emitting a machine-readable inventory of every command, flag, error code, and read/write classification — is planned for v0.2.x as part of the canonical-source-of-truth refactor (#164). Until that lands, parse `--help` output or read this file.

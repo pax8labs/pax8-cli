@@ -23,6 +23,7 @@ import { registerQuotesCommands } from "./commands/quotes/index.js";
 import { registerCostCommands } from "./commands/cost/index.js";
 import { registerReportCommands } from "./commands/report/index.js";
 import { dashboardCommand } from "./commands/dashboard.js";
+import { todayCommand } from "./commands/today.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
@@ -115,6 +116,7 @@ export function createProgram(): Command {
   registerCostCommands(program);
   registerReportCommands(program);
   program.addCommand(dashboardCommand);
+  program.addCommand(todayCommand);
   program.addCommand(initCommand);
   program.addCommand(doctorCommand);
   program.addCommand(completionsCommand);
