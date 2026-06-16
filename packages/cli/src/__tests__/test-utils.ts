@@ -58,6 +58,12 @@ export async function runCli(
     const result = await exec("node", [CLI_PATH, ...args], {
       env: { ...process.env, PAX8_DEMO: "1", NO_COLOR: "1", ...finalEnv },
       timeout: 15000,
+      // Default execFile maxBuffer is 1 MB. The streaming-export tests
+      // and any future scale-matrix test that exercises `subscriptions
+      // export` at PAX8_DEMO_SCALE=large can emit multi-MB of stdout
+      // (the 5000-sub fixture is ~5 MB as jsonl). Bumping to 32 MB gives
+      // every test enough headroom without any practical cost.
+      maxBuffer: 32 * 1024 * 1024,
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (error: unknown) {
