@@ -440,8 +440,10 @@ Two delivery modes, depending on the response shape:
 
 | Response shape | Where `nextActions` lives | Flag |
 |---|---|---|
-| Single object (`dashboard`, `invoices audit`) | Inline as a top-level `nextActions` field | Always emitted |
+| Single object (`dashboard`, `today`, `invoices audit`) | Inline as a top-level `nextActions` field | Always emitted |
 | List/array (`companies list`, `subscriptions list`, `subscriptions renewals`, `recommendations list`, `invoices list`, `webhooks list`, `webhooks logs`) | Inside an envelope: `{ <resourceKey>: [...], nextActions: [...] }` | Opt-in via `--with-actions` |
+
+Composite-summary commands (`today`) additionally carry a per-item `action: { command, args, description }` slot — same argv contract as `nextActions[]`. Agents pick an item by priority, then spawn `item.action.args.slice(1)` directly without ever re-deriving the command line.
 
 The opt-in flag for list commands exists because the default contract is "list commands return a flat array" — agents that already parse `pax8 ... list --json` as an array of records don't break. If they want hints, they pass `--with-actions` and accept the wrapped envelope.
 
