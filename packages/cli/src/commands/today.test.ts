@@ -60,6 +60,30 @@ describe("assembleToday", () => {
     // 5 sections × 2 dropped each (5 input → 3 after PER_KIND_CAP) = 10,
     // plus composite drops 5 more (15 capped → 10).
     expect(out.truncated).toBe(10 + 5);
+    // perSectionTruncated covers ONLY the per-section drops — the human
+    // render uses this so its "N more not shown" hint never counts items
+    // that are still on screen.
+    expect(out.perSectionTruncated).toBe(10);
+  });
+
+  it("perSectionTruncated never includes composite-capped items still rendered by sections", () => {
+    // Reviewer's regression case: 5 sections × 3 = 15 visible sections.
+    // Composite cap fires, dropping 5 to flat. Human render shows all 15
+    // section items. perSectionTruncated must be 0 in this exact case
+    // because no input section exceeded PER_KIND_CAP.
+    const three = (k: TodayItem["kind"]) =>
+      Array.from({ length: 3 }, () => mkItem({ kind: k }));
+    const out = assembleToday({
+      urgentRenewals: three("renewal-urgent"),
+      audit: three("audit-overcharge"),
+      growth: three("growth-high"),
+      trials: three("trial-expiring"),
+      upcomingRenewals: three("renewal-upcoming"),
+    });
+    expect(out.perSectionTruncated).toBe(0);
+    // Composite cap still drops 5 from flat (15 → 10) for JSON consumers.
+    expect(out.truncated).toBe(5);
+    expect(out.flat.length).toBe(10);
   });
 
   it("counts both per-section and composite truncation in `truncated`", () => {

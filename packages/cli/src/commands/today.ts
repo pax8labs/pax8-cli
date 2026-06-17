@@ -303,13 +303,31 @@ interface Sections {
   upcomingRenewals: TodayItem[];
 }
 
+export interface AssembleResult {
+  sections: Sections;
+  flat: TodayItem[];
+  /**
+   * Items hidden across BOTH mechanisms — per-section cap + composite cap.
+   * Used by the JSON `summary.truncated` field where consumers see the
+   * canonical `items[]` (which is `flat`).
+   */
+  truncated: number;
+  /**
+   * Items hidden by ONLY the per-section cap. Used by the human render,
+   * which iterates every section in full (up to PER_KIND_CAP each) — items
+   * dropped by the composite cap are still visible on screen, so it would
+   * over-count to surface `truncated` there.
+   */
+  perSectionTruncated: number;
+}
+
 export function assembleToday(input: {
   urgentRenewals: TodayItem[];
   upcomingRenewals: TodayItem[];
   audit: TodayItem[];
   growth: TodayItem[];
   trials: TodayItem[];
-}): { sections: Sections; flat: TodayItem[]; truncated: number } {
+}): AssembleResult {
   // Cap each section to PER_KIND_CAP first so one runaway category can't
   // drown the others out (e.g. a partner with 50 high-priority recs
   // shouldn't lose visibility on the 3 urgent renewals due tomorrow).
@@ -332,9 +350,10 @@ export function assembleToday(input: {
     ...sections.upcomingRenewals,
   ];
   const flat = composite.slice(0, TOTAL_CAP);
-  // Truncated counts items hidden by EITHER the composite cap or the
-  // per-section cap. Partners see a single "N more not shown" hint that
-  // captures the full tail across both mechanisms.
+  // Two truncation counts: per-section vs total. The human path shows
+  // every section item (up to PER_KIND_CAP each), so it only "loses"
+  // items past the per-section cap. The JSON path returns `flat` and
+  // loses items past EITHER cap.
   const perSectionTruncated =
     Math.max(0, input.urgentRenewals.length - PER_KIND_CAP) +
     Math.max(0, input.audit.length - PER_KIND_CAP) +
@@ -343,7 +362,7 @@ export function assembleToday(input: {
     Math.max(0, input.upcomingRenewals.length - PER_KIND_CAP);
   const compositeTruncated = composite.length - flat.length;
   const truncated = perSectionTruncated + compositeTruncated;
-  return { sections, flat, truncated };
+  return { sections, flat, truncated, perSectionTruncated };
 }
 
 // ── Header date ───────────────────────────────────────────────────────────────
@@ -363,7 +382,11 @@ function formatHeaderDate(now: Date): string {
 function renderHuman(
   out: NodeJS.WriteStream,
   sections: Sections,
-  truncated: number,
+  // Per-section truncation only — the human render shows every section
+  // in full, so items dropped by the composite cap are still on screen
+  // and must NOT be counted as hidden. JSON consumers use the larger
+  // `summary.truncated` since they see `flat`, not the section breakdown.
+  perSectionTruncated: number,
   context: { totalCompanies: number; activeSubs: number; portfolioMonthly: number; currency: string },
 ): void {
   const now = new Date();
@@ -477,8 +500,8 @@ function renderHuman(
   }
 
   // ── Truncation hint ─────────────────────────────────────────────
-  if (truncated > 0) {
-    out.write(chalk.dim(`  … ${truncated} more action${truncated > 1 ? "s" : ""} not shown — run section-level commands above to see them.\n\n`));
+  if (perSectionTruncated > 0) {
+    out.write(chalk.dim(`  … ${perSectionTruncated} more action${perSectionTruncated > 1 ? "s" : ""} not shown — run section-level commands above to see them.\n\n`));
   }
 
   // ── Closer line ─────────────────────────────────────────────────
@@ -551,7 +574,7 @@ async function runToday(options: Record<string, unknown>, cmd: Command): Promise
 
     const trials = buildTrialItems(allSubs, portfolioCurrency);
 
-    const { sections, flat, truncated } = assembleToday({
+    const { sections, flat, truncated, perSectionTruncated } = assembleToday({
       urgentRenewals,
       upcomingRenewals,
       audit,
@@ -651,7 +674,7 @@ async function runToday(options: Record<string, unknown>, cmd: Command): Promise
 
     // ── Human output ─────────────────────────────────────────────
     const out = process.stdout;
-    renderHuman(out, sections, truncated, {
+    renderHuman(out, sections, perSectionTruncated, {
       totalCompanies: companies.length,
       activeSubs: activeSubs.length,
       portfolioMonthly,
