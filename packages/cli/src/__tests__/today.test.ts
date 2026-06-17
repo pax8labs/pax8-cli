@@ -83,6 +83,40 @@ describe("pax8 today", () => {
     expect(payload.summary.totalItems).toBe(payload.items.length);
   });
 
+  // Section counts must equal what's actually in items[]. Pre-fix, counts
+  // read from the per-section-capped `sections` (max 3×5=15) while
+  // totalItems read from `flat` (cap 10) — so when the composite cap
+  // fired, the section counts could sum to more than totalItems and
+  // reference items absent from items[]. An agent filtering
+  // `items[].kind === "renewal-urgent"` expected exactly
+  // `summary.urgentRenewals` results; the pre-fix shape broke that.
+  it("--json: section counts sum to totalItems and match items[] grouping", async () => {
+    const result = await runCliExpectSuccess(["today", "--json"]);
+    const payload = JSON.parse(result.stdout) as TodayPayload;
+    const s = payload.summary;
+    expect(
+      s.urgentRenewals + s.auditDiscrepancies + s.growthOpportunities + s.expiringTrials + s.upcomingRenewals,
+    ).toBe(s.totalItems);
+    // Each section count equals the number of items with the matching kind.
+    expect(payload.items.filter((i) => i.kind === "renewal-urgent").length).toBe(s.urgentRenewals);
+    expect(payload.items.filter((i) => i.kind === "audit-overcharge" || i.kind === "audit-undercharge").length).toBe(s.auditDiscrepancies);
+    expect(payload.items.filter((i) => i.kind === "growth-high").length).toBe(s.growthOpportunities);
+    expect(payload.items.filter((i) => i.kind === "trial-expiring").length).toBe(s.expiringTrials);
+    expect(payload.items.filter((i) => i.kind === "renewal-upcoming").length).toBe(s.upcomingRenewals);
+  });
+
+  // Growth section is sourced from `priority === "high"` recs; the items
+  // must carry `priority: "high"` so agents filtering on that field find
+  // exactly the opportunities the section is named after.
+  it("--json: growth-high items carry priority='high' (not the demoted 'medium')", async () => {
+    const result = await runCliExpectSuccess(["today", "--json"]);
+    const payload = JSON.parse(result.stdout) as TodayPayload;
+    const growth = payload.items.filter((i) => i.kind === "growth-high");
+    for (const g of growth) {
+      expect(g.priority).toBe("high");
+    }
+  });
+
   it("--json: every items[].action.args[0] is 'pax8' (argv contract #562)", async () => {
     const result = await runCliExpectSuccess(["today", "--json"]);
     const payload = JSON.parse(result.stdout) as TodayPayload;

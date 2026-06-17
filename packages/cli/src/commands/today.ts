@@ -221,8 +221,13 @@ function buildGrowthItems(
       args = ["pax8", "recommendations", "list", "--company", r.companyName];
     }
     return {
+      // kind="growth-high" means "from the high-priority recs section".
+      // Pass through the source rec's priority — `highRecs` was already
+      // filtered to `priority === "high"` upstream, so this is always
+      // "high". Emitting "medium" here would mislead any agent filtering
+      // `items[].priority === "high"` (the documented filter field).
       kind: "growth-high" as const,
-      priority: "medium" as const,
+      priority: "high" as const,
       companyId: r.companyId,
       companyName: r.companyName,
       summary: `add ${r.suggestedProducts?.[0] ?? r.title}`,
@@ -459,14 +464,15 @@ function renderHuman(
         sections.upcomingRenewals.length > 1 ? "s" : ""
       } in 8-30 days · ${chalk.dim(formatCurrency(total))}/mo\n`,
     );
-    sections.upcomingRenewals.slice(0, 3).forEach((item, i) => {
+    // `sections.upcomingRenewals` is already capped at PER_KIND_CAP by
+    // assembleToday — no further slice needed here, and a "… and N more"
+    // hint at this level would be unreachable. The full tail is surfaced
+    // via the summary.truncated count + the section-level command below.
+    sections.upcomingRenewals.forEach((item, i) => {
       out.write(
         `     ${chalk.dim(`${i + 1}.`)} ${item.companyName} — ${item.summary}\n`,
       );
     });
-    if (sections.upcomingRenewals.length > 3) {
-      out.write(chalk.dim(`     … and ${sections.upcomingRenewals.length - 3} more\n`));
-    }
     out.write(chalk.dim(`        → pax8 subscriptions renewals --within 30d\n\n`));
   }
 
@@ -564,39 +570,57 @@ async function runToday(options: Record<string, unknown>, cmd: Command): Promise
 
     // ── JSON output ──────────────────────────────────────────────
     if (ctx.outputFormat === "json") {
+      // Section counts MUST be derived from `flat` (the items array
+      // actually emitted), not from `sections` (the pre-composite-cap
+      // state). When the composite cap fires (e.g. 5 sections × 3 = 15
+      // → sliced to 10), section.* counts can sum to more than
+      // totalItems, and items[] would lack entries the section counts
+      // imply exist. Agents reading the summary expect
+      //   urgentRenewals + audit + growth + trials + upcoming === totalItems
+      // and `items[].kind === "<x>"` to find exactly that many entries.
+      const countKind = (kinds: TodayItemKind[]) =>
+        flat.filter((i) => kinds.includes(i.kind)).length;
+      const itemsByKind = (kinds: TodayItemKind[]) =>
+        flat.filter((i) => kinds.includes(i.kind));
+
+      const urgentRenewalsInFlat = itemsByKind(["renewal-urgent"]);
+      const auditInFlat = itemsByKind(["audit-overcharge", "audit-undercharge"]);
+      const growthInFlat = itemsByKind(["growth-high"]);
+      const trialsInFlat = itemsByKind(["trial-expiring"]);
+
       const sumMonthly = (items: TodayItem[]) =>
         Number(items.reduce((s, i) => s + i.monthlyImpact.amount, 0).toFixed(2));
       const dollarsOnTable = Number(
-        sections.audit.reduce((s, i) => s + Math.abs(i.monthlyImpact.amount), 0).toFixed(2),
+        auditInFlat.reduce((s, i) => s + Math.abs(i.monthlyImpact.amount), 0).toFixed(2),
       );
 
       const nextActions: { command: string; args: string[]; description: string }[] = [];
-      if (sections.urgentRenewals.length > 0) {
+      if (urgentRenewalsInFlat.length > 0) {
         nextActions.push({
           command: "pax8 subscriptions renewals --within 7d",
           args: ["pax8", "subscriptions", "renewals", "--within", "7d"],
-          description: `Walk ${sections.urgentRenewals.length} urgent renewal${sections.urgentRenewals.length > 1 ? "s" : ""}`,
+          description: `Walk ${urgentRenewalsInFlat.length} urgent renewal${urgentRenewalsInFlat.length > 1 ? "s" : ""}`,
         });
       }
-      if (sections.audit.length > 0) {
+      if (auditInFlat.length > 0) {
         nextActions.push({
           command: "pax8 invoices audit",
           args: ["pax8", "invoices", "audit"],
-          description: `Review ${sections.audit.length} invoice discrepanc${sections.audit.length > 1 ? "ies" : "y"}`,
+          description: `Review ${auditInFlat.length} invoice discrepanc${auditInFlat.length > 1 ? "ies" : "y"}`,
         });
       }
-      if (sections.growth.length > 0) {
+      if (growthInFlat.length > 0) {
         nextActions.push({
           command: "pax8 recommendations act --priority high",
           args: ["pax8", "recommendations", "act", "--priority", "high"],
-          description: `Walk ${sections.growth.length} high-priority growth opportunit${sections.growth.length > 1 ? "ies" : "y"}`,
+          description: `Walk ${growthInFlat.length} high-priority growth opportunit${growthInFlat.length > 1 ? "ies" : "y"}`,
         });
       }
-      if (sections.trials.length > 0) {
+      if (trialsInFlat.length > 0) {
         nextActions.push({
           command: "pax8 subscriptions list --status Trial",
           args: ["pax8", "subscriptions", "list", "--status", "Trial"],
-          description: `Review ${sections.trials.length} expiring trial${sections.trials.length > 1 ? "s" : ""}`,
+          description: `Review ${trialsInFlat.length} expiring trial${trialsInFlat.length > 1 ? "s" : ""}`,
         });
       }
 
@@ -605,13 +629,13 @@ async function runToday(options: Record<string, unknown>, cmd: Command): Promise
         items: flat,
         summary: {
           totalItems: flat.length,
-          urgentRenewals: sections.urgentRenewals.length,
-          auditDiscrepancies: sections.audit.length,
-          growthOpportunities: sections.growth.length,
-          expiringTrials: sections.trials.length,
-          upcomingRenewals: sections.upcomingRenewals.length,
+          urgentRenewals: urgentRenewalsInFlat.length,
+          auditDiscrepancies: auditInFlat.length,
+          growthOpportunities: growthInFlat.length,
+          expiringTrials: trialsInFlat.length,
+          upcomingRenewals: countKind(["renewal-upcoming"]),
           monthlyImpact: {
-            amount: sumMonthly([...sections.urgentRenewals, ...sections.growth]),
+            amount: sumMonthly([...urgentRenewalsInFlat, ...growthInFlat]),
             currency: portfolioCurrency,
           },
           dollarsOnTable,
@@ -693,7 +717,7 @@ What's in it:
   - Expiring trials (≤ 14 days) — convert or cancel
   - Upcoming renewals (8-30 days) — demoted, visible but not urgent
 
-Composite cap: 10 items total, max 5 per section. Run the section-level
+Composite cap: 10 items total, max 3 per section. Run the section-level
 command shown under each block for the full list.
 
 JSON output (--json):
@@ -711,7 +735,9 @@ JSON output (--json):
       "upcomingRenewals": number,
       "monthlyImpact": { "amount": number, "currency": string },
       "dollarsOnTable": number,             // sum of |dollarImpact| across audit items
-      "truncated": number                   // items hidden by composite cap
+      "truncated": number                   // items hidden by EITHER the per-section cap (max 3)
+                                            // or the composite cap (max 10); drill into the
+                                            // section-level command shown under each block.
     },
     "nextActions": [{ "command": string, "args": string[], "description": string }]
   }
