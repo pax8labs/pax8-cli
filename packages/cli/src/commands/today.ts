@@ -23,6 +23,7 @@ import { enrichCompanyNames, enrichProductNames } from "../lib/enrich-subscripti
 import { discrepancyId } from "./invoices/dispute.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 import { collectSubsWithSpinner } from "../lib/subs-stream.js";
+import { emitWarnings, type WarningRecord } from "../lib/aggregator-fetch.js";
 
 // ── Item shape ────────────────────────────────────────────────────────────────
 
@@ -75,14 +76,22 @@ export interface TodayItem {
 
 // ── Data fetch ───────────────────────────────────────────────────────────────
 
-interface FetchedData {
+export interface FetchedData {
   allSubs: Subscription[];
   companies: Company[];
   products: Product[];
   invoiceItems: InvoiceItem[];
+  /**
+   * Per-feed warnings collected during the parallel fetch. Returned as
+   * structured data (rather than written directly to stderr) so this
+   * helper is unit-testable in isolation. The command layer calls
+   * `emitWarnings(process.stderr, data.warnings)` at the appropriate
+   * point in the run sequence. See #635.
+   */
+  warnings: WarningRecord[];
 }
 
-async function fetchAll(
+export async function fetchAll(
   ctx: Awaited<ReturnType<typeof buildContext>>,
   spinner: ReturnType<typeof createSpinner>,
 ): Promise<FetchedData> {
@@ -105,27 +114,43 @@ async function fetchAll(
   const invoices = invoicesSettled.status === "fulfilled" ? invoicesSettled.value : empty;
   const allSubs = subsSettled.status === "fulfilled" ? subsSettled.value : [];
 
-  // Surface partial failures on stderr so a feed crash isn't conflated
-  // with a quiet/empty portfolio. `today` is a synthetic command — an
-  // empty render with a failed subscriptions feed looks identical to a
-  // partner with no urgent action, and that's misleading. Same pattern
-  // as dashboard.ts. We never throw here — a single feed failure should
-  // still produce a partial brief — but the partner needs to know the
-  // numbers are incomplete.
+  // Collect partial-failure warnings as structured data so the partial-
+  // failure logic is unit-testable. The command layer emits these via
+  // `emitWarnings()` once the spinner has settled. We never throw here —
+  // a single feed failure should still produce a partial brief — but
+  // the partner needs to know the numbers are incomplete. Same pattern
+  // as dashboard.ts (#635).
+  const warnings: WarningRecord[] = [];
   if (companiesSettled.status === "rejected") {
-    process.stderr.write(chalk.yellow("  ⚠ Could not load companies — names may render as IDs\n"));
+    warnings.push({
+      feed: "companies",
+      severity: "warn",
+      message: "Could not load companies — names may render as IDs",
+    });
   }
   if (productsSettled.status === "rejected") {
-    process.stderr.write(chalk.yellow("  ⚠ Could not load product catalog — growth opportunities suppressed\n"));
+    warnings.push({
+      feed: "products",
+      severity: "warn",
+      message: "Could not load product catalog — growth opportunities suppressed",
+    });
   }
   if (invoicesSettled.status === "rejected") {
-    process.stderr.write(chalk.yellow("  ⚠ Could not load invoices — audit findings suppressed\n"));
+    warnings.push({
+      feed: "invoices",
+      severity: "warn",
+      message: "Could not load invoices — audit findings suppressed",
+    });
   }
   if (subsSettled.status === "rejected") {
     // Subs are the primary feed (renewals + trials + audit normalization).
     // An empty result here is the single most-misleading shape — call it
     // out explicitly rather than rendering "all quiet."
-    process.stderr.write(chalk.red("  ✗ Could not load subscriptions — today's list is incomplete\n"));
+    warnings.push({
+      feed: "subscriptions",
+      severity: "error",
+      message: "Could not load subscriptions — today's list is incomplete",
+    });
   }
 
   // Per-invoice items fetched after subs land so the spinner already
@@ -139,7 +164,7 @@ async function fetchAll(
   );
   const invoiceItems = itemPages.flatMap((p) => p.content);
 
-  return { allSubs, companies, products, invoiceItems };
+  return { allSubs, companies, products, invoiceItems, warnings };
 }
 
 // ── Item builders ─────────────────────────────────────────────────────────────
@@ -549,7 +574,13 @@ async function runToday(options: Record<string, unknown>, cmd: Command): Promise
   const spinner = createSpinner("Loading today's list...").start();
 
   try {
-    const { allSubs, companies, products, invoiceItems } = await fetchAll(ctx, spinner);
+    const { allSubs, companies, products, invoiceItems, warnings } = await fetchAll(ctx, spinner);
+
+    // Surface partial-failure warnings before the spinner succeeds so the
+    // partner sees them in the same place as before the refactor (#635).
+    // The fetch helper returns them as structured data; this layer owns
+    // I/O.
+    emitWarnings(process.stderr, warnings);
 
     // Enrich subs with company + product names so the human render reads as
     // names, not UUIDs. Cheap; the heavy lookups are cached per-process.
