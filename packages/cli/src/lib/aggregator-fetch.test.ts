@@ -34,6 +34,14 @@ function collectStream(): {
   return { stream, read: () => buf };
 }
 
+// ANSI color codes are stripped from captured stderr before content
+// assertions so this file isn't coupled to chalk's exact escape shape.
+// The literal ESC character is required in a regex; the matching string-
+// literal form (e.g. `expect(s).toContain("\x1b[")` in table-output.test.ts)
+// doesn't trigger no-control-regex, but the regex form does.
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[\d+m/g;
+
 describe("formatWarning", () => {
   it("renders a warn-severity record with the yellow ⚠ prefix", () => {
     const w: WarningRecord = {
@@ -98,7 +106,7 @@ describe("emitWarnings", () => {
     expect(lines).toHaveLength(3);
     // strip ANSI colour codes for content assertions; order must match
     // input order.
-    const stripped = lines.map((l) => l.replace(/\[\d+m/g, ""));
+    const stripped = lines.map((l) => l.replace(ANSI_RE, ""));
     expect(stripped[0]).toContain("first");
     expect(stripped[1]).toContain("second");
     expect(stripped[2]).toContain("third");
@@ -134,7 +142,7 @@ describe("emitWarnings", () => {
         message: "Could not load subscriptions — today's list is incomplete",
       },
     ]);
-    const stripped = read().replace(/\[\d+m/g, "");
+    const stripped = read().replace(ANSI_RE, "");
     expect(stripped).toContain("  ⚠ Could not load companies — names may render as IDs\n");
     expect(stripped).toContain("  ⚠ Could not load product catalog — growth opportunities suppressed\n");
     expect(stripped).toContain("  ⚠ Could not load invoices — audit findings suppressed\n");
@@ -148,7 +156,7 @@ describe("emitWarnings", () => {
       { feed: "subscriptions", severity: "warn", message: "Could not load subscriptions" },
       { feed: "products", severity: "warn", message: "Could not load products" },
     ]);
-    const stripped = read().replace(/\[\d+m/g, "");
+    const stripped = read().replace(ANSI_RE, "");
     expect(stripped).toContain("  ⚠ Could not load companies\n");
     expect(stripped).toContain("  ⚠ Could not load subscriptions\n");
     expect(stripped).toContain("  ⚠ Could not load products\n");
