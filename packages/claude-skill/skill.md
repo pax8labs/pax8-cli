@@ -139,6 +139,8 @@ The "act on item N" loop:
 
 `monthlyImpact` aggregates the urgent renewals + growth uplifts (the two impact-bearing categories that don't double-count). `dollarsOnTable` sums |dollarImpact| across audit items — over- and undercharges both count as money the partner should be moving.
 
+**stdout/stderr contract.** The JSON envelope is the only thing on stdout. stderr may carry per-feed warnings on partial fetch failures (e.g. `⚠ Could not load invoices — audit findings suppressed`); the JSON on stdout stays well-formed even when one feed degrades. Discard stderr with `2>/dev/null` when piping. If you need to surface degraded-feed state to the user, capture stderr separately — `summary.totalItems` will be smaller than usual but the envelope shape is unchanged.
+
 ### Renewal triage
 ```
 pax8 subscriptions renewals --json --within 30d
