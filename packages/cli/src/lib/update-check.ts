@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import chalk from "chalk";
 import updateNotifier from "update-notifier";
-import { getConfigDir } from "@pax8/core";
+import { getConfigDir, safeWriteFileSync } from "@pax8/core";
 
 declare const __CLI_VERSION__: string;
 
@@ -172,15 +172,18 @@ export function readCachedUpdateInfo(): CachedUpdateInfo | null {
 
 /**
  * Persist the cache record. Failures are swallowed — the update banner is
- * a courtesy and must never break the CLI. We don't use `safeWriteFileSync`
- * here because (a) the file isn't security-sensitive and (b) writing
- * over an existing file is the expected steady-state shape.
+ * a courtesy and must never break the CLI. Routed through `safeWriteFileSync`
+ * per the #458/#469 local-state-writer policy (the meta-test in
+ * `__tests__/local-state-writers.test.ts` enforces it). Steady-state writes
+ * over an existing file are fine — `safeWriteFileSync`'s O_NOFOLLOW + 0600
+ * semantics still apply; we just want the same hardened path every CLI
+ * writer takes.
  */
 function writeCache(info: CachedUpdateInfo): void {
   try {
     const dir = getConfigDir();
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(cachePath(), JSON.stringify(info, null, 2));
+    safeWriteFileSync(cachePath(), JSON.stringify(info, null, 2));
   } catch {
     // Cache writes are best-effort; never crash the CLI.
   }
