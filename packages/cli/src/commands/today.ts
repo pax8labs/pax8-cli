@@ -105,6 +105,29 @@ async function fetchAll(
   const invoices = invoicesSettled.status === "fulfilled" ? invoicesSettled.value : empty;
   const allSubs = subsSettled.status === "fulfilled" ? subsSettled.value : [];
 
+  // Surface partial failures on stderr so a feed crash isn't conflated
+  // with a quiet/empty portfolio. `today` is a synthetic command — an
+  // empty render with a failed subscriptions feed looks identical to a
+  // partner with no urgent action, and that's misleading. Same pattern
+  // as dashboard.ts. We never throw here — a single feed failure should
+  // still produce a partial brief — but the partner needs to know the
+  // numbers are incomplete.
+  if (companiesSettled.status === "rejected") {
+    process.stderr.write(chalk.yellow("  ⚠ Could not load companies — names may render as IDs\n"));
+  }
+  if (productsSettled.status === "rejected") {
+    process.stderr.write(chalk.yellow("  ⚠ Could not load product catalog — growth opportunities suppressed\n"));
+  }
+  if (invoicesSettled.status === "rejected") {
+    process.stderr.write(chalk.yellow("  ⚠ Could not load invoices — audit findings suppressed\n"));
+  }
+  if (subsSettled.status === "rejected") {
+    // Subs are the primary feed (renewals + trials + audit normalization).
+    // An empty result here is the single most-misleading shape — call it
+    // out explicitly rather than rendering "all quiet."
+    process.stderr.write(chalk.red("  ✗ Could not load subscriptions — today's list is incomplete\n"));
+  }
+
   // Per-invoice items fetched after subs land so the spinner already
   // reflected the heavy fetch. Failures fall back to empty.
   const itemPages = await Promise.all(
@@ -740,8 +763,10 @@ What's in it:
   - Expiring trials (≤ 14 days) — convert or cancel
   - Upcoming renewals (8-30 days) — demoted, visible but not urgent
 
-Composite cap: 10 items total, max 3 per section. Run the section-level
-command shown under each block for the full list.
+Composite cap: max 3 per section. JSON's items[] is further capped at
+10 (composite cap) so agents always reason over the top-priority slice;
+the human view renders every section in full (up to 3 each). Run the
+section-level command shown under each block for the long tail.
 
 JSON output (--json):
   Returns a composite envelope:
@@ -757,7 +782,11 @@ JSON output (--json):
       "expiringTrials": number,
       "upcomingRenewals": number,
       "monthlyImpact": { "amount": number, "currency": string },
-      "dollarsOnTable": number,             // sum of |dollarImpact| across audit items
+                                            // sum of urgent-renewal MRR + growth uplift across
+                                            // items[]. Combined "monthly dollars in motion"
+                                            // figure — distinct from dollarsOnTable which
+                                            // captures one-time audit dollar impact only.
+      "dollarsOnTable": number,             // sum of |dollarImpact| across audit items in items[]
       "truncated": number                   // items hidden by EITHER the per-section cap (max 3)
                                             // or the composite cap (max 10); drill into the
                                             // section-level command shown under each block.

@@ -188,4 +188,16 @@ describe("pax8 today", () => {
     const result = await runCliExpectSuccess(["today", "--quiet"]);
     expect(result.stdout).toBe("");
   });
+
+  // The `--help` text is the durable agent/human contract surface. Two
+  // claims that drifted in earlier rounds — keep them pinned.
+  it("--help documents the JSON-vs-human cap distinction and monthlyImpact composition", async () => {
+    const result = await runCliExpectSuccess(["today", "--help"]);
+    // Cap shape: human renders every section, JSON caps items[] at 10.
+    expect(result.stdout).toContain("max 3 per section");
+    expect(result.stdout.toLowerCase()).toMatch(/items\[\].*10|10.*composite/);
+    // monthlyImpact aggregates urgent renewal MRR + growth uplift —
+    // documented so agents don't read it as a single coherent exposure.
+    expect(result.stdout.toLowerCase()).toMatch(/urgent.*renewal.*growth.*uplift|renewal.*growth/);
+  });
 });
