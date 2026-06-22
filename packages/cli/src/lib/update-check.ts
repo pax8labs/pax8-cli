@@ -30,13 +30,22 @@ export interface CachedUpdateInfo {
   /** Unix epoch (ms) of the registry lookup that produced this record. */
   checkedAt: number;
   /**
-   * Unix epoch (ms) of the last time we rendered the nudge banner for
-   * THIS `latest`. Used to gate "Notice prints once per release" (AC for
-   * #183) — once we've shown the banner for `latest === X.Y.Z`, we don't
-   * surface it again until a newer `latest` lands in the cache. Absent
-   * (or `< checkedAt`) means we still owe the user a banner.
+   * Version string (e.g. `"0.6.0"`) of the `latest` we last rendered a
+   * banner for. Gates "Notice prints once per release" (AC for #183) —
+   * once `acknowledgedLatest === latest`, we stay quiet for this release.
+   *
+   * An earlier shape stored an `acknowledgedAt` timestamp and gated on
+   * `acknowledgedAt >= checkedAt`, but `fillCacheFromUpdateNotifier`
+   * unconditionally bumps `checkedAt` on every `update-notifier` refresh
+   * cycle (~daily) even when `latest` is unchanged, which flipped the
+   * invariant and re-fired the banner every day. Version-string equality
+   * is immune to clock drift.
+   *
+   * Legacy `acknowledgedAt` records (from earlier installs) are dropped
+   * silently by the reader — those partners see one extra nudge after
+   * upgrading, then the new gate takes over.
    */
-  acknowledgedAt?: number;
+  acknowledgedLatest?: string;
 }
 
 const CACHE_FILE = "update-check.json";
@@ -160,9 +169,9 @@ export function readCachedUpdateInfo(): CachedUpdateInfo | null {
       current: parsed.current,
       type: typeof parsed.type === "string" ? parsed.type : undefined,
       checkedAt: parsed.checkedAt,
-      acknowledgedAt:
-        typeof parsed.acknowledgedAt === "number"
-          ? parsed.acknowledgedAt
+      acknowledgedLatest:
+        typeof parsed.acknowledgedLatest === "string"
+          ? parsed.acknowledgedLatest
           : undefined,
     };
   } catch {
@@ -209,12 +218,13 @@ function getCurrentVersion(): string {
  *      partner's real machine.
  *
  *   2. **Render stage.** Re-read our own cache and decide whether to
- *      print the banner based on its `acknowledgedAt` field. We render
- *      once per `latest` value, then stamp `acknowledgedAt = now()` so
- *      subsequent invocations stay quiet until a newer release lands.
- *      This stage is what subprocess tests exercise: they pre-populate
- *      the cache file and assert the banner fires without ever
- *      reaching update-notifier (which auto-suppresses under
+ *      print the banner based on its `acknowledgedLatest` field. We
+ *      render once per `latest` value, then stamp
+ *      `acknowledgedLatest = cached.latest` so subsequent invocations
+ *      stay quiet until a newer release lands (and `fillCache…` clears
+ *      the field). This stage is what subprocess tests exercise: they
+ *      pre-populate the cache file and assert the banner fires without
+ *      ever reaching update-notifier (which auto-suppresses under
  *      `NODE_ENV=test`).
  *
  * Renders the nudge to **stderr** when a newer version is cached, so a
@@ -274,19 +284,20 @@ function fillCacheFromUpdateNotifier(): void {
 
     const update = notifier.update;
     if (update && isNewerVersion(update.latest, update.current)) {
-      // Preserve any existing acknowledgedAt only if it matches the same
-      // `latest` — a newer release invalidates the prior ack.
+      // Preserve any existing `acknowledgedLatest` only if it matches the
+      // same `latest` — a newer release invalidates the prior ack and
+      // the partner should see the banner once for the new version.
       const existing = readCachedUpdateInfo();
-      const acknowledgedAt =
+      const acknowledgedLatest =
         existing && existing.latest === update.latest
-          ? existing.acknowledgedAt
+          ? existing.acknowledgedLatest
           : undefined;
       writeCache({
         latest: update.latest,
         current: update.current,
         type: update.type,
         checkedAt: Date.now(),
-        acknowledgedAt,
+        acknowledgedLatest,
       });
     }
   } catch {
@@ -303,21 +314,26 @@ function fillCacheFromUpdateNotifier(): void {
 
 /**
  * Stage 2 — render the banner if our cache has a fresh newer-version
- * record we haven't surfaced yet. Stamps `acknowledgedAt = now()` after
- * rendering so the banner stays quiet for that `latest` until a newer
- * release lands in the cache (AC: "Notice prints once per release").
+ * record we haven't surfaced yet. Stamps
+ * `acknowledgedLatest = cached.latest` after rendering so the banner
+ * stays quiet for that `latest` until a newer release lands in the
+ * cache (AC: "Notice prints once per release").
  */
 function renderFromCacheIfDue(): void {
   const cached = readCachedUpdateInfo();
   if (!cached) return;
-  // Already rendered for this `latest` — stay quiet.
-  if (cached.acknowledgedAt && cached.acknowledgedAt >= cached.checkedAt) {
-    return;
-  }
-  renderNudge(cached.current, cached.latest);
+  // Already rendered for this `latest` — stay quiet. The pre-fix code
+  // used `acknowledgedAt >= checkedAt`, but `checkedAt` advances every
+  // refresh cycle (~daily) so the invariant broke. Version-string
+  // equality is the durable gate.
+  if (cached.acknowledgedLatest === cached.latest) return;
+  // Pass the RUNNING version (not `cached.current`) as the "from" so a
+  // partner who upgraded mid-cycle sees an accurate "0.7.0 → 1.0.0" rather
+  // than the stale recorded version.
+  renderNudge(getCurrentVersion(), cached.latest);
   writeCache({
     ...cached,
-    acknowledgedAt: Date.now(),
+    acknowledgedLatest: cached.latest,
   });
 }
 

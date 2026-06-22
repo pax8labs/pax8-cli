@@ -36,7 +36,7 @@ const NUDGE_NEEDLE = "A new version of pax8-cli is available";
  * Drop a "newer version available" record into the per-test cache dir so
  * `runUpdateCheck`'s render-from-cache stage has something to fire on.
  * Returns the cache path so individual tests can re-read it to assert
- * post-conditions (e.g. that `acknowledgedAt` got stamped).
+ * post-conditions (e.g. that `acknowledgedLatest` got stamped).
  */
 function seedCache(configDir: string): string {
   fs.mkdirSync(configDir, { recursive: true });
@@ -150,20 +150,21 @@ describe("update-notifier nudge (#183)", () => {
     expect(result.stderr).not.toContain(NUDGE_NEEDLE);
   });
 
-  it("stamps acknowledgedAt after rendering so the next run stays quiet", async () => {
+  it("stamps acknowledgedLatest after rendering so the next run stays quiet", async () => {
     const first = await runCli(["version"], {
       PAX8_UPDATE_CHECK_TEST_FORCE: "1",
       PAX8_DEMO: "",
     });
     expect(first.stderr).toContain(NUDGE_NEEDLE);
 
-    // Verify the on-disk cache has acknowledgedAt set.
+    // Verify the on-disk cache has acknowledgedLatest set to the version
+    // we just rendered the banner for.
     const post = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as {
-      acknowledgedAt?: number;
-      checkedAt: number;
+      acknowledgedLatest?: string;
+      latest: string;
     };
-    expect(post.acknowledgedAt).toBeTypeOf("number");
-    expect(post.acknowledgedAt!).toBeGreaterThanOrEqual(post.checkedAt);
+    expect(post.acknowledgedLatest).toBe(post.latest);
+    expect(post.acknowledgedLatest).toBe(NEWER_VERSION);
 
     // Second invocation should stay quiet — same `latest`, already acked.
     const second = await runCli(["version"], {
@@ -171,6 +172,58 @@ describe("update-notifier nudge (#183)", () => {
       PAX8_DEMO: "",
     });
     expect(second.stderr).not.toContain(NUDGE_NEEDLE);
+  });
+
+  // Regression for the operon-flagged P0 (round 2): the pre-fix gate
+  // compared `acknowledgedAt >= checkedAt`, but `fillCacheFromUpdateNotifier`
+  // bumps `checkedAt` on every daily refresh even when `latest` is
+  // unchanged. The invariant flipped on every cycle and the banner
+  // re-fired. Simulate that exact scenario: write a cache file where
+  // a prior session DID ack the `latest` (acknowledgedLatest === latest),
+  // then advance `checkedAt` to "now" as if a fresh refresh just ran
+  // without finding a newer release. The banner must stay quiet.
+  it("stays quiet across a simulated daily refresh that doesn't change `latest`", async () => {
+    // Pre-populate with the post-ack shape, then mimic what
+    // fillCacheFromUpdateNotifier would write on day 2: same `latest`,
+    // bumped `checkedAt`, preserved `acknowledgedLatest`.
+    fs.writeFileSync(
+      cachePath,
+      JSON.stringify({
+        latest: NEWER_VERSION,
+        current: PKG_VERSION,
+        type: "major",
+        checkedAt: Date.now(),
+        acknowledgedLatest: NEWER_VERSION,
+      }),
+    );
+    const result = await runCli(["version"], {
+      PAX8_UPDATE_CHECK_TEST_FORCE: "1",
+      PAX8_DEMO: "",
+    });
+    expect(result.stderr).not.toContain(NUDGE_NEEDLE);
+  });
+
+  // The flip side: when `latest` advances (a newer release lands), the
+  // banner DOES re-fire even though there's a prior ack on disk.
+  it("re-fires the banner when a newer `latest` lands in the cache", async () => {
+    const NEWER_STILL = "1000.0.0";
+    fs.writeFileSync(
+      cachePath,
+      JSON.stringify({
+        latest: NEWER_STILL,
+        current: PKG_VERSION,
+        type: "major",
+        checkedAt: Date.now(),
+        // Ack was for the OLDER `latest`; the new one hasn't been seen.
+        acknowledgedLatest: NEWER_VERSION,
+      }),
+    );
+    const result = await runCli(["version"], {
+      PAX8_UPDATE_CHECK_TEST_FORCE: "1",
+      PAX8_DEMO: "",
+    });
+    expect(result.stderr).toContain(NUDGE_NEEDLE);
+    expect(result.stderr).toContain(NEWER_STILL);
   });
 });
 
