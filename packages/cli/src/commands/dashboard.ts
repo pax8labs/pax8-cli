@@ -10,10 +10,11 @@ import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.j
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
 import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
-import type { Subscription, Company, Product, Order, RenewalReport, Recommendation } from "@pax8/core";
+import type { Subscription, RenewalReport, Recommendation } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
 import { collectSubsWithSpinner } from "../lib/subs-stream.js";
+import { emitWarnings, type WarningRecord } from "../lib/aggregator-fetch.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -165,6 +166,92 @@ function renderGrowthSection(
   out.write(chalk.dim(`\n    → ${replCmd("pax8 recommendations act")}  walk through and order\n`));
 }
 
+// ── Data fetch ───────────────────────────────────────────────────────────────
+
+/**
+ * Result shape returned by the fetch layer. We derive the page-wrapper
+ * type from the actual api method signatures rather than re-declaring it
+ * because the bundled `@pax8/core` .d.ts exposes two structurally similar
+ * `PaginatedResponse` types (an internal wire-shape and a re-exported
+ * variant), and using `Awaited<ReturnType<...>>` keeps us aligned with
+ * whichever the api method actually returns.
+ */
+type CtxApi = Awaited<ReturnType<typeof buildContext>>["api"];
+type CompaniesListResult = Awaited<ReturnType<CtxApi["companies"]["list"]>>;
+type ProductsListResult = Awaited<ReturnType<CtxApi["products"]["list"]>>;
+type OrdersListResult = Awaited<ReturnType<CtxApi["orders"]["list"]>>;
+
+export interface DashboardFetchedData {
+  allSubs: Subscription[];
+  companiesResult: CompaniesListResult;
+  productsResult: ProductsListResult;
+  ordersResult: OrdersListResult;
+  /**
+   * Per-feed warnings collected during the parallel fetch. Returned as
+   * structured data (rather than written directly to stderr) so this
+   * helper is unit-testable in isolation. The command layer calls
+   * `emitWarnings(process.stderr, data.warnings)` at the appropriate
+   * point in the run sequence. See #635.
+   */
+  warnings: WarningRecord[];
+}
+
+export async function fetchAll(
+  ctx: Awaited<ReturnType<typeof buildContext>>,
+  spinner: ReturnType<typeof createSpinner>,
+): Promise<DashboardFetchedData> {
+  // Fetch companies/products/orders in parallel with the subscription
+  // stream. Subscriptions are the heaviest resource and now walk every
+  // page via `streamAll()` (#613) so partners with >1000 subs no longer
+  // get silently truncated portfolio totals. The other three resources
+  // stay single-page — none of dashboard's outputs grow with their
+  // count past the first 200 (companies are used as a name lookup,
+  // products for recommendations enrichment, orders for the recent-
+  // activity window).
+  const [companiesSettled, productsSettled, ordersSettled, subsSettled] = await Promise.allSettled([
+    ctx.api.companies.list({ size: 200 }),
+    ctx.api.products.list({ size: 200 }),
+    ctx.api.orders.list({ size: 200 }),
+    collectSubsWithSpinner(ctx.api.subscriptions.streamAll(), spinner, "dashboard"),
+  ]);
+
+  const emptyPage = { number: 0, size: 0, totalPages: 0, totalElements: 0 };
+  const companiesResult: CompaniesListResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [], page: { ...emptyPage } };
+  const productsResult: ProductsListResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [], page: { ...emptyPage } };
+  const ordersResult: OrdersListResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [], page: { ...emptyPage } };
+  const allSubs: Subscription[] = subsSettled.status === 'fulfilled' ? subsSettled.value : [];
+
+  // Collect partial-failure warnings as structured data so the partial-
+  // failure logic is unit-testable. The command layer emits these via
+  // `emitWarnings()` once the fetch returns. We never throw here — a
+  // single feed failure should still produce a partial dashboard — but
+  // the partner needs to know the numbers are incomplete (#635).
+  const warnings: WarningRecord[] = [];
+  if (companiesSettled.status === 'rejected') {
+    warnings.push({
+      feed: "companies",
+      severity: "warn",
+      message: "Could not load companies",
+    });
+  }
+  if (subsSettled.status === 'rejected') {
+    warnings.push({
+      feed: "subscriptions",
+      severity: "warn",
+      message: "Could not load subscriptions",
+    });
+  }
+  if (productsSettled.status === 'rejected') {
+    warnings.push({
+      feed: "products",
+      severity: "warn",
+      message: "Could not load products",
+    });
+  }
+
+  return { allSubs, companiesResult, productsResult, ordersResult, warnings };
+}
+
 // ── Command ──────────────────────────────────────────────────────────────────
 
 async function runDashboard(options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, cmd: Command): Promise<void> {
@@ -173,36 +260,13 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
     const spinner = createSpinner("Loading dashboard...").start();
 
     try {
-      // Fetch companies/products/orders in parallel with the subscription
-      // stream. Subscriptions are the heaviest resource and now walk every
-      // page via `streamAll()` (#613) so partners with >1000 subs no longer
-      // get silently truncated portfolio totals. The other three resources
-      // stay single-page — none of dashboard's outputs grow with their
-      // count past the first 200 (companies are used as a name lookup,
-      // products for recommendations enrichment, orders for the recent-
-      // activity window).
-      const [companiesSettled, productsSettled, ordersSettled, subsSettled] = await Promise.allSettled([
-        ctx.api.companies.list({ size: 200 }),
-        ctx.api.products.list({ size: 200 }),
-        ctx.api.orders.list({ size: 200 }),
-        collectSubsWithSpinner(ctx.api.subscriptions.streamAll(), spinner, "dashboard"),
-      ]);
+      const { allSubs, companiesResult, productsResult, ordersResult, warnings } = await fetchAll(ctx, spinner);
 
-      const emptyPage = { number: 0, totalPages: 0, totalElements: 0 };
-      const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as Company[], page: { ...emptyPage } };
-      const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as Product[], page: { ...emptyPage } };
-      const ordersResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [] as Order[], page: { ...emptyPage } };
-      const allSubs: Subscription[] = subsSettled.status === 'fulfilled' ? subsSettled.value : [];
-
-      if (companiesSettled.status === 'rejected') {
-        process.stderr.write(chalk.yellow("  ⚠ Could not load companies\n"));
-      }
-      if (subsSettled.status === 'rejected') {
-        process.stderr.write(chalk.yellow("  ⚠ Could not load subscriptions\n"));
-      }
-      if (productsSettled.status === 'rejected') {
-        process.stderr.write(chalk.yellow("  ⚠ Could not load products\n"));
-      }
+      // Surface partial-failure warnings before further processing so the
+      // partner sees them in the same place as before the refactor (#635).
+      // The fetch helper returns them as structured data; this layer owns
+      // I/O.
+      emitWarnings(process.stderr, warnings);
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) {
