@@ -45,6 +45,7 @@ import { resolveDemoModeAsync } from "./lib/context.js";
 import type { Command as CommandType } from "commander";
 import { startRepl } from "./lib/repl.js";
 import { showWelcomeScreen } from "./lib/welcome.js";
+import { runUpdateCheck } from "./lib/update-check.js";
 
 /**
  * Build the full dotted command name from a Commander command,
@@ -311,6 +312,18 @@ async function main(): Promise<void> {
       await showWelcomeScreen();
     }
   } else {
+    // #183: nudge once per release when a newer pax8-cli is available.
+    // Fires before parse so the registry refresh (detached child process
+    // inside `update-notifier`) has the full command duration to settle
+    // and the synchronous cache read happens before any --json output
+    // could open the stdout pipe. The wrapper handles all suppression
+    // signals (PAX8_NO_UPDATE_CHECK, PAX8_DEMO, --json, --quiet, CI,
+    // NO_UPDATE_NOTIFIER) and renders only to stderr.
+    try {
+      runUpdateCheck();
+    } catch {
+      // Never let the courtesy nudge break command dispatch.
+    }
     const program = createProgram();
     await program.parseAsync(process.argv).catch(async (err) => {
       // `handleCommandError` itself emits the `command_executed`

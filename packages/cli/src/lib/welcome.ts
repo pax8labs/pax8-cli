@@ -3,6 +3,7 @@
 
 import chalk from "chalk";
 import { CredentialStore } from "@pax8/core";
+import { runUpdateCheck } from "./update-check.js";
 
 declare const __CLI_VERSION__: string;
 
@@ -25,6 +26,19 @@ async function isAuthenticated(): Promise<boolean> {
 }
 
 export async function showWelcomeScreen(): Promise<void> {
+  // #183: nudge the user when a newer pax8-cli has been published. The
+  // check is fire-and-forget from our perspective — `update-notifier`
+  // reads its configstore synchronously and spawns the registry refresh
+  // in a detached child process, so this doesn't block the welcome
+  // render. Honors PAX8_NO_UPDATE_CHECK / PAX8_DEMO / PAX8_QUIET / CI /
+  // NO_UPDATE_NOTIFIER and only writes to stderr (so it can never
+  // pollute the welcome stdout block read by smoke tests).
+  try {
+    runUpdateCheck();
+  } catch {
+    // The check is a courtesy; never let it break the welcome render.
+  }
+
   const version = typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0";
 
   const W = 48;

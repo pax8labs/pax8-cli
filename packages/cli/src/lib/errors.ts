@@ -29,6 +29,7 @@ import {
 import { replCmd } from "./confirm.js";
 import { redactEnvelope, redactString } from "./redactor.js";
 import { consumeActiveCommand } from "./telemetry-context.js";
+import { getApiValidationUpgradeHint } from "./update-check.js";
 
 declare const __CLI_VERSION__: string;
 
@@ -316,23 +317,45 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
     const env: ErrorEnvelope = { message: prefix + error.message };
     if (error.code) env.code = error.code;
     if (error.causes && error.causes.length > 0) env.causes = error.causes;
-    if (error.recoverySteps && error.recoverySteps.length > 0) {
-      env.recoverySteps = error.recoverySteps;
+    const baseSteps = error.recoverySteps ?? [];
+    // #183: drift-aware messaging. CliErrors raised with
+    // `code: ERROR_API_VALIDATION` (e.g. orders/create's invalid-response
+    // guards) get the same upgrade nudge the ZodError path gets when a
+    // newer pax8-cli is cached locally. Prepend so it's the first
+    // recovery step — the action most likely to fix the failure.
+    let steps = baseSteps;
+    if (error.code === ERROR_API_VALIDATION) {
+      const upgradeHint = getApiValidationUpgradeHint();
+      if (upgradeHint) {
+        steps = [upgradeHint, ...baseSteps];
+      }
+    }
+    if (steps.length > 0) {
+      env.recoverySteps = steps;
     }
     if (error.docsUrl) env.docsUrl = error.docsUrl;
     return env;
   }
 
   if (error instanceof ZodError) {
+    // #183: drift-aware messaging. A Zod validation failure usually means
+    // the API shape moved out from under the CLI version the user is
+    // running. If our cached update-check (populated on previous welcome
+    // runs / command invocations) knows a newer version exists, surface
+    // it as the FIRST recovery step — that's the action most likely to
+    // fix the failure. Sync read; never adds a network round-trip to the
+    // error path.
+    const upgradeHint = getApiValidationUpgradeHint();
+    const recoverySteps = upgradeHint
+      ? [upgradeHint, "Try a different query, or run pax8 doctor to check your setup."]
+      : ["Try a different query, or run pax8 doctor to check your setup."];
     return {
       code: ERROR_API_VALIDATION,
       message:
         prefix +
         "The Pax8 API returned an unexpected response.",
       causes: [formatZodError(error)],
-      recoverySteps: [
-        "Try a different query, or run pax8 doctor to check your setup.",
-      ],
+      recoverySteps,
     };
   }
 
@@ -618,9 +641,23 @@ export async function handleCommandError(
       }
     }
 
-    if (error.recoverySteps && error.recoverySteps.length > 0) {
+    // #183: same drift-aware recovery prepend as the envelope path —
+    // CliErrors with `code: ERROR_API_VALIDATION` get the upgrade hint
+    // rendered first when our cache knows a newer pax8-cli is available.
+    const baseSteps = error.recoverySteps ?? [];
+    let humanSteps = baseSteps;
+    if (
+      error instanceof CliError &&
+      error.code === ERROR_API_VALIDATION
+    ) {
+      const upgradeHint = getApiValidationUpgradeHint();
+      if (upgradeHint) {
+        humanSteps = [upgradeHint, ...baseSteps];
+      }
+    }
+    if (humanSteps.length > 0) {
       process.stderr.write(chalk.yellow("\n  Recovery steps:\n"));
-      for (const step of error.recoverySteps) {
+      for (const step of humanSteps) {
         process.stderr.write(chalk.yellow(`    → ${safe(step)}\n`));
       }
     }
@@ -650,8 +687,19 @@ export async function handleCommandError(
       chalk.red.bold(`\n  ✗ ${prefix}`) +
       chalk.red(`  The Pax8 API returned an unexpected response.\n`) +
       chalk.dim(`    ${safe(formatZodError(error))}\n\n`) +
-      chalk.yellow(`    → This usually means no data was found, or the API format has changed.\n`) +
-      chalk.yellow(`    → Try a different query, or run ${chalk.cyan(replCmd("pax8 doctor"))} to check your setup.\n\n`)
+      chalk.yellow(`    → This usually means no data was found, or the API format has changed.\n`)
+    );
+    // #183: drift-aware messaging. Surface the upgrade hint BEFORE the
+    // generic "try a different query" step — if a newer CLI is available,
+    // the partner's first move should be `npm i -g @pax8/cli`.
+    const upgradeHint = getApiValidationUpgradeHint();
+    if (upgradeHint) {
+      process.stderr.write(
+        chalk.yellow(`    → ${safe(upgradeHint)}\n`),
+      );
+    }
+    process.stderr.write(
+      chalk.yellow(`    → Try a different query, or run ${chalk.cyan(replCmd("pax8 doctor"))} to check your setup.\n\n`),
     );
   } else if (error instanceof ApiError) {
     process.stderr.write(
