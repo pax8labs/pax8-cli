@@ -10,6 +10,7 @@ import {
   readCachedUpdateInfo,
   getApiValidationUpgradeHint,
   truthyEnv,
+  presenceEnv,
 } from "./update-check.js";
 
 /**
@@ -147,11 +148,57 @@ describe("truthyEnv", () => {
     },
   );
 
-  it.each(["0", "false", "no", "off", "", "  ", "anything-else"])(
-    "treats %s as falsy",
+  // Critically: realistic non-token values that some env conventions set
+  // (e.g. `CI=github` from a provider that uses platform identifiers,
+  // `NO_UPDATE_NOTIFIER=set` from an operator who didn't read the docs).
+  // For Pax8-owned `=1`-shape flags these MUST read as falsy — that's
+  // the strict-token guarantee partners rely on. Presence-shaped flags
+  // go through `presenceEnv` instead.
+  it.each([
+    "0",
+    "false",
+    "no",
+    "off",
+    "",
+    "  ",
+    "anything-else",
+    "github",
+    "set",
+    "enabled",
+  ])("treats %s as falsy", (v) => {
+    process.env[FLAG] = v;
+    expect(truthyEnv(FLAG)).toBe(false);
+  });
+});
+
+describe("presenceEnv", () => {
+  const FLAG = "PAX8_PRESENCE_ENV_FIXTURE";
+
+  afterEach(() => {
+    delete process.env[FLAG];
+  });
+
+  it("returns false when the variable is unset", () => {
+    expect(presenceEnv(FLAG)).toBe(false);
+  });
+
+  // Realistic non-token values that presence-shaped community flags
+  // ship with — these MUST read as truthy. Pre-fix on PR #647, these
+  // went through `truthyEnv` and silently failed to suppress, narrowing
+  // the established convention for NO_UPDATE_NOTIFIER and CI.
+  it.each(["1", "true", "set", "enabled", "github", "  yes  ", "anything"])(
+    "treats %s as truthy (any non-empty)",
     (v) => {
       process.env[FLAG] = v;
-      expect(truthyEnv(FLAG)).toBe(false);
+      expect(presenceEnv(FLAG)).toBe(true);
+    },
+  );
+
+  it.each(["", "   ", "\t\n"])(
+    "treats whitespace-only %j as falsy",
+    (v) => {
+      process.env[FLAG] = v;
+      expect(presenceEnv(FLAG)).toBe(false);
     },
   );
 });
