@@ -9,6 +9,7 @@ import {
   isNewerVersion,
   readCachedUpdateInfo,
   getApiValidationUpgradeHint,
+  truthyEnv,
 } from "./update-check.js";
 
 /**
@@ -125,4 +126,32 @@ describe("readCachedUpdateInfo + getApiValidationUpgradeHint", () => {
     expect(hint).toContain("999.0.0");
     expect(hint).toContain("npm i -g @pax8/cli");
   });
+});
+
+describe("truthyEnv", () => {
+  const FLAG = "PAX8_TRUTHY_ENV_FIXTURE";
+
+  afterEach(() => {
+    delete process.env[FLAG];
+  });
+
+  it("returns false when the variable is unset", () => {
+    expect(truthyEnv(FLAG)).toBe(false);
+  });
+
+  it.each(["1", "true", "yes", "on", "TRUE", "Yes", "  1  "])(
+    "treats %s as truthy",
+    (v) => {
+      process.env[FLAG] = v;
+      expect(truthyEnv(FLAG)).toBe(true);
+    },
+  );
+
+  it.each(["0", "false", "no", "off", "", "  ", "anything-else"])(
+    "treats %s as falsy",
+    (v) => {
+      process.env[FLAG] = v;
+      expect(truthyEnv(FLAG)).toBe(false);
+    },
+  );
 });

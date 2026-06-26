@@ -109,7 +109,7 @@ Adding a new command? Lives at `packages/cli/src/commands/<resource>/<action>.ts
 - `PAX8_YES=1` — auto-confirm write prompts
 - `PAX8_QUIET=1` — disable spinners
 - `PAX8_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1` — opt out of telemetry (already opt-in by default)
-- `PAX8_NO_UPDATE_CHECK=1` — suppress the "newer pax8-cli available" nudge for CI / scripted use (#183). The check also skips automatically under `PAX8_DEMO=1`, `PAX8_QUIET=1`, `--json`, `--quiet`, `NO_UPDATE_NOTIFIER`, `DO_NOT_TRACK=1`, CI, and any non-TTY stderr.
+- `PAX8_NO_UPDATE_CHECK=1` — suppress the "newer pax8-cli available" nudge for CI / scripted use (#183). The check also skips automatically under `PAX8_DEMO=1`, `PAX8_QUIET=1`, `--json`, `--quiet`, `NO_UPDATE_NOTIFIER`, `DO_NOT_TRACK=1`, CI, and any non-TTY stderr. Scope: this gates the **periodic banner only**. The drift-aware upgrade hint surfaced inside an `ERROR_API_VALIDATION` recovery envelope is contextual error help, not a nag, and fires regardless of this flag — delete `<configDir>/update-check.json` if you want strict silence across both surfaces.
 
 ## References
 
