@@ -84,21 +84,67 @@ function cachePath(): string {
  * `PAX8_NO_UPDATE_CHECK=1` alongside it still produces no banner, which
  * is exactly the "opt-out wins" assertion the tests pin.
  */
+/**
+ * Truthy-env predicate. Treats `"1"`, `"true"`, `"yes"`, `"on"` (case-
+ * insensitive, whitespace-trimmed) as truthy; everything else — including
+ * `"0"`, `"false"`, `""`, and unset — as falsy.
+ *
+ * Use this for **Pax8-owned `=1`-shape flags** (`PAX8_NO_UPDATE_CHECK`,
+ * `PAX8_DEMO`, `PAX8_QUIET`, `PAX8_UPDATE_CHECK_TEST_FORCE`) and for the
+ * Do-Not-Track standard which is spec'd as `"1"` / `"0"`. Do NOT use this
+ * for presence-shaped community flags — see `presenceEnv`.
+ */
+export function truthyEnv(name: string): boolean {
+  const raw = process.env[name];
+  if (raw === undefined) return false;
+  const v = raw.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+/**
+ * Presence-env predicate. Treats **any non-empty, non-whitespace value**
+ * as truthy; only unset / empty / pure-whitespace counts as falsy.
+ *
+ * Use this for community-convention flags whose canonical shape is
+ * presence-based:
+ *
+ *   - `NO_UPDATE_NOTIFIER` — the upstream `update-notifier` package
+ *     suppresses on any non-empty value. CLAUDE.md's env-var docs list
+ *     this flag bare (no `=1`), matching the convention.
+ *   - `CI` — many providers set `CI` to non-empty values outside the
+ *     `1/true` token set (e.g. GitHub Actions sometimes sets `CI=true`
+ *     but other providers use platform identifiers). Treating those
+ *     as non-CI would re-enable interactive banners in pipelines.
+ *
+ * The split exists because rolling everything through `truthyEnv`
+ * narrows these flags' semantics against established convention — a
+ * regression operon-ensemble-reviewer caught on the original consolidation
+ * attempt (PR #647 round 1).
+ */
+export function presenceEnv(name: string): boolean {
+  const raw = process.env[name];
+  if (raw === undefined) return false;
+  return raw.trim().length > 0;
+}
+
 function isCheckSuppressed(): boolean {
   // User opt-outs — always respected, regardless of the test-force seam.
-  if (process.env.PAX8_NO_UPDATE_CHECK === "1") return true;
-  if (process.env.PAX8_DEMO === "1") return true;
-  if (process.env.PAX8_QUIET === "1") return true;
-  if (process.env.NO_UPDATE_NOTIFIER) return true;
-  if (process.env.DO_NOT_TRACK === "1") return true;
+  if (truthyEnv("PAX8_NO_UPDATE_CHECK")) return true;
+  if (truthyEnv("PAX8_DEMO")) return true;
+  if (truthyEnv("PAX8_QUIET")) return true;
+  // Presence semantics — update-notifier's own convention.
+  if (presenceEnv("NO_UPDATE_NOTIFIER")) return true;
+  // DNT is spec'd as "1" / "0" — strict truthy is correct.
+  if (truthyEnv("DO_NOT_TRACK")) return true;
   if (process.argv.includes("--json")) return true;
   if (process.argv.includes("--quiet")) return true;
   if (process.argv.includes("--no-update-notifier")) return true;
 
   // Auto-suppressors — bypassed by the test-force seam.
-  if (process.env.PAX8_UPDATE_CHECK_TEST_FORCE === "1") return false;
+  if (truthyEnv("PAX8_UPDATE_CHECK_TEST_FORCE")) return false;
   if (process.env.NODE_ENV === "test") return true;
-  if (process.env.CI === "true" || process.env.CI === "1") return true;
+  // Presence semantics — many CI providers set CI to non-token values.
+  if (presenceEnv("CI")) return true;
   // Banner is a courtesy for interactive humans; never write it to a
   // non-TTY stderr because something downstream is consuming it.
   if (!process.stderr.isTTY) return true;
@@ -254,7 +300,7 @@ export function runUpdateCheck(): void {
  */
 function fillCacheFromUpdateNotifier(): void {
   if (process.env.NODE_ENV === "test") return;
-  if (process.env.PAX8_UPDATE_CHECK_TEST_FORCE === "1") return;
+  if (truthyEnv("PAX8_UPDATE_CHECK_TEST_FORCE")) return;
 
   // Redirect `update-notifier`'s configstore under our config-dir
   // isolation root. configstore reads `XDG_CONFIG_HOME` at construction

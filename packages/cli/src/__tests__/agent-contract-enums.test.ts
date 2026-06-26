@@ -26,12 +26,11 @@
  *      those docs. If someone renames a value in code but forgets the
  *      docs, this fails.
  *
- *      Enums not documented in those agent-facing files (e.g.
- *      Recommendation.type / opportunityType — currently documented in
- *      the `recommendations list --help` text, the README, and the
- *      CHANGELOG, but not in AGENTS/CLAUDE/skill) skip the doc-grep
- *      check. Flagging the gap is a separate decision for the
- *      maintainer; pinning the runtime contract still has value.
+ *      All five pinned enums (TodayItemKind, Recommendation.priority,
+ *      Recommendation.type, Recommendation.opportunityType,
+ *      AuditDiscrepancy.type) are documented in `skill.md`'s
+ *      "Agent-consumed enums" section as quoted literals, so each one
+ *      gets a doc-grep test.
  */
 
 import { describe, it, expect } from "vitest";
@@ -211,10 +210,13 @@ describe("agent-contract enum pinning (#636)", () => {
       }
     });
 
-    // No doc-grep test: `seat_gap` / `cross_sell` are documented in the
-    // `recommendations list --help` text, README, and CHANGELOG, but
-    // not in any of AGENTS.md / CLAUDE.md / skill.md. The runtime
-    // check above still pins the contract.
+    it("every allowed value appears as a quoted literal in agent docs", () => {
+      assertDocumented(
+        RECOMMENDATION_TYPES,
+        loadAgentDocs(),
+        "Recommendation.type",
+      );
+    });
   });
 
   describe("Recommendation.opportunityType — `pax8 recommendations list --json`", () => {
@@ -242,10 +244,13 @@ describe("agent-contract enum pinning (#636)", () => {
       }
     });
 
-    // No doc-grep test: the 5-value OpportunityType taxonomy is
-    // documented in `recommendations list --help` and the CHANGELOG
-    // (and the README's STAX-divergence table), but not in any of
-    // AGENTS.md / CLAUDE.md / skill.md.
+    it("every allowed value appears as a quoted literal in agent docs", () => {
+      assertDocumented(
+        OPPORTUNITY_TYPES,
+        loadAgentDocs(),
+        "Recommendation.opportunityType",
+      );
+    });
   });
 
   describe("AuditDiscrepancy.type — `pax8 invoices audit --json`", () => {
@@ -268,12 +273,12 @@ describe("agent-contract enum pinning (#636)", () => {
       }
     });
 
-    // No doc-grep test: AGENTS.md / skill.md mention "overcharge" /
-    // "undercharge" in prose ("Group discrepancies by category
-    // (overcharge, undercharge, orphan line item)"), but not as quoted
-    // enum literals — and "missing" / "unexpected" aren't documented
-    // in those files at all. Adding the missing literals to the agent
-    // docs is the maintainer's call; the runtime check above still
-    // pins the wire contract.
+    it("every allowed value appears as a quoted literal in agent docs", () => {
+      assertDocumented(
+        AUDIT_DISCREPANCY_TYPES,
+        loadAgentDocs(),
+        "AuditDiscrepancy.type",
+      );
+    });
   });
 });

@@ -114,6 +114,18 @@ pax8 cost sim --company <id|name> --product <id|name> --quantity <n> [--from <id
 pax8 doctor                                                  # diagnostics, not for data
 ```
 
+## Agent-consumed enums
+
+These string unions are pinned by a runtime + doc-drift contract test (`packages/cli/src/__tests__/agent-contract-enums.test.ts`). Switch on these values, never on prose synonyms.
+
+- `Recommendation.type` ∈ `"seat_gap"` | `"cross_sell"`. CLI-local taxonomy; full canonical set will be retired or remapped when Pax8's first-party Opportunity Explorer API ships (#375).
+- `Recommendation.opportunityType` ∈ `"Upsell"` | `"Cross-sell"` | `"Add-on"` | `"Upgrade"` | `"Net-new"`. OE's canonical 5-type taxonomy; rides alongside `type` until v0.2 collapses to one axis.
+- `Recommendation.priority` ∈ `"high"` | `"medium"` | `"low"`.
+- `AuditDiscrepancy.type` ∈ `"overcharge"` | `"undercharge"` | `"missing"` | `"unexpected"`. `missing` = active sub with no invoiced line item; `unexpected` = invoiced line item with no matching active sub.
+- `TodayItem.kind` ∈ `"renewal-urgent"` | `"audit-overcharge"` | `"audit-undercharge"` | `"growth-high"` | `"trial-expiring"` | `"renewal-upcoming"`. See the `pax8 today` workflow recipe below.
+
+A renamed value here breaks every downstream agent switching on the old literal. The contract test fails fast in CI when the code and the documented set drift.
+
 ## Pax8 cost math
 
 The CLI computes the partner's Pax8 monthly / annual cost for you in `pax8 dashboard` (portfolio-wide, top customers) and `pax8 clients more` (per-client). Prefer those over hand-rolling it. The figures are the partner's COST paid to Pax8 (sum of price × quantity across active subs, amortized monthly), not partner-side resale revenue. If you must compute from `subscriptions list`:
