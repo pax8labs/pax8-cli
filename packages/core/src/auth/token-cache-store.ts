@@ -126,6 +126,14 @@ export function computeCacheIdentity(key: TokenCacheLookupKey): {
   clientIdHash: string;
   apiBaseHash: string;
 } {
+  // Reject a degenerate empty clientId. SHA-256 of the empty string is a
+  // valid hex digest that would silently match any other empty-clientId
+  // session — accidentally sharing a cache key across two callers that
+  // both forgot to plumb credentials. Better to fail loud here than
+  // surface a confusing cross-session token reuse later.
+  if (!key.clientId) {
+    throw new Error("computeCacheIdentity: clientId must be a non-empty string");
+  }
   return {
     clientIdHash: sha256Hex(key.clientId),
     apiBaseHash: sha256Hex(normalizeApiBase(key.apiBaseUrl)),

@@ -227,12 +227,16 @@ describe("Pax8Client — extended coverage", () => {
   // ───────────────────────────────────────────────────────────────────────
 
   describe("401 cache-clear retry (#233)", () => {
-    function jsonResponse(status: number, body: unknown) {
+    function jsonResponse(
+      status: number,
+      body: unknown,
+      headers: Record<string, string> = {},
+    ) {
       return {
         ok: status >= 200 && status < 300,
         status,
         statusText: status === 200 ? "OK" : "Unauthorized",
-        headers: new Headers(),
+        headers: new Headers(headers),
         json: () => Promise.resolve(body),
         text: () => Promise.resolve(JSON.stringify(body)),
       };
@@ -329,6 +333,45 @@ describe("Pax8Client — extended coverage", () => {
       await expect(client.get("/x")).rejects.toThrow(ApiError);
       expect(clearCache).not.toHaveBeenCalled();
       expect(fetchFn).toHaveBeenCalledOnce();
+    });
+
+    // Regression: PR #649 round-2 bot review caught that a 401 landing on
+    // the final retry slot (after earlier slots are burned by 429s) would
+    // set retriedAfterAuthClear=true, continue the loop, and fall through
+    // to `throw lastError ?? new Error("Unexpected error")` — a code-less
+    // bare Error that violates the "errors carry codes" contract. The
+    // fix (client.ts) gates the 401 retry on `attempt < MAX_RETRIES` so a
+    // terminal 401 falls through to the !response.ok branch and surfaces
+    // as a structured ApiError(401).
+    it("surfaces ApiError(401), not a bare Error, when a 401 lands on the final retry slot", async () => {
+      const getToken = vi.fn().mockResolvedValue("token");
+      const clearCache = vi.fn();
+      // MAX_RETRIES=3 → up to 4 attempts (indices 0..3). Burn the first
+      // three on 429s, then return 401 on the final slot. Retry-After=0
+      // skips the 429 backoff sleep so the test runs instantly.
+      const r429 = jsonResponse(429, { error: "rate limited" }, { "Retry-After": "0" });
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(r429)
+        .mockResolvedValueOnce(r429)
+        .mockResolvedValueOnce(r429)
+        .mockResolvedValueOnce(jsonResponse(401, { error: "unauthorized" }));
+      globalThis.fetch = fetchFn as unknown as typeof fetch;
+
+      const client = new Pax8Client({
+        tokenManager: { getToken, clearCache },
+        baseUrl: "https://api.pax8.com/v1",
+        cacheTtlMs: 0,
+      });
+
+      // The throw MUST be an ApiError (carries status + ERROR_* code),
+      // never a bare Error("Unexpected error"). That's the regression.
+      await expect(client.get("/x")).rejects.toThrow(ApiError);
+      // Cache must NOT be cleared because the terminal-slot guard
+      // short-circuits before the clear-and-retry side effect.
+      expect(clearCache).not.toHaveBeenCalled();
+      // Three 429s + one 401 = 4 fetch calls. No retry beyond the 401.
+      expect(fetchFn).toHaveBeenCalledTimes(4);
     });
   });
 });

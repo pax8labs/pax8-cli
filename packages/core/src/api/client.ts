@@ -547,7 +547,23 @@ export class Pax8Client {
           // Safe for non-idempotent methods (POST /orders, etc.) because a
           // 401 means the server *rejected* the request before processing —
           // same logic as 429. Retry can't produce a duplicate side effect.
-          if (response.status === 401 && !retriedAfterAuthClear) {
+          // The `attempt < MAX_RETRIES` guard prevents a final-slot 401
+          // from setting `retriedAfterAuthClear = true` and `continue`-ing
+          // the loop without ever actually running the retried request:
+          // the next iteration condition fails and we fall through to the
+          // generic `throw lastError ?? new Error("Unexpected error")` at
+          // the bottom, surfacing a code-less Error that violates the
+          // "errors carry codes" contract (CLAUDE.md). Reachable when
+          // earlier attempts were burned by 429s (e.g. 0/1/2 = 429,
+          // attempt 3 = 401). Without the guard the user sees a bare
+          // Error("Unexpected error") instead of a structured
+          // ApiError(401). With the guard, a terminal 401 falls through
+          // to the `!response.ok` branch below and surfaces correctly.
+          if (
+            response.status === 401 &&
+            !retriedAfterAuthClear &&
+            attempt < MAX_RETRIES
+          ) {
             clearTimeout(timeoutId);
             retriedAfterAuthClear = true;
             // Drain the response body so the underlying socket can be reused.

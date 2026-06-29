@@ -38,7 +38,12 @@ const DEFAULT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
  * 4.5 minutes of usable cache.
  */
 function refreshBufferForTtl(ttlMs: number): number {
-  return Math.min(60_000, Math.floor(ttlMs * 0.1));
+  // Floor at 1s — a misconfigured auth server returning a 1-9 second
+  // expires_in would otherwise collapse the buffer to 0ms and let
+  // requests race the server clock into avoidable 401 flakes. The
+  // 401-retry path recovers from that, but a 1s buffer is essentially
+  // free defense-in-depth that keeps the proactive-refresh path warm.
+  return Math.max(1000, Math.min(60_000, Math.floor(ttlMs * 0.1)));
 }
 
 interface TokenManagerOptions {
@@ -240,12 +245,16 @@ export class TokenManager {
     }
 
     // Honor `expires_in` from the response (seconds, per OAuth2). Production
-    // returns 86400. A missing / non-numeric / non-positive value falls back
-    // to the 24 h default so we never end up with a token cached at a
-    // negative or zero TTL.
+    // returns 86400 (24h). A missing / non-numeric / non-positive value
+    // falls back to the 24h default so we never end up with a token cached
+    // at a negative or zero TTL. A value > 24h is clamped — defense-in-
+    // depth against a misbehaving or compromised auth endpoint persisting
+    // an unexpectedly long-lived token to disk, where it would survive
+    // 24h+ across CLI invocations.
+    const MAX_TTL_SEC = 24 * 60 * 60; // 86400
     const expiresInSec =
       typeof body.expires_in === "number" && Number.isFinite(body.expires_in) && body.expires_in > 0
-        ? body.expires_in
+        ? Math.min(body.expires_in, MAX_TTL_SEC)
         : DEFAULT_TOKEN_TTL_MS / 1000;
     const ttlMs = expiresInSec * 1000;
     const expiresAt = Date.now() + ttlMs;
