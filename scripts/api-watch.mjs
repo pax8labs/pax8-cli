@@ -5,10 +5,21 @@
 //
 // Scheduled API drift watcher — Layer 1 of the api-resilience plan (#176).
 //
-// Queries PostHog for spikes in ERROR_API_VALIDATION events grouped by
-// command over the last 24 hours. When a bucket exceeds the configured
-// threshold, opens a maintainer issue on GitHub (or comments on the
-// existing open issue if one was already opened within the last 7 days).
+// Queries PostHog for spikes in selected error codes grouped by command over
+// the last 24 hours. When a bucket exceeds the per-code threshold, opens a
+// maintainer issue on GitHub (or comments on the existing open issue if one
+// was already opened within the last 7 days). One issue per (code, command)
+// pair — codes are not bundled together.
+//
+// Watched codes and per-code thresholds live in the WATCHED table below.
+// Each code carries its own `threshold` (events) because some failure modes
+// are inherently noisier than others (rate-limiting at scale is expected;
+// 5xx-class internal failures are not). Per-code thresholds are deliberate
+// rather than a global knob so each signal can be tuned independently as
+// real traffic shapes emerge (#213).
+//
+// All codes must match the canonical `ERROR_*` constants exported from
+// `packages/core/src/errors/codes.ts` (the source of truth — append-only).
 //
 // Usage:
 //   node scripts/api-watch.mjs                  # normal run
@@ -20,9 +31,7 @@
 //   GITHUB_TOKEN              Workflow token with issues: write
 //   REPO                      e.g. pax8labs/pax8-cli
 //
-// Optional env vars (tunable thresholds):
-//   THRESHOLD_USERS           Open issue if distinct users >= this value (default: 5)
-//   THRESHOLD_EVENTS          Open issue if total events >= this value (default: 20)
+// Optional env vars:
 //   WATCH_DRY_RUN             Set to "1" to skip PostHog + GitHub calls; log intent only
 
 const DRY_RUN = process.env.WATCH_DRY_RUN === "1";
@@ -30,8 +39,37 @@ const POSTHOG_KEY = process.env.POSTHOG_PROJECT_API_KEY;
 const POSTHOG_HOST = (process.env.POSTHOG_HOST ?? "https://us.i.posthog.com").replace(/\/$/, "");
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO = process.env.REPO ?? "";
-const THRESHOLD_USERS = parseInt(process.env.THRESHOLD_USERS ?? "5", 10);
-const THRESHOLD_EVENTS = parseInt(process.env.THRESHOLD_EVENTS ?? "20", 10);
+
+// ── watched codes + per-code thresholds (#213) ─────────────────────────────
+//
+// Each entry: `{ code, threshold }` — `code` must be a canonical ERROR_*
+// constant from packages/core/src/errors/codes.ts. `threshold` is the minimum
+// number of events in the 24h window before an issue is opened/commented for
+// any (code, command) bucket.
+//
+// Rationale per code:
+//   ERROR_API_VALIDATION  — schema drift / wire shape change. Low threshold;
+//                           even a handful of these usually means a real
+//                           upstream change worth investigating (#178).
+//   ERROR_API_TIMEOUT     — large-portfolio endpoints (e.g. orders list, #199)
+//                           legitimately hit the default 30s budget. Some
+//                           noise expected; threshold higher than validation.
+//   ERROR_NOT_FOUND       — 404 from a previously-working endpoint (e.g.
+//                           usage list, #212) signals a removed surface.
+//                           Treat as urgent like validation drift.
+//   ERROR_INTERNAL        — generic 5xx / unexpected backend failure.
+//                           Tightest threshold — these should be rare and
+//                           every cluster warrants attention.
+//   ERROR_RATE_LIMITED    — 1,000 req/min budget. At portfolio scale this
+//                           can fire briefly during bulk operations; only
+//                           page on sustained pressure.
+const WATCHED = [
+  { code: "ERROR_API_VALIDATION", threshold: 5 },
+  { code: "ERROR_API_TIMEOUT", threshold: 10 },
+  { code: "ERROR_NOT_FOUND", threshold: 5 },
+  { code: "ERROR_INTERNAL", threshold: 3 },
+  { code: "ERROR_RATE_LIMITED", threshold: 50 },
+];
 
 // ── guard: secret not provisioned yet ──────────────────────────────────────
 
@@ -80,15 +118,19 @@ async function getProjectId() {
 }
 
 /**
- * Query PostHog for ERROR_API_VALIDATION events in the last 24 hours,
- * grouped by command. Returns an array of bucket objects:
+ * Query PostHog for events emitting the given error code in the last 24
+ * hours, grouped by command. Returns an array of bucket objects:
  *   { command, count, distinct_users, cli_versions }
  *
  * Uses the HogQL Query API (POST /api/projects/<id>/query/).
  * HogQL is PostHog's SQL-like query language; it surfaces the same
  * properties captured by the SDK (event properties live under "properties").
+ *
+ * Codes are validated against the WATCHED table before reaching this
+ * function, so the `code` value is always one of our canonical constants
+ * (no user input flows here).
  */
-async function queryPostHog(projectId) {
+async function queryPostHog(projectId, code) {
   // Window: last 24 hours expressed as a HogQL relative date.
   const hogql = `
     SELECT
@@ -104,24 +146,29 @@ async function queryPostHog(projectId) {
     FROM events
     WHERE event = 'command_executed'
       AND properties.success = false
-      AND properties.error_code = 'ERROR_API_VALIDATION'
+      AND properties.error_code = '${code}'
       AND timestamp >= now() - INTERVAL 24 HOUR
     GROUP BY properties.command
     ORDER BY total_events DESC
   `.trim();
 
   if (DRY_RUN) {
-    console.log("[api-watch] DRY_RUN: would POST the following HogQL query to PostHog:");
+    console.log(`[api-watch] DRY_RUN: would POST HogQL query to PostHog for code=${code}:`);
     console.log(hogql);
     // Return a synthetic spike so dry-run exercises the downstream logic.
-    return [
-      {
-        command: "subscriptions",
-        count: 42,
-        distinct_users: 7,
-        cli_versions: "0.1.0, 0.1.1",
-      },
-    ];
+    // Only ERROR_API_VALIDATION fakes a hit so the loop still touches the
+    // "no spike" path for the other codes during a dry run.
+    if (code === "ERROR_API_VALIDATION") {
+      return [
+        {
+          command: "subscriptions",
+          count: 42,
+          distinct_users: 7,
+          cli_versions: "0.1.0, 0.1.1",
+        },
+      ];
+    }
+    return [];
   }
 
   const res = await fetch(`${POSTHOG_HOST}/api/projects/${projectId}/query/`, {
@@ -165,13 +212,14 @@ function ghHeaders() {
 }
 
 /**
- * Search for open issues with label "api-drift" and a title containing the
- * given command name, created within the last 7 days. Returns the first match
- * or null.
+ * Search for open issues with label "api-drift" whose title contains both
+ * the given error code and command, created within the last 7 days. Returns
+ * the first match or null. The dedup key is (code, command) — two different
+ * codes spiking on the same command get two separate issues, by design.
  */
-async function findExistingIssue(command) {
+async function findExistingIssue(code, command) {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const q = `repo:${REPO} is:issue is:open label:api-drift "${command}" in:title created:>=${since.slice(0, 10)}`;
+  const q = `repo:${REPO} is:issue is:open label:api-drift "${code}" "${command}" in:title created:>=${since.slice(0, 10)}`;
   const url = `${GH_API}/search/issues?q=${encodeURIComponent(q)}&per_page=1`;
 
   if (DRY_RUN) {
@@ -191,9 +239,9 @@ async function findExistingIssue(command) {
 /**
  * Open a new GitHub issue for the given bucket. Returns the issue URL.
  */
-async function openIssue({ command, count, distinct_users, cli_versions }) {
-  const title = `api-drift: ERROR_API_VALIDATION spike on \`${command}\``;
-  const body = buildIssueBody({ command, count, distinct_users, cli_versions });
+async function openIssue(code, { command, count, distinct_users, cli_versions }) {
+  const title = `api-drift: ${code} spike on \`${command}\``;
+  const body = buildIssueBody(code, { command, count, distinct_users, cli_versions });
   const labels = ["api-drift", "priority: high", "bug"];
 
   if (DRY_RUN) {
@@ -220,9 +268,9 @@ async function openIssue({ command, count, distinct_users, cli_versions }) {
 /**
  * Post an update comment on an existing issue. Returns the comment URL.
  */
-async function commentOnIssue(issueNumber, { command, count, distinct_users, cli_versions }) {
+async function commentOnIssue(issueNumber, code, { command, count, distinct_users, cli_versions }) {
   const commentBody = [
-    `**Spike persists** — updated counts from the last 24 h:`,
+    `**Spike persists** — updated counts from the last 24 h (code: \`${code}\`):`,
     ``,
     `| Metric | Value |`,
     `|---|---|`,
@@ -234,7 +282,7 @@ async function commentOnIssue(issueNumber, { command, count, distinct_users, cli
   ].join("\n");
 
   if (DRY_RUN) {
-    console.log(`[api-watch] DRY_RUN: would comment on issue #${issueNumber} for command "${command}"`);
+    console.log(`[api-watch] DRY_RUN: would comment on issue #${issueNumber} for code=${code} command="${command}"`);
     return "(dry-run — no comment posted)";
   }
 
@@ -255,12 +303,12 @@ async function commentOnIssue(issueNumber, { command, count, distinct_users, cli
   return comment.html_url;
 }
 
-function buildIssueBody({ command, count, distinct_users, cli_versions }) {
+function buildIssueBody(code, { command, count, distinct_users, cli_versions }) {
   return [
-    `## Suspected API drift on \`${command}\``,
+    `## Suspected API drift on \`${command}\` (\`${code}\`)`,
     ``,
     `In the last 24h:`,
-    `- **${count}** events emitting \`error_code: ERROR_API_VALIDATION\``,
+    `- **${count}** events emitting \`error_code: ${code}\``,
     `- **${distinct_users}** distinct users affected`,
     `- CLI versions hit: ${cli_versions || "—"}`,
     ``,
@@ -271,18 +319,79 @@ function buildIssueBody({ command, count, distinct_users, cli_versions }) {
     `- Add an optional field (additive — patch bump)`,
     `- Narrow / widen a type (consumer-visible — minor bump)`,
     `- Migrate (breaking — major bump, deprecation cycle)`,
+    `- Increase \`PAX8_TIMEOUT_MS\` default / add per-endpoint budget (for \`ERROR_API_TIMEOUT\`)`,
+    `- Add retry-after backoff (for \`ERROR_RATE_LIMITED\`)`,
     ``,
     `Tracking: closes when a fix lands; auto-comments if the spike persists.`,
     ``,
     `---`,
-    `_Auto-opened by the API drift watcher ([.github/workflows/api-watch.yml](../../blob/main/.github/workflows/api-watch.yml)). Refs #176._`,
+    `_Auto-opened by the API drift watcher ([.github/workflows/api-watch.yml](../../blob/main/.github/workflows/api-watch.yml)). Refs #176, #213._`,
   ].join("\n");
 }
 
 // ── main ───────────────────────────────────────────────────────────────────
 
+async function processCode(projectId, { code, threshold }) {
+  console.log(`[api-watch] --- ${code} (threshold=${threshold}) ---`);
+
+  let buckets;
+  try {
+    buckets = await queryPostHog(projectId, code);
+  } catch (err) {
+    console.error(`[api-watch] PostHog query failed for ${code}: ${err.message}`);
+    // Transient error — degrade gracefully and continue with the next code.
+    return;
+  }
+
+  console.log(`[api-watch] ${code}: query returned ${buckets.length} command bucket(s).`);
+
+  if (buckets.length === 0) {
+    console.log(`[api-watch] ${code}: no events in the last 24 hours. All clear.`);
+    return;
+  }
+
+  for (const bucket of buckets) {
+    const { command, count, distinct_users, cli_versions } = bucket;
+    const meetsThreshold = count >= threshold;
+
+    console.log(
+      `[api-watch] ${code} command="${command}" events=${count} distinct_users=${distinct_users} versions="${cli_versions}" — threshold_met=${meetsThreshold}`,
+    );
+
+    if (!meetsThreshold) continue;
+
+    // Dedup: look for an existing open issue in the last 7 days for this
+    // (code, command) pair specifically. Different codes never share an
+    // issue — that's the whole point of widening the filter.
+    let existingIssue = null;
+    try {
+      existingIssue = await findExistingIssue(code, command);
+    } catch (err) {
+      console.warn(`[api-watch] Could not check for existing issue: ${err.message} — will open a new one`);
+    }
+
+    if (existingIssue) {
+      console.log(`[api-watch] Found existing issue #${existingIssue.number}: ${existingIssue.html_url}`);
+      try {
+        const commentUrl = await commentOnIssue(existingIssue.number, code, bucket);
+        console.log(`[api-watch] Commented with updated counts: ${commentUrl}`);
+      } catch (err) {
+        console.error(`[api-watch] Failed to post comment on #${existingIssue.number}: ${err.message}`);
+      }
+    } else {
+      try {
+        const issueUrl = await openIssue(code, bucket);
+        console.log(`[api-watch] Opened new issue: ${issueUrl}`);
+      } catch (err) {
+        console.error(`[api-watch] Failed to open issue for ${code}/${command}: ${err.message}`);
+      }
+    }
+  }
+}
+
 async function main() {
-  console.log(`[api-watch] Starting — thresholds: users>=${THRESHOLD_USERS}, events>=${THRESHOLD_EVENTS}`);
+  const summary = WATCHED.map((w) => `${w.code}>=${w.threshold}`).join(", ");
+  console.log(`[api-watch] Starting — watching ${WATCHED.length} code(s): ${summary}`);
 
   let projectId;
   try {
@@ -293,56 +402,11 @@ async function main() {
     process.exit(0);
   }
 
-  let buckets;
-  try {
-    buckets = await queryPostHog(projectId);
-  } catch (err) {
-    console.error(`[api-watch] PostHog query failed: ${err.message}`);
-    // Transient error — degrade gracefully.
-    process.exit(0);
-  }
-
-  console.log(`[api-watch] Query returned ${buckets.length} command bucket(s).`);
-
-  if (buckets.length === 0) {
-    console.log("[api-watch] No ERROR_API_VALIDATION events in the last 24 hours. All clear.");
-    process.exit(0);
-  }
-
-  for (const bucket of buckets) {
-    const { command, count, distinct_users, cli_versions } = bucket;
-    const meetsThreshold = distinct_users >= THRESHOLD_USERS || count >= THRESHOLD_EVENTS;
-
-    console.log(
-      `[api-watch] command="${command}" events=${count} distinct_users=${distinct_users} versions="${cli_versions}" — threshold_met=${meetsThreshold}`,
-    );
-
-    if (!meetsThreshold) continue;
-
-    // Dedup: look for an existing open issue in the last 7 days.
-    let existingIssue = null;
-    try {
-      existingIssue = await findExistingIssue(command);
-    } catch (err) {
-      console.warn(`[api-watch] Could not check for existing issue: ${err.message} — will open a new one`);
-    }
-
-    if (existingIssue) {
-      console.log(`[api-watch] Found existing issue #${existingIssue.number}: ${existingIssue.html_url}`);
-      try {
-        const commentUrl = await commentOnIssue(existingIssue.number, bucket);
-        console.log(`[api-watch] Commented with updated counts: ${commentUrl}`);
-      } catch (err) {
-        console.error(`[api-watch] Failed to post comment on #${existingIssue.number}: ${err.message}`);
-      }
-    } else {
-      try {
-        const issueUrl = await openIssue(bucket);
-        console.log(`[api-watch] Opened new issue: ${issueUrl}`);
-      } catch (err) {
-        console.error(`[api-watch] Failed to open issue for command "${command}": ${err.message}`);
-      }
-    }
+  // Process codes serially so we stay polite to PostHog's query API and so
+  // GitHub issue creation order is deterministic in logs. The full loop
+  // emits five HogQL queries per run, well within rate budgets.
+  for (const entry of WATCHED) {
+    await processCode(projectId, entry);
   }
 
   console.log("[api-watch] Done.");
