@@ -33,12 +33,45 @@
 //
 // Optional env vars:
 //   WATCH_DRY_RUN             Set to "1" to skip PostHog + GitHub calls; log intent only
+//
+// Tuning: thresholds were previously controlled via THRESHOLD_USERS /
+// THRESHOLD_EVENTS env vars. Those are gone — sensitivity now lives in the
+// `WATCHED` table below so each error code gets its own threshold rather
+// than a single fleet-wide number. Edit the table; redeploy the workflow.
 
 const DRY_RUN = process.env.WATCH_DRY_RUN === "1";
 const POSTHOG_KEY = process.env.POSTHOG_PROJECT_API_KEY;
 const POSTHOG_HOST = (process.env.POSTHOG_HOST ?? "https://us.i.posthog.com").replace(/\/$/, "");
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO = process.env.REPO ?? "";
+
+// Warn-and-continue if operators set the removed knobs. They become no-ops
+// rather than silent surprises — a sustained-operations courtesy.
+for (const removed of ["THRESHOLD_USERS", "THRESHOLD_EVENTS"]) {
+  if (process.env[removed] !== undefined) {
+    console.warn(
+      `[api-watch] WARNING: ${removed} is no longer read; sensitivity is per-code in the WATCHED table. Edit scripts/api-watch.mjs to tune.`,
+    );
+  }
+}
+
+// Validate REPO format before anything tries to interpolate it into GitHub
+// API paths. An empty / malformed value would produce opaque 4xx failures
+// from `/repos/undefined/undefined/issues`; fail loud at startup instead.
+// Format is `owner/name`; both segments must be non-empty.
+if (!/^[^/\s]+\/[^/\s]+$/.test(REPO)) {
+  console.error(
+    `[api-watch] FATAL: REPO env var must be in "owner/name" form (got: ${JSON.stringify(REPO)})`,
+  );
+  process.exit(1);
+}
+
+// Defense-in-depth: `code` from the WATCHED table flows into a HogQL string
+// via direct interpolation. Today every value is a hardcoded canonical
+// constant, but if WATCHED ever becomes config-driven this is an injection
+// vector. Enforce the constant shape at startup so the assumption is
+// load-bearing in code, not just convention.
+const ERROR_CODE_RE = /^ERROR_[A-Z0-9_]+$/;
 
 // ── watched codes + per-code thresholds (#213) ─────────────────────────────
 //
@@ -70,6 +103,17 @@ const WATCHED = [
   { code: "ERROR_INTERNAL", threshold: 3 },
   { code: "ERROR_RATE_LIMITED", threshold: 50 },
 ];
+
+// Validate every entry against ERROR_CODE_RE before any code is
+// interpolated into a HogQL query. See the regex declaration above.
+for (const { code } of WATCHED) {
+  if (!ERROR_CODE_RE.test(code)) {
+    console.error(
+      `[api-watch] FATAL: WATCHED contains non-canonical code ${JSON.stringify(code)}; must match ${ERROR_CODE_RE}`,
+    );
+    process.exit(1);
+  }
+}
 
 // ── guard: secret not provisioned yet ──────────────────────────────────────
 
