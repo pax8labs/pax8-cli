@@ -74,6 +74,16 @@ const CORE_HOMEDIR_EXCEPTIONS = new Set<string>([
   // Test fixtures legitimately reference homedir() for assertions.
   "packages/core/src/auth/credential-store.test.ts",
   "packages/core/src/config/loader-extended.test.ts",
+  // token-cache-store.ts (#233): production code uses getConfigDir() for
+  // path resolution; the remaining os.homedir() calls are only inside the
+  // Windows ACL check (checkPermissionsWindows) which compares the cache
+  // file path against the user-profile directory — same pattern as
+  // credential-store.ts above.
+  "packages/core/src/auth/token-cache-store.ts",
+  // token-cache-store.test.ts (#233): mkdtemp's inside $HOME so the test
+  // tmpdir satisfies the home-anchored validateConfigDir guard (M-5).
+  // Same pattern as idempotency.test.ts in the CLI tree.
+  "packages/core/src/auth/token-cache-store.test.ts",
 ]);
 
 /**
@@ -93,6 +103,11 @@ const CORE_ALLOWED_RAW_WRITERS = new Set<string>([
   "packages/core/src/config/loader-extended.test.ts",
   "packages/core/src/config/loader.test.ts",
   "packages/core/src/telemetry/telemetry.test.ts",
+  // token-cache-store.test.ts (#233): seeds malformed JSON, wrong-mode,
+  // and ACL-blocker fixtures into a tmpdir to exercise the error paths
+  // (corrupt cache → return null, bad mode → security check fails, etc).
+  // The production write path goes through safeWriteFileSync.
+  "packages/core/src/auth/token-cache-store.test.ts",
 ]);
 
 /**

@@ -102,9 +102,19 @@ function sha256Hex(input: string): string {
  * `PAX8_API_BASE=https://api.pax8.com/v1` and `…/v1/` resolve to the same
  * cache partition. Mirrors the trailing-slash strip applied by `Pax8Client`
  * and `getTokenUrl` so the hash key matches whatever the caller passes.
+ *
+ * Implementation: char-by-char loop instead of `replace(/\/+$/, "")`.
+ * The regex form is anchored and linear in practice, but CodeQL's static
+ * analysis flags the greedy `+` quantifier as polynomial-regex on
+ * uncontrolled input (js/polynomial-redos). The loop avoids the false
+ * positive without changing semantics — same input → same output.
  */
 function normalizeApiBase(raw: string): string {
-  return raw.replace(/\/+$/, "");
+  let end = raw.length;
+  while (end > 0 && raw.charCodeAt(end - 1) === 47 /* '/' */) {
+    end--;
+  }
+  return raw.slice(0, end);
 }
 
 /**
