@@ -9,8 +9,25 @@ import { FileCache } from "../services/cache.js";
 import { validateBaseUrl } from "../security/validate-env.js";
 import { redactDebugBody } from "../security/redact-debug.js";
 
+/**
+ * Minimal interface the client needs from a token manager. Carries an
+ * optional `clearCache()` hook so a 401 response can invalidate any stale
+ * server-side token without coupling `Pax8Client` to the full
+ * `TokenManager` shape (keeps embedders that bring their own token source
+ * free to ignore the cache plumbing).
+ */
+export interface TokenManagerLike {
+  getToken(): Promise<string>;
+  /**
+   * Optional. When defined, called once on a 401 response before the
+   * request is retried — gives the token manager a chance to drop a
+   * server-side-revoked token from memory + disk (#233).
+   */
+  clearCache?(): void;
+}
+
 export interface Pax8ClientOptions {
-  tokenManager: { getToken(): Promise<string> };
+  tokenManager: TokenManagerLike;
   baseUrl?: string;
   timeout?: number;
   debug?: boolean;
@@ -307,7 +324,7 @@ export function buildCacheKey(input: BuildCacheKeyInput): string {
 }
 
 export class Pax8Client {
-  private readonly tokenManager: { getToken(): Promise<string> };
+  private readonly tokenManager: TokenManagerLike;
   private readonly baseUrl: string;
   private readonly apiBaseOverrides: Record<string, string> | undefined;
   private readonly timeout: number;
@@ -476,6 +493,14 @@ export class Pax8Client {
 
     let lastError: Error | undefined;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    // #233: track whether we've already retried after a 401-driven cache
+    // invalidation. The on-disk token cache (TokenManager) lets a stale
+    // token live up to 24 h; a server-side revocation would otherwise hang
+    // the CLI for the rest of that lifetime. On the first 401 we clear the
+    // cached token and retry the request once with a freshly-minted token.
+    // Single retry only — a real 401 (revoked creds, wrong scopes) must
+    // still surface to the caller, not loop forever.
+    let retriedAfterAuthClear = false;
 
     try {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -507,6 +532,51 @@ export class Pax8Client {
             }
             const retryAfter = parseRetryAfter(response) ?? (attempt + 1);
             await sleep(retryAfter * 1000);
+            continue;
+          }
+
+          // #233 — single-shot retry on 401. The on-disk token cache (see
+          // TokenManager) lets a stale token live up to 24 h; without this
+          // guard a server-side revocation would hang the CLI for the rest
+          // of that lifetime. We clear the cache (memory + disk) and
+          // re-fetch a fresh token, then retry the request *once* with the
+          // new Authorization header. A second 401 is treated as a real
+          // auth failure (revoked creds, wrong scopes) and surfaces to the
+          // caller via the standard !response.ok branch below.
+          //
+          // Safe for non-idempotent methods (POST /orders, etc.) because a
+          // 401 means the server *rejected* the request before processing —
+          // same logic as 429. Retry can't produce a duplicate side effect.
+          // The `attempt < MAX_RETRIES` guard prevents a final-slot 401
+          // from setting `retriedAfterAuthClear = true` and `continue`-ing
+          // the loop without ever actually running the retried request:
+          // the next iteration condition fails and we fall through to the
+          // generic `throw lastError ?? new Error("Unexpected error")` at
+          // the bottom, surfacing a code-less Error that violates the
+          // "errors carry codes" contract (CLAUDE.md). Reachable when
+          // earlier attempts were burned by 429s (e.g. 0/1/2 = 429,
+          // attempt 3 = 401). Without the guard the user sees a bare
+          // Error("Unexpected error") instead of a structured
+          // ApiError(401). With the guard, a terminal 401 falls through
+          // to the `!response.ok` branch below and surfaces correctly.
+          if (
+            response.status === 401 &&
+            !retriedAfterAuthClear &&
+            attempt < MAX_RETRIES
+          ) {
+            clearTimeout(timeoutId);
+            retriedAfterAuthClear = true;
+            // Drain the response body so the underlying socket can be reused.
+            // Ignore parse errors — we don't surface the error body on this
+            // path (the retry might succeed; if it doesn't, the second 401
+            // is handled by the generic !response.ok branch below).
+            await safeJson(response);
+            this.tokenManager.clearCache?.();
+            const freshToken = await this.tokenManager.getToken();
+            headers.Authorization = `Bearer ${freshToken}`;
+            // The retry consumes one of the MAX_RETRIES transient slots.
+            // With MAX_RETRIES=3 that leaves plenty of headroom for a
+            // genuine network blip on the retried request.
             continue;
           }
 

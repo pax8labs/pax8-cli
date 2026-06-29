@@ -207,6 +207,8 @@ export type {
 export { TokenManager } from "./auth/token-manager.js";
 export { CredentialStore } from "./auth/credential-store.js";
 export type { Credentials, PermissionCheckResult } from "./auth/credential-store.js";
+export { TokenCacheStore } from "./auth/token-cache-store.js";
+export type { TokenCacheFile, TokenCacheLookupKey } from "./auth/token-cache-store.js";
 
 // ─── Services: computed business logic over the API ─────────────────────────
 
