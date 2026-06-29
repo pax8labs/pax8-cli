@@ -221,4 +221,114 @@ describe("Pax8Client — extended coverage", () => {
 
     await expect(client.get("/bad")).rejects.toThrow(ApiError);
   });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // #233 — 401 recovery: clear stale token cache and retry once.
+  // ───────────────────────────────────────────────────────────────────────
+
+  describe("401 cache-clear retry (#233)", () => {
+    function jsonResponse(status: number, body: unknown) {
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        statusText: status === 200 ? "OK" : "Unauthorized",
+        headers: new Headers(),
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      };
+    }
+
+    it("clears the token cache and retries once on a 401, then succeeds", async () => {
+      const getToken = vi
+        .fn()
+        .mockResolvedValueOnce("stale-token")
+        .mockResolvedValueOnce("fresh-token");
+      const clearCache = vi.fn();
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(401, { error: "token revoked" }))
+        .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+      globalThis.fetch = fetchFn as unknown as typeof fetch;
+
+      const client = new Pax8Client({
+        tokenManager: { getToken, clearCache },
+        baseUrl: "https://api.pax8.com/v1",
+        cacheTtlMs: 0,
+      });
+
+      const result = await client.get<{ ok: boolean }>("/companies");
+      expect(result).toEqual({ ok: true });
+      expect(clearCache).toHaveBeenCalledOnce();
+      expect(getToken).toHaveBeenCalledTimes(2);
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+      // The retry must carry the fresh Authorization header.
+      const secondCallInit = fetchFn.mock.calls[1][1] as RequestInit;
+      const secondHeaders = secondCallInit.headers as Record<string, string>;
+      expect(secondHeaders.Authorization).toBe("Bearer fresh-token");
+    });
+
+    it("does not retry a second time when the retry also returns 401", async () => {
+      const getToken = vi.fn().mockResolvedValue("any-token");
+      const clearCache = vi.fn();
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValue(jsonResponse(401, { error: "still unauthorized" }));
+      globalThis.fetch = fetchFn as unknown as typeof fetch;
+
+      const client = new Pax8Client({
+        tokenManager: { getToken, clearCache },
+        baseUrl: "https://api.pax8.com/v1",
+        cacheTtlMs: 0,
+      });
+
+      await expect(client.get("/companies")).rejects.toThrow(ApiError);
+      // One cache clear + exactly two fetches (initial + single retry).
+      expect(clearCache).toHaveBeenCalledOnce();
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not invoke clearCache when the token manager lacks the hook", async () => {
+      // Older / embedder-provided token managers may not implement
+      // clearCache. The optional-chaining call must not throw and the
+      // retry must still happen.
+      const getToken = vi
+        .fn()
+        .mockResolvedValueOnce("first")
+        .mockResolvedValueOnce("second");
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(401, { error: "revoked" }))
+        .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+      globalThis.fetch = fetchFn as unknown as typeof fetch;
+
+      const client = new Pax8Client({
+        tokenManager: { getToken },
+        baseUrl: "https://api.pax8.com/v1",
+        cacheTtlMs: 0,
+      });
+
+      await expect(client.get("/x")).resolves.toEqual({ ok: true });
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not enter the retry loop on a 403 (only 401 triggers cache clear)", async () => {
+      // Pin the boundary: 403 (forbidden, not unauthorized) must NOT
+      // clear the token cache — the token is valid, the user just
+      // doesn't have access to this resource.
+      const getToken = vi.fn().mockResolvedValue("token");
+      const clearCache = vi.fn();
+      const fetchFn = vi.fn().mockResolvedValue(jsonResponse(403, { error: "forbidden" }));
+      globalThis.fetch = fetchFn as unknown as typeof fetch;
+
+      const client = new Pax8Client({
+        tokenManager: { getToken, clearCache },
+        baseUrl: "https://api.pax8.com/v1",
+        cacheTtlMs: 0,
+      });
+
+      await expect(client.get("/x")).rejects.toThrow(ApiError);
+      expect(clearCache).not.toHaveBeenCalled();
+      expect(fetchFn).toHaveBeenCalledOnce();
+    });
+  });
 });

@@ -6,7 +6,7 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { replCmd } from "../lib/confirm.js";
-import { CredentialStore, getConfigDir, getDefaultBaseUrl } from "@pax8/core";
+import { CredentialStore, TokenCacheStore, getConfigDir, getDefaultBaseUrl } from "@pax8/core";
 import {
   getOutputFormat,
   resolveDemoModeAsync,
@@ -318,6 +318,20 @@ async function checkCredentialPermissions(): Promise<CheckResult> {
   };
 }
 
+// #233 — the OAuth access-token cache lives next to credentials.json under
+// the same config dir with the same 0o600 / icacls hardening. Surface the
+// same kind of permission probe here so a loosened-perms cache file gets
+// flagged the same way a loosened credentials file would.
+async function checkTokenCachePermissions(): Promise<CheckResult> {
+  const store = new TokenCacheStore();
+  const result = await store.checkPermissions();
+  return {
+    name: "Token cache file permissions",
+    passed: result.secure,
+    detail: result.detail,
+  };
+}
+
 async function checkTelemetry(): Promise<CheckResult> {
   try {
     const { loadConfig } = await import("@pax8/core");
@@ -418,19 +432,20 @@ Examples:
     }
 
     // Run all checks in parallel for speed
-    const [nodeV, apiBase, configF, authC, credPerms, tokenC, apiCs, cacheC, telC, mcpC] = await Promise.all([
+    const [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, apiCs, cacheC, telC, mcpC] = await Promise.all([
       checkNodeVersion(),
       checkApiBase(),
       checkConfigFile(),
       checkAuth(),
       checkCredentialPermissions(),
+      checkTokenCachePermissions(),
       checkTokenFetch(),
       checkApiHealth(),
       checkCacheDir(),
       checkTelemetry(),
       checkMcp(),
     ]);
-    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenC, ...apiCs, cacheC, telC, mcpC];
+    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, ...apiCs, cacheC, telC, mcpC];
 
     let allPassed = true;
     for (const check of checks) {

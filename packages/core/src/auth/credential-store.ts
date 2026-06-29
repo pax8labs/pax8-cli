@@ -9,6 +9,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { safeWriteFileSync } from "../security/safe-write.js";
 import { getConfigDir } from "../config/loader.js";
+import { TokenCacheStore } from "./token-cache-store.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -115,7 +116,12 @@ export class CredentialStore {
   }
 
   /**
-   * Removes the credentials file.
+   * Removes the credentials file. Also wipes the on-disk OAuth token cache
+   * (#233) — leaving a stale token paired with cleared credentials would let
+   * a logged-out session keep hitting the API until the token's natural
+   * 24 h expiry. The token-cache clear is best-effort: a permission error
+   * on the cache file must not block the credential removal, since the
+   * credentials themselves are the higher-value secret.
    */
   async clearCredentials(): Promise<void> {
     try {
@@ -125,6 +131,12 @@ export class CredentialStore {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
         throw err;
       }
+    }
+    try {
+      new TokenCacheStore().clear();
+    } catch {
+      // Best-effort. The credentials are gone; a leftover token cache will
+      // be invalidated by `clientIdHash` mismatch on the next `auth login`.
     }
   }
 
