@@ -264,9 +264,9 @@ For **batched writes** where the partner has many similar candidates (e.g. `pax8
 
 1. Show a `multiselect` picker (space toggles, `a` toggles all, enter submits) listing every candidate with its dollar / seat impact.
 2. After the user submits, summarize the selected subset (`About to place 5 orders for +$2,400/mo. Proceed?`) and gate the whole batch on a single `confirm` prompt.
-3. SIGINT during the picker exits 130 cleanly (the prompt's `onCancel` should set a local flag the action handler checks before exiting — don't throw from inside the multiselect callback).
+3. SIGINT during the picker exits 130 cleanly. Use the shared `ask()` wrapper in `packages/cli/src/lib/prompts.ts` — its `onCancel` writes a trailing newline to stderr and calls `process.exit(130)` directly. The action handler does NOT regain control after cancellation, so any cleanup that must run before exit belongs in a `SIGINT` handler registered earlier in the command (see `lib/signals.ts`), not in code that runs after `ask()` returns.
 
-The split between `lib/confirm.ts` (readline-based, used everywhere) and the vendored `prompts` package (used at `auth/login.ts` for password input + `recommendations/act.ts` for multi-select) is intentional — `prompts` brings password masking and multi-line picker UI that readline alone doesn't.
+The split between `lib/confirm.ts` (readline-based, used everywhere) and the vendored `prompts` package (used at `auth/login.ts` for password input + `recommendations/act.ts` for multi-select, both via `lib/prompts.ts:ask`) is intentional — `prompts` brings password masking and multi-line picker UI that readline alone doesn't. Always go through `ask()` rather than calling `prompts()` directly so the SIGINT contract stays uniform across callers.
 
 ### Simulators are reads, not writes
 
