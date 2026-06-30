@@ -54,9 +54,18 @@ export async function confirm(
 }
 
 /**
- * Confirm with an option to change a numeric value (e.g. quantity).
+ * Confirm with an option to edit a numeric value (e.g. quantity).
  * Returns the confirmed value, or null if cancelled.
- * [y] confirms default, [c] prompts for new value, [n] cancels.
+ *
+ * Prompt is `[y/n/e]` where the letters mean:
+ *   y — accept the current value (also: empty enter = accept)
+ *   n — reject (returns null) — readable as "no" or "cancel"
+ *   e — edit the value, then re-confirm
+ *
+ * The historical letter was `c` (for "change"), which read as "cancel"
+ * to many partners and produced an inverted-intent gotcha (typing what
+ * felt like "abort" actually entered the edit flow). `e` removes the
+ * ambiguity — same shape, clearer meaning.
  */
 export async function confirmWithChange(
   message: string,
@@ -65,10 +74,10 @@ export async function confirmWithChange(
 ): Promise<number | null> {
   if (shouldAutoConfirm()) return currentValue;
 
-  const answer = await prompt(`  ${message} [y/n/c] `);
+  const answer = await prompt(`  ${message} [y/n/e] `);
   const a = answer.toLowerCase();
 
-  if (a === "c" || a === "change") {
+  if (a === "e" || a === "edit") {
     const label = options?.label ?? "Quantity";
     const newAnswer = await prompt(`  ${label}? [${currentValue}] `);
     if (newAnswer === "") return currentValue;

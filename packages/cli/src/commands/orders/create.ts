@@ -631,7 +631,7 @@ Examples:
       process.stderr.write("\n");
 
       // ── Confirmation ──
-      // Single-line, non-dry-run keeps the existing [y/n/c] flow that lets
+      // Single-line, non-dry-run keeps the existing [y/n/e] flow that lets
       // users edit the quantity inline. Multi-line and dry-run use a simple
       // [y/n] — there's no single quantity to edit in multi-line, and a
       // dry-run wants to lock the input as-is so the validation reflects
