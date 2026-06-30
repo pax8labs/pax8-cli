@@ -260,6 +260,18 @@ Three helpers in `packages/cli/src/lib/confirm.ts`:
 | `confirmWithChange(msg, currentValue, {label})` | `[y/n/c]` — lets the user edit a numeric value (e.g. quantity) inline before confirming. |
 | `confirmDestructive(msg, keyword)` | User must type an exact keyword. Reserved for cancellations and deletes. |
 
+For **batched writes** where the partner has many similar candidates (e.g. `pax8 recommendations act` walking high-priority recs), use the `prompts` multi-select + single batch confirm rather than N per-item `confirm()` prompts:
+
+1. Show a `multiselect` picker (space toggles, `a` toggles all, enter submits) listing every candidate with its dollar / seat impact.
+2. After the user submits, summarize the selected subset (`About to place 5 orders for +$2,400/mo. Proceed?`) and gate the whole batch on a single `confirm` prompt.
+3. SIGINT during the picker exits 130 cleanly (the prompt's `onCancel` should set a local flag the action handler checks before exiting — don't throw from inside the multiselect callback).
+
+The split between `lib/confirm.ts` (readline-based, used everywhere) and the vendored `prompts` package (used at `auth/login.ts` for password input + `recommendations/act.ts` for multi-select) is intentional — `prompts` brings password masking and multi-line picker UI that readline alone doesn't.
+
+### Simulators are reads, not writes
+
+`pax8 cost sim` is the canonical "what-if" surface: same preview block as a write (current → proposed deltas in plain English with concrete numbers) but **no prompt**, **no `--yes`**, **no idempotency key**. Use the simulator pattern when the partner wants to model an order without committing to it. The naming convention is `<resource> sim` (e.g. future `subscriptions sim`); the output mirrors the write's preview format so the partner can move directly from `cost sim` to `orders create` without re-reading the numbers.
+
 Always declare the `-y, --yes` option on commands that prompt:
 
 ```ts
@@ -320,6 +332,17 @@ When the user is at a terminal, we can be more helpful. When they're piping, we 
 - **Hints** like `Add --coverage to see uplift potential` go on stderr in dim text, only in TTY mode. Never in `--json`, `--csv`, or `--quiet`.
 
 If a feature would corrupt a JSON pipe, it doesn't ship without a TTY guard.
+
+### Guided walkthroughs
+
+Commands that gather information across multiple steps before producing an artifact — `pax8 report-bug` is the canonical example — use a guided walkthrough rather than a single big prompt. Pattern shape:
+
+1. Read whatever state is already on disk (e.g. `<configDir>/last-error.json` for `report-bug`).
+2. Show what will be included, redacted-as-shipped, before asking. Partner needs to see the bytes that would go to GitHub before consenting.
+3. Single `confirm()` at the end — never multi-stage approval. If the partner says no, exit cleanly without sending.
+4. Honor `--print` / `--copy` style flags to dump the artifact locally instead of opening a browser, for offline / air-gapped use.
+
+`report-bug`'s `redactor.ts` strips bearer tokens, client IDs, file paths inside `$HOME`, and any field matching the credential regex. The redactor is the only piece that touches partner-supplied free text — keep it under tight test coverage and never relax the patterns without a security review.
 
 ---
 
