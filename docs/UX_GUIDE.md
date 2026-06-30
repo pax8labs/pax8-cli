@@ -257,7 +257,7 @@ Three helpers in `packages/cli/src/lib/confirm.ts`:
 | Helper | Use for |
 |---|---|
 | `confirm(msg, {default})` | Standard `[y/n]` — most writes. |
-| `confirmWithChange(msg, currentValue, {label})` | `[y/n/c]` — lets the user edit a numeric value (e.g. quantity) inline before confirming. |
+| `confirmWithChange(msg, currentValue, {label})` | `[y/n/e]` — `e` opens an inline edit for a numeric value (e.g. quantity) before confirming. The letter is `e` (edit), not `c` — a `c` reads as "cancel" to most partners and inverts the meaning. |
 | `confirmDestructive(msg, keyword)` | User must type an exact keyword. Reserved for cancellations and deletes. |
 
 For **batched writes** where the partner has many similar candidates (e.g. `pax8 recommendations act` walking high-priority recs), use the `prompts` multi-select + single batch confirm rather than N per-item `confirm()` prompts:
@@ -285,7 +285,7 @@ Show the user what they're about to do, in plain English with concrete numbers, 
     Microsoft 365 Business Premium × 25 seats
     $22.00/seat/mo · $550.00/mo · annual billing
 
-  Place this order? [y/n/c]
+  Place this order? [y/n/e]
 ```
 
 ---
