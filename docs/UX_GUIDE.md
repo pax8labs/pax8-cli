@@ -340,7 +340,7 @@ Commands that gather information across multiple steps before producing an artif
 1. Read whatever state is already on disk (e.g. `<configDir>/last-error.json` for `report-bug`).
 2. Show what will be included, redacted-as-shipped, before asking. Partner needs to see the bytes that would go to GitHub before consenting.
 3. Single `confirm()` at the end — never multi-stage approval. If the partner says no, exit cleanly without sending.
-4. Honor `--print` / `--copy` style flags to dump the artifact locally instead of opening a browser, for offline / air-gapped use.
+4. Honor `--print` (or equivalent) to dump the artifact locally instead of opening a browser, for offline / air-gapped use.
 
 `report-bug`'s `redactor.ts` strips bearer tokens, client IDs, file paths inside `$HOME`, and any field matching the credential regex. The redactor is the only piece that touches partner-supplied free text — keep it under tight test coverage and never relax the patterns without a security review.
 
