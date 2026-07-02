@@ -13,6 +13,7 @@ function makeRec(overrides: Partial<Recommendation> = {}): Recommendation {
     priority: "high",
     title: "Add Microsoft Defender for Endpoint",
     reason: "No endpoint protection detected",
+    rationaleSnippet: "no endpoint protection",
     suggestedProducts: ["Microsoft Defender for Endpoint P2"],
     orderCommand: null,
     productAvailable: true,

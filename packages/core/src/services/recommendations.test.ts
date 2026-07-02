@@ -230,6 +230,55 @@ describe("getRecommendations", () => {
     expect(report.recommendations.some((r) => r.opportunityType === "Upsell")).toBe(true);
   });
 
+  // #655 / UXR F5: every rec carries a short "at-a-glance why" for the
+  // `Rationale` column in `recommendations list`. Customer-specific
+  // quantitative anchor for seat gaps (a ratio), categorical form for
+  // cross-sell rules and zero-active-subs.
+  it("populates rationaleSnippet on every recommendation across all emit paths", () => {
+    const subs = [
+      makeSub({ companyId: "c1", companyName: "Has Productivity", quantity: 100, price: 22 }),
+      makeSub({
+        companyId: "c1", companyName: "Has Productivity",
+        productId: "p2", productName: "Microsoft 365 Business Basic [New Commerce Experience]",
+        quantity: 20, price: 6,
+      }),
+    ];
+    const companies = [
+      { id: "c1", name: "Has Productivity" },
+      { id: "c2", name: "Ghost Co" },
+    ];
+    const report = getRecommendations(subs, undefined, companies);
+
+    // Every rec has a non-empty snippet that fits the table budget.
+    for (const rec of report.recommendations) {
+      expect(rec.rationaleSnippet).toBeTruthy();
+      expect(rec.rationaleSnippet.length).toBeLessThanOrEqual(40);
+    }
+
+    // Seat-gap snippets are a quantity ratio ("20/100 productivity").
+    const seatGaps = report.recommendations.filter((r) => r.type === "seat_gap");
+    expect(seatGaps.length).toBeGreaterThan(0);
+    for (const rec of seatGaps) {
+      expect(rec.rationaleSnippet).toMatch(/^\d+\/\d+ /);
+    }
+
+    // Cross-sell rule snippets are categorical ("no backup", "no security", …).
+    const crossSells = report.recommendations.filter(
+      (r) => r.type === "cross_sell" && r.companyId === "c1",
+    );
+    expect(crossSells.length).toBeGreaterThan(0);
+    for (const rec of crossSells) {
+      expect(rec.rationaleSnippet).toMatch(/^no /);
+    }
+
+    // Zero-active-subs path uses the fixed "no active subs" snippet.
+    const zeroSub = report.recommendations.find(
+      (r) => r.companyId === "c2" && r.title.includes("No active subscriptions"),
+    );
+    expect(zeroSub).toBeDefined();
+    expect(zeroSub!.rationaleSnippet).toBe("no active subs");
+  });
+
   // orderCommand is the agent's handle on a recommendation — CLAUDE.md and
   // skill.md document "extract orderCommand from --json and run it." That
   // makes the agent the unintentional executor of any value we interpolate

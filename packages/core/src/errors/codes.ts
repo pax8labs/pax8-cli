@@ -33,6 +33,13 @@ export const ERROR_QUOTE_LINE_ITEM_NOT_FOUND = "ERROR_QUOTE_LINE_ITEM_NOT_FOUND"
  * real failures.
  */
 export const ERROR_CANCELLED = "ERROR_CANCELLED";
+/**
+ * `pax8 recommendations why <n>` was passed an index that isn't in the
+ * cached results of the last `recommendations list` invocation — either
+ * out-of-range, or the cache file doesn't exist. Recovery hint tells the
+ * user to run `recommendations list` first.
+ */
+export const ERROR_RECOMMENDATION_NOT_FOUND = "ERROR_RECOMMENDATION_NOT_FOUND";
 
 /**
  * Union of all known Pax8 CLI error codes. Use this for exhaustive switch
@@ -52,4 +59,5 @@ export type Pax8ErrorCode =
   | typeof ERROR_NOT_FOUND
   | typeof ERROR_INTERNAL
   | typeof ERROR_QUOTE_LINE_ITEM_NOT_FOUND
-  | typeof ERROR_CANCELLED;
+  | typeof ERROR_CANCELLED
+  | typeof ERROR_RECOMMENDATION_NOT_FOUND;

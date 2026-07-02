@@ -70,6 +70,7 @@ export {
   ERROR_INTERNAL,
   ERROR_QUOTE_LINE_ITEM_NOT_FOUND,
   ERROR_CANCELLED,
+  ERROR_RECOMMENDATION_NOT_FOUND,
 } from "./errors/codes.js";
 export type { Pax8ErrorCode } from "./errors/codes.js";
 

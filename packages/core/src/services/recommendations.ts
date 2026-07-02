@@ -174,6 +174,22 @@ export const ALL_CATEGORIES: ProductCategory[] = [
   "cloud_infrastructure",
 ];
 
+/**
+ * Short human labels for each product category, used to build the
+ * `rationaleSnippet` on every Recommendation. Kept intentionally short
+ * (≤ ~20 chars) so the snippet fits in the `recommendations list`
+ * table column between the title and the uplift. #655 / UXR F5.
+ */
+const CATEGORY_SHORT_LABEL: Record<ProductCategory, string> = {
+  productivity: "productivity",
+  email: "email",
+  security: "security",
+  endpoint_protection: "endpoint protection",
+  identity: "identity/MFA",
+  backup: "backup",
+  cloud_infrastructure: "cloud",
+};
+
 export function categorizeProduct(productName: string): ProductCategory[] {
   const categories: ProductCategory[] = [];
   for (const rule of CATEGORY_RULES) {
@@ -366,6 +382,15 @@ export interface Recommendation {
   priority: "high" | "medium" | "low";
   title: string;
   reason: string;
+  /**
+   * Short "at-a-glance why" — customer-specific quantitative anchor when
+   * available (e.g. `"30/150 backup"`), categorical when not
+   * (e.g. `"no backup"`, `"no active subs"`). Kept ≤ ~20 chars so it
+   * fits in the `recommendations list` table between the title and the
+   * uplift column. #655 / UXR F5. See also the full `reason` above for
+   * the paragraph-length explanation surfaced by `recommendations why`.
+   */
+  rationaleSnippet: string;
   suggestedProducts: string[];
   /**
    * The exact CLI command to execute this recommendation.
@@ -724,6 +749,7 @@ export function getRecommendations(
           priority: effectivePriority,
           title,
           reason: rule.reason,
+          rationaleSnippet: `no ${CATEGORY_SHORT_LABEL[rule.butMissing]}`,
           suggestedProducts: [resolvedProductName, ...rule.suggestedProducts.slice(1)],
           orderCommand,
           orderArgs,
@@ -772,6 +798,7 @@ export function getRecommendations(
         // heuristic is cross-product mismatch coverage. See #298.
         title: `${gap.missingSeats} mismatched seats: ${gap.gapProduct} (${gap.gapQuantity}/${gap.baseQuantity})`,
         reason: `${gap.baseProduct} covers ${gap.baseQuantity} seats but ${gap.gapProduct} only covers ${gap.gapQuantity}. ${gap.missingSeats} seats are unprotected.`,
+        rationaleSnippet: `${gap.gapQuantity}/${gap.baseQuantity} ${CATEGORY_SHORT_LABEL[gap.category]}`,
         suggestedProducts: [gap.gapProduct],
         orderCommand,
         orderArgs,
@@ -805,6 +832,7 @@ export function getRecommendations(
           priority: "high",
           title: `No active subscriptions for ${company.name}`,
           reason: "This customer has no active subscriptions. Consider reaching out to discuss their needs.",
+          rationaleSnippet: "no active subs",
           suggestedProducts: [],
           orderCommand: null,
           orderArgs: null,
