@@ -6,6 +6,7 @@ import { recommendationsListCommand } from "./list.js";
 import { recommendationsActCommand } from "./act.js";
 import { recommendationsUpsellCommand } from "./upsell.js";
 import { recommendationsWhyCommand } from "./why.js";
+import { recommendationsEmailCommand } from "./email.js";
 
 export function registerRecommendationsCommands(program: Command): void {
   const recommendations = new Command("recommendations")
@@ -16,6 +17,7 @@ export function registerRecommendationsCommands(program: Command): void {
   recommendations.addCommand(recommendationsActCommand);
   recommendations.addCommand(recommendationsUpsellCommand);
   recommendations.addCommand(recommendationsWhyCommand);
+  recommendations.addCommand(recommendationsEmailCommand);
 
   program.addCommand(recommendations);
 }

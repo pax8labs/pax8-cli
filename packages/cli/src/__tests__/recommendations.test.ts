@@ -543,6 +543,137 @@ describe("pax8 recommendations", () => {
         expect(result.stdout).toContain("recommendations why");
       });
     });
+
+    // UXR F3 (#658): `pax8 recommendations email <n>` drafts a customer-
+    // ready email from the cached recommendation. The CLI must NOT send —
+    // it emits either a `mailto:` URL, structured JSON, or a human-readable
+    // draft. Same cache-based drill-in as `recommendations why`.
+    describe("recommendations email", () => {
+      let tmpConfigDir: string;
+
+      beforeEach(async () => {
+        tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-recs-email-"));
+      });
+
+      afterEach(async () => {
+        await fs.rm(tmpConfigDir, { recursive: true, force: true });
+      });
+
+      it("default text output shows subject + body + mailto hand-off hint", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        expect(result.stdout).toContain("Subject:");
+        expect(result.stdout).toMatch(/Hi\s+\w/);
+        // Next-step hints on stderr point at both --open and --mailto.
+        expect(result.stderr).toContain("--open");
+        expect(result.stderr).toContain("--mailto");
+        // The raw mailto: URL is surfaced for copy-paste.
+        expect(result.stderr).toContain("mailto:");
+      });
+
+      it("--mailto prints the URL and nothing else on stdout", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1", "--mailto"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        expect(result.stdout.trim().startsWith("mailto:")).toBe(true);
+        // Single-line — pipeable to `open`, `pbcopy`, etc.
+        expect(result.stdout.trim().split("\n").length).toBe(1);
+      });
+
+      it("--to <email> populates the mailto URL", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1", "--to", "alice@example.com", "--mailto"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        // encodeURIComponent turns @ into %40, so both spellings are
+        // acceptable. Match either form.
+        expect(result.stdout).toMatch(/^mailto:alice(@|%40)example\.com\?/);
+      });
+
+      it("--json envelope carries draft.subject / body / mailto / reason", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const data = JSON.parse(result.stdout);
+        expect(data.draft).toBeDefined();
+        expect(typeof data.draft.subject).toBe("string");
+        expect(typeof data.draft.body).toBe("string");
+        expect(typeof data.draft.mailto).toBe("string");
+        expect(data.draft.mailto.startsWith("mailto:")).toBe(true);
+        expect(typeof data.draft.reason).toBe("string");
+        expect(Array.isArray(data.draft.product_summary)).toBe(true);
+      });
+
+      it("percent-encodes special characters in subject and body", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1", "--mailto"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const url = result.stdout.trim();
+        // Newlines in the body must be percent-encoded so the mailto: URL
+        // survives a click across every mail client.
+        expect(url).toContain("%0A");
+        // Raw newlines and unencoded ampersands would break mailto handoff.
+        expect(url).not.toMatch(/\n/);
+      });
+
+      it("out-of-range index exits 1 with ERROR_RECOMMENDATION_NOT_FOUND", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "email", "999", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        expect(start).toBeGreaterThanOrEqual(0);
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+      });
+
+      it("missing cache exits 1 with a hint to run `recommendations list` first", async () => {
+        const result = await runCliExpectFailure(
+          ["recommendations", "email", "1"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const combined = result.stdout + result.stderr;
+        expect(combined).toContain("No cached recommendations");
+        expect(combined).toContain("recommendations list");
+      });
+
+      it("--help shows the command and its flags", async () => {
+        const result = await runCliExpectSuccess(["recommendations", "email", "--help"]);
+        expect(result.stdout).toContain("email");
+        expect(result.stdout).toContain("--mailto");
+        expect(result.stdout).toContain("--open");
+        expect(result.stdout).toContain("--to");
+      });
+    });
   });
 
   describe("recommendations upsell", () => {
