@@ -40,10 +40,12 @@ interface CachedRec {
   productAvailable?: boolean;
 }
 
-interface CachedEntry {
+export interface CachedEntry {
   key: string;
   rec: CachedRec;
 }
+
+export type { CachedRec };
 
 // Which glossary terms each rec type wants to point at. Kept minimal;
 // the drill-down output shows them as `pax8 explain <term>` hints so
@@ -53,7 +55,7 @@ const SEE_ALSO_BY_TYPE: Record<"seat_gap" | "cross_sell", string[]> = {
   cross_sell: ["cross-sell", "mrr-uplift", "opportunity-type"],
 };
 
-function loadCache(): CachedEntry[] {
+export function loadCache(): CachedEntry[] {
   const file = join(getConfigDir(), "pending-actions.json");
   if (!existsSync(file)) {
     throw new CliError(
