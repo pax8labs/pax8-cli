@@ -63,6 +63,25 @@ export function formatCurrency(amount: number, currencyCode: string = "USD"): st
   }
 }
 
+/**
+ * Null-safe wrapper around `formatCurrency`. Callers that receive an
+ * optional price from the wire should use this rather than `?? 0`,
+ * which silently misrenders \"missing data\" as \"\$0.00\" — the confusion
+ * UXR F9 / #657 flagged.
+ *
+ * When the amount is null / undefined / NaN, returns a dim em-dash so
+ * a missing value is visually distinguishable from a real zero.
+ * When the amount is a real number (including 0), formats it the same
+ * way `formatCurrency` does.
+ */
+export function formatCurrencyNullable(
+  amount: number | null | undefined,
+  currencyCode: string = "USD",
+): string {
+  if (amount == null || Number.isNaN(amount)) return chalk.dim("—");
+  return formatCurrency(amount, currencyCode);
+}
+
 export function formatQuantity(n: number): string {
   return `${n} seat${n !== 1 ? "s" : ""}`;
 }

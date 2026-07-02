@@ -10,6 +10,7 @@ import { handleCommandError } from "../../lib/errors.js";
 import {
   formatStatus,
   formatCurrency,
+  formatCurrencyNullable,
   formatDate,
   formatQuantity,
 } from "../../lib/formatters.js";
@@ -86,16 +87,23 @@ provisioning detail.`
       // case stays unchanged; non-USD partners get e.g. `$1,234.56 EUR`.
       // Surfaced in #273 (fixes #6).
       const currencyCode = (sub as { currencyCode?: string }).currencyCode ?? "USD";
-      const priceFormatted = currencyCode === "USD"
-        ? formatCurrency(sub.price ?? 0)
-        : `${formatCurrency(sub.price ?? 0)} ${currencyCode}`;
+      // #657 / UXR F9: use the null-aware helper so a missing `price`
+      // renders as `—` instead of the ambiguous `$0.00`. Label renamed
+      // to `Partner Price` to match the wire semantic (what the partner
+      // pays Pax8) and the `products show --pricing` column.
+      const priceFormatted =
+        sub.price == null
+          ? formatCurrencyNullable(null)
+          : currencyCode === "USD"
+            ? formatCurrency(sub.price)
+            : `${formatCurrency(sub.price)} ${currencyCode}`;
       const fields: [string, string][] = [
         ["ID", sub.id],
         ["Company", sub.companyName ?? sub.companyId],
         ["Product", sub.productName ?? ""],
         ["Quantity", formatQuantity(sub.quantity)],
         ["Status", formatStatus(sub.status)],
-        ["Price", priceFormatted],
+        ["Partner Price", priceFormatted],
         ["Billing Term", sub.billingTerm ?? ""],
         ["Start Date", formatDate(sub.startDate)],
         // #385: read canonical `createdAt`. Legacy `createdDate` is still

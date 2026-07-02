@@ -25,7 +25,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import {
   formatStatus,
-  formatCurrency,
+  formatCurrencyNullable,
   formatCompanyName,
 } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
@@ -77,15 +77,20 @@ const columns: Column[] = [
   { key: "billingTerm", header: "Term" },
   {
     key: "price",
-    header: "Price",
+    // #657 / UXR F9: partners couldn't tell whether the `Price` column
+    // meant their cost or the customer's cost. Rename to `Partner Price`
+    // (what the partner pays Pax8) so the semantic is unambiguous at a
+    // glance, matching the label already used in `products show --pricing`.
+    header: "Partner Price",
     // Thread the row's `currencyCode` through `formatCurrency` so the
     // rendered symbol matches the subscription's actual currency (#472).
     // Previously this layered a `" EUR"` suffix on top of a hard-coded
     // `"$"`; now `formatCurrency` handles the unit directly via
-    // `Intl.NumberFormat`.
+    // `Intl.NumberFormat`. #657: use the null-aware helper so a missing
+    // upstream `price` renders as `—` instead of the ambiguous `$0.00`.
     format: (v, row) => {
       const code = String((row as { currencyCode?: string } | undefined)?.currencyCode ?? "USD");
-      return formatCurrency(Number(v), code);
+      return formatCurrencyNullable(v == null ? null : Number(v), code);
     },
   },
 ];

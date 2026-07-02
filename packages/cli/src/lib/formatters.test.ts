@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatTimeAgo,
   formatCurrency,
+  formatCurrencyNullable,
   formatQuantity,
   formatStatus,
   formatCompanyName,
@@ -125,6 +126,39 @@ describe("formatCurrency", () => {
     expect(result).toContain("42.50");
     // Could be "-€42.50" or "(€42.50)" depending on ICU defaults; both
     // contain '-' or '(' — just assert the magnitude renders correctly.
+  });
+});
+
+// #657 / UXR F9: `?? 0` fallbacks used to misrender missing prices as
+// `$0.00`, indistinguishable from a genuine zero. `formatCurrencyNullable`
+// draws that distinction — null/undefined/NaN render as a dim em-dash;
+// real zeros still render as `$0.00`.
+describe("formatCurrencyNullable", () => {
+  it("returns a dim em-dash for null", () => {
+    // chalk wraps the em-dash in ANSI dim codes; a substring match keeps
+    // the assertion robust to the exact escape sequence.
+    expect(formatCurrencyNullable(null)).toContain("—");
+  });
+
+  it("returns a dim em-dash for undefined", () => {
+    expect(formatCurrencyNullable(undefined)).toContain("—");
+  });
+
+  it("returns a dim em-dash for NaN", () => {
+    expect(formatCurrencyNullable(NaN)).toContain("—");
+  });
+
+  it("still renders a real zero as $0.00", () => {
+    expect(formatCurrencyNullable(0)).toBe("$0.00");
+  });
+
+  it("formats a real amount the same as formatCurrency", () => {
+    expect(formatCurrencyNullable(1234.56)).toBe(formatCurrency(1234.56));
+  });
+
+  it("honors the currencyCode parameter", () => {
+    const result = formatCurrencyNullable(42.5, "EUR");
+    expect(result).toContain("42.50");
   });
 });
 
