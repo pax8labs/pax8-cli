@@ -56,6 +56,9 @@ const columns: Column[] = [
   },
   { key: "type", header: "Type", format: (v) => String(v) === "seat_gap" ? "Seat Gap" : "Cross-sell" },
   { key: "title", header: "Recommendation" },
+  // #655 / UXR F5: at-a-glance "why" between the recommendation title and
+  // the uplift. Engine populates it; we just render.
+  { key: "rationaleSnippet", header: "Rationale", format: (v) => chalk.dim(String(v)) },
   {
     key: "estimatedMrrUplift",
     header: "Pax8 Cost+",
@@ -495,6 +498,15 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
                 orderCommand: r.orderCommand,
                 suggestedProducts: r.suggestedProducts,
                 targetSeats: r.targetSeats,
+                // #655 / UXR F5: persist rationale so `recommendations why <n>`
+                // can drill in without re-running the engine.
+                type: r.type,
+                priority: r.priority,
+                opportunityType: r.opportunityType,
+                reason: r.reason,
+                rationaleSnippet: r.rationaleSnippet,
+                estimatedMrrUplift: r.estimatedMrrUplift,
+                productAvailable: r.productAvailable,
               },
             })),
           ),
