@@ -169,6 +169,44 @@ describe("pax8 products", () => {
       expect(data.products).toEqual([]);
       expect(data.page.totalElements).toBe(0);
     });
+
+    // UXR F7 (#653): the human table doesn't expose product IDs, so the
+    // "Try next" picker must not surface a raw ID either — labels use the
+    // product name, and the numeric pick spawns `products show` silently.
+    // (The numbered menu itself only renders under a TTY — see
+    // `promptNextSteps` in lib/next-step.ts — so we assert on the "Try
+    // next:" header and the no-ID contract, not the numbered rows.)
+    it("table mode does not leak product IDs into the next-step affordance", async () => {
+      const result = await runCli(
+        ["products", "search", "microsoft"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      const combined = result.stdout + result.stderr;
+      expect(combined).not.toMatch(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+      );
+      expect(combined).not.toMatch(/pax8 products show prod-/);
+      expect(combined).toContain("Try next:");
+    });
+
+    // Contract: `--json` output shape is machine-facing and byte-stable —
+    // the human-surface fix above must not perturb it.
+    it("--json output shape is unchanged by the picker refactor", async () => {
+      const result = await runCliExpectSuccess([
+        "products",
+        "search",
+        "microsoft",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("products");
+      expect(data).toHaveProperty("page");
+      // Every product still carries its id — machine consumers rely on it.
+      for (const p of data.products) {
+        expect(p).toHaveProperty("id");
+        expect(p).toHaveProperty("name");
+      }
+    });
   });
 
   describe("products --help", () => {

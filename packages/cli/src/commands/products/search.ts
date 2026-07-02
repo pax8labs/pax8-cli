@@ -109,17 +109,21 @@ Examples:
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim(`\n  ${matches.length} products\n`));
         if (matches.length > 0) {
-          const first = matches[0] as Record<string, unknown>;
-          // Pickable next step: drill into the top match. `orders create`
-          // needs --company (a value the user has to choose) so it can't be
-          // pickable — surfaced as an affordance pointer below.
-          const steps: NextStep[] = [
-            {
-              key: "1",
-              label: `${chalk.cyan(replCmd(`pax8 products show ${String(first.id)}`))}  ${chalk.dim("view details & pricing")}`,
-              command: ["products", "show", String(first.id)],
-            },
-          ];
+          // UXR F7 (#653): participants couldn't identify the ID to pass to
+          // `pax8 products show` because the table doesn't expose it and the
+          // previous next-step only surfaced the top match's UUID. Now we
+          // pick with product NAME (which is in the table) and let the
+          // command spawn the id silently. Top 5 covers the choice space
+          // without turning into a second table.
+          const pickable = matches.slice(0, 5);
+          const steps: NextStep[] = pickable.map((p, i) => {
+            const rec = p as Record<string, unknown>;
+            return {
+              key: String(i + 1),
+              label: `${chalk.cyan(String(rec.name))}  ${chalk.dim("— view details & pricing")}`,
+              command: ["products", "show", String(rec.id)],
+            };
+          });
           process.stderr.write(chalk.dim("\n  Try next:\n"));
           await promptNextSteps(steps, { renderList: true });
           process.stderr.write(
