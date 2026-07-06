@@ -66,8 +66,38 @@ function loadCache(): CachedEntry[] {
       ERROR_RECOMMENDATION_NOT_FOUND,
     );
   }
-  const raw = readFileSync(file, "utf8");
-  return JSON.parse(raw) as CachedEntry[];
+  // TOCTOU window between existsSync and readFileSync, plus the file
+  // is self-produced but not guaranteed well-formed on disk (partial
+  // write, corrupted JSON, stale format). Convert every failure mode
+  // into the same structured recovery hint so we don't leak a raw
+  // SyntaxError / ENOENT past the CliError envelope.
+  let parsed: unknown;
+  try {
+    const raw = readFileSync(file, "utf8");
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new CliError(
+      `Cached recommendations at \`${file}\` are unreadable or corrupted.`,
+      [err instanceof Error ? err.message : String(err)],
+      [
+        `Re-run \`${replCmd("pax8 recommendations list")}\` to rewrite the cache, then re-run this command.`,
+      ],
+      undefined,
+      ERROR_RECOMMENDATION_NOT_FOUND,
+    );
+  }
+  if (!Array.isArray(parsed)) {
+    throw new CliError(
+      `Cached recommendations at \`${file}\` are in an unexpected format.`,
+      [`Expected a JSON array; got \`${typeof parsed}\`.`],
+      [
+        `Re-run \`${replCmd("pax8 recommendations list")}\` to rewrite the cache.`,
+      ],
+      undefined,
+      ERROR_RECOMMENDATION_NOT_FOUND,
+    );
+  }
+  return parsed as CachedEntry[];
 }
 
 export const recommendationsWhyCommand = new Command("why")

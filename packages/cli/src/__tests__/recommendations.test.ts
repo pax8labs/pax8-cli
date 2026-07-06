@@ -514,6 +514,44 @@ describe("pax8 recommendations", () => {
         expect(combined).toContain("recommendations list");
       });
 
+      it("corrupt cache exits 1 with ERROR_RECOMMENDATION_NOT_FOUND and a rewrite hint", async () => {
+        // Write malformed JSON to the cache file to simulate a
+        // truncated / partially written pending-actions.json.
+        await fs.writeFile(
+          path.join(tmpConfigDir, "pending-actions.json"),
+          "{not-json,",
+          "utf-8",
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        expect(start).toBeGreaterThanOrEqual(0);
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+        expect(json.recoverySteps.join(" ")).toContain("recommendations list");
+      });
+
+      it("cache with wrong top-level shape exits 1 with a rewrite hint", async () => {
+        // The reader expects an array of {key, rec} entries. A JSON
+        // object at the top level (an older format, or a stray write)
+        // must fail with the same recovery path.
+        await fs.writeFile(
+          path.join(tmpConfigDir, "pending-actions.json"),
+          JSON.stringify({ wrong: "shape" }),
+          "utf-8",
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+        expect(json.recoverySteps.join(" ")).toContain("recommendations list");
+      });
+
       it("--help shows the command and an example", async () => {
         const result = await runCliExpectSuccess(["recommendations", "why", "--help"]);
         expect(result.stdout).toContain("why");
