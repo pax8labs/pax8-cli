@@ -1,5 +1,44 @@
 # @pax8/cli
 
+## 0.1.5
+
+### Patch Changes
+
+- [#647](https://github.com/pax8labs/pax8-cli/pull/647) [`0725512`](https://github.com/pax8labs/pax8-cli/commit/072551210326fce5ee7bf548ca2bc102f1160dc9) Thanks [@jidulberger](https://github.com/jidulberger)! - Normalize env-flag parsing in the update-check suppression matrix.
+
+  Two shared helpers — `truthyEnv` and `presenceEnv` — split parsing along the convention each flag follows:
+
+  - **Truthy semantics** (`"1"` / `"true"` / `"yes"` / `"on"`, case-insensitive, trimmed) apply to Pax8-owned `=1`-shape flags and to `DO_NOT_TRACK` (spec'd as `"1"` / `"0"`): `PAX8_NO_UPDATE_CHECK`, `PAX8_DEMO`, `PAX8_QUIET`, `PAX8_UPDATE_CHECK_TEST_FORCE`, `DO_NOT_TRACK`.
+  - **Presence semantics** (any non-empty, non-whitespace value) apply to community-convention flags whose canonical shape is presence-based: `NO_UPDATE_NOTIFIER` (matches the upstream `update-notifier` package), `CI` (matches the broad set of CI providers that set `CI` to platform identifiers rather than tokens).
+
+  Net effect for operators: setting `PAX8_DEMO=true` / `PAX8_QUIET=yes` / etc. now suppresses the update-check correctly (previously required exactly `=1`). Established conventions for `NO_UPDATE_NOTIFIER` and `CI` are preserved unchanged.
+
+- [#649](https://github.com/pax8labs/pax8-cli/pull/649) [`95edd67`](https://github.com/pax8labs/pax8-cli/commit/95edd679692bdae86973b629a42f9e2882590033) Thanks [@jidulberger](https://github.com/jidulberger)! - Persist the OAuth access token across CLI invocations.
+
+  `TokenManager` now hydrates from `<configDir>/.token-cache.json` (mode 0600, O_NOFOLLOW) before hitting `POST /v1/token`, so the typical `pax8 <command>` no longer pays ~100-300ms of auth latency or burns rate-limit budget on every shell. Cache identity is keyed by `sha256(clientId)` + `sha256(apiBaseUrl)` — switching `PAX8_API_BASE` between prod/staging, or running `pax8 auth login` with new creds, automatically invalidates without leaking either value on disk. TTL honors the auth server's `expires_in` (production: 86400s); refresh skew is `max(1s, min(60s, 10% of TTL))`.
+
+  Behavioral shifts worth noting for callers and operators:
+
+  - **Cross-process token reuse.** Scripts that loop over multiple `pax8` commands now share the token across processes instead of fetching one per invocation. Integrations or tests assuming "one /token mint per call" will observe different behavior.
+  - **`Pax8Client` retries once on 401.** On a 401, the cache is cleared and a fresh token is fetched, then the request retries once. Misconfigured-auth cases incur two failed calls before surfacing, but server-side token revocations now recover automatically instead of hanging the CLI for up to 24h.
+  - **Stronger `auth logout`.** `CredentialStore.clearCredentials()` now also wipes `<configDir>/.token-cache.json`, so logout invalidates the cached token across any in-flight shells.
+  - **`clearToken()` vs `clearCache()`.** `clearToken()` only clears in-memory state; the new `clearCache()` performs the full wipe (memory + disk). Callers that previously assumed `clearToken()` meant "full revocation" should switch to `clearCache()`.
+  - **New optional embedder hook.** `TokenManagerLike.clearCache?: () => void` — invoked exactly once by `Pax8Client` on a 401. Embedders that bring their own token manager don't need to implement it; the optional-chaining call is a no-op.
+  - **`pax8 doctor`** now reports token-cache file permissions alongside the existing credentials.json check.
+
+  The cache file uses the same OS-level hardening as `credentials.json`. No new dependencies. Token TTL is clamped to 24h on the way in (defense-in-depth against a misbehaving auth endpoint).
+
+  Closes [#233](https://github.com/pax8labs/pax8-cli/issues/233).
+
+- [#640](https://github.com/pax8labs/pax8-cli/pull/640) [`dac773e`](https://github.com/pax8labs/pax8-cli/commit/dac773ed807d3aae7bdd7c8df17856ac68311166) Thanks [@jidulberger](https://github.com/jidulberger)! - Nudge partners when a newer pax8-cli version is available.
+
+  Wires `update-notifier` into CLI startup (welcome screen + command dispatch). When a newer release is on npm, the next interactive run prints a single-line nudge to stderr — never stdout — and stamps a local cache so the banner doesn't repeat until the next release lands. `ERROR_API_VALIDATION` failures additionally surface a "newer version may include a fix" hint as their first recovery step when the cache knows about an upgrade.
+
+  Opt out with `PAX8_NO_UPDATE_CHECK=1` (CI / scripted use). Demo mode (`PAX8_DEMO=1`), `--json`, `--quiet`, `PAX8_QUIET=1`, `NO_UPDATE_NOTIFIER`, `DO_NOT_TRACK=1`, CI environments, and non-TTY stderr all suppress the check automatically. Closes [#183](https://github.com/pax8labs/pax8-cli/issues/183).
+
+- Updated dependencies [[`95edd67`](https://github.com/pax8labs/pax8-cli/commit/95edd679692bdae86973b629a42f9e2882590033)]:
+  - @pax8/core@0.1.5
+
 ## 0.1.4
 
 ### Patch Changes
