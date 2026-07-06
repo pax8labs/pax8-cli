@@ -57,6 +57,10 @@ export interface SuggestOptions {
  * Return up to `opts.max` candidates whose lower-cased edit distance to
  * `input` is ≤ `opts.threshold`. Sorted by ascending distance, ties broken
  * alphabetically for stable output.
+ *
+ * Intended for small candidate sets — the auto-threshold and tie-breaking
+ * rules are an implicit contract, treat as internal/unstable when tuning
+ * matters.
  */
 export function suggest(
   input: string,
@@ -69,6 +73,9 @@ export function suggest(
 
   const scored: Array<{ candidate: string; distance: number }> = [];
   for (const c of candidates) {
+    // Length-band cheap reject: a length delta > threshold forces at
+    // least that many insertions/deletions, so distance > threshold too.
+    if (Math.abs(c.length - needle.length) > threshold) continue;
     const d = levenshtein(needle, c.toLowerCase());
     if (d <= threshold) scored.push({ candidate: c, distance: d });
   }

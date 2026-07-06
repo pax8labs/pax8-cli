@@ -113,6 +113,19 @@ describe("pax8 explain", () => {
       expect(combined.toLowerCase()).toContain("no glossary entry");
     });
 
+    it("strips terminal control chars before echoing the unknown term", async () => {
+      // \x1b[31m is a red-ANSI sequence. If the sanitizer misses it, the
+      // stderr banner colors leak past the quoted value.
+      const result = await runCliExpectFailure(
+        ["explain", "\x1b[31mnope\x1b[0m"],
+        TABLE,
+      );
+      expect(result.stderr).not.toContain("\x1b[31m");
+      // The letters themselves (post-strip) should still surface so the
+      // user sees what they typed.
+      expect(result.stderr).toMatch(/nope/);
+    });
+
     it("carries ERROR_TERM_NOT_FOUND in the --json envelope", async () => {
       const result = await runCliExpectFailure(
         ["explain", "xross-sell", "--json"],

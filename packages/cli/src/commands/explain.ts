@@ -110,8 +110,12 @@ Aliases and normalization:
           normalizeTerm(rawInput),
           allCanonicalTerms(),
         );
+        // Strip C0/C1 control chars so an input carrying ANSI escapes
+        // can't repaint the surrounding error banner. redactString() only
+        // scrubs PII patterns, not terminal control bytes.
+        const safeInput = rawInput.replace(/[\x00-\x1f\x7f-\x9f]/g, "");
         throw new CliError(
-          `No glossary entry for "${rawInput}".`,
+          `No glossary entry for "${safeInput}".`,
           suggestions.length > 0
             ? [`Nearest matches: ${suggestions.join(", ")}.`]
             : [],
