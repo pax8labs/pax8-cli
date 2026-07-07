@@ -402,6 +402,164 @@ describe("pax8 recommendations", () => {
     });
   });
 
+  // UXR F5 (#655): the recommendations table now carries a "Rationale"
+  // column and every rec ships a `rationaleSnippet` in --json output.
+  // `pax8 recommendations why <n>` reads the cached pending-actions.json
+  // and drills into a specific rec without hitting the API.
+  describe("recommendations rationale (#655)", () => {
+    it("every --json rec carries a non-empty rationaleSnippet", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "list", "--json", "--top", "0",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
+        expect(typeof rec.rationaleSnippet).toBe("string");
+        expect(rec.rationaleSnippet.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("table-mode list renders a Rationale column", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list", "--top", "5"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      // The column header appears once in the ASCII table row.
+      expect(result.stdout).toContain("Rationale");
+      // At least one seat-gap snippet ("N/M …") lands in the table.
+      expect(result.stdout).toMatch(/\d+\/\d+ /);
+    });
+
+    describe("recommendations why", () => {
+      let tmpConfigDir: string;
+
+      beforeEach(async () => {
+        tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-recs-why-"));
+      });
+
+      afterEach(async () => {
+        await fs.rm(tmpConfigDir, { recursive: true, force: true });
+      });
+
+      it("drills into a recommendation after `list` populates the cache", async () => {
+        const listResult = await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        expect(listResult.exitCode).toBe(0);
+        // pending-actions.json exists and includes the new rationale fields.
+        const cache = JSON.parse(
+          await fs.readFile(path.join(tmpConfigDir, "pending-actions.json"), "utf-8"),
+        );
+        expect(Array.isArray(cache)).toBe(true);
+        expect(cache.length).toBeGreaterThan(0);
+        for (const entry of cache) {
+          expect(entry.rec).toHaveProperty("reason");
+          expect(entry.rec).toHaveProperty("rationaleSnippet");
+          expect(typeof entry.rec.reason).toBe("string");
+        }
+
+        const whyResult = await runCliExpectSuccess(
+          ["recommendations", "why", "1"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        expect(whyResult.stdout).toContain("Recommendation #1");
+        expect(whyResult.stdout).toContain("Why this recommendation");
+        expect(whyResult.stdout).toContain("Why it ranks here");
+        // Cross-links to `pax8 explain` for terminology drill-in.
+        expect(whyResult.stdout).toContain("pax8 explain");
+      });
+
+      it("--json envelope carries reason, rationaleSnippet, seeAlso", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const whyResult = await runCliExpectSuccess(
+          ["recommendations", "why", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const data = JSON.parse(whyResult.stdout);
+        expect(data.index).toBe(1);
+        expect(typeof data.reason).toBe("string");
+        expect(typeof data.rationaleSnippet).toBe("string");
+        expect(Array.isArray(data.seeAlso)).toBe(true);
+        expect(data.seeAlso.length).toBeGreaterThan(0);
+      });
+
+      it("out-of-range index exits 1 with ERROR_RECOMMENDATION_NOT_FOUND", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "999", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        expect(start).toBeGreaterThanOrEqual(0);
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+      });
+
+      it("missing cache exits 1 with a hint to run `recommendations list` first", async () => {
+        // No prior `list` invocation — the cache file doesn't exist in
+        // tmpConfigDir, so `why` must fail loudly with recovery guidance.
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "1"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const combined = result.stdout + result.stderr;
+        expect(combined).toContain("No cached recommendations");
+        expect(combined).toContain("recommendations list");
+      });
+
+      it("corrupt cache exits 1 with ERROR_RECOMMENDATION_NOT_FOUND and a rewrite hint", async () => {
+        // Write malformed JSON to the cache file to simulate a
+        // truncated / partially written pending-actions.json.
+        await fs.writeFile(
+          path.join(tmpConfigDir, "pending-actions.json"),
+          "{not-json,",
+          "utf-8",
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        expect(start).toBeGreaterThanOrEqual(0);
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+        expect(json.recoverySteps.join(" ")).toContain("recommendations list");
+      });
+
+      it("cache with wrong top-level shape exits 1 with a rewrite hint", async () => {
+        // The reader expects an array of {key, rec} entries. A JSON
+        // object at the top level (an older format, or a stray write)
+        // must fail with the same recovery path.
+        await fs.writeFile(
+          path.join(tmpConfigDir, "pending-actions.json"),
+          JSON.stringify({ wrong: "shape" }),
+          "utf-8",
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+        expect(json.recoverySteps.join(" ")).toContain("recommendations list");
+      });
+
+      it("--help shows the command and an example", async () => {
+        const result = await runCliExpectSuccess(["recommendations", "why", "--help"]);
+        expect(result.stdout).toContain("why");
+        expect(result.stdout).toContain("recommendations why");
+      });
+    });
+  });
+
   describe("recommendations upsell", () => {
     it("returns the upsell cohort as JSON by default", async () => {
       const result = await runCliExpectSuccess([
