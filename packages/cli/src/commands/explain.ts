@@ -112,7 +112,11 @@ Aliases and normalization:
         );
         // Strip C0/C1 control chars so an input carrying ANSI escapes
         // can't repaint the surrounding error banner. redactString() only
-        // scrubs PII patterns, not terminal control bytes.
+        // scrubs PII patterns, not terminal control bytes. The regex
+        // matches literal control chars by definition — that's the
+        // whole point — so the `no-control-regex` rule is disabled
+        // for this line only.
+        // eslint-disable-next-line no-control-regex
         const safeInput = rawInput.replace(/[\x00-\x1f\x7f-\x9f]/g, "");
         throw new CliError(
           `No glossary entry for "${safeInput}".`,
