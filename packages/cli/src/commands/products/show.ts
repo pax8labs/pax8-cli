@@ -7,7 +7,7 @@ import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { formatCurrency } from "../../lib/formatters.js";
+import { formatCurrencyNullable } from "../../lib/formatters.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 
 export const productsShowCommand = new Command("show")
@@ -79,12 +79,23 @@ Examples:
 
       if (pricing && pricing.length > 0) {
         process.stdout.write(`\n  ${chalk.cyan.bold("Pricing Plans")}\n`);
-        const pricingRows = pricing.map((p) => ({
-          billingTerm: p.billingTerm,
-          commitmentTerm: p.commitmentTerm,
-          partnerBuyRate: p.rates[0]?.partnerBuyRate,
-          suggestedRetailPrice: p.rates[0]?.suggestedRetailPrice,
-        }));
+        const pricingRows = pricing.map((p) => {
+          const partner = p.rates[0]?.partnerBuyRate;
+          const retail = p.rates[0]?.suggestedRetailPrice;
+          // #657 / UXR F9: derive margin client-side. Only meaningful when
+          // both sides are numeric — if either is missing we render `—`.
+          const margin =
+            typeof partner === "number" && typeof retail === "number"
+              ? retail - partner
+              : null;
+          return {
+            billingTerm: p.billingTerm,
+            commitmentTerm: p.commitmentTerm,
+            partnerBuyRate: partner,
+            suggestedRetailPrice: retail,
+            margin,
+          };
+        });
         const pricingColumns = [
           { key: "billingTerm", header: "Billing", width: 10 },
           { key: "commitmentTerm", header: "Commitment", width: 12 },
@@ -92,13 +103,19 @@ Examples:
             key: "partnerBuyRate",
             header: "Partner Price",
             width: 16,
-            format: (v: unknown) => formatCurrency(Number(v)),
+            format: (v: unknown) => formatCurrencyNullable(v as number | null | undefined),
           },
           {
             key: "suggestedRetailPrice",
             header: "Retail Price",
             width: 16,
-            format: (v: unknown) => formatCurrency(Number(v)),
+            format: (v: unknown) => formatCurrencyNullable(v as number | null | undefined),
+          },
+          {
+            key: "margin",
+            header: "Margin",
+            width: 12,
+            format: (v: unknown) => formatCurrencyNullable(v as number | null | undefined),
           },
         ];
         output(pricingRows, { format: "table", columns: pricingColumns });

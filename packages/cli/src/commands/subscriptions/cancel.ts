@@ -9,7 +9,7 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { CliError, handleCommandError } from "../../lib/errors.js";
 import { confirmDestructive } from "../../lib/confirm.js";
-import { formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
+import { formatCurrency, formatCurrencyNullable, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
@@ -198,7 +198,9 @@ Behavior on committed subscriptions:
             `  ${chalk.bold("Days remaining")}     ${activeCommitment.daysRemaining}\n`,
           );
           process.stdout.write(
-            `  ${chalk.bold("Estimated cost through term end")}   ${formatCurrency(estimatedCost)}\n`,
+            `  ${chalk.bold("Estimated cost through term end")}   ${
+              sub.price == null ? formatCurrencyNullable(null) : formatCurrency(estimatedCost)
+            }\n`,
           );
           process.stdout.write(
             chalk.dim(
@@ -257,7 +259,14 @@ Behavior on committed subscriptions:
             `  ${chalk.bold("Cancel Date")}  ${effectiveCancelDate}${usedSafePath ? chalk.dim(" (commitment term end)") : ""}\n`,
           );
         }
-        process.stdout.write(`  ${chalk.bold("Est. Pax8 Cost Impact")}   ${chalk.red("-" + formatCurrency(mrr))}/mo\n`);
+        // #657: guard against a null upstream `price` — the multiplication
+        // above still returns a numeric `mrr`, but rendering it as `-$0.00`
+        // is worse than surfacing that we don't know.
+        process.stdout.write(
+          `  ${chalk.bold("Est. Pax8 Cost Impact")}   ${
+            sub.price == null ? formatCurrencyNullable(null) : chalk.red("-" + formatCurrency(mrr)) + "/mo"
+          }\n`,
+        );
         process.stdout.write("\n");
       }
 
