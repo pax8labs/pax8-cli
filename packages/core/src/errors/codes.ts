@@ -33,6 +33,13 @@ export const ERROR_QUOTE_LINE_ITEM_NOT_FOUND = "ERROR_QUOTE_LINE_ITEM_NOT_FOUND"
  * real failures.
  */
 export const ERROR_CANCELLED = "ERROR_CANCELLED";
+/**
+ * `pax8 explain <term>` was passed a term that is not in the built-in
+ * glossary. The error envelope carries the original input and up to
+ * three fuzzy-matched suggestions so agents can either retry with the
+ * suggested slug or escalate.
+ */
+export const ERROR_TERM_NOT_FOUND = "ERROR_TERM_NOT_FOUND";
 
 /**
  * Union of all known Pax8 CLI error codes. Use this for exhaustive switch
@@ -52,4 +59,5 @@ export type Pax8ErrorCode =
   | typeof ERROR_NOT_FOUND
   | typeof ERROR_INTERNAL
   | typeof ERROR_QUOTE_LINE_ITEM_NOT_FOUND
-  | typeof ERROR_CANCELLED;
+  | typeof ERROR_CANCELLED
+  | typeof ERROR_TERM_NOT_FOUND;

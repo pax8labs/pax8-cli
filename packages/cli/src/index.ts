@@ -28,6 +28,7 @@ import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
 import { initCommand } from "./commands/init.js";
+import { explainCommand } from "./commands/explain.js";
 import { reportBugCommand } from "./commands/report-bug.js";
 import { handleCommandError, flushTelemetryBeforeExit } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
@@ -120,6 +121,7 @@ export function createProgram(): Command {
   program.addCommand(todayCommand);
   program.addCommand(initCommand);
   program.addCommand(doctorCommand);
+  program.addCommand(explainCommand);
   program.addCommand(completionsCommand);
   program.addCommand(versionCommand);
   program.addCommand(reportBugCommand());
