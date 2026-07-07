@@ -457,7 +457,11 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       }
 
       if (hiddenCount > 0) {
-        process.stderr.write(chalk.dim(`  ${hiddenCount} more recommendation${hiddenCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet\n`));
+        process.stderr.write(
+          chalk.dim(`  ${hiddenCount} more recommendation${hiddenCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet · run with `) +
+          chalk.cyan("--include-all") +
+          chalk.dim(" to see them\n")
+        );
       }
 
       // Suggest recommendations act

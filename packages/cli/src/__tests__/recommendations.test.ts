@@ -254,6 +254,21 @@ describe("pax8 recommendations", () => {
       expect(allRecs.length).toBe(defaultRecs.length);
     });
 
+    // UXR F6 (#652): the hidden-count footer used to end at "no orderable
+    // products in catalog yet" with no follow-up command. Participants
+    // treated it as a dead end. The mixed-case footer now surfaces the
+    // same --include-all recovery hint the empty-state branch already
+    // uses. Large-scale demo fixture has hidden recs; the small default
+    // fixture doesn't, so this test flips PAX8_DEMO_SCALE.
+    it("table mode surfaces --include-all when hidden recs are trimmed", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list", "--top", "0"],
+        { PAX8_OUTPUT_FORMAT: "table", PAX8_DEMO_SCALE: "large" },
+      );
+      expect(result.stderr).toMatch(/more recommendations? hidden/);
+      expect(result.stderr).toMatch(/--include-all/);
+    });
+
     // #521 footer hint: when the cap fires, table mode must tell the
     // partner that there's more behind the curtain and how to widen it.
     // Forcing table mode via PAX8_OUTPUT_FORMAT because a non-TTY stdout
