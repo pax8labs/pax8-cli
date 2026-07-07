@@ -1,5 +1,100 @@
 # @pax8/cli
 
+## 0.1.6
+
+### Patch Changes
+
+- [#679](https://github.com/pax8labs/pax8-cli/pull/679) [`f830f38`](https://github.com/pax8labs/pax8-cli/commit/f830f38fc24879bc7a8c58b647b732d92c6e640b) Thanks [@jidulberger](https://github.com/jidulberger)! - New `pax8 explain <term>` — a built-in glossary of Pax8 CLI and marketplace terminology.
+
+  UXR F8 ([#656](https://github.com/pax8labs/pax8-cli/issues/656)): partners were leaving the workflow to look up terms like _seat gap_, _MRR uplift_, and _orderable_. Andrew explicitly suggested `pax8 explain seat-gap` as the recovery. Ships as a fully local command — no API call, no auth, no config — so it works even without credentials or in demo mode.
+
+  **Surface:**
+
+  ```
+  pax8 explain seat-gap                # look up a term
+  pax8 explain "opportunity type"       # spaces work
+  pax8 explain seat_gap                 # aliases and case-insensitive
+  pax8 explain --list                   # browse every term, grouped by category
+  pax8 explain <bad-term>                # exits 1; stderr suggests nearest matches
+  ```
+
+  Both text and `--json` output. Missing terms exit 1 with `ERROR_TERM_NOT_FOUND` (new machine-readable code) and up to three fuzzy-matched suggestions.
+
+  **v1 covers 15 terms** grouped into recommendation, subscription, billing, product, and operational categories — drawn from wording that already appears in user-facing CLI output, so every entry solves a "wait, what does that mean?" moment partners can actually hit today.
+
+  **Also lands a small reusable fuzzy matcher** (Levenshtein + `suggest()`) in `packages/cli/src/lib/fuzzy.ts` — the first fuzzy helper in the repo, useful for any future did-you-mean recovery path. Guarded with a length-band pre-filter so it stays cheap on larger candidate sets.
+
+  Closes [#656](https://github.com/pax8labs/pax8-cli/issues/656).
+
+- [#666](https://github.com/pax8labs/pax8-cli/pull/666) [`748bedf`](https://github.com/pax8labs/pax8-cli/commit/748bedf3f173380e7417d0cb9aa9d8fe11301366) Thanks [@jidulberger](https://github.com/jidulberger)! - Sharpen pricing surfaces across `subscriptions` and `products show`.
+
+  UXR F9 ([#657](https://github.com/pax8labs/pax8-cli/issues/657)): partners couldn't tell whether the `Price` column showed their partner cost or the customer-facing MSRP, and a missing wire `price` rendered as `$0.00` or the misleading `-$0.00`. Three human-readable output changes ship together — the `--json` shape on all four commands is unchanged.
+
+  - **`subscriptions list` / `show` / `update`**: the `Price` column and detail label are now `Partner Price` so the meaning is explicit at a glance.
+  - **`subscriptions show` / `update` / `cancel`**: a missing wire `price` (null, undefined, or NaN) renders as a dim em-dash (`—`) instead of `$0.00` / `-$0.00`. A real `0` still renders `$0.00` — the em-dash only stands in for "we don't have a value from the API."
+  - **`products show --pricing`**: the table gains a new `Margin` column derived from the first rate entry so partners can compare cost vs MSRP inline.
+
+  Scripts and integrations that parse the human table output (labels or column counts) will see these shifts — the ensemble reviewer flagged this on the PR. `--json` is the stable contract and unchanged; steer any automation that keys off row labels toward `--json`.
+
+  Closes [#657](https://github.com/pax8labs/pax8-cli/issues/657).
+
+- [#679](https://github.com/pax8labs/pax8-cli/pull/679) [`f830f38`](https://github.com/pax8labs/pax8-cli/commit/f830f38fc24879bc7a8c58b647b732d92c6e640b) Thanks [@jidulberger](https://github.com/jidulberger)! - New `pax8 recommendations email <n>` — draft a customer-ready email for a specific recommendation and hand off to the partner's default mail client.
+
+  UXR F3 ([#658](https://github.com/pax8labs/pax8-cli/issues/658)): partners described an observed workflow (export recs → paste into Copilot → generate a customer email) and Josh's response was _"why don't we just generate the email?"_ The CLI generates the draft — subject, body, and a `mailto:` URL — and hands off. **The CLI never sends.** The partner (or their mail client) is the sender-of-record.
+
+  **Surface:**
+
+  ```
+  pax8 recommendations email 1                       # print draft + mailto hint
+  pax8 recommendations email 1 --json                # structured envelope
+  pax8 recommendations email 1 --mailto              # single-line URL, pipeable
+  pax8 recommendations email 1 --to alice@x.com --mailto
+  pax8 recommendations email 1 --open                # spawn OS-native URL opener
+  ```
+
+  Two template variants — one for seat-gap recs (framed around coverage) and one for cross-sell recs (framed around the missing category). Both draw from the existing engine fields shipped alongside the rationale drill-down (`reason`, `rationaleSnippet`, `title`, `estimatedMrrUplift`, `targetSeats`, `companyName`). Both end with a `<partner name>` placeholder — v1 doesn't plumb operator identity through.
+
+  `--open` uses the existing cross-platform `openUrl()` helper (`open` / `xdg-open` / `start`), and the affordance always prints the URL first so a headless SSH session or missing default handler still leaves the partner with something to copy.
+
+  Closes [#658](https://github.com/pax8labs/pax8-cli/issues/658).
+
+- [#679](https://github.com/pax8labs/pax8-cli/pull/679) [`f830f38`](https://github.com/pax8labs/pax8-cli/commit/f830f38fc24879bc7a8c58b647b732d92c6e640b) Thanks [@jidulberger](https://github.com/jidulberger)! - Answer "why is this recommended?" — two disclosure layers on `pax8 recommendations`.
+
+  UXR F5 ([#655](https://github.com/pax8labs/pax8-cli/issues/655)), the highest-leverage single finding in the 2026-07-02 readout. Partners repeatedly asked what a recommendation was based on, and couldn't answer from the table alone. Ships as an inline snippet + a drill-down subcommand.
+
+  **Layer 1 — inline `Rationale` column in `recommendations list`:**
+
+  New engine field `Recommendation.rationaleSnippet` — a short quantitative anchor per rec, populated at every emit site:
+
+  - **seat_gap**: e.g. `30/150 backup` — the customer-specific ratio.
+  - **cross_sell rule**: e.g. `no backup`, `no identity/MFA` — the categorical gap.
+  - **zero-active-subs**: `no active subs`.
+
+  Renders as a new column between `Recommendation` and `Pax8 Cost+`. `--json` shape gains one new required field on `Recommendation` (see below).
+
+  **Layer 2 — `pax8 recommendations why <n>`:**
+
+  Standalone drill-down subcommand alongside `list` / `act` / `upsell`. Reads the cache written by `list` (no second API call), expands rec `#n` into full rationale plus a "Why it ranks here" paragraph explaining the sort. Cross-references `pax8 explain` for anchor terms so partners can chase definitions without leaving the workflow.
+
+  - Text output includes rationale, sort narrative, and orderable / target-seat context.
+  - `--json` envelope carries `reason`, `rationaleSnippet`, `seeAlso[]`, and every other cached field.
+  - New `ERROR_RECOMMENDATION_NOT_FOUND` machine-readable code fires on cache-miss or out-of-range with a clear recovery hint. `loadCache()` guards against corrupted / stale JSON on disk, converting every read/parse failure into the same structured error.
+
+  **Breaking change for direct `@pax8/core` consumers:** `Recommendation.rationaleSnippet: string` is now required (not optional). Every in-repo constructor is covered — the risk is external packages importing the type and building instances directly. Set the field to a short (<40 char) anchor.
+
+  Closes [#655](https://github.com/pax8labs/pax8-cli/issues/655).
+
+- [#679](https://github.com/pax8labs/pax8-cli/pull/679) [`f830f38`](https://github.com/pax8labs/pax8-cli/commit/f830f38fc24879bc7a8c58b647b732d92c6e640b) Thanks [@jidulberger](https://github.com/jidulberger)! - Two small human-surface fixes drawn from the 2026-07-02 UXR readout ([#661](https://github.com/pax8labs/pax8-cli/issues/661)).
+
+  **`recommendations list` hidden-count footer now surfaces the recovery command.** UXR F6 ([#652](https://github.com/pax8labs/pax8-cli/issues/652)): the `N more recommendations hidden — no orderable products in catalog yet` footer had no follow-up, so partners tried `--help`, guessed, and gave up. It now appends `· run with --include-all to see them`, matching the phrasing the empty-state branch already used.
+
+  **`products search` next-step picker labels use product names instead of UUIDs.** UXR F7 ([#653](https://github.com/pax8labs/pax8-cli/issues/653)): the table columns didn't expose product IDs, but the "Try next" line still said `pax8 products show <ID>`. The picker now numbers the top 5 matches by product name — the underlying `products show <id>` spawn is still id-based, but the human surface never shows a UUID. `--json` output is unchanged.
+
+  Closes [#652](https://github.com/pax8labs/pax8-cli/issues/652) and [#653](https://github.com/pax8labs/pax8-cli/issues/653).
+
+- Updated dependencies [[`f830f38`](https://github.com/pax8labs/pax8-cli/commit/f830f38fc24879bc7a8c58b647b732d92c6e640b), [`f830f38`](https://github.com/pax8labs/pax8-cli/commit/f830f38fc24879bc7a8c58b647b732d92c6e640b)]:
+  - @pax8/core@0.1.6
+
 ## 0.1.5
 
 ### Patch Changes

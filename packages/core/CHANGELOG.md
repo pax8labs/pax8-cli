@@ -1,5 +1,57 @@
 # @pax8/core
 
+## 0.1.6
+
+### Patch Changes
+
+- [#679](https://github.com/pax8labs/pax8-cli/pull/679) [`f830f38`](https://github.com/pax8labs/pax8-cli/commit/f830f38fc24879bc7a8c58b647b732d92c6e640b) Thanks [@jidulberger](https://github.com/jidulberger)! - New `pax8 explain <term>` — a built-in glossary of Pax8 CLI and marketplace terminology.
+
+  UXR F8 ([#656](https://github.com/pax8labs/pax8-cli/issues/656)): partners were leaving the workflow to look up terms like _seat gap_, _MRR uplift_, and _orderable_. Andrew explicitly suggested `pax8 explain seat-gap` as the recovery. Ships as a fully local command — no API call, no auth, no config — so it works even without credentials or in demo mode.
+
+  **Surface:**
+
+  ```
+  pax8 explain seat-gap                # look up a term
+  pax8 explain "opportunity type"       # spaces work
+  pax8 explain seat_gap                 # aliases and case-insensitive
+  pax8 explain --list                   # browse every term, grouped by category
+  pax8 explain <bad-term>                # exits 1; stderr suggests nearest matches
+  ```
+
+  Both text and `--json` output. Missing terms exit 1 with `ERROR_TERM_NOT_FOUND` (new machine-readable code) and up to three fuzzy-matched suggestions.
+
+  **v1 covers 15 terms** grouped into recommendation, subscription, billing, product, and operational categories — drawn from wording that already appears in user-facing CLI output, so every entry solves a "wait, what does that mean?" moment partners can actually hit today.
+
+  **Also lands a small reusable fuzzy matcher** (Levenshtein + `suggest()`) in `packages/cli/src/lib/fuzzy.ts` — the first fuzzy helper in the repo, useful for any future did-you-mean recovery path. Guarded with a length-band pre-filter so it stays cheap on larger candidate sets.
+
+  Closes [#656](https://github.com/pax8labs/pax8-cli/issues/656).
+
+- [#679](https://github.com/pax8labs/pax8-cli/pull/679) [`f830f38`](https://github.com/pax8labs/pax8-cli/commit/f830f38fc24879bc7a8c58b647b732d92c6e640b) Thanks [@jidulberger](https://github.com/jidulberger)! - Answer "why is this recommended?" — two disclosure layers on `pax8 recommendations`.
+
+  UXR F5 ([#655](https://github.com/pax8labs/pax8-cli/issues/655)), the highest-leverage single finding in the 2026-07-02 readout. Partners repeatedly asked what a recommendation was based on, and couldn't answer from the table alone. Ships as an inline snippet + a drill-down subcommand.
+
+  **Layer 1 — inline `Rationale` column in `recommendations list`:**
+
+  New engine field `Recommendation.rationaleSnippet` — a short quantitative anchor per rec, populated at every emit site:
+
+  - **seat_gap**: e.g. `30/150 backup` — the customer-specific ratio.
+  - **cross_sell rule**: e.g. `no backup`, `no identity/MFA` — the categorical gap.
+  - **zero-active-subs**: `no active subs`.
+
+  Renders as a new column between `Recommendation` and `Pax8 Cost+`. `--json` shape gains one new required field on `Recommendation` (see below).
+
+  **Layer 2 — `pax8 recommendations why <n>`:**
+
+  Standalone drill-down subcommand alongside `list` / `act` / `upsell`. Reads the cache written by `list` (no second API call), expands rec `#n` into full rationale plus a "Why it ranks here" paragraph explaining the sort. Cross-references `pax8 explain` for anchor terms so partners can chase definitions without leaving the workflow.
+
+  - Text output includes rationale, sort narrative, and orderable / target-seat context.
+  - `--json` envelope carries `reason`, `rationaleSnippet`, `seeAlso[]`, and every other cached field.
+  - New `ERROR_RECOMMENDATION_NOT_FOUND` machine-readable code fires on cache-miss or out-of-range with a clear recovery hint. `loadCache()` guards against corrupted / stale JSON on disk, converting every read/parse failure into the same structured error.
+
+  **Breaking change for direct `@pax8/core` consumers:** `Recommendation.rationaleSnippet: string` is now required (not optional). Every in-repo constructor is covered — the risk is external packages importing the type and building instances directly. Set the field to a short (<40 char) anchor.
+
+  Closes [#655](https://github.com/pax8labs/pax8-cli/issues/655).
+
 ## 0.1.5
 
 ### Patch Changes
