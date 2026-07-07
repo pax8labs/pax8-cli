@@ -1,6 +1,6 @@
 {
   "name": "@pax8/core",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Core API client, auth, services, and types for Pax8",
   "type": "module",
   "main": "./dist/index.js",
