@@ -266,22 +266,22 @@ function generateProducts(count: number, rng: ReturnType<typeof makeRng>): Produ
     const name = `${vendor} ${kind} ${tier}`;
     const id = rng.uuid("prod", i);
     const sku = `${vendor.toLowerCase().slice(0, 3)}-${kind.toLowerCase().replace(/\s+/g, "")}-${tier.toLowerCase().slice(0, 3)}-${String(i).padStart(4, "0")}`;
-    const partnerBuyPrice = Number((5 + rng.next() * 195).toFixed(2));
-    const suggestedRetailPrice = Number((partnerBuyPrice * (1.15 + rng.next() * 0.6)).toFixed(2));
+    const partnerBuyRate = Number((5 + rng.next() * 195).toFixed(2));
+    const suggestedRetailPrice = Number((partnerBuyRate * (1.15 + rng.next() * 0.6)).toFixed(2));
     const pricing: ProductPricing[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice,
+        partnerBuyRate,
         suggestedRetailPrice,
-        flatPrice: partnerBuyPrice,
+        flatPrice: partnerBuyRate,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: Number((partnerBuyPrice * 0.9).toFixed(2)),
+        partnerBuyRate: Number((partnerBuyRate * 0.9).toFixed(2)),
         suggestedRetailPrice: Number((suggestedRetailPrice * 0.9).toFixed(2)),
-        flatPrice: Number((partnerBuyPrice * 0.9).toFixed(2)),
+        flatPrice: Number((partnerBuyRate * 0.9).toFixed(2)),
       },
     ];
     result.push({
@@ -313,7 +313,7 @@ function generateSubscriptions(
     const startMs = Date.UTC(2015, 0, 1) + Math.floor(rng.next() * (Date.now() - Date.UTC(2015, 0, 1)));
     const startDate = new Date(startMs).toISOString().split("T")[0];
     const pricing = product.pricing[0];
-    const price = pricing.flatPrice ?? pricing.partnerBuyPrice;
+    const price = pricing.flatPrice ?? pricing.partnerBuyRate;
     const currencyCode = rng.pickWeighted(CURRENCY_WEIGHTS);
     // Commitment-term end date: ~1 year out for committed terms, null for monthly/one-time.
     const hasCommitment = billingTerm === "Annual" || billingTerm === "2-Year" || billingTerm === "3-Year";

@@ -426,7 +426,7 @@ class ProductsResource {
       unitOfMeasurement: product.unitOfMeasurement,
       rates: [
         {
-          partnerBuyRate: p.partnerBuyPrice,
+          partnerBuyRate: p.partnerBuyRate,
           suggestedRetailPrice: p.suggestedRetailPrice,
         },
       ],
@@ -1019,7 +1019,7 @@ class QuotesResource {
     const term = input.billingTerm ?? "Monthly";
     const plan = product?.pricing.find((p) => p.billingTerm === term);
     const unitPrice =
-      typeof input.price === "number" ? input.price : plan?.partnerBuyPrice;
+      typeof input.price === "number" ? input.price : plan?.partnerBuyRate;
     const newId = `li-demo-${Date.now()}`;
     // Round-trip `commitmentTermId` back onto the line as a
     // `commitmentTerm: { id, term }` object, mirroring the real v2 read
