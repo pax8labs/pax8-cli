@@ -27,6 +27,7 @@ import { todayCommand } from "./commands/today.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
+import { upgradeCommand } from "./commands/upgrade.js";
 import { initCommand } from "./commands/init.js";
 import { explainCommand } from "./commands/explain.js";
 import { reportBugCommand } from "./commands/report-bug.js";
@@ -124,6 +125,7 @@ export function createProgram(): Command {
   program.addCommand(explainCommand);
   program.addCommand(completionsCommand);
   program.addCommand(versionCommand);
+  program.addCommand(upgradeCommand);
   program.addCommand(reportBugCommand());
 
   // Easter egg commands (hidden from main help)

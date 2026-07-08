@@ -69,6 +69,13 @@ pax8 dashboard
 
 > **Permission denied?** If `npm install -g` fails with `EACCES` (permission denied), do not use `sudo`. Either use `npx` instead, or install Node via a version manager (nvm or fnm) so the global prefix lives in your home directory. See [Troubleshooting](#troubleshooting) for details.
 
+Once installed, keep it current with the built-in updater — it detects how you installed (npm/pnpm/yarn/Homebrew) and runs the matching upgrade command:
+
+```bash
+pax8 upgrade          # check for a newer version and install it (with confirmation)
+pax8 upgrade --check  # just report current vs latest, don't install
+```
+
 ## Demo Flow (90 seconds)
 
 Run with demo data by prefixing `PAX8_DEMO=1`:
