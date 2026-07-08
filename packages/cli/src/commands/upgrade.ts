@@ -55,8 +55,9 @@ async function resolveLatestVersion(demo: boolean): Promise<string | null> {
   const timer = setTimeout(() => controller.abort(), REGISTRY_TIMEOUT_MS);
   try {
     // Slash in the scope must be percent-encoded for the registry path; the
-    // `@` is accepted verbatim by registry.npmjs.org.
-    const url = `https://registry.npmjs.org/${PACKAGE_NAME.replace("/", "%2F")}/latest`;
+    // `@` is accepted verbatim by registry.npmjs.org. Global regex so every
+    // slash is encoded, not just the first (CodeQL js/incomplete-sanitization).
+    const url = `https://registry.npmjs.org/${PACKAGE_NAME.replace(/\//g, "%2F")}/latest`;
     const res = await fetch(url, {
       signal: controller.signal,
       headers: { accept: "application/json" },

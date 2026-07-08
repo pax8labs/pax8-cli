@@ -8,10 +8,10 @@ require "language/node"
 class Pax8 < Formula
   desc "Open-source CLI for MSPs to manage Pax8 cloud marketplace operations"
   homepage "https://github.com/pax8labs/pax8-cli"
-  url "https://registry.npmjs.org/@pax8/cli/-/cli-0.1.5.tgz"
-  sha256 "4cd7d92134e7bbeec17fe45e494fe98bcbcc5046406b71f2535b807fbc9f2d32"
+  url "https://registry.npmjs.org/@pax8/cli/-/cli-0.1.6.tgz"
+  sha256 "ffac2858f838387a18e15b0b324a28a92102684813a44cd049e6db481764443d"
   license "Apache-2.0"
-  version "0.1.5"
+  version "0.1.6"
 
   depends_on "node"
 

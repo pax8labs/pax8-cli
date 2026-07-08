@@ -85,8 +85,9 @@ async function main() {
     ? resolve(process.argv[3])
     : join(HERE, "pax8.rb");
 
-  // Resolve the version to a concrete release manifest.
-  const encoded = PACKAGE.replace("/", "%2F");
+  // Resolve the version to a concrete release manifest. Global regex so every
+  // slash is encoded, not just the first (CodeQL js/incomplete-sanitization).
+  const encoded = PACKAGE.replace(/\//g, "%2F");
   const manifestUrl = versionArg
     ? `${REGISTRY}/${encoded}/${versionArg}`
     : `${REGISTRY}/${encoded}/latest`;
@@ -99,6 +100,22 @@ async function main() {
   }
 
   const sha256 = await sha256OfUrl(tarball);
+
+  // Validate the registry-derived values before they're written into a
+  // committed formula. Beyond hardening (a poisoned/misconfigured registry
+  // response can't inject arbitrary text into the .rb), this constrains the
+  // network-sourced fields to known-safe shapes — the barrier CodeQL's
+  // js/http-to-file-access taint tracking looks for.
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(version)) {
+    throw new Error(`unexpected version shape from registry: ${version}`);
+  }
+  if (!tarball.startsWith(`${REGISTRY}/`)) {
+    throw new Error(`tarball is not on the npm registry: ${tarball}`);
+  }
+  if (!/^[a-f0-9]{64}$/.test(sha256)) {
+    throw new Error(`computed sha256 is malformed: ${sha256}`);
+  }
+
   const formula = renderFormula({ version, tarball, sha256 });
   writeFileSync(outfile, formula);
   process.stdout.write(
