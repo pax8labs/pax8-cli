@@ -27,20 +27,28 @@ const REGISTRY_TIMEOUT_MS = 10_000;
  *
  * Resolution order:
  *   1. `PAX8_UPGRADE_LATEST` test seam — deterministic version, no network.
- *   2. Demo mode — never touch the network; fall back to the update-check
- *      cache if a partner happens to have one, otherwise `null`.
+ *      The sentinel value `"unknown"` forces the "can't determine latest"
+ *      path so that error envelope is testable without blocking the network.
+ *   2. Demo mode — never touch the network; use a cached update-check record
+ *      if one exists (so a seeded cache can still surface a newer version),
+ *      otherwise report the running version so `pax8 upgrade` is benignly
+ *      "up to date" rather than erroring on a lookup demo mode must not run.
  *   3. Live npm registry lookup (the dist-tag `latest` endpoint), with a
  *      hard timeout. On any failure, fall back to the cached record so an
  *      offline `pax8 upgrade` can still surface a known-newer version.
  *
- * Returns `null` when the latest version genuinely can't be determined.
+ * Returns `null` when the latest version genuinely can't be determined
+ * (only reachable outside demo mode, or via the `"unknown"` sentinel).
  */
 async function resolveLatestVersion(demo: boolean): Promise<string | null> {
   const seam = process.env.PAX8_UPGRADE_LATEST;
-  if (seam && seam.trim().length > 0) return seam.trim();
+  if (seam && seam.trim().length > 0) {
+    const v = seam.trim();
+    return v === "unknown" ? null : v;
+  }
 
   if (demo) {
-    return readCachedUpdateInfo()?.latest ?? null;
+    return readCachedUpdateInfo()?.latest ?? getCurrentVersion();
   }
 
   const controller = new AbortController();

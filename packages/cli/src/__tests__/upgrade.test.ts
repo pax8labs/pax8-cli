@@ -98,10 +98,11 @@ describe("pax8 upgrade", () => {
   });
 
   it("errors with ERROR_API_TIMEOUT when the latest version can't be determined", async () => {
-    // No PAX8_UPGRADE_LATEST seam + demo mode (no network) + a clean
-    // per-test config dir (no cached update-check.json) → latest unknown.
+    // The `unknown` sentinel forces the "can't determine latest" path
+    // deterministically (demo mode itself is benign — it reports up-to-date).
     const { stderr } = await runCliExpectFailure(["upgrade", "--json"], {
       PAX8_UPGRADE_METHOD: "npm-global",
+      PAX8_UPGRADE_LATEST: "unknown",
     });
     // Demo mode prints a banner to stderr before the JSON envelope, so slice
     // from the first brace rather than parsing stderr directly.
