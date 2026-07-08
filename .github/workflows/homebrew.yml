@@ -1,0 +1,82 @@
+name: Update Homebrew formula
+
+# Fires when changesets publishes a new @pax8/cli version and pushes its tag
+# (tags are shaped `@pax8/cli@<version>`). By this point the version is live
+# on npm, so the generator can download the published tarball and hash it.
+on:
+  push:
+    tags:
+      - "@pax8/cli@*"
+  # Manual re-run / backfill: dispatch with an explicit version.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Published @pax8/cli version to publish a formula for (e.g. 0.2.0)"
+        required: true
+
+# Read-only against THIS repo; the write goes to the tap repo via the PAT.
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    runs-on: ubuntu-latest
+    steps:
+      # SHA-pinned to match release.yml (security review H-4). Dependabot
+      # bumps these via the trailing `# <tag>` comments.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Strip the `@pax8/cli@` prefix off the pushed tag.
+            VERSION="${GITHUB_REF_NAME#@pax8/cli@}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing Homebrew formula for @pax8/cli@$VERSION"
+
+      # npm can take a few seconds to serve a freshly published version's
+      # manifest/tarball; retry so a fast tag-push doesn't race the registry.
+      - name: Generate formula
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if node packaging/homebrew/generate-formula.mjs "${{ steps.ver.outputs.version }}"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed; waiting for npm to propagate..."
+            sleep 15
+          done
+          echo "Formula generation failed after retries" >&2
+          exit 1
+
+      # Check out the tap repo with a PAT that has contents:write on it, then
+      # copy the formula in and push. Requires the HOMEBREW_TAP_TOKEN secret
+      # (a fine-grained PAT scoped to pax8labs/homebrew-tap). See
+      # packaging/homebrew/README.md for the one-time bootstrap.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: pax8labs/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Commit formula to tap
+        run: |
+          mkdir -p tap/Formula
+          cp packaging/homebrew/pax8.rb tap/Formula/pax8.rb
+          cd tap
+          git config user.name "pax8-cli-bot"
+          git config user.email "bot@pax8.com"
+          if git diff --quiet; then
+            echo "Formula already up to date; nothing to commit."
+            exit 0
+          fi
+          git add Formula/pax8.rb
+          git commit -m "pax8 ${{ steps.ver.outputs.version }}"
+          git push
