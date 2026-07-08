@@ -182,8 +182,10 @@ Examples:
       }
 
       // Report-only: --check, or a method we won't auto-run (npx / unknown).
-      const autoRunnable = info.upgradeArgs !== null;
-      if (checkOnly || !autoRunnable) {
+      // Capture into a local so TS narrows `string[] | null` → `string[]`
+      // past this guard (a property access wouldn't stay narrowed).
+      const runnableArgs = info.upgradeArgs;
+      if (checkOnly || runnableArgs === null) {
         if (!jsonMode) {
           const verb = checkOnly ? "To upgrade, run" : "Upgrade with";
           process.stdout.write(
@@ -222,7 +224,7 @@ Examples:
       if (!jsonMode) {
         process.stdout.write(chalk.dim(`  Running: ${info.upgradeCommand}\n\n`));
       }
-      const code = await runUpgrade(info.upgradeArgs);
+      const code = await runUpgrade(runnableArgs);
       if (code !== 0) {
         throw new CliError(
           `Upgrade failed (${info.manager} exited with code ${code})`,
