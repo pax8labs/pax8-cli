@@ -46,6 +46,7 @@ Write commands:
 - `pax8 quotes create`, `pax8 quotes update`, `pax8 quotes delete` — modifies sales quotes.
 - `pax8 subscriptions update`, `pax8 subscriptions cancel` — changes seat counts, billing terms, or terminates a subscription.
 - `pax8 webhooks create`, `pax8 webhooks delete`, `pax8 webhooks test` — modifies subscription endpoints / sends real test deliveries to partner-controlled URLs.
+- `pax8 upgrade` — runs the local package manager (`npm`/`pnpm`/`yarn`/`brew`) to reinstall the CLI at the latest version. Not a Pax8 API write, but it mutates the local machine, so confirm first. Use `pax8 upgrade --check` for a read-only "is a newer version available?" report that never installs.
 - **Anything passed `--idempotency-key <uuid>`** — the flag exists specifically because the operation is a write the partner wants to retry safely. Treat as write regardless of which subcommand carries it.
 
 If you're unsure whether a command counts as a write, default to confirming. Better one extra prompt than one unintended order.

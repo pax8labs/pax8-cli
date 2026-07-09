@@ -398,7 +398,7 @@ function renderNudge(current: string, latest: string): void {
     chalk.yellow("⚠") +
     chalk.dim(
       ` A new version of pax8-cli is available (${current} → ${latest}). ` +
-        "Run `npm i -g @pax8/cli` to update.\n",
+        "Run `pax8 upgrade` to update.\n",
     );
   process.stderr.write(line);
 }
@@ -414,6 +414,6 @@ export function getApiValidationUpgradeHint(): string | null {
   if (!info) return null;
   return (
     `A newer version of pax8-cli (${info.latest}) is available and may include a fix. ` +
-    "Run `npm i -g @pax8/cli` to update."
+    "Run `pax8 upgrade` to update."
   );
 }
