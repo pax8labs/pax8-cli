@@ -303,6 +303,7 @@ export {
   Telemetry,
   getTelemetry,
   TELEMETRY_NOTICE,
+  accountGroupKey,
 } from "./telemetry/telemetry.js";
 export type { TelemetryEvent } from "./telemetry/telemetry.js";
 

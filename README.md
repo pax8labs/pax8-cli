@@ -454,18 +454,21 @@ The CLI also honors two ambient environment variables (no opt-in required) and s
 | `node_version` | always | `process.version` |
 | `os` | always | `process.platform` |
 | `demo_mode` | always | Whether `PAX8_DEMO=1` was set |
+| `credentialed` | always | Boolean — whether any credential source was configured at emit time (never the credentials themselves) |
 | `recs_presented`, `recs_ordered`, `recs_skipped`, `recs_mrr_captured` | `recommendations act` | Aggregate counts only |
 | `order_success`, `order_total_dollars`, `order_mrr_impact`, `order_seats` | `orders create` | Aggregate transaction outcome only |
 
-The anonymous `distinct_id` is `sha256(hostname + ":" + username)` truncated to 16 hex chars — computed locally, never reversible to its inputs.
+**Identity — `distinct_id` and the account group.** The anonymous `distinct_id` is a random UUID (`crypto.randomUUID()`) generated once and persisted at `<config-dir>/telemetry-id`. It is not derived from your hostname, username, or any machine attribute, so it can't be regenerated from an AD/LDAP record. Because it is per-install, the same person on two machines (or in ephemeral CI, where `~/.pax8` doesn't persist) counts as multiple `distinct_id`s.
+
+To make **unique accounts** countable despite that, credentialed runs also attach a PostHog *group* — `account = sha256("pax8-cli:account:v1" + clientId)`, a salted one-way hash of your Pax8 API client ID. It is identical across every machine and CI job for a given partner, so PostHog can report account-level unique counts and retention without touching the anonymous per-install `distinct_id`. The salt is a public domain-separation constant (the CLI is open source), so the group key is a **pseudonym, not an anonymization guarantee**: an operator holding both PostHog access and the list of partner client IDs could recompute it. Uncredentialed and demo runs attach no group.
 
 **Never sent:**
 
-- API client_id, client_secret, OAuth tokens
+- Raw API client_id, client_secret, OAuth tokens (only a salted one-way hash of the client_id, as the account group above)
 - Customer / company / subscription / order IDs
 - Customer or company names
 - Command argument values (only flag *names* — `--company`, never `--company "Acme Corp"`)
-- Partner identifiers, account names, billing data
+- Account names, billing data
 - Stack traces, file paths, environment variables
 - Any PII
 

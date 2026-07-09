@@ -503,6 +503,18 @@ async function emitFailureEvent(error: unknown): Promise<void> {
     } catch {
       // Telemetry must never crash the CLI.
     }
+    // Attribute failed credentialed runs to the partner-account group too, so
+    // account-level unique counts and retention aren't skewed by failures.
+    // Only the salted clientId hash leaves the machine; see index.ts success
+    // path and Telemetry.setAccount().
+    if (credentialed) {
+      try {
+        const creds = await new CredentialStore().getCredentials();
+        telemetry.setAccount(creds?.clientId ?? null);
+      } catch {
+        telemetry.setAccount(null);
+      }
+    }
     telemetry.track({
       event: "command_executed",
       command: active?.command ?? "unknown",
