@@ -28,7 +28,7 @@ import {
 } from "@pax8/core";
 import { replCmd } from "./confirm.js";
 import { redactEnvelope, redactString } from "./redactor.js";
-import { consumeActiveCommand } from "./telemetry-context.js";
+import { consumeActiveCommand, resolveTelemetryAccount } from "./telemetry-context.js";
 import { getApiValidationUpgradeHint } from "./update-check.js";
 
 declare const __CLI_VERSION__: string;
@@ -478,8 +478,11 @@ async function emitFailureEvent(error: unknown): Promise<void> {
   try {
     const telemetry = getTelemetry();
     const active = consumeActiveCommand();
-    // No active sentinel = parse-time failure; preAction didn't run, so
-    // the enabled state was never loaded. Load it now (bounded async).
+    // No active sentinel = parse-time failure; preAction didn't run, so the
+    // enabled state was never loaded AND the partner-account group was never
+    // resolved. Do both now (bounded async). For a normal command failure
+    // (`active` set), preAction already ran resolveTelemetryAccount(), so the
+    // group is already on the telemetry singleton — don't re-read here.
     if (!active) {
       try {
         await telemetry.loadEnabled();
@@ -488,6 +491,7 @@ async function emitFailureEvent(error: unknown): Promise<void> {
         // and we'll silently no-op below, which is the same outcome as
         // the pre-#598 behavior.
       }
+      await resolveTelemetryAccount();
     }
     if (!telemetry.isEnabled()) return;
     // #621: emit credential-store state on failure events too so we can
@@ -503,18 +507,10 @@ async function emitFailureEvent(error: unknown): Promise<void> {
     } catch {
       // Telemetry must never crash the CLI.
     }
-    // Attribute failed credentialed runs to the partner-account group too, so
-    // account-level unique counts and retention aren't skewed by failures.
-    // Only the salted clientId hash leaves the machine; see index.ts success
-    // path and Telemetry.setAccount().
-    if (credentialed) {
-      try {
-        const creds = await new CredentialStore().getCredentials();
-        telemetry.setAccount(creds?.clientId ?? null);
-      } catch {
-        telemetry.setAccount(null);
-      }
-    }
+    // Note: the partner-account group is NOT set here — it's resolved once in
+    // the preAction hook (or, for parse-time failures, in the `!active` branch
+    // above) so the group rides on the telemetry singleton for every emit
+    // path. See resolveTelemetryAccount().
     telemetry.track({
       event: "command_executed",
       command: active?.command ?? "unknown",

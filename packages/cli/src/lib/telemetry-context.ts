@@ -1,7 +1,38 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { TelemetryEvent } from "@pax8/core";
+import { CredentialStore, getTelemetry, type TelemetryEvent } from "@pax8/core";
+
+/**
+ * Resolve the partner-account group key for the current process and set it on
+ * the telemetry singleton, so **every** emit path attaches the same `account`
+ * group: the success `postAction` hook, the failure handler
+ * (`emitFailureEvent`), and — critically — the SIGINT handler in `signals.ts`,
+ * which emits a `command_executed` event directly and previously shipped it
+ * with a null group.
+ *
+ * This is the single startup seam for account attribution. `posthog-node` is
+ * stateless — there is no persistent session `group()` call as in the browser
+ * `posthog-js` SDK — so `Telemetry.flush()` must stamp `groups` onto each
+ * captured event. Setting the key once here, from the `preAction` hook before
+ * any event is captured, is what makes that stamping reliable regardless of
+ * which code path ends up emitting. Scattering per-emit-site `setAccount`
+ * calls (the prior approach) let paths be missed.
+ *
+ * Best-effort and never throws: a credential-read failure just leaves the
+ * account unset, so events fall back to the anonymous per-install
+ * `distinct_id` only. Only a salted hash of the `clientId` is ever retained —
+ * see `Telemetry.setAccount()` / `accountGroupKey()`. Uncredentialed and demo
+ * runs resolve to `null` (no group).
+ */
+export async function resolveTelemetryAccount(): Promise<void> {
+  try {
+    const creds = await new CredentialStore().getCredentials();
+    getTelemetry().setAccount(creds?.clientId ?? null);
+  } catch {
+    getTelemetry().setAccount(null);
+  }
+}
 
 /**
  * Request-scoped telemetry fields contributed by command handlers.

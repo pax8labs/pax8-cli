@@ -33,7 +33,7 @@ import { explainCommand } from "./commands/explain.js";
 import { reportBugCommand } from "./commands/report-bug.js";
 import { handleCommandError, flushTelemetryBeforeExit } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
-import { consumeTelemetryFields, setActiveCommand, consumeActiveCommand } from "./lib/telemetry-context.js";
+import { consumeTelemetryFields, setActiveCommand, consumeActiveCommand, resolveTelemetryAccount } from "./lib/telemetry-context.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
@@ -208,6 +208,13 @@ export function createProgram(): Command {
     } catch {
       // Never block the CLI on telemetry init
     }
+
+    // Resolve the partner-account group ONCE here, before any event is
+    // captured, so every emit path (success postAction, failure handler,
+    // SIGINT) attaches it via flush(). See resolveTelemetryAccount() — this
+    // replaces the old per-emit-site setAccount calls, which the SIGINT path
+    // missed (interrupted credentialed runs shipped null groups).
+    await resolveTelemetryAccount();
   });
 
   // ── Telemetry: track successful command execution ──────────────────
@@ -234,6 +241,11 @@ export function createProgram(): Command {
       // welcome.ts and `auth status` use; sub-millisecond stat + env-var
       // read. Computed AFTER the action ran so a successful `auth login`
       // emits `credentialed: true`.
+      // #621: `credentialed` reflects whether any credential source exists
+      // (hasCredentials = tolerant existence check). The partner-account
+      // *group* is set separately, once, in the preAction hook via
+      // resolveTelemetryAccount(), so it's already on the telemetry singleton
+      // by the time this event flushes — no per-emit-site setAccount here.
       let credentialed = false;
       try {
         credentialed = await new CredentialStore().hasCredentials();
@@ -241,21 +253,6 @@ export function createProgram(): Command {
         // Telemetry must never crash the CLI. hasCredentials() already
         // swallows fs errors, but defense-in-depth in case PAX8_CONFIG_DIR
         // validation throws synchronously.
-      }
-
-      // Attribute credentialed runs to a partner-account group so PostHog
-      // reports real account-level unique counts (not one "user" per
-      // ephemeral install). Only a salted hash of the clientId leaves the
-      // machine; the per-install distinct_id is untouched. Gated on
-      // `credentialed` so uncredentialed/demo runs pay no extra read and
-      // stay attributed to the anonymous id only.
-      if (credentialed) {
-        try {
-          const creds = await new CredentialStore().getCredentials();
-          telemetry.setAccount(creds?.clientId ?? null);
-        } catch {
-          telemetry.setAccount(null);
-        }
       }
 
       // Single canonical event for every command run (#146). Handlers
