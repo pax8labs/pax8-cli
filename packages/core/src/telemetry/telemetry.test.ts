@@ -7,12 +7,14 @@ import * as fs from "node:fs/promises";
 import * as fsSync from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { createHash } from "node:crypto";
 import {
   Telemetry,
   resetTelemetry,
   bucketDollars,
   bucketSeats,
   bucketLineCount,
+  accountGroupKey,
   type TelemetryEvent,
 } from "./telemetry.js";
 import { ERROR_COMPANY_NOT_FOUND } from "../errors/codes.js";
@@ -525,5 +527,109 @@ describe("PostHog write-token (source-file shape guard)", () => {
     // insight or alert in the shared portfolio project that filters on
     // `app = "pax8-cli"`. The test is here to make that breakage loud.
     expect(match![1]).toBe("pax8-cli");
+  });
+
+  // ── Account grouping (real unique-user counts) ──────────────────────────
+
+  it("accountGroupKey is a stable, salted sha256 hex — not the raw clientId", () => {
+    const clientId = "abc-123-partner";
+    const key = accountGroupKey(clientId);
+
+    // 64 hex chars = sha256 digest.
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    // Deterministic: same input → same key, across machines and CI (this is
+    // what unifies a partner into one PostHog account).
+    expect(accountGroupKey(clientId)).toBe(key);
+    // Distinct partners → distinct keys.
+    expect(accountGroupKey("different-partner")).not.toBe(key);
+    // The raw clientId never appears in the digest.
+    expect(key).not.toContain(clientId);
+    // Salted, not a bare sha256(clientId): the digest must differ from an
+    // un-salted hash so it can't be trivially correlated against another
+    // system's sha256(clientId).
+    const bare = createHash("sha256").update(clientId).digest("hex");
+    expect(key).not.toBe(bare);
+  });
+
+  it("flush attaches the account group + calls groupIdentify when credentialed", async () => {
+    const t = new Telemetry();
+    (t as any).enabled = true;
+    (t as any).storageDir = makeTmpDir();
+
+    const captures: Array<{ groups?: Record<string, string> }> = [];
+    const groupIdentifies: Array<{ groupType: string; groupKey: string }> = [];
+    (t as any).posthog = {
+      capture: (payload: { groups?: Record<string, string> }) => captures.push(payload),
+      groupIdentify: (payload: { groupType: string; groupKey: string }) =>
+        groupIdentifies.push(payload),
+      flush: async () => {},
+      shutdown: async () => {},
+    };
+
+    t.setAccount("partner-xyz");
+    t.track(makeEvent());
+    await t.flush();
+
+    const expectedKey = accountGroupKey("partner-xyz");
+    expect(groupIdentifies).toEqual([{ groupType: "account", groupKey: expectedKey }]);
+    expect(captures).toHaveLength(1);
+    expect(captures[0].groups).toEqual({ account: expectedKey });
+
+    await fs.rm((t as any).storageDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("flush omits the account group for uncredentialed / demo runs", async () => {
+    const t = new Telemetry();
+    (t as any).enabled = true;
+    (t as any).storageDir = makeTmpDir();
+
+    const captures: Array<{ groups?: Record<string, string> }> = [];
+    let groupIdentifyCalled = false;
+    (t as any).posthog = {
+      capture: (payload: { groups?: Record<string, string> }) => captures.push(payload),
+      groupIdentify: () => {
+        groupIdentifyCalled = true;
+      },
+      flush: async () => {},
+      shutdown: async () => {},
+    };
+
+    // No setAccount() call at all — and an explicit null clear — must both
+    // leave the run attributed to the anonymous distinct_id only.
+    t.setAccount(null);
+    t.track(makeEvent());
+    await t.flush();
+
+    expect(groupIdentifyCalled).toBe(false);
+    expect(captures).toHaveLength(1);
+    expect(captures[0].groups).toBeUndefined();
+
+    await fs.rm((t as any).storageDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("setAccount does not alter the per-install distinct_id (M-2 anonymity)", async () => {
+    const t = new Telemetry();
+    (t as any).enabled = true;
+    (t as any).storageDir = makeTmpDir();
+
+    const captures: Array<{ distinctId: string }> = [];
+    (t as any).posthog = {
+      capture: (payload: { distinctId: string }) => captures.push(payload),
+      groupIdentify: () => {},
+      flush: async () => {},
+      shutdown: async () => {},
+    };
+
+    const anonId = (t as any).anonymousId as string;
+    t.setAccount("partner-xyz");
+    t.track(makeEvent());
+    await t.flush();
+
+    // distinct_id stays the random per-install UUID; the partner is carried
+    // only in the group, never promoted to the distinct_id.
+    expect(captures[0].distinctId).toBe(anonId);
+    expect(captures[0].distinctId).not.toBe(accountGroupKey("partner-xyz"));
+
+    await fs.rm((t as any).storageDir, { recursive: true, force: true }).catch(() => {});
   });
 });

@@ -25,6 +25,41 @@ const POSTHOG_HOST = "https://us.i.posthog.com";
 // insight or alert in PostHog that filters on `app = "pax8-cli"`.
 const APP_NAME = "pax8-cli";
 
+// Domain-separation salt for the partner-account group key (see
+// {@link accountGroupKey}). This is NOT a secret — the CLI is open source, so
+// anyone reading this repo can see it. Its only job is to keep the account
+// key from being a bare sha256(clientId) that an unrelated system could
+// trivially recompute and correlate against. The account group key is
+// therefore a *pseudonym*, not an anonymization guarantee: an internal
+// operator holding BOTH PostHog access AND the list of partner OAuth client
+// IDs could still reverse it by recomputing this hash. That is the same
+// residual risk the M-2 review flagged for derivable IDs (see
+// getAnonymousId()); genuine de-anonymization resistance would require a
+// server-side salt we do not have. Bump the version suffix only if you ever
+// need to rotate the key space (it re-partitions every account in PostHog).
+const ACCOUNT_KEY_SALT = "pax8-cli:account:v1";
+
+/**
+ * Stable, salted pseudonym for a partner's OAuth `clientId`, used as the
+ * PostHog *group* key (groupType `account`).
+ *
+ * Because it is derived purely from the clientId + a fixed salt, it is
+ * identical across every machine and CI job a given partner runs on. That is
+ * exactly what lets PostHog collapse a partner's runs into a single "account"
+ * and report real account-level unique counts and retention — independent of
+ * the per-install `distinct_id`, which (by design, post-M-2) is a random UUID
+ * and thus over-counts unique *users* whenever `~/.pax8` does not persist
+ * (ephemeral CI, `npx`, fresh containers).
+ *
+ * The raw clientId is never stored or transmitted — only this digest.
+ */
+export function accountGroupKey(clientId: string): string {
+  return crypto
+    .createHash("sha256")
+    .update(ACCOUNT_KEY_SALT + clientId)
+    .digest("hex");
+}
+
 export interface TelemetryEvent {
   event: "command_executed";
   command: string;
@@ -126,6 +161,8 @@ export const TELEMETRY_NOTICE = `
     Command names and flags used (never values or arguments)
     Success/failure and duration
     OS and Node.js version
+    A salted, one-way hash of your Pax8 API client ID, used only to
+      count unique accounts (never the raw ID, never a name)
 
   What we never collect:
     Company names, IDs, or subscription data
@@ -189,6 +226,7 @@ export class Telemetry {
   private storageDir: string;
   private posthog: PostHog | null = null;
   private anonymousId: string;
+  private accountKey: string | null = null;
 
   constructor() {
     this.storageDir = path.join(getConfigDir(), "telemetry");
@@ -257,6 +295,23 @@ export class Telemetry {
     this.buffer.push(event);
   }
 
+  /**
+   * Associate subsequent events with a partner-account group so PostHog can
+   * report account-level unique counts and retention (see
+   * {@link accountGroupKey}). Pass the raw OAuth `clientId` from the active
+   * credential source; only its salted hash is retained. Passing
+   * null/undefined/empty clears the association (e.g. an unauthenticated or
+   * demo run), which correctly leaves that run attributed to the anonymous
+   * per-install distinct_id only.
+   *
+   * Idempotent and cheap; last value wins. Never throws — a bad clientId just
+   * results in a hash. Wiring lives in the CLI (the two canonical emit sites)
+   * so `@pax8/core` telemetry stays decoupled from `CredentialStore`.
+   */
+  setAccount(clientId: string | null | undefined): void {
+    this.accountKey = clientId ? accountGroupKey(clientId) : null;
+  }
+
   async flush(): Promise<void> {
     if (this.buffer.length === 0) return;
 
@@ -286,10 +341,18 @@ export class Telemetry {
     // operator can still audit their own machine's usage.
     try {
       const ph = this.getPostHog();
+      // Register the partner-account group once (if credentialed this run) so
+      // PostHog can report account-level unique counts + retention. The
+      // per-install `distinct_id` stays the random UUID; `groups.account`
+      // unifies a partner across machines and ephemeral CI.
+      if (this.accountKey) {
+        ph.groupIdentify({ groupType: "account", groupKey: this.accountKey });
+      }
       for (const event of events) {
         ph.capture({
           distinctId: this.anonymousId,
           event: event.event,
+          ...(this.accountKey && { groups: { account: this.accountKey } }),
           properties: {
             app: APP_NAME,
             command: event.command,

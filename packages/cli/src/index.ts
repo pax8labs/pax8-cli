@@ -241,6 +241,21 @@ export function createProgram(): Command {
         // validation throws synchronously.
       }
 
+      // Attribute credentialed runs to a partner-account group so PostHog
+      // reports real account-level unique counts (not one "user" per
+      // ephemeral install). Only a salted hash of the clientId leaves the
+      // machine; the per-install distinct_id is untouched. Gated on
+      // `credentialed` so uncredentialed/demo runs pay no extra read and
+      // stay attributed to the anonymous id only.
+      if (credentialed) {
+        try {
+          const creds = await new CredentialStore().getCredentials();
+          telemetry.setAccount(creds?.clientId ?? null);
+        } catch {
+          telemetry.setAccount(null);
+        }
+      }
+
       // Single canonical event for every command run (#146). Handlers
       // contribute aggregate counters via setTelemetryFields(); they no
       // longer call telemetry.track() directly.
