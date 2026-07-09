@@ -45,6 +45,10 @@ export type TelemetryExtraFields = Partial<
     | "recs_ordered"
     | "recs_skipped"
     | "recs_mrr_captured"
+    | "upgrade_action"
+    | "upgrade_method"
+    | "upgrade_from"
+    | "upgrade_to"
   >
 >;
 

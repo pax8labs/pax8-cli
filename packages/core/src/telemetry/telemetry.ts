@@ -121,6 +121,14 @@ export interface TelemetryEvent {
   recs_skipped?: number;
   /** For recommendations act: total MRR uplift of orders placed — RAW, see above. */
   recs_mrr_captured?: number;
+  /** For upgrade: outcome of the run (up-to-date | checked | manual | upgraded | skipped). */
+  upgrade_action?: string;
+  /** For upgrade: detected install method (npm-global | homebrew | npx | …). */
+  upgrade_method?: string;
+  /** For upgrade: version upgraded from. */
+  upgrade_from?: string;
+  /** For upgrade: version upgraded to (latest available). */
+  upgrade_to?: string;
 }
 
 /**
@@ -386,6 +394,10 @@ export class Telemetry {
             ...(event.recs_mrr_captured !== undefined && {
               recs_mrr_captured_bucket: bucketDollars(event.recs_mrr_captured),
             }),
+            ...(event.upgrade_action !== undefined && { upgrade_action: event.upgrade_action }),
+            ...(event.upgrade_method !== undefined && { upgrade_method: event.upgrade_method }),
+            ...(event.upgrade_from !== undefined && { upgrade_from: event.upgrade_from }),
+            ...(event.upgrade_to !== undefined && { upgrade_to: event.upgrade_to }),
           },
         });
       }

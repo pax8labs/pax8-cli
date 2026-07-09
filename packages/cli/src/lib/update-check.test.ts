@@ -125,7 +125,7 @@ describe("readCachedUpdateInfo + getApiValidationUpgradeHint", () => {
 
     const hint = getApiValidationUpgradeHint();
     expect(hint).toContain("999.0.0");
-    expect(hint).toContain("npm i -g @pax8/cli");
+    expect(hint).toContain("pax8 upgrade");
   });
 });
 

@@ -703,7 +703,7 @@ export async function handleCommandError(
     );
     // #183: drift-aware messaging. Surface the upgrade hint BEFORE the
     // generic "try a different query" step — if a newer CLI is available,
-    // the partner's first move should be `npm i -g @pax8/cli`.
+    // the partner's first move should be `pax8 upgrade`.
     const upgradeHint = getApiValidationUpgradeHint();
     if (upgradeHint) {
       process.stderr.write(
