@@ -30,11 +30,17 @@ jobs:
         with:
           node-version: 22
 
+      # Bind the dispatch input through `env` rather than interpolating the
+      # `${{ }}` expression directly into the shell — otherwise a crafted
+      # version string would be command injection. GITHUB_REF_NAME is a
+      # runner-provided env var (not a `${{ }}` expansion), so it's already safe.
       - name: Resolve version
         id: ver
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
           else
             # Strip the `@pax8/cli@` prefix off the pushed tag.
             VERSION="${GITHUB_REF_NAME#@pax8/cli@}"
@@ -45,9 +51,11 @@ jobs:
       # npm can take a few seconds to serve a freshly published version's
       # manifest/tarball; retry so a fast tag-push doesn't race the registry.
       - name: Generate formula
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           for attempt in 1 2 3 4 5; do
-            if node packaging/homebrew/generate-formula.mjs "${{ steps.ver.outputs.version }}"; then
+            if node packaging/homebrew/generate-formula.mjs "$VERSION"; then
               exit 0
             fi
             echo "Attempt $attempt failed; waiting for npm to propagate..."
@@ -67,16 +75,21 @@ jobs:
           path: tap
 
       - name: Commit formula to tap
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           mkdir -p tap/Formula
           cp packaging/homebrew/pax8.rb tap/Formula/pax8.rb
           cd tap
           git config user.name "pax8-cli-bot"
           git config user.email "bot@pax8.com"
-          if git diff --quiet; then
+          # Stage first, THEN check staged diff — on a fresh tap repo the
+          # formula is untracked and `git diff --quiet` (unstaged only) would
+          # report clean, silently skipping the very first commit.
+          git add Formula/pax8.rb
+          if git diff --cached --quiet; then
             echo "Formula already up to date; nothing to commit."
             exit 0
           fi
-          git add Formula/pax8.rb
-          git commit -m "pax8 ${{ steps.ver.outputs.version }}"
+          git commit -m "pax8 $VERSION"
           git push

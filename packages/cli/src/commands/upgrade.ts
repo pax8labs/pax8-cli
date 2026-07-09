@@ -11,7 +11,7 @@ import { createSpinner } from "../lib/spinner.js";
 import { setTelemetryFields } from "../lib/telemetry-context.js";
 import { getInstallInfo, PACKAGE_NAME, type InstallInfo } from "../lib/install-method.js";
 import { readCachedUpdateInfo, isNewerVersion } from "../lib/update-check.js";
-import { ERROR_API_TIMEOUT } from "@pax8/core";
+import { ERROR_API_TIMEOUT, ERROR_INTERNAL } from "@pax8/core";
 
 // Build-time injected by tsup (see tsup.config.ts).
 declare const __CLI_VERSION__: string;
@@ -85,7 +85,13 @@ function runUpgrade(argv: string[]): Promise<number> {
     // invoke. stdio inherited so the partner sees npm/brew's own progress.
     const child = spawn(cmd, args, { stdio: "inherit", shell: false });
     child.on("error", reject);
-    child.on("close", (code) => resolve(code ?? 0));
+    // A signal-terminated child reports `code === null` (e.g. Ctrl-C mid
+    // install). Coercing that to 0 would render a false "upgraded 🎉"
+    // success, so map it to a non-zero code the caller treats as failure
+    // (130 for a signal, matching the SIGINT convention; 1 otherwise).
+    child.on("close", (code, signal) =>
+      resolve(code === null ? (signal ? 130 : 1) : code),
+    );
   });
 }
 
@@ -243,7 +249,7 @@ Examples:
             "On permission errors, your global install may need elevated privileges (e.g. sudo)",
           ],
           undefined,
-          ERROR_API_TIMEOUT,
+          ERROR_INTERNAL,
         );
       }
 
