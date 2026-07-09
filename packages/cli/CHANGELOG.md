@@ -1,5 +1,13 @@
 # @pax8/cli
 
+## 0.2.0
+
+### Minor Changes
+
+- [#683](https://github.com/pax8labs/pax8-cli/pull/683) [`34b164f`](https://github.com/pax8labs/pax8-cli/commit/34b164f11b7ae73e3d808942ba3b940aaae4212d) Thanks [@jidulberger](https://github.com/jidulberger)! - feat(upgrade): add `pax8 upgrade` self-updater with install-method detection
+
+  New `pax8 upgrade` command checks the npm registry for a newer `@pax8/cli`, detects how the CLI was installed (npm/pnpm/yarn global, Homebrew, or npx), and runs the matching upgrade command after confirmation. `pax8 upgrade --check` reports current vs latest without installing, and `--json` emits a machine-readable envelope (`{ current, latest, upToDate, installMethod, upgradeCommand, upgradeArgs, action }`). The periodic "new version available" nudge and the drift-aware `ERROR_API_VALIDATION` recovery hint now point at `pax8 upgrade` instead of a hardcoded `npm i -g`.
+
 ## 0.1.6
 
 ### Patch Changes
