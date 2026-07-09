@@ -86,6 +86,21 @@ describe("pax8 upgrade", () => {
     expect(out.upgradeArgs).toEqual(["npm", "i", "-g", "@pax8/cli@latest"]);
   });
 
+  it("non-TTY without --yes errors cleanly instead of silently installing", async () => {
+    // A newer version is available, npm-global is auto-runnable, and there's
+    // no -y — so this hits the confirm-and-install path. Subprocesses spawned
+    // by execFile have a non-TTY stdin by default, so this exercises the
+    // production guard that would otherwise let confirm()'s EOF default
+    // silently proceed to run the package manager.
+    const { stderr, exitCode } = await runCliExpectFailure(["upgrade"], {
+      PAX8_UPGRADE_LATEST: NEWER,
+      PAX8_UPGRADE_METHOD: "npm-global",
+    });
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/TTY/i);
+    expect(stderr).toMatch(/--yes|-y/);
+  });
+
   it("renders a human-readable report in table mode", async () => {
     const { stdout } = await runCli(["upgrade", "--check"], {
       PAX8_UPGRADE_LATEST: NEWER,

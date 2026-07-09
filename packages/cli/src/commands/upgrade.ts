@@ -11,7 +11,7 @@ import { createSpinner } from "../lib/spinner.js";
 import { setTelemetryFields } from "../lib/telemetry-context.js";
 import { getInstallInfo, PACKAGE_NAME, type InstallInfo } from "../lib/install-method.js";
 import { readCachedUpdateInfo, isNewerVersion } from "../lib/update-check.js";
-import { ERROR_API_TIMEOUT, ERROR_INTERNAL } from "@pax8/core";
+import { ERROR_API_TIMEOUT, ERROR_INTERNAL, ERROR_INVALID_INPUT } from "@pax8/core";
 
 // Build-time injected by tsup (see tsup.config.ts).
 declare const __CLI_VERSION__: string;
@@ -104,7 +104,7 @@ interface UpgradeResult {
   manager: string;
   upgradeCommand: string;
   upgradeArgs: string[] | null;
-  action: "up-to-date" | "checked" | "manual" | "upgraded" | "skipped";
+  action: "up-to-date" | "checked" | "manual" | "upgraded" | "skipped" | "cancelled";
 }
 
 export const upgradeCommand = new Command("upgrade")
@@ -212,13 +212,32 @@ Examples:
       }
 
       // ── Confirm + install ──
+      // A required prompt with no TTY and no --yes must error cleanly rather
+      // than silently proceed: confirm(..., { default: true }) returns its
+      // default on EOF, so a piped `pax8 upgrade` would otherwise auto-run the
+      // package manager. Same convention as `recommendations act` / `orders
+      // create` — non-TTY without confirmation is an ERROR_INVALID_INPUT.
+      const autoYes = !!allOpts.yes || process.env.PAX8_YES === "1";
+      if (!autoYes && !process.stdin.isTTY) {
+        throw new CliError(
+          "Cannot upgrade without confirmation — stdin is not a TTY",
+          ["`pax8 upgrade` needs a terminal to confirm the install"],
+          [
+            `Pass ${replCmd("--yes")} to upgrade without prompting`,
+            `Or run the upgrade command yourself: ${info.upgradeCommand}`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+
       const ok = await confirm(
         `Upgrade pax8-cli ${current} → ${latest} via ${info.manager}?`,
         { default: true },
       );
       if (!ok) {
         if (!jsonMode) process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
-        emit("checked");
+        emit("cancelled");
         return;
       }
 
