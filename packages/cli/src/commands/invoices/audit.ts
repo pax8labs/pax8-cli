@@ -15,11 +15,13 @@ import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { validateMonth } from "../../lib/validate.js";
 import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
+import { classifyAuditDiscrepanciesWithPsa, resolvePsaProviderName } from "../../lib/psa.js";
 
 export const invoicesAuditCommand = new Command("audit")
   .description("Audit invoices against active subscriptions")
   .option("--month <YYYY-MM>", "Filter by month (YYYY-MM)")
   .option("--company <id|name>", "Filter by company ID or name")
+  .option("--psa [provider]", "Join discrepancies to PSA agreement data (connectwise)")
   .addHelpText(
     "after",
     `
@@ -27,6 +29,7 @@ Examples:
   pax8 invoices audit
   pax8 invoices audit --month 2026-03
   pax8 invoices audit --company "Summit Healthcare"
+  pax8 invoices audit --psa connectwise --json
   pax8 invoices audit --json
 
 Note: this audit compares the partner's invoiced charges against their
@@ -148,6 +151,20 @@ JSON output (--json):
         }),
       }));
 
+      const psaProviderName = resolvePsaProviderName(options.psa);
+      let outputDiscrepancies: Array<(typeof stampedDiscrepancies)[number] & { psa?: unknown }> = stampedDiscrepancies;
+      let psaSummary: unknown;
+      if (psaProviderName) {
+        try {
+          const psaResult = await classifyAuditDiscrepanciesWithPsa(ctx, psaProviderName, stampedDiscrepancies);
+          outputDiscrepancies = psaResult.discrepancies as Array<(typeof stampedDiscrepancies)[number] & { psa?: unknown }>;
+          psaSummary = psaResult.psaSummary;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          process.stderr.write(`${chalk.yellow("⚠")} PSA join failed; base invoice audit is still valid. ${message}\n`);
+        }
+      }
+
       // JSON output
       if (ctx.outputFormat === "json") {
         const nextActions = stampedDiscrepancies
@@ -158,7 +175,7 @@ JSON output (--json):
           }));
         process.stdout.write(
           JSON.stringify(
-            { ...report, discrepancies: stampedDiscrepancies, nextActions },
+            { ...report, discrepancies: outputDiscrepancies, ...(psaSummary ? { psaSummary } : {}), nextActions },
             null,
             2,
           ) + "\n",
@@ -204,7 +221,7 @@ JSON output (--json):
       // "type 3 to dispute discrepancy #3"). Keeps the existing single-id
       // form in the `[…]` brackets so partners who copy-paste the id by
       // hand can still locate it.
-      stampedDiscrepancies.forEach((d, i) => {
+      outputDiscrepancies.forEach((d, i) => {
         const idx = i + 1;
         process.stdout.write(
           `  ${chalk.bold(`${idx}.`)} ${chalk.bold(d.companyName)} — ${d.productName}  ${chalk.dim(`[${d.discrepancyId}]`)}\n`
@@ -219,6 +236,11 @@ JSON output (--json):
         process.stdout.write(
           `     Invoiced: ${formatQuantity(d.invoicedQuantity)}    Active: ${formatQuantity(d.activeQuantity)}    Δ ${deltaSign}${d.delta} (${impactLabel})\n`
         );
+        if ("psa" in d && d.psa) {
+          const psa = d.psa as { status: string; customerImpact?: { amount: number; currency: string } | null };
+          const impact = psa.customerImpact ? `, customer impact ${formatCurrency(psa.customerImpact.amount)}` : "";
+          process.stdout.write(`     PSA: ${psa.status}${impact}\n`);
+        }
         process.stdout.write("\n");
       });
 
@@ -237,6 +259,12 @@ JSON output (--json):
       process.stdout.write(
         `  ${chalk.bold("Net impact:")}   ${formatCurrency(report.netImpact)}\n`
       );
+      if (psaSummary) {
+        const summary = psaSummary as { coveragePercent: number; customerImpactTotal: { amount: number }; unmappedDollarImpact: { amount: number } };
+        process.stdout.write(
+          `  ${chalk.bold("PSA coverage:")} ${summary.coveragePercent}%    Customer impact: ${formatCurrency(summary.customerImpactTotal.amount)}    Unmapped: ${formatCurrency(summary.unmappedDollarImpact.amount)}\n`
+        );
+      }
       process.stdout.write("\n");
 
       // Closed-loop hint: every discrepancy becomes a pickable dispute
@@ -245,7 +273,7 @@ JSON output (--json):
       // filtering by month) carried through automatically.
       if (stampedDiscrepancies.length > 0) {
         const monthArgs = options.month ? ["--month", options.month] : [];
-        const steps: NextStep[] = stampedDiscrepancies.map((d, i) => {
+        const steps: NextStep[] = outputDiscrepancies.map((d, i) => {
           const command = ["invoices", "dispute", "--discrepancy", d.discrepancyId, ...monthArgs];
           return {
             key: String(i + 1),

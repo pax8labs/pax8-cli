@@ -29,6 +29,19 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default({}),
+  psa: z
+    .object({
+      connectwise: z
+        .object({
+          baseUrl: z.string().optional(),
+          companyId: z.string().optional(),
+          publicKey: z.string().optional(),
+          privateKey: z.string().optional(),
+          clientId: z.string().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
