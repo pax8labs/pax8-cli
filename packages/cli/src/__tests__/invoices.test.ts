@@ -115,12 +115,7 @@ describe("pax8 invoices", () => {
     });
 
     it("--with-actions adds nextActions to { invoices, page } envelope", async () => {
-      const result = await runCliExpectSuccess([
-        "invoices",
-        "list",
-        "--json",
-        "--with-actions",
-      ]);
+      const result = await runCliExpectSuccess(["invoices", "list", "--json", "--with-actions"]);
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("invoices");
       expect(data).toHaveProperty("page");
@@ -157,11 +152,7 @@ describe("pax8 invoices", () => {
 
   describe("invoices items", () => {
     it("lists invoice items in demo mode", async () => {
-      const result = await runCliExpectSuccess([
-        "invoices",
-        "items",
-        "--json",
-      ]);
+      const result = await runCliExpectSuccess(["invoices", "items", "--json"]);
       // #483: JSON envelope is { items, page }.
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("items");
@@ -207,27 +198,50 @@ describe("pax8 invoices", () => {
       expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
     });
 
-    it("produces audit report in JSON", async () => {
-      const result = await runCliExpectSuccess([
-        "invoices",
-        "audit",
-        "--json",
-      ]);
+    it("produces audit report in JSON without PSA fields by default", async () => {
+      const result = await runCliExpectSuccess(["invoices", "audit", "--json"]);
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("discrepancies");
       expect(data).toHaveProperty("totalOvercharge");
       expect(data).toHaveProperty("totalUndercharge");
       expect(data).toHaveProperty("netImpact");
       expect(data).toHaveProperty("itemsAudited");
+      expect(data).not.toHaveProperty("psaSummary");
       expect(data.discrepancies.length).toBeGreaterThan(0);
+      expect(data.discrepancies[0]).not.toHaveProperty("psa");
     });
 
-    it("each discrepancy has required fields", async () => {
+    it("extends audit JSON additively when --psa is supplied", async () => {
       const result = await runCliExpectSuccess([
         "invoices",
         "audit",
+        "--psa",
+        "connectwise",
         "--json",
       ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("discrepancies");
+      expect(data).toHaveProperty("psaSummary");
+      expect(data.psaSummary).toMatchObject({
+        provider: "connectwise",
+        counts: expect.objectContaining({
+          propagated: expect.any(Number),
+          costOnly: expect.any(Number),
+          psaDrift: expect.any(Number),
+          unmapped: expect.any(Number),
+        }),
+        unmappedDollarImpact: expect.objectContaining({ currency: "USD" }),
+        customerImpactTotal: expect.objectContaining({ currency: "USD" }),
+      });
+      expect(data.discrepancies.length).toBeGreaterThan(0);
+      expect(data.discrepancies[0]).toHaveProperty("psa");
+      expect(data.discrepancies[0].psa).toMatchObject({
+        status: expect.stringMatching(/^(propagated|cost-only|psa-drift|unmapped)$/),
+      });
+    });
+
+    it("each discrepancy has required fields", async () => {
+      const result = await runCliExpectSuccess(["invoices", "audit", "--json"]);
       const data = JSON.parse(result.stdout);
       const disc = data.discrepancies[0];
       expect(disc).toHaveProperty("companyName");
@@ -316,11 +330,7 @@ describe("pax8 invoices", () => {
     // #389: every spec-backed filter must appear in --help. Pre-#389 the CLI
     // didn't surface --from / --to / --sort at all.
     it("list --help advertises every #389 filter and sort flag", async () => {
-      const result = await runCliExpectSuccess([
-        "invoices",
-        "list",
-        "--help",
-      ]);
+      const result = await runCliExpectSuccess(["invoices", "list", "--help"]);
       const flat = result.stdout.replace(/\s+/g, " ");
       // Date range
       expect(flat).toContain("--from");
@@ -346,22 +356,11 @@ describe("pax8 invoices", () => {
     // only 4 of the 6 documented values (`Nothing Due` and `Credited` were
     // missing).
     it("list --status help advertises every documented API enum value (#250)", async () => {
-      const result = await runCliExpectSuccess([
-        "invoices",
-        "list",
-        "--help",
-      ]);
+      const result = await runCliExpectSuccess(["invoices", "list", "--help"]);
       // Commander wraps long option descriptions across lines on narrow
       // terminals, so collapse whitespace before matching multi-word values.
       const flat = result.stdout.replace(/\s+/g, " ");
-      const DOCUMENTED_STATUSES = [
-        "Unpaid",
-        "Paid",
-        "Void",
-        "Carried",
-        "Nothing Due",
-        "Credited",
-      ];
+      const DOCUMENTED_STATUSES = ["Unpaid", "Paid", "Void", "Carried", "Nothing Due", "Credited"];
       for (const status of DOCUMENTED_STATUSES) {
         expect(flat).toContain(status);
       }
