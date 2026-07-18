@@ -2,6 +2,10 @@
 
 Thanks for your interest in contributing! Outside contributions are welcome — issues, discussion, bug fixes, and features are all fair game. There is no CLA. We use a [Developer Certificate of Origin](https://developercertificate.org) sign-off instead (`git commit -s`); see below.
 
+## AI-Assisted and Automated Contributions
+
+AI-assisted contributions are welcome on the same terms as any other: a human submitter must understand the change, be able to vouch for it under the DCO sign-off, and engage with review. Unsolicited fully-automated PRs — including bot-generated implementations of open issues — will be closed without review. Issues labeled `needs-design` are not ready for implementation by anyone, human or bot; the useful contribution there is input on the open design questions, not code.
+
 ## Development Setup
 
 ```bash
