@@ -51,6 +51,17 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # npm OIDC trusted publishing requires npm >= 11.5.1. Node 22 bundles
+      # npm 10.x, which never attempts the OIDC token exchange — the publish
+      # PUT goes out carrying only setup-node's literal placeholder token,
+      # and the registry answers with its existence-masking E404. This was
+      # the actual cause of every CI publish failure since 0.1.5 (see #685's
+      # run log: "using npm trusted publishing" followed by E404, with no
+      # token-exchange round-trip despite loglevel=http). Upgrading npm in
+      # place keeps the build/test runtime on Node 22.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@^11.5.1 && npm --version
+
       # Publish gate opened 2026-06-04 (closes #370). Pushing to main now
       # invokes `pnpm changeset publish`, which publishes whichever package
       # versions in main exceed what's on the registry. The first publish
@@ -59,15 +70,17 @@ jobs:
       # when a changeset is present) bumps versions and is merged.
       #
       # 0.1.5 publish attempt (2026-07-06/07) failed here with a hard-to-
-      # diagnose `E404 Not Found - PUT https://registry.npmjs.org/@pax8%2fcore`.
-      # Provenance signing (sigstore) succeeded — meaning the OIDC token was
-      # minted correctly and the workflow identity matched the trusted-
-      # publisher pattern — but the actual PUT to the registry got 404,
-      # which npm returns for scoped packages when the effective identity
-      # lacks publish rights. 0.1.5 was ultimately shipped from a
-      # maintainer laptop via `pnpm publish --otp`. Debug logging enabled
-      # below so the next attempt captures the token-exchange response
-      # inline in the workflow log.
+      # diagnose `E404 Not Found - PUT https://registry.npmjs.org/@pax8%2fcore`,
+      # and 0.1.6/0.2.0 failed the same way; all three were shipped from a
+      # maintainer laptop via `pnpm publish --otp`. Root cause (found
+      # 2026-07-24 via the debug logging below): the bundled npm 10.x
+      # predates trusted-publishing support, so the OIDC exchange never ran —
+      # see the "Upgrade npm" step above. (The earlier theory that sigstore
+      # success proved the token exchange worked was wrong: provenance
+      # signing consumes the Actions OIDC token directly and is independent
+      # of the registry token exchange.) Side effect of the manual publishes:
+      # no git tags or GitHub Releases for 0.1.5/0.1.6/0.2.0, since the
+      # changesets action only tags when its own publish step succeeds.
       - name: Publish (gate opened in #370)
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
