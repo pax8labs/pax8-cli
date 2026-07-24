@@ -189,7 +189,7 @@ On merge to `main`, the release workflow opens (or updates) a `chore: release` P
 
 ### Maintainer note: npm trusted publishing
 
-The release workflow publishes via [npm OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) — no `NPM_TOKEN` secret. For this to work, the `@pax8` scope must have the `pax8labs/pax8-cli` repository and the `Release` workflow registered as a trusted publisher at <https://www.npmjs.com/settings/pax8/packages> for every package the workflow publishes (`@pax8/cli`, `@pax8/core`). The workflow already declares `permissions.id-token: write` and `setup-node`'s `registry-url`; once the npm side is configured, `npm publish` exchanges the OIDC token for an ephemeral publish token automatically.
+The release workflow publishes via [npm OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) — no `NPM_TOKEN` secret. For this to work, the `@pax8` scope must have the `pax8labs/pax8-cli` repository and the `Release` workflow registered as a trusted publisher at <https://www.npmjs.com/settings/pax8/packages> for every package the workflow publishes (`@pax8/cli`, `@pax8/core`). The workflow already declares `permissions.id-token: write` and `setup-node`'s `registry-url`; once the npm side is configured, `npm publish` exchanges the OIDC token for an ephemeral publish token automatically. One more hard prerequisite: the npm CLI doing the publish must be **>= 11.5.1** — older npm (including the 10.x bundled with Node 22) has no trusted-publishing code at all and silently falls back to whatever token is configured, which surfaces as a masked `E404` on the PUT. The release workflow upgrades npm explicitly for this reason; keep that step if you copy this setup to another repo.
 
 ## Security Reports
 
