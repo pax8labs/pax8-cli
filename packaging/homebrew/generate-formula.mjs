@@ -49,7 +49,10 @@ async function sha256OfUrl(url) {
  * `std_npm_args` installs the package into `libexec`; we then symlink its
  * bin into Homebrew's `bin`.
  */
-function renderFormula({ version, tarball, sha256 }) {
+// No explicit `version` stanza: Homebrew scans the version from the tarball
+// URL (`cli-<version>.tgz`), and `brew audit --strict` flags a literal
+// `version` line as redundant.
+function renderFormula({ tarball, sha256 }) {
   return `# Copyright 2026 Pax8, Inc.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -63,7 +66,6 @@ class Pax8 < Formula
   url "${tarball}"
   sha256 "${sha256}"
   license "Apache-2.0"
-  version "${version}"
 
   depends_on "node"
 
@@ -116,7 +118,7 @@ async function main() {
     throw new Error(`computed sha256 is malformed: ${sha256}`);
   }
 
-  const formula = renderFormula({ version, tarball, sha256 });
+  const formula = renderFormula({ tarball, sha256 });
   writeFileSync(outfile, formula);
   process.stdout.write(
     `Wrote ${outfile}\n  version: ${version}\n  url:     ${tarball}\n  sha256:  ${sha256}\n`,
