@@ -34,7 +34,9 @@ jobs:
       # moved past it, leaving the publish step running an untested
       # pnpm/npm combination. Explicit pin keeps the tarball packing +
       # publish path matched to `pnpm@9.15.4`, which is what maintainers
-      # exercise locally.
+      # exercise locally. (One deliberate divergence from local setups: the
+      # "Upgrade npm" step below swaps in npm 11 for the registry PUT, which
+      # laptops don't run — CI needs it for OIDC; laptops use `--otp`.)
       - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           version: 9.15.4
@@ -55,12 +57,27 @@ jobs:
       # npm 10.x, which never attempts the OIDC token exchange — the publish
       # PUT goes out carrying only setup-node's literal placeholder token,
       # and the registry answers with its existence-masking E404. This was
-      # the actual cause of every CI publish failure since 0.1.5 (see #685's
-      # run log: "using npm trusted publishing" followed by E404, with no
-      # token-exchange round-trip despite loglevel=http). Upgrading npm in
+      # the actual cause of every CI publish failure since 0.1.5. Evidence
+      # in #685's run log: changesets/action prints "using npm trusted
+      # publishing" (its own OIDC detection), then npm 10's PUT 404s with no
+      # token-exchange round-trip despite loglevel=http. Upgrading npm in
       # place keeps the build/test runtime on Node 22.
+      #
+      # Exact-pinned (not `^`) to match this workflow's H-4 supply-chain
+      # posture — a floating range would install whatever npm publishes,
+      # unreviewed, into the job that holds `id-token: write`. Dependabot
+      # does NOT manage versions inside `run:` scripts; bump manually and
+      # note npm 11's engine floor (^20.17.0 || >=22.9.0).
+      #
+      # Caveat for future debugging: npm 11's oidc() is never-throw — if the
+      # exchange is skipped (id-token permission lost, or the trusted-
+      # publisher registration no longer matches after e.g. a workflow file
+      # rename), it logs only at silly/verbose (invisible at loglevel=http),
+      # silently falls back to the placeholder token, and reproduces the
+      # same masked E404. If that error returns, check the auth layer first
+      # and re-run with NPM_CONFIG_LOGLEVEL=verbose.
       - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@^11.5.1 && npm --version
+        run: npm install -g npm@11.18.0 && npm --version
 
       # Publish gate opened 2026-06-04 (closes #370). Pushing to main now
       # invokes `pnpm changeset publish`, which publishes whichever package
@@ -79,8 +96,10 @@ jobs:
       # success proved the token exchange worked was wrong: provenance
       # signing consumes the Actions OIDC token directly and is independent
       # of the registry token exchange.) Side effect of the manual publishes:
-      # no git tags or GitHub Releases for 0.1.5/0.1.6/0.2.0, since the
-      # changesets action only tags when its own publish step succeeds.
+      # the changesets action only tags/creates GitHub Releases when its own
+      # publish step succeeds, so 0.1.5/0.1.6/0.2.0 got neither. The tags
+      # were backfilled manually on 2026-07-24; the GitHub Releases for
+      # those three versions are still missing.
       - name: Publish (gate opened in #370)
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
