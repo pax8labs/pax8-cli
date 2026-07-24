@@ -43,9 +43,12 @@
     "overrides": {
       "vite": "^8.0.16",
       "picomatch": "^4.0.4",
-      "brace-expansion": "^5.0.6",
+      "brace-expansion": "^5.0.7",
       "yaml": "^2.8.3",
-      "esbuild": "^0.28.1"
+      "esbuild": "^0.28.1",
+      "postcss": "^8.5.18",
+      "js-yaml@3": "^3.15.0",
+      "js-yaml@4": "^4.3.0"
     }
   }
 }
