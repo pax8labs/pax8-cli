@@ -65,7 +65,7 @@ The durable asset — questions this package answers without you having to assem
 
 ## Versioning
 
-**Experimental.** This package is currently `0.x` and the public surface may change between minor versions. Pin a specific version (`"@pax8/core": "0.1.0"`, not `"^0.1.0"`) until the package reaches `1.0`. Breaking changes will be called out in release notes.
+**Experimental.** This package is currently `0.x` and the public surface may change between minor versions. Pin a specific version (`"@pax8/core": "0.2.1"`, not `"^0.2.0"`) until the package reaches `1.0`. Breaking changes will be called out in release notes.
 
 The CLI in this repo is the reference consumer — if you're unsure how to assemble a workflow, look at how [`packages/cli`](https://github.com/pax8labs/pax8-cli/tree/main/packages/cli/src/commands) uses these services.
 
