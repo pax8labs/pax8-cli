@@ -565,7 +565,7 @@ The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrow
 
 ## Known Limitations
 
-These are tracked, prioritized for v0.1.x, and not blockers for v0.1.0. Each links to a GitHub issue with repro and fix shape.
+These are tracked and prioritized within the `0.x` line. Each links to a GitHub issue with repro and fix shape.
 
 **Real-API surfaces (depend on Pax8 backend):**
 - `pax8 orders list` against busy tenants can hit the 30s default timeout. Extend it by setting `PAX8_TIMEOUT_MS=<ms>` (default 30000, max 300000). Workaround for very large portfolios: `--size 25` or smaller.
