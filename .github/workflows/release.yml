@@ -101,6 +101,7 @@ jobs:
       # were backfilled manually on 2026-07-24; the GitHub Releases for
       # those three versions are still missing.
       - name: Publish (gate opened in #370)
+        id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           publish: pnpm changeset publish
@@ -126,3 +127,51 @@ jobs:
           # bearer token redacted; use `verbose` if you need parameter-
           # level detail (much noisier).
           NPM_CONFIG_LOGLEVEL: "http"
+
+      # Post-publish canary (#697). Installs what was just published into a
+      # clean directory outside the workspace and runs the README demo
+      # commands against it.
+      #
+      # This runs AFTER publish, not before, and that ordering is forced: the
+      # packaged CLI resolves `@pax8/core` from the registry at the version
+      # `pnpm publish` baked in when it rewrote `workspace:*`, so the check is
+      # unrunnable until that core version actually exists on npm. Gating the
+      # publish on it would deadlock — core can't be validated before it's
+      # published, and it can't be published before it's validated.
+      #
+      # So this is detection, not prevention: it converts "broken release
+      # discovered by a user days later" (what happened with 0.2.0, where
+      # every command died on `getTelemetry(...).setAccount is not a function`
+      # because the published core predated the method) into a red release
+      # run within a minute of publish. If it fails, deprecate immediately:
+      #   npm deprecate @pax8/cli@<version> "Broken; use <next> instead"
+      #
+      # Pinned to the exact version just published rather than `latest` —
+      # npm's `latest` dist-tag can lag the publish by a few seconds, and a
+      # canary that silently tests the PREVIOUS release is worse than none.
+      - name: Smoke-test the published artifact
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          PUBLISHED: ${{ steps.changesets.outputs.publishedPackages }}
+        run: |
+          set -euo pipefail
+          version="$(printf '%s' "$PUBLISHED" | jq -r '.[] | select(.name == "@pax8/cli") | .version')"
+          if [ -z "$version" ]; then
+            echo "No @pax8/cli in publishedPackages ($PUBLISHED) — core-only release, nothing to smoke."
+            exit 0
+          fi
+          echo "Smoke-testing @pax8/cli@$version"
+
+          # The registry is read-through-cached; a just-published version can
+          # 404 for a few seconds on the read path even though the PUT
+          # succeeded. Retry the metadata lookup before declaring failure so a
+          # propagation blip doesn't page anyone.
+          for attempt in 1 2 3 4 5 6; do
+            if npm view "@pax8/cli@$version" version >/dev/null 2>&1; then
+              break
+            fi
+            echo "Not visible yet (attempt $attempt) — waiting 10s"
+            sleep 10
+          done
+
+          PAX8_SMOKE_TARGET=registry PAX8_SMOKE_VERSION="$version" pnpm test:smoke

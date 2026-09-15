@@ -26,11 +26,26 @@ import { CredentialStore, getTelemetry, type TelemetryEvent } from "@pax8/core";
  * runs resolve to `null` (no group).
  */
 export async function resolveTelemetryAccount(): Promise<void> {
+  let clientId: string | null;
   try {
-    const creds = await new CredentialStore().getCredentials();
-    getTelemetry().setAccount(creds?.clientId ?? null);
+    clientId = (await new CredentialStore().getCredentials())?.clientId ?? null;
   } catch {
-    getTelemetry().setAccount(null);
+    // Unreadable / absent credentials → anonymous. Not an error worth
+    // surfacing: demo and uncredentialed runs take this path routinely.
+    clientId = null;
+  }
+
+  try {
+    // Optional call, deliberately. A `@pax8/cli` build can end up resolving an
+    // older `@pax8/core` than it was compiled against — that is exactly what
+    // shipped in 0.2.0, where the published core predated `setAccount()` and
+    // every command died with "getTelemetry(...).setAccount is not a function"
+    // (#697). The previous shape called `setAccount` again from its own catch,
+    // so the fallback threw too and the failure was fatal rather than silent.
+    getTelemetry().setAccount?.(clientId);
+  } catch {
+    // Attribution is best-effort and must never take down a command — same
+    // contract as the `loadEnabled()` init in `index.ts`.
   }
 }
 

@@ -18,6 +18,7 @@
     "format": "prettier --write .",
     "dev": "pnpm --filter @pax8/cli dev",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:smoke": "vitest run --config vitest.smoke.config.ts",
     "test:scale": "vitest run packages/cli/src/__tests__/scale-matrix.test.ts"
   },
   "engines": {
