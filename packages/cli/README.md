@@ -43,7 +43,7 @@ The Pax8 API is a CRUD layer; this CLI is what turns raw subscriptions, invoices
 - **`pax8 recommendations list`** — gap analysis across each customer's stack against backup / security / identity / productivity categories; estimates additional Pax8 monthly cost if acted on; emits ready-to-execute order parameters (the `orderArgs` argv array is shell-injection-safe).
 - **`pax8 recommendations act`** — interactive flow that walks portfolio gaps and places the orders. Closes the loop between insight and action in the same tool.
 - **`pax8 cost sim`** — model SKU swaps, quantity changes, and add-product scenarios with monthly/annual MRR delta, *before* placing the order.
-- **`pax8 report subscriptions --by vendor`** / **`pax8 report renewals`** / **`pax8 report concentration`** — aggregations, renewal exposure, and spend-concentration analysis with annual-to-monthly amortization; emits the partner's cost to Pax8 (not partner-side resale revenue).
+- **`pax8 report subscriptions --by vendor`** / **`pax8 report renewals`** / **`pax8 report concentration --by client`** — aggregations, renewal exposure, and spend-concentration analysis with annual-to-monthly amortization; emits the partner's cost to Pax8 (not partner-side resale revenue).
 - **`pax8 doctor`** — diagnostic health check (Node version, config, API connectivity, credentials).
 
 Every command supports `--json`, `--csv`, and `--quiet`. List commands have `--with-actions` to ride a `{ data, nextActions }` envelope. Write commands take `--idempotency-key <uuid>` for safe retry.
