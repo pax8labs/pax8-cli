@@ -1,5 +1,15 @@
 # @pax8/core
 
+## 0.2.1
+
+### Patch Changes
+
+- [#698](https://github.com/pax8labs/pax8-cli/pull/698) [`b6b596e`](https://github.com/pax8labs/pax8-cli/commit/b6b596ef8f730006630cc32ef2520b85dd3c2576) Thanks [@jidulberger](https://github.com/jidulberger)! - fix(release): publish the core APIs `@pax8/cli@0.2.0` was already built against
+
+  These landed in the source tree with [#684](https://github.com/pax8labs/pax8-cli/issues/684) and [#683](https://github.com/pax8labs/pax8-cli/issues/683) but shipped without a changeset, so `@pax8/core` was never versioned and the registry copy of `0.1.6` never contained them. `@pax8/cli@0.2.0` was built against the workspace core (which has them) and published with its `workspace:*` range rewritten to the stale registry `0.1.6` (which does not) — every command then failed at startup with `getTelemetry(...).setAccount is not a function` ([#697](https://github.com/pax8labs/pax8-cli/issues/697)).
+
+  Also includes the `partnerBuyPrice` → `partnerBuyRate` mock-fixture alignment from [#680](https://github.com/pax8labs/pax8-cli/issues/680), unreleased for the same reason.
+
 ## 0.1.6
 
 ### Patch Changes
