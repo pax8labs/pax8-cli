@@ -155,9 +155,21 @@ jobs:
           PUBLISHED: ${{ steps.changesets.outputs.publishedPackages }}
         run: |
           set -euo pipefail
+
+          # Validate the shape before trusting it. `published == 'true'` with a
+          # payload we can't parse means changesets/action changed its output
+          # contract — fail loudly rather than skip the one canary that exists
+          # to catch a broken release.
+          if ! printf '%s' "$PUBLISHED" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+            echo "::error::publishedPackages is not a non-empty JSON array — changesets/action output contract may have changed. Got: $PUBLISHED"
+            exit 1
+          fi
+
           version="$(printf '%s' "$PUBLISHED" | jq -r '.[] | select(.name == "@pax8/cli") | .version')"
           if [ -z "$version" ]; then
-            echo "No @pax8/cli in publishedPackages ($PUBLISHED) — core-only release, nothing to smoke."
+            # Legitimate only when the release genuinely contained no CLI. The
+            # array parsed and was non-empty, so we know which packages shipped.
+            echo "Core-only release ($(printf '%s' "$PUBLISHED" | jq -r '[.[].name] | join(", ")')) — no @pax8/cli to smoke."
             exit 0
           fi
           echo "Smoke-testing @pax8/cli@$version"

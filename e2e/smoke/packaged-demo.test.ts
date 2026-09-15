@@ -62,6 +62,7 @@ const DEMO_COMMANDS: string[][] = [
 ];
 
 let installDir: string;
+let configDir: string;
 let cliBin: string;
 /**
  * Set ONLY when the registry is genuinely unreachable. Every other failure
@@ -73,15 +74,46 @@ let offlineSkip = false;
 
 const NETWORK_ERROR = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|network/i;
 
-function run(
-  cmd: string,
-  args: string[],
-  cwd: string,
-): { stdout: string; stderr: string; status: number } {
+/**
+ * A deliberately small environment for the child process.
+ *
+ * Two reasons not to spread `process.env`. Least privilege: the CLI under test
+ * is a freshly-published artifact, and handing it every variable in the CI job
+ * means any future dependency or telemetry change could pick up an ambient
+ * secret. And determinism: a stray `PAX8_*` in a maintainer's shell
+ * (`PAX8_DEMO_SCALE=large`, a `PAX8_CONFIG_DIR` pointing at real state, live
+ * credentials) would quietly change what this test exercises, so a local run
+ * and a CI run would not mean the same thing.
+ *
+ * `PAX8_CONFIG_DIR` is pinned into the temp install so the CLI's own writes —
+ * `update-check.json`, `last-error.json` — land there and get cleaned up with
+ * it, rather than in the developer's `~/.pax8`.
+ */
+function childEnv(configDir: string): NodeJS.ProcessEnv {
+  const passthrough = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "TMP", "TEMP", "APPDATA"];
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of passthrough) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return {
+    ...env,
+    PAX8_DEMO: "1",
+    PAX8_NO_UPDATE_CHECK: "1",
+    PAX8_CONFIG_DIR: configDir,
+    // The temp dir resolves outside $HOME; opt into the same escape hatch the
+    // main suite uses (see vitest.config.ts).
+    PAX8_ALLOW_NON_HOME_CONFIG: "1",
+    NO_COLOR: "1",
+  };
+}
+
+type RunResult = { stdout: string; stderr: string; status: number };
+
+function spawn(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): RunResult {
   const res = spawnSync(cmd, args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, PAX8_DEMO: "1", PAX8_NO_UPDATE_CHECK: "1" },
+    env,
     // npm on a cold cache is slow; the per-test timeout above is the real bound.
     timeout: 280_000,
   });
@@ -92,9 +124,26 @@ function run(
   };
 }
 
+/**
+ * Build tooling (`pnpm pack`, `npm install`) — inherits the full environment.
+ * npm and pnpm legitimately read a wide set of vars (`npm_config_*`,
+ * `PNPM_HOME`, proxy and cache settings, CI runner vars); starving them would
+ * break the install rather than harden anything. These are the same trusted
+ * tools the rest of the repo already runs.
+ */
+function runTool(cmd: string, args: string[], cwd: string): RunResult {
+  return spawn(cmd, args, cwd, process.env);
+}
+
+/** The artifact under test — minimal env only. See `childEnv`. */
+function runCli(args: string[]): RunResult {
+  return spawn(cliBin, args, installDir, childEnv(configDir));
+}
+
 beforeAll(() => {
   try {
     installDir = mkdtempSync(join(tmpdir(), "pax8-smoke-"));
+    configDir = mkdtempSync(join(tmpdir(), "pax8-smoke-cfg-"));
     // A bare package.json with no workspace field — nothing links back to the
     // monorepo, so `@pax8/core` must come from the registry.
     writeFileSync(
@@ -112,7 +161,7 @@ beforeAll(() => {
       // Note `pnpm pack` takes no `--filter` (pnpm 9 reads it as `--recursive`
       // and errors), so run it from the package directory.
       const packDir = mkdtempSync(join(tmpdir(), "pax8-pack-"));
-      const packed = run(
+      const packed = runTool(
         "pnpm",
         ["pack", "--pack-destination", packDir],
         join(REPO_ROOT, "packages", "cli"),
@@ -126,7 +175,7 @@ beforeAll(() => {
       installSpec = join(packDir, tarball);
     }
 
-    const install = run("npm", ["install", "--no-audit", "--no-fund", installSpec], installDir);
+    const install = runTool("npm", ["install", "--no-audit", "--no-fund", installSpec], installDir);
     if (install.status !== 0) {
       throw new Error(`install of ${installSpec} failed:\n${install.stderr}`);
     }
@@ -145,6 +194,7 @@ beforeAll(() => {
 
 afterAll(() => {
   if (installDir) rmSync(installDir, { recursive: true, force: true });
+  if (configDir) rmSync(configDir, { recursive: true, force: true });
 });
 
 describe(`packaged CLI demo smoke (target=${TARGET})`, () => {
@@ -271,7 +321,7 @@ describe(`packaged CLI demo smoke (target=${TARGET})`, () => {
 
     it(`\`${label}\` succeeds under PAX8_DEMO=1`, (ctx) => {
       skipIfOffline(ctx);
-      const res = run(cliBin, argv, installDir);
+      const res = runCli(argv);
       const combined = `${res.stdout}\n${res.stderr}`;
 
       // The #697 signature specifically: a core API the published core lacks.
@@ -282,7 +332,7 @@ describe(`packaged CLI demo smoke (target=${TARGET})`, () => {
 
     it(`\`${label} --json\` emits a parseable envelope on stdout`, (ctx) => {
       skipIfOffline(ctx);
-      const res = run(cliBin, [...argv, "--json"], installDir);
+      const res = runCli([...argv, "--json"]);
       expect(res.status, `${label} --json exited ${res.status}\n${res.stderr}`).toBe(0);
       // stdout is data only — stderr carries spinners/banners/warnings.
       expect(() => JSON.parse(res.stdout)).not.toThrow();
