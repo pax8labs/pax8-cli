@@ -18,6 +18,7 @@
     "format": "prettier --write .",
     "dev": "pnpm --filter @pax8/cli dev",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:smoke": "vitest run --config vitest.smoke.config.ts",
     "test:scale": "vitest run packages/cli/src/__tests__/scale-matrix.test.ts"
   },
   "engines": {
@@ -43,12 +44,13 @@
     "overrides": {
       "vite": "^8.0.16",
       "picomatch": "^4.0.4",
-      "brace-expansion": "^5.0.7",
+      "brace-expansion": "^5.0.9",
       "yaml": "^2.8.3",
       "esbuild": "^0.28.1",
       "postcss": "^8.5.18",
-      "js-yaml@3": "^3.15.0",
-      "js-yaml@4": "^4.3.0"
+      "js-yaml@3": "^3.15.2",
+      "js-yaml@4": "^4.3.2",
+      "nanoid": "^3.3.18"
     }
   }
 }
