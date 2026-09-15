@@ -21,7 +21,7 @@ import { defineConfig } from "vitest/config";
  * that is precisely how 0.2.0 shipped calling a `@pax8/core` method the
  * published core did not have. Only an out-of-workspace install can catch it.
  *
- * Run with `pnpm test:smoke` (defaults to packing the local workspace) or
+ * Run with `pnpm test:smoke` (packs the local workspace; manual only) or
  * `PAX8_SMOKE_TARGET=registry pnpm test:smoke` (tests what is actually live).
  */
 export default defineConfig({

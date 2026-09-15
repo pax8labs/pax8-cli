@@ -33,11 +33,18 @@ import { fileURLToPath } from "node:url";
  * Two targets:
  * - `local` (default) — `pnpm pack` the workspace packages and install the
  *   cli tarball. Its `@pax8/core` dependency still resolves from the registry,
- *   so this reproduces the publish-time skew *before* a release goes out.
- *   This is the pre-publish gate.
+ *   so this reproduces the publish-time skew without publishing anything.
+ *   **Manual / opt-in: no workflow runs this.** It cannot be an automated
+ *   pre-publish gate as things stand — during a release the packed CLI pins
+ *   the core version being released, which by definition isn't on npm yet, so
+ *   the install would 404. Making it a real gate means splitting the
+ *   changesets publish so core goes out first; tracked separately.
+ *   Run it by hand when touching anything in `packages/core` that the CLI
+ *   imports, and it is the fastest way to reproduce a reported version skew.
  * - `registry` — install `@pax8/cli@$PAX8_SMOKE_VERSION` (default `latest`)
- *   straight from npm. This is the post-release canary: it tests exactly what
- *   users get. Run it after publishing, and to confirm a live breakage.
+ *   straight from npm. This is the post-release canary and the one that is
+ *   automated: `release.yml` runs it after a successful publish. It tests
+ *   exactly what users get.
  */
 
 const TARGET = process.env.PAX8_SMOKE_TARGET ?? "local";

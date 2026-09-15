@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { CredentialStore, getTelemetry, type TelemetryEvent } from "@pax8/core";
+import { debugLog } from "./debug.js";
 
 /**
  * Resolve the partner-account group key for the current process and set it on
@@ -29,9 +30,12 @@ export async function resolveTelemetryAccount(): Promise<void> {
   let clientId: string | null;
   try {
     clientId = (await new CredentialStore().getCredentials())?.clientId ?? null;
-  } catch {
+  } catch (err) {
     // Unreadable / absent credentials → anonymous. Not an error worth
     // surfacing: demo and uncredentialed runs take this path routinely.
+    // Behind PAX8_DEBUG (stderr, redacted) so a systemic credential-store
+    // problem is still diagnosable rather than silently anonymous.
+    debugLog("telemetry account: credential read failed", err);
     clientId = null;
   }
 
@@ -43,9 +47,12 @@ export async function resolveTelemetryAccount(): Promise<void> {
     // (#697). The previous shape called `setAccount` again from its own catch,
     // so the fallback threw too and the failure was fatal rather than silent.
     getTelemetry().setAccount?.(clientId);
-  } catch {
+  } catch (err) {
     // Attribution is best-effort and must never take down a command — same
-    // contract as the `loadEnabled()` init in `index.ts`.
+    // contract as the `loadEnabled()` init in `index.ts`. Still logged behind
+    // PAX8_DEBUG: a version skew that silently drops account attribution
+    // should be findable without a debugger.
+    debugLog("telemetry account: setAccount failed", err);
   }
 }
 

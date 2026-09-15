@@ -171,6 +171,54 @@ describe("telemetry-context", () => {
       expect(captures[0].groups).toEqual({ account: key });
     });
 
+    // Regression guard for #697. The published @pax8/cli@0.2.0 resolved a
+    // @pax8/core whose Telemetry had no setAccount(), and resolveTelemetryAccount
+    // called setAccount from BOTH the try and the catch — so the fallback threw
+    // too and the preAction hook rejected, killing every command before its body
+    // ran. These two lock in "telemetry setup can never be fatal", which is the
+    // property that actually protects users, independent of any version pin.
+    // `setAccount` is a prototype method, so `delete instance.setAccount` is a
+    // no-op — it would leave the real method reachable and the test would pass
+    // against the very bug it is meant to catch. Shadow it with an own property
+    // instead, then remove the shadow to restore.
+    const withSetAccount = async (value: unknown, fn: () => Promise<void>) => {
+      const telemetry = getTelemetry() as unknown as Record<string, unknown>;
+      Object.defineProperty(telemetry, "setAccount", {
+        value,
+        configurable: true,
+        writable: true,
+      });
+      try {
+        await fn();
+      } finally {
+        delete telemetry.setAccount;
+      }
+    };
+
+    it("does not throw when the resolved core has no setAccount (version skew)", async () => {
+      process.env.PAX8_CLIENT_ID = "partner-under-test";
+      process.env.PAX8_CLIENT_SECRET = "secret";
+
+      // Simulate the older published core: the method simply isn't there.
+      await withSetAccount(undefined, async () => {
+        await expect(resolveTelemetryAccount()).resolves.toBeUndefined();
+      });
+    });
+
+    it("does not throw when setAccount itself throws", async () => {
+      delete process.env.PAX8_CLIENT_ID;
+      delete process.env.PAX8_CLIENT_SECRET;
+
+      await withSetAccount(
+        () => {
+          throw new Error("boom");
+        },
+        async () => {
+          await expect(resolveTelemetryAccount()).resolves.toBeUndefined();
+        },
+      );
+    });
+
     it("resolves to no group when no credentials are configured", async () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
