@@ -1,5 +1,18 @@
 # @pax8/cli
 
+## 0.2.1
+
+### Patch Changes
+
+- [#698](https://github.com/pax8labs/pax8-cli/pull/698) [`b6b596e`](https://github.com/pax8labs/pax8-cli/commit/b6b596ef8f730006630cc32ef2520b85dd3c2576) Thanks [@jidulberger](https://github.com/jidulberger)! - fix(telemetry): never let account attribution take down a command ([#697](https://github.com/pax8labs/pax8-cli/issues/697))
+
+  `resolveTelemetryAccount()` called `getTelemetry().setAccount()` again from its own `catch` block, so when the resolved `@pax8/core` predated that method the fallback threw too and the `preAction` hook rejected — turning a best-effort telemetry detail into a fatal error on every single invocation, including demo mode. The call is now optional (`setAccount?.()`) and independently guarded, matching the "never block the CLI on telemetry init" contract already used by `loadEnabled()`.
+
+  Adds `pnpm test:smoke`, which installs the packaged CLI into a clean temp directory — so `@pax8/core` resolves from the registry rather than the workspace link — and runs the README demo commands end to end. That resolution difference is what hid this regression from the existing suites.
+
+- Updated dependencies [[`b6b596e`](https://github.com/pax8labs/pax8-cli/commit/b6b596ef8f730006630cc32ef2520b85dd3c2576)]:
+  - @pax8/core@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
