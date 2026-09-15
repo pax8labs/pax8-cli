@@ -119,7 +119,24 @@ Examples:
 - **An imperative is not approval.** "Cancel X" is the request, not the sign-off — step 1 of the write protocol requires showing the change first, so approval necessarily comes after the preview. In a session with no human to answer, every write therefore stops at the preview. That is the correct outcome, not a failure.
 - **Parallel fetches.** When you need two independent calls (e.g. subs + companies), run them in parallel.
 - **Resolve names, hide UUIDs.** Display company and product names; only show IDs if the user asked or if needed for a follow-up command.
-- **Order previews are mandatory — use `--dry-run`.** `pax8 orders create … --dry-run` validates the order and returns price/total/estimated Pax8 cost impact **without placing it** (it sets `isMock=true` on the wire). That is a genuine non-mutating preview; omitting `--yes` is not, because it depends on an interactive prompt that may not exist (see the write protocol, step 3). Preview with `--dry-run`, show the user, get approval, then run it for real.
+- **Order previews are mandatory — use `--dry-run --yes`.** `pax8 orders create … --dry-run --yes --json` validates the order and returns the full preview **without placing it** (`isMock=true` on the wire; the response carries `dryRun: true`, `monthlyCost`, `annualCost`, `unitPrice`, and the resolved `companyName` / `productName`). Verify `dryRun: true` is in the response before trusting it.
+
+  **Both flags are needed.** `--dry-run` alone still stops on an interactive `Run dry-run validation? [y/n]` prompt, which hangs or silently no-ops in an agent session. `--yes` here only skips *that* prompt — it cannot place an order, because `--dry-run` is what guarantees nothing is written. This is the one place `--yes` is safe without prior approval, and it is safe precisely because it is paired with `--dry-run`.
+
+  Then show the user the preview, get approval, and run it for real **without** `--dry-run`. Omitting `--yes` on the real run is not itself a safety net — see the write protocol, step 3.
+
+  **The preview is not always obtainable.** For a product needing a commitment term, the CLI resolves it from an existing subscription on that company. A customer buying their first SKU — or their first of that commitment shape — has nothing to resolve from, so `--dry-run` fails exactly like the real order would:
+
+  ```
+  "causes": ["Product … requires a commitment term",
+             "This product requires a commitment term ID that couldn't be auto-resolved"]
+  ```
+
+  Check first with `pax8 subscriptions list --company "<name>" --json | jq '[.subscriptions[].commitment]'` — all `null` means no preview is available. **Do not improvise a `--commitment-term-id` from another customer's subscription.** Report that the order can't be validated from the CLI and hand it back to the user; a first-SKU order is a portal flow.
+
+  **The CLI's own `recoverySteps` for this error do not work.** It suggests `--commitment-term Monthly` / `--commitment-term 1-Year`; both return the identical error. Don't loop on them — the error's recovery hints are advisory, and this one is wrong.
+
+  **Dry-run money fields are bare numbers**, not `{ amount, currency }`: `monthlyCost: 150`, `annualCost: 1800`, `unitPrice: 6`. Reading `.amount` here yields `undefined`. The `{ amount, currency }` rule holds for computed rollups (`dashboard`, `today`, `report *`), not for this response.
 - **Lead with the number.** Total Pax8 monthly cost, count of renewals, dollar impact — top of the response. Top 3-5 rows, not every row.
 
 (Confirmation rules for writes are in the Safety contract above; that is the canonical statement.)
@@ -175,7 +192,12 @@ Where `args` is absent, **do not fall back to tokenizing `command`** — that's 
 
 Every entry also carries a `description` field, useful for previews.
 
-`recommendations list` is the one list command with a different envelope: `{ recommendations, totalAvailable }` (#521), no `page`.
+Two commands break the envelope rule — check these before assuming:
+
+- **`recommendations list`** → `{ recommendations, totalAvailable }` (#521), no `page`.
+- **`quotes line-items list <quote-id>`** → a **bare JSON array**, no envelope and no `page`. Iterate it directly; `.items` and `.page` are both `null`.
+
+**Ignore `_`-prefixed keys.** `clients list` emits `_num`, and `clients list --coverage` adds `_coverage`, `_missing`, `_potential` — table-rendering artifacts that duplicate the real fields in display form (`_coverage: "3/7"` vs `coverage: "3/7"`, `_missing: "email, identity"` vs `missingCategories: ["email","identity"]`). Always read the unprefixed field; the `_` ones are pre-formatted strings, not data.
 
 Result size: list commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost rollups, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 
@@ -241,7 +263,18 @@ pax8 orders list --json [--company <id|name>] [--page <n>] [--size <n>] [--sort 
   # 2013 archives in row 1 on long-lived tenants. Compare orders.length to
   # page.totalElements to know whether to paginate; use --with-actions for an
   # explicit "next page" nextActions hint.
-pax8 orders create --company <id|name> --product <id|name> --quantity <n> [--billing-term Monthly|Annual]
+pax8 orders create --company <id|name> --product <id|name> --quantity <n>
+                   [--billing-term Monthly|Annual|2-Year|3-Year|One-Time|Trial|Activation]
+                   [--commitment-term Monthly|1-Year|3-Year] [--commitment-term-id <uuid>]
+                   [--line-item product=<id|name>,quantity=<n>[,billing-term=…][,commitment-term=…]]
+                   [--dry-run] [--idempotency-key <uuid>]
+  # --billing-term defaults to Monthly.
+  # MANY PRODUCTS REQUIRE A COMMITMENT TERM. The CLI auto-resolves it from an
+  # existing subscription on that company. If the company has no subscription
+  # carrying a `commitment` object, the order fails with ERROR_INVALID_INPUT
+  # ("requires a commitment term ID that couldn't be auto-resolved") — and so
+  # does the DRY RUN, so you cannot preview it either. See the preview note.
+  # --line-item is for multi-line orders; repeat the flag per line.
 ```
 
 ### Write command syntax
@@ -252,9 +285,14 @@ Listed so you can show the user exactly what would run. **Confirm before any of 
 pax8 subscriptions update <id> [--quantity <n>] [--billing-term <term>]
 pax8 subscriptions cancel <id> [--immediately] [--cancel-date <YYYY-MM-DD>]
   # Destructive: typed-keyword challenge on top of --yes.
-  # Cancelling BEFORE the commitment term end date does not stop billing
-  # and is NOT refundable — say so in the preview, it's the single most
-  # consequential fact about a cancellation.
+  # DEFAULT IS THE SAFE PATH: on a committed subscription, bare `cancel <id>`
+  # schedules cancellation for the commitment term end date. Don't add
+  # --immediately unless the user asked to cancel TODAY and understands that
+  # cancelling before the term end does NOT stop billing — per the Pax8 Direct
+  # User Agreement, fees for the unused portion of the term are nonrefundable.
+  # Say that in the preview; it's the most consequential fact about a cancel.
+  # Vendor rules (Microsoft NCE 7-day window, Adobe renewal-only, Azure
+  # Savings Plan finality) can still cause the API to reject.
 pax8 invoices dispute --discrepancy <id>              # id from `invoices audit`
 pax8 clients create|update [--name <name>] …
 pax8 contacts create|update|delete <id> --company <id|name>
@@ -284,6 +322,9 @@ pax8 quotes list --json
 pax8 webhooks logs [id] --json [--since 7d|24h]              # delivery history
 pax8 doctor                                                  # diagnostics, not for data
 pax8 explain <term>                                          # glossary — Pax8 / CLI vocabulary
+  # Emits JSON on stdout by default (no --json needed):
+  # { term, category, short, detail, seeAlso[] }. Fuzzy-resolves the term
+  # ("mrr" → "mrr-uplift"). Useful when a field name's meaning is unclear.
 ```
 
 ## Agent-consumed enums
@@ -441,6 +482,7 @@ Don't reimplement what's already a first-class command (renewals, audit, recomme
 - **Empty results** (e.g. `renewals --within 7d` returns `{ "renewals": [] }`): say so explicitly ("no renewals in the next 7 days"). Don't fabricate rows. Offer to widen the window.
 - **A `jq` path returning `null`.** Suspect the envelope before you conclude there's no data — `.[]` on a wrapped object, or `.items` where the key is the resource name, both yield `null` rather than an error. Re-check with `jq 'keys'`.
 - **Read `message`, not just `code`.** The codes are the machine-readable contract, but they are not always right: a missing resource currently surfaces as `ERROR_NOT_AUTHORIZED` with a message reading `Quote not found: Q-1001` (#712). Matching on the code alone would send a correctly-authenticated partner to re-run `pax8 auth login` — itself a write. When code and message disagree, believe the message.
+- **`recoverySteps` are advisory and can be wrong.** They are authored hints, not verified fixes. `orders create` on a product needing a commitment term suggests `--commitment-term Monthly`, which returns the identical error. Try a recovery step once; if it reproduces the same failure, stop and tell the user rather than cycling through the rest.
 - **Flag values are redacted in errors.** Invalid input comes back as `unknown option '<REDACTED:ARG>'` rather than naming the flag, so the error text alone won't tell you what you got wrong. Re-check against this skill's flag tables or `--help`; don't retry variations blindly.
 - **Rate limit** (429): pause, summarize what you got, and surface the limit to the user. Don't hammer.
 - **Diagnostic before giving up.** If something feels off (stale cache, weird timeouts, auth issues), `pax8 doctor` is the one-shot health check. Don't run it preemptively.

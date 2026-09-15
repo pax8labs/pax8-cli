@@ -404,6 +404,64 @@ describe("agent-contract surface pinning (#704)", () => {
       ).toEqual([]);
     });
 
+    it("pins the commands that deliberately break the envelope rule", async () => {
+      // Two exceptions exist and both are documented. This test is here so a
+      // third can't appear silently — an agent that assumes `{ <resource>, page }`
+      // and gets a bare array reads `.page` as null and concludes the data is
+      // missing. `quotes line-items list` was found only by running it.
+      const lineItems = parse<unknown>(
+        (await runCliExpectSuccess(
+          ["quotes", "line-items", "list", "quote-bright-001", "--json"],
+          { PAX8_DEMO: "1" },
+        )).stdout,
+      );
+      expect(
+        Array.isArray(lineItems),
+        "`quotes line-items list` used to return a bare array. If it now returns an " +
+          `envelope that is an improvement — move it into LIST_ENVELOPES and drop the ` +
+          `exception from ${SKILL_PATH}.`,
+      ).toBe(true);
+
+      const recs = parse<JsonRecord>(
+        (await runCliExpectSuccess(["recommendations", "list", "--json"], {
+          PAX8_DEMO: "1",
+        })).stdout,
+      );
+      expect(Object.keys(recs).sort()).toEqual([
+        "recommendations",
+        "totalAvailable",
+      ]);
+
+      const skill = readSkill();
+      for (const phrase of ["quotes line-items list", "bare JSON array"]) {
+        expect(
+          skill.includes(phrase),
+          `${SKILL_PATH} must keep documenting the bare-array exception.`,
+        ).toBe(true);
+      }
+    });
+
+    it("documents the `_`-prefixed display artifacts agents must ignore", async () => {
+      // `clients list` mixes table-rendering strings into the JSON payload.
+      // They shadow real fields (`_coverage: "3/7"` vs `coverage: "3/7"`), so
+      // an agent can easily read the formatted one and then try to do math on it.
+      const payload = parse<{ companies: JsonRecord[] }>(
+        (await runCliExpectSuccess(["clients", "list", "--coverage", "--json"], {
+          PAX8_DEMO: "1",
+        })).stdout,
+      );
+      const underscored = Object.keys(payload.companies[0]).filter((k) =>
+        k.startsWith("_"),
+      );
+      expect(underscored.length).toBeGreaterThan(0);
+      expect(
+        readSkill().includes("Ignore `_`-prefixed keys"),
+        `clients list emits ${JSON.stringify(underscored)} into its JSON payload. ` +
+          `${SKILL_PATH} must tell agents to ignore them — or the CLI should stop ` +
+          `emitting them, in which case delete this test and the skill paragraph.`,
+      ).toBe(true);
+    });
+
     it("skill.md documents each envelope key it tells agents to read", () => {
       const skill = readSkill();
       for (const { key } of LIST_ENVELOPES) {
