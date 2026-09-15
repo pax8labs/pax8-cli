@@ -37,12 +37,12 @@ import { emitWarnings, type WarningRecord } from "../lib/aggregator-fetch.js";
  * skill.md) document. New kinds must be added to all four places.
  */
 export type TodayItemKind =
-  | "renewal-urgent"      // commitmentTerm.endDate ≤ 7 days
-  | "audit-overcharge"    // invoice audit: partner billed more than active subs
-  | "audit-undercharge"   // invoice audit: partner billed less than active subs
-  | "growth-high"         // recommendation with priority="high"
-  | "trial-expiring"      // Trial-status sub with renewalDate ≤ 14 days
-  | "renewal-upcoming";   // commitmentTerm.endDate 8-30 days
+  | "renewal-urgent" // commitmentTerm.endDate ≤ 7 days
+  | "audit-overcharge" // invoice audit: partner billed more than active subs
+  | "audit-undercharge" // invoice audit: partner billed less than active subs
+  | "growth-high" // recommendation with priority="high"
+  | "trial-expiring" // Trial-status sub with renewalDate ≤ 14 days
+  | "renewal-upcoming"; // commitmentTerm.endDate 8-30 days
 
 type Priority = "high" | "medium" | "low";
 
@@ -167,6 +167,42 @@ export async function fetchAll(
   return { allSubs, companies, products, invoiceItems, warnings };
 }
 
+/**
+ * Run the invoice audit, but only when there is something to audit (#705).
+ *
+ * `auditInvoices` reports an active subscription with no matching invoice line
+ * as a `missing` discrepancy, signed negative so it surfaces as an undercharge.
+ * That is correct per line — but it means an EMPTY item set turns *every*
+ * active subscription into a finding. A tenant whose invoices simply hadn't
+ * posted yet produced 681 phantom discrepancies and "$950,640 on the table"
+ * against 476 subscriptions and zero invoices. Nothing was under-billed;
+ * nothing was billed at all.
+ *
+ * `invoices audit` already draws this line via its own `allItems.length === 0`
+ * short circuit. `today` has to draw it too — and before `buildAuditItems`, so
+ * the phantom rows never reach `dollarsOnTable` / `monthlyImpact` either.
+ *
+ * Deliberately distinct from the *fetch-failure* path: a rejected invoices feed
+ * emits the "audit findings suppressed" warning in `fetchAll`. Here the fetch
+ * succeeded and legitimately returned nothing, so there is nothing to warn
+ * about — there is simply no audit to run.
+ */
+export function auditWhenInvoiced(
+  invoiceItems: Parameters<typeof auditInvoices>[0],
+  normalizedSubs: Parameters<typeof auditInvoices>[1],
+): ReturnType<typeof auditInvoices> {
+  if (invoiceItems.length === 0) {
+    return {
+      discrepancies: [],
+      totalOvercharge: 0,
+      totalUndercharge: 0,
+      netImpact: 0,
+      itemsAudited: 0,
+    };
+  }
+  return auditInvoices(invoiceItems, normalizedSubs);
+}
+
 // ── Item builders ─────────────────────────────────────────────────────────────
 
 function renewalCurrency(r: RenewalItem): string {
@@ -201,7 +237,13 @@ function buildRenewalItems(renewals: { items: RenewalItem[] }): {
       monthlyImpact: { amount: Number(r.mrrRenewing.toFixed(2)), currency: renewalCurrency(r) },
       action: {
         command: `pax8 subscriptions renewals --within ${r.daysUntilRenewal <= 7 ? 7 : 30}d`,
-        args: ["pax8", "subscriptions", "renewals", "--within", `${r.daysUntilRenewal <= 7 ? 7 : 30}d`],
+        args: [
+          "pax8",
+          "subscriptions",
+          "renewals",
+          "--within",
+          `${r.daysUntilRenewal <= 7 ? 7 : 30}d`,
+        ],
         description: `Walk the renewal triage`,
       },
     };
@@ -216,10 +258,7 @@ interface StampedDiscrepancy extends AuditDiscrepancy {
   discrepancyId: string;
 }
 
-function buildAuditItems(
-  discrepancies: StampedDiscrepancy[],
-  currency: string,
-): TodayItem[] {
+function buildAuditItems(discrepancies: StampedDiscrepancy[], currency: string): TodayItem[] {
   // Sort by absolute dollar impact descending. A $1,200 undercharge ranks
   // above a $300 overcharge — both are money on the floor, the bigger one
   // gets attention first.
@@ -245,10 +284,7 @@ function buildAuditItems(
   });
 }
 
-function buildGrowthItems(
-  highRecs: Recommendation[],
-  currency: string,
-): TodayItem[] {
+function buildGrowthItems(highRecs: Recommendation[], currency: string): TodayItem[] {
   // Sort by estimatedMrrUplift DESC — concrete dollars first. Nulls last,
   // mirroring `recommendations list` (#521). Filtered to high-priority +
   // orderable upstream.
@@ -289,10 +325,7 @@ function buildGrowthItems(
   });
 }
 
-function buildTrialItems(
-  allSubs: Subscription[],
-  currency: string,
-): TodayItem[] {
+function buildTrialItems(allSubs: Subscription[], currency: string): TodayItem[] {
   // Trials with an end date in the next 14 days. Demo fixture sometimes lacks
   // commitmentTerm on trials; those fall through silently — better than
   // surfacing a stale trial with no deadline.
@@ -302,10 +335,10 @@ function buildTrialItems(
   for (const sub of allSubs) {
     if (sub.status !== "Trial") continue;
     // Subscription has `commitmentTermEndDate` (flat) + `commitment` (nested
-     // CommitmentSchema with optional `endDate`). Renewal tracker uses both
-     // because it accepts a more permissive Partial input shape; on real
-     // Subscriptions we only have these two slots.
-     const endDateRaw = sub.commitmentTermEndDate ?? sub.commitment?.endDate;
+    // CommitmentSchema with optional `endDate`). Renewal tracker uses both
+    // because it accepts a more permissive Partial input shape; on real
+    // Subscriptions we only have these two slots.
+    const endDateRaw = sub.commitmentTermEndDate ?? sub.commitment?.endDate;
     if (!endDateRaw) continue;
     const endDate = new Date(endDateRaw).getTime();
     if (Number.isNaN(endDate)) continue;
@@ -323,7 +356,15 @@ function buildTrialItems(
       monthlyImpact: { amount: Number(monthly.toFixed(2)), currency: sub.currencyCode ?? currency },
       action: {
         command: `pax8 subscriptions list --status Trial --company "${sub.companyName ?? sub.companyId}"`,
-        args: ["pax8", "subscriptions", "list", "--status", "Trial", "--company", sub.companyName ?? sub.companyId],
+        args: [
+          "pax8",
+          "subscriptions",
+          "list",
+          "--status",
+          "Trial",
+          "--company",
+          sub.companyName ?? sub.companyId,
+        ],
         description: `Review the trial`,
       },
     });
@@ -435,7 +476,12 @@ function renderHuman(
   // and must NOT be counted as hidden. JSON consumers use the larger
   // `summary.truncated` since they see `flat`, not the section breakdown.
   perSectionTruncated: number,
-  context: { totalCompanies: number; activeSubs: number; portfolioMonthly: number; currency: string },
+  context: {
+    totalCompanies: number;
+    activeSubs: number;
+    portfolioMonthly: number;
+    currency: string;
+  },
 ): void {
   const now = new Date();
   out.write("\n");
@@ -490,7 +536,9 @@ function renderHuman(
         `     ${chalk.dim(`${i + 1}.`)} ${chalk.bold(item.companyName)} — ${item.summary}\n`,
       );
     });
-    out.write(chalk.dim(`        → pax8 invoices audit  ·  pax8 invoices dispute --discrepancy <id>\n\n`));
+    out.write(
+      chalk.dim(`        → pax8 invoices audit  ·  pax8 invoices dispute --discrepancy <id>\n\n`),
+    );
   }
 
   // ── Growth ──────────────────────────────────────────────────────
@@ -540,23 +588,28 @@ function renderHuman(
     // hint at this level would be unreachable. The full tail is surfaced
     // via the summary.truncated count + the section-level command below.
     sections.upcomingRenewals.forEach((item, i) => {
-      out.write(
-        `     ${chalk.dim(`${i + 1}.`)} ${item.companyName} — ${item.summary}\n`,
-      );
+      out.write(`     ${chalk.dim(`${i + 1}.`)} ${item.companyName} — ${item.summary}\n`);
     });
     out.write(chalk.dim(`        → pax8 subscriptions renewals --within 30d\n\n`));
   }
 
   // ── Truncation hint ─────────────────────────────────────────────
   if (perSectionTruncated > 0) {
-    out.write(chalk.dim(`  … ${perSectionTruncated} more action${perSectionTruncated > 1 ? "s" : ""} not shown — run section-level commands above to see them.\n\n`));
+    out.write(
+      chalk.dim(
+        `  … ${perSectionTruncated} more action${perSectionTruncated > 1 ? "s" : ""} not shown — run section-level commands above to see them.\n\n`,
+      ),
+    );
   }
 
   // ── Closer line ─────────────────────────────────────────────────
   // One short warmth note. Phrasing rotates by section count so a partner
   // running this every morning doesn't see the same closer twice in a row.
   const actionCount =
-    sections.urgentRenewals.length + sections.audit.length + sections.growth.length + sections.trials.length;
+    sections.urgentRenewals.length +
+    sections.audit.length +
+    sections.growth.length +
+    sections.trials.length;
   const closer =
     actionCount === 0
       ? "Upcoming items only — nothing urgent today."
@@ -608,7 +661,7 @@ async function runToday(options: Record<string, unknown>, cmd: Command): Promise
       const { id: _id, ...rest } = s;
       return { ...rest, subscriptionId: undefined, unitPrice: s.price };
     });
-    const auditReport = auditInvoices(invoiceItems, normalizedSubs);
+    const auditReport = auditWhenInvoiced(invoiceItems, normalizedSubs);
     const stamped: StampedDiscrepancy[] = auditReport.discrepancies.map((d) => ({
       ...d,
       discrepancyId: discrepancyId({
@@ -657,8 +710,7 @@ async function runToday(options: Record<string, unknown>, cmd: Command): Promise
       // and `items[].kind === "<x>"` to find exactly that many entries.
       const countKind = (kinds: TodayItemKind[]) =>
         flat.filter((i) => kinds.includes(i.kind)).length;
-      const itemsByKind = (kinds: TodayItemKind[]) =>
-        flat.filter((i) => kinds.includes(i.kind));
+      const itemsByKind = (kinds: TodayItemKind[]) => flat.filter((i) => kinds.includes(i.kind));
 
       const urgentRenewalsInFlat = itemsByKind(["renewal-urgent"]);
       const auditInFlat = itemsByKind(["audit-overcharge", "audit-undercharge"]);

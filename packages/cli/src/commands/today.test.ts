@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { assembleToday, type TodayItem } from "./today.js";
+import { assembleToday, auditWhenInvoiced, type TodayItem } from "./today.js";
 
 /**
  * Unit tests for the pure ranking / assembly logic in `today.ts`.
@@ -28,9 +28,7 @@ describe("assembleToday", () => {
   it("caps each section at PER_KIND_CAP=3 (one runaway category can't crowd out the others)", () => {
     // 15 urgent renewals all by themselves: per-section cap drops to 3.
     // Flat composite ends up at 3 because no other sections contribute.
-    const urgent = Array.from({ length: 15 }, (_, i) =>
-      mkItem({ summary: `renews in ${i + 1}d` }),
-    );
+    const urgent = Array.from({ length: 15 }, (_, i) => mkItem({ summary: `renews in ${i + 1}d` }));
     const out = assembleToday({
       urgentRenewals: urgent,
       upcomingRenewals: [],
@@ -47,8 +45,7 @@ describe("assembleToday", () => {
   it("caps the flat composite at 10 across sections", () => {
     // 5 sections × 3 items each = 15 visible per-section-capped items.
     // Composite cap of 10 drops the last 5.
-    const five = (k: TodayItem["kind"]) =>
-      Array.from({ length: 5 }, () => mkItem({ kind: k }));
+    const five = (k: TodayItem["kind"]) => Array.from({ length: 5 }, () => mkItem({ kind: k }));
     const out = assembleToday({
       urgentRenewals: five("renewal-urgent"),
       audit: five("audit-overcharge"),
@@ -71,8 +68,7 @@ describe("assembleToday", () => {
     // Composite cap fires, dropping 5 to flat. Human render shows all 15
     // section items. perSectionTruncated must be 0 in this exact case
     // because no input section exceeded PER_KIND_CAP.
-    const three = (k: TodayItem["kind"]) =>
-      Array.from({ length: 3 }, () => mkItem({ kind: k }));
+    const three = (k: TodayItem["kind"]) => Array.from({ length: 3 }, () => mkItem({ kind: k }));
     const out = assembleToday({
       urgentRenewals: three("renewal-urgent"),
       audit: three("audit-overcharge"),
@@ -134,5 +130,63 @@ describe("assembleToday", () => {
     expect(out.flat.length).toBe(0);
     expect(out.truncated).toBe(0);
     expect(out.sections.urgentRenewals.length).toBe(0);
+  });
+});
+
+/**
+ * Regression guard for #705.
+ *
+ * A live tenant with 476 active subscriptions and zero invoices produced 681
+ * "undercharge" findings and a `dollarsOnTable` of $950,640 — every active
+ * subscription counted as `missing` because there were no invoice lines to
+ * match against. `pax8 invoices audit` reported nothing for the same tenant in
+ * the same minute; only `today` was affected, and `today` is the command agents
+ * are told to lead with.
+ */
+describe("auditWhenInvoiced (#705)", () => {
+  const sub = {
+    companyId: "c1",
+    companyName: "Acme",
+    productId: "p1",
+    productName: "Widget",
+    quantity: 10,
+    unitPrice: 100,
+    status: "Active",
+  };
+
+  it("returns an empty report when there are no invoice items", () => {
+    const report = auditWhenInvoiced([], [sub] as never);
+
+    expect(report.discrepancies).toEqual([]);
+    expect(report.itemsAudited).toBe(0);
+    expect(report.totalOvercharge).toBe(0);
+    expect(report.totalUndercharge).toBe(0);
+    expect(report.netImpact).toBe(0);
+  });
+
+  it("does not invent findings as the subscription count grows", () => {
+    // The bug scaled with the portfolio: more subscriptions, more phantom
+    // money. Pin that an empty invoice set stays empty regardless.
+    const many = Array.from({ length: 476 }, (_, i) => ({ ...sub, companyId: `c${i}` }));
+
+    expect(auditWhenInvoiced([], many as never).discrepancies).toHaveLength(0);
+  });
+
+  it("still audits normally once invoice items exist", () => {
+    // Guard must not suppress real findings — bill for 4 when 10 are active.
+    const items = [
+      {
+        companyId: "c1",
+        companyName: "Acme",
+        productId: "p1",
+        productName: "Widget",
+        quantity: 4,
+        unitPrice: 100,
+      },
+    ];
+    const report = auditWhenInvoiced(items as never, [sub] as never);
+
+    expect(report.itemsAudited).toBeGreaterThan(0);
+    expect(report.discrepancies.length).toBeGreaterThan(0);
   });
 });
