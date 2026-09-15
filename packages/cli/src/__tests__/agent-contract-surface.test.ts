@@ -644,6 +644,43 @@ describe("agent-contract surface pinning (#704)", () => {
       expect(typeof r.recommendations[0].orderCommand).toBe("string");
     });
 
+    it("invoices audit rows carry the field names the recipe documents", async () => {
+      // This assertion exists because the first version of the audit recipe
+      // invented `id`, `expected`, and `actual` — none of which are emitted.
+      // An agent building `--discrepancy ${row.id}` would have produced
+      // `--discrepancy undefined` and shown the user a preview naming a
+      // discrepancy that doesn't exist, defeating write-protocol step 1.
+      const audit = parse<{ discrepancies: JsonRecord[] } & JsonRecord>(
+        (await runCliExpectSuccess(["invoices", "audit", "--json"], {
+          PAX8_DEMO: "1",
+        })).stdout,
+      );
+      expect(audit.discrepancies.length).toBeGreaterThan(0);
+      const row = audit.discrepancies[0];
+      for (const k of [
+        "discrepancyId",
+        "type",
+        "companyId",
+        "companyName",
+        "productName",
+        "invoicedQuantity",
+        "activeQuantity",
+        "delta",
+        "dollarImpact",
+      ]) {
+        expect(
+          row,
+          `audit discrepancy row is missing "${k}", which ${SKILL_PATH} tells agents to read`,
+        ).toHaveProperty(k);
+      }
+      // The dispute argument is `discrepancyId`; a bare `id` has never existed.
+      expect(row).not.toHaveProperty("id");
+
+      for (const k of ["totalOvercharge", "totalUndercharge", "netImpact", "itemsAudited"]) {
+        expect(audit, `audit envelope is missing "${k}"`).toHaveProperty(k);
+      }
+    });
+
     it("subscriptions renewals carries no aggregate the docs could point at", async () => {
       // The renewal-triage recipe used to say "lead with totalMrrRenewing".
       // That field is real on @pax8/core's RenewalReport but absent from the

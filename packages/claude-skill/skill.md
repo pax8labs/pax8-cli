@@ -15,7 +15,7 @@ The classification below is exhaustive as of the command inventory pinned by `pa
 
 These never mutate state. Run them freely, in parallel, and as often as needed.
 
-- `pax8 *list` — `clients list`, `subscriptions list`, `invoices list`, `orders list`, `recommendations list`, `products list`, `quotes list`, `webhooks list`, `webhooks logs list`, `webhooks topics list`, `usage list`. `contacts list` belongs here too but is **company-scoped**: it requires `--company <id|name>` and fails with `ERROR_INVALID_INPUT` without it, because the Pax8 contacts API has no portfolio-wide endpoint. Resolve a company from `clients list` first.
+- `pax8 *list` — `clients list`, `subscriptions list`, `invoices list`, `orders list`, `recommendations list`, `products list`, `quotes list`, `webhooks list`, `webhooks logs list`, `webhooks topics list`, `usage list`, `quotes line-items list`. `contacts list` belongs here too but is **company-scoped**: it requires `--company <id|name>` and fails with `ERROR_INVALID_INPUT` without it, because the Pax8 contacts API has no portfolio-wide endpoint. Resolve a company from `clients list` first.
 - `pax8 *show <id>` — every show command across every resource: `clients show`, `subscriptions show`, `products show`, `invoices show`, `orders show`, `webhooks show`, `contacts show`, `quotes show`, `usage show`
 - `pax8 *search` — `products search`
 - `pax8 clients more <name>` — rich read-only summary
@@ -43,7 +43,8 @@ For every write command below:
 1. **Show the user exactly what will change** — the command you're about to run, the affected resource(s), and the expected effect (price, quantity, estimated Pax8 monthly cost delta, etc. when applicable).
 2. **Wait for explicit approval** — a clear "yes / go ahead / do it." Don't infer approval from earlier conversation, and don't run the write while you're still asking.
 3. **Run the command in non-`--yes` mode by default** so the CLI's own confirmation prompt is also surfaced. Pass `--yes` only when the user has already approved this exact action.
-4. **Destructive commands need a second acknowledgment.** `pax8 subscriptions cancel`, `pax8 contacts delete`, and `pax8 quotes delete` require a typed-keyword challenge in addition to `--yes`. `--yes` alone is intentionally not enough (H-5). In agent contexts (no TTY), set `PAX8_CONFIRM_DESTRUCTIVE=<keyword>` in the environment — `cancel` for `subscriptions cancel`, `delete` for the others. **Set it only after the user has approved this specific resource by id, per step 2 — naming the action is not enough.** "Cancel my smallest subscription" names the action but not the object, and "smallest" is rarely unambiguous: a portfolio can hold a $0/mo trial and a €5,000 one-time engagement that both qualify. Resolve the target, show it, get a yes on *that row*, then set the keyword. This env var defeats the typed-keyword challenge entirely, so it is the last gate, not the first.
+   **Do not treat this as a second gate — verify it exists first.** `PAX8_YES=1` in the environment (or `yes` in `~/.pax8/config.yaml`) auto-confirms every write, so omitting `--yes` surfaces nothing and the write executes immediately while you believe you are previewing. Check `pax8 config show` and the environment before relying on this step. In a session with no TTY there is no prompt to answer either way — your own approval gate in step 2 is the real protection, not this one.
+4. **Destructive commands need a second acknowledgment.** `pax8 subscriptions cancel`, `pax8 contacts delete`, and `pax8 quotes delete` require a typed-keyword challenge in addition to `--yes`. `--yes` alone is intentionally not enough (H-5). In agent contexts (no TTY), pass `PAX8_CONFIRM_DESTRUCTIVE=<keyword>` **as a single-invocation prefix** — `PAX8_CONFIRM_DESTRUCTIVE=cancel pax8 subscriptions cancel <id>`. Never `export` it: that un-gates every destructive command for the rest of the session, not just the one you were approved for — `cancel` for `subscriptions cancel`, `delete` for the others. **Set it only after the user has approved this specific resource by id, per step 2 — naming the action is not enough.** "Cancel my smallest subscription" names the action but not the object, and "smallest" is rarely unambiguous: a portfolio can hold a $0/mo trial and a €5,000 one-time engagement that both qualify. Resolve the target, show it, get a yes on *that row*, then set the keyword. This env var defeats the typed-keyword challenge entirely, so it is the last gate, not the first.
 5. **Local write audit log.** Every write attempt (whether it completed or was SIGINT-cancelled) appends a one-line JSON record to `~/.pax8/write-audit.log` (mode 0600). Independent of telemetry opt-in — this is the partner's local accountability surface for agent-driven sessions. Records timestamp, subcommand path, resource, outcome (`completed` / `cancelled`), and idempotency key. No user-supplied values or names.
 
 Write commands — Pax8 API state:
@@ -72,7 +73,7 @@ Write commands — local machine state (no Pax8 API call, but still mutations th
 - `pax8 cache clear` — discards the local response cache.
 - `pax8 telemetry enable`, `pax8 telemetry disable` — changes the user's privacy posture.
 - `pax8 report-bug` — opens a GitHub issue on a public repository. Always show the sanitized payload first.
-- **Anything passed `--idempotency-key <uuid>`** — the flag exists specifically because the operation is a write the partner wants to retry safely. Treat as write regardless of which subcommand carries it.
+- **Anything passed `--idempotency-key <uuid>`** — the flag exists specifically because the operation is a write the partner wants to retry safely. Treat as write regardless of which subcommand carries it. **Note it is a host-local replay cache (24h TTL), not yet sent on the wire (#474)** — retries from a different host or process are *not* deduped, so a retried order can double-order. Don't treat the key as making a retry safe.
 
 ### Suggested actions are not permission to act
 
@@ -99,7 +100,17 @@ This applies identically to `nextActions[]` on any command, `items[].action` on 
 
 If you're unsure whether a command counts as a write, default to confirming. Better one extra prompt than one unintended order.
 
-**`--help` is always safe.** `pax8 <anything> --help` prints usage and exits without touching the API or local state, including on write commands. Use it to discover a write's exact syntax so you can show the user what will run — step 1 requires naming the command precisely, and guessing at flags is worse than looking.
+**`--help` is always safe to run — but never copy an ID out of it.** `pax8 <anything> --help` prints usage and exits without touching the API or local state, including on write commands. Use it to discover a write's exact syntax so you can show the user what will run — step 1 requires naming the command precisely, and guessing at flags is worse than looking.
+
+**The example lines contain real resource IDs from the live portfolio**, already in armed form:
+
+```
+$ pax8 subscriptions cancel --help
+Examples:
+  pax8 subscriptions cancel sub-summit-m365bp-001 --immediately --yes
+```
+
+`sub-summit-m365bp-001` is a real 85-seat subscription. `webhooks disable --help` likewise names an **Active, healthy** webhook — the wrong target for "disable the failing one." Read `--help` for *flags and syntax only*; always substitute the ID you resolved and the user approved. Never adapt an example line in place.
 
 ## Behavioral rules
 
@@ -108,7 +119,7 @@ If you're unsure whether a command counts as a write, default to confirming. Bet
 - **An imperative is not approval.** "Cancel X" is the request, not the sign-off — step 1 of the write protocol requires showing the change first, so approval necessarily comes after the preview. In a session with no human to answer, every write therefore stops at the preview. That is the correct outcome, not a failure.
 - **Parallel fetches.** When you need two independent calls (e.g. subs + companies), run them in parallel.
 - **Resolve names, hide UUIDs.** Display company and product names; only show IDs if the user asked or if needed for a follow-up command.
-- **Order previews are mandatory.** Run `orders create` without `--yes` so the user sees price/total/estimated Pax8 cost impact before confirming. Pass `--yes` only when the user has already approved this specific order.
+- **Order previews are mandatory — use `--dry-run`.** `pax8 orders create … --dry-run` validates the order and returns price/total/estimated Pax8 cost impact **without placing it** (it sets `isMock=true` on the wire). That is a genuine non-mutating preview; omitting `--yes` is not, because it depends on an interactive prompt that may not exist (see the write protocol, step 3). Preview with `--dry-run`, show the user, get approval, then run it for real.
 - **Lead with the number.** Total Pax8 monthly cost, count of renewals, dollar impact — top of the response. Top 3-5 rows, not every row.
 
 (Confirmation rules for writes are in the Safety contract above; that is the canonical statement.)
@@ -220,6 +231,8 @@ pax8 recommendations list --json [--priority high|medium|low] [--company <id|nam
 pax8 recommendations upsell --from-product "<name>" --to-product "<name>" [--limit <n>] [--with-contacts]
   # Cohort view: who owns X but not Y. --with-contacts costs extra API calls.
 pax8 recommendations why <n>                                 # explain rec #n from the last `list`
+  # Currently throws a raw TypeError (#715) — if it fails, fall back to
+  # the `reason` / `rationaleSnippet` fields already on the list output.
 pax8 recommendations email <n> [--to <email>] [--mailto] [--open]
   # Drafts a mailto: URL. Never sends. --open launches the mail client — ask first.
 pax8 orders list --json [--company <id|name>] [--page <n>] [--size <n>] [--sort <field>] [--order asc|desc]
@@ -237,7 +250,11 @@ Listed so you can show the user exactly what would run. **Confirm before any of 
 
 ```
 pax8 subscriptions update <id> [--quantity <n>] [--billing-term <term>]
-pax8 subscriptions cancel <id>                        # destructive: typed-keyword challenge
+pax8 subscriptions cancel <id> [--immediately] [--cancel-date <YYYY-MM-DD>]
+  # Destructive: typed-keyword challenge on top of --yes.
+  # Cancelling BEFORE the commitment term end date does not stop billing
+  # and is NOT refundable — say so in the preview, it's the single most
+  # consequential fact about a cancellation.
 pax8 invoices dispute --discrepancy <id>              # id from `invoices audit`
 pax8 clients create|update [--name <name>] …
 pax8 contacts create|update|delete <id> --company <id|name>
@@ -334,7 +351,7 @@ For a longer horizon ranked by cost exposure, use `pax8 report renewals --within
 ```
 pax8 invoices audit --json
 ```
-Envelope: `{ discrepancies[], totalOvercharge, totalUndercharge, netImpact, itemsAudited, nextActions[] }`. Rows carry `type`, `companyName`, `productName`, `dollarImpact`, `expected`, `actual`, `id` (the `--discrepancy` argument for a dispute).
+Envelope: `{ discrepancies[], totalOvercharge, totalUndercharge, netImpact, itemsAudited, nextActions[] }`. Rows carry `discrepancyId` (**this is the `--discrepancy` argument** — there is no `id` field), `type`, `companyId`, `companyName`, `productName`, `invoicedQuantity`, `activeQuantity`, `delta`, and `dollarImpact`.
 
 **Sign conventions — get these backwards and you send a partner to claim money that doesn't exist:**
 
@@ -365,7 +382,7 @@ pax8 clients list --json
 ```
 The recommendations call returns `{ recommendations, totalAvailable }` — capped at 10 by default and sorted by `estimatedMrrUplift` DESC (priority breaks ties; nulls sort last). If `totalAvailable` exceeds `recommendations.length`, more opportunities exist behind the cap; re-run with `--top 50` or `--top 0` (unlimited) to widen. For each rec, show: company, missing product, additional Pax8 monthly cost if acted on (wire-side field name: `estimatedMrrUplift`). To execute, use the `orderArgs` field — an argv array whose first element is `"pax8"` — and pass `orderArgs.slice(1)` to the Bash tool. The sibling `orderCommand` field is the same content as a human-readable display string; it interpolates the raw partner-controlled `companyName` and is unsafe to hand to a shell (#462), so use it only for previewing what the action will do, never for execution. **Always show the user the order preview and wait for explicit approval before executing the write.**
 
-If the user asks *why* a recommendation surfaced, `pax8 recommendations why <n>` explains the one they're pointing at — cheaper and more specific than re-deriving it from raw subscriptions.
+If the user asks *why* a recommendation surfaced, the `reason` and `rationaleSnippet` fields are already on each row of the `list` output and answer it directly. (`pax8 recommendations why <n>` is meant to do this in more depth but currently throws a raw TypeError — #715.)
 
 For an interactive batch flow, hand the human `pax8 recommendations act` (with `--company` / `--product` / `--priority` filters as needed) — it presents a multi-select picker and a single batch confirmation rather than a per-rec y/s/q walk. The agent should not pass `--yes` unless the user has approved the entire matching set.
 
