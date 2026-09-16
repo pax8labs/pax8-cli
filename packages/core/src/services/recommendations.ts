@@ -577,12 +577,21 @@ export function getRecommendations(
 
   // Build product price lookup for MRR uplift estimates
   // Source 1: product catalog pricing (if available)
-  const productPriceMap = new Map<string, number>();
+  //
+  // The billing term rides along with the price: a One-Time or Trial SKU
+  // must not be amortised as recurring. Before #710 this map held bare
+  // numbers and uplift was `price × seats` regardless of term, so a
+  // $5,000 one-time onboarding SKU across 39 seats reported $195,000/mo
+  // of recurring uplift — 110x the entire portfolio's monthly cost.
+  const productPriceMap = new Map<string, { price: number; billingTerm: string }>();
   if (products) {
     for (const p of products) {
       const monthlyRate = p.pricing?.find((r) => r.billingTerm === "Monthly");
       if (monthlyRate) {
-        productPriceMap.set(p.name.toLowerCase(), monthlyRate.suggestedRetailPrice);
+        productPriceMap.set(p.name.toLowerCase(), {
+          price: monthlyRate.suggestedRetailPrice,
+          billingTerm: "Monthly",
+        });
       }
     }
   }
@@ -592,7 +601,7 @@ export function getRecommendations(
     const name = (sub.productName ?? "").toLowerCase();
     const price = sub.price ?? 0;
     if (name && price > 0 && !productPriceMap.has(name)) {
-      productPriceMap.set(name, price);
+      productPriceMap.set(name, { price, billingTerm: sub.billingTerm ?? "Monthly" });
     }
   }
 
@@ -649,9 +658,11 @@ export function getRecommendations(
         let estimatedMrrUplift: number | null = null;
         const suggestedName = rule.suggestedProducts[0];
         if (suggestedName) {
-          const price = productPriceMap.get(suggestedName.toLowerCase());
-          if (price) {
-            estimatedMrrUplift = price * primaryQty;
+          const entry = productPriceMap.get(suggestedName.toLowerCase());
+          if (entry) {
+            // Via subscriptionMrr so One-Time / Trial / Activation contribute
+            // 0 rather than being counted as recurring (#710).
+            estimatedMrrUplift = subscriptionMrr(entry.price, primaryQty, entry.billingTerm);
           }
         }
 
@@ -689,9 +700,13 @@ export function getRecommendations(
 
         // If initial price lookup failed but we resolved a real product name, retry lookup
         if (!estimatedMrrUplift && resolvedProductName) {
-          const resolvedPrice = productPriceMap.get(resolvedProductName.toLowerCase());
-          if (resolvedPrice) {
-            estimatedMrrUplift = resolvedPrice * primaryQty;
+          const resolvedEntry = productPriceMap.get(resolvedProductName.toLowerCase());
+          if (resolvedEntry) {
+            estimatedMrrUplift = subscriptionMrr(
+              resolvedEntry.price,
+              primaryQty,
+              resolvedEntry.billingTerm,
+            );
           }
         }
 
@@ -765,8 +780,10 @@ export function getRecommendations(
     // Check seat gaps
     const gaps = findSeatGaps(subs);
     for (const gap of gaps) {
-      const price = productPriceMap.get(gap.gapProduct.toLowerCase());
-      const estimatedMrrUplift = price ? price * gap.missingSeats : null;
+      const gapPrice = productPriceMap.get(gap.gapProduct.toLowerCase());
+      const estimatedMrrUplift = gapPrice
+        ? subscriptionMrr(gapPrice.price, gap.missingSeats, gapPrice.billingTerm)
+        : null;
 
       // For seat gaps, use the product ID directly from the subscription.
       // See buildOrderArtifacts (#462) for the shell-injection rationale

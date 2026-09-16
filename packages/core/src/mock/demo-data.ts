@@ -122,7 +122,11 @@ export interface Product {
  * as the real API regardless of which client they hold.
  */
 export interface ProductPricing {
-  billingTerm: "Monthly" | "Annual";
+  // Full `BillingTermSchema` union, not just Monthly | Annual. Narrowing it
+  // meant a One-Time professional-services SKU could not be represented in
+  // the catalog at all, which is why the onboarding subscription ended up
+  // borrowing M365 E3's productId (#707).
+  billingTerm: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";
   commitmentTerm: "Monthly" | "1-Year" | "3-Year";
   partnerBuyRate: number;
   suggestedRetailPrice: number;
@@ -788,6 +792,28 @@ export const products: Product[] = [
       },
     ],
   },
+  // One-time professional-services SKU. Exists so the One-Time billing-term
+  // path has a catalog entry to resolve against — before #707 the onboarding
+  // subscription borrowed M365 E3's productId, which made its seat-gap
+  // recommendation emit an orderArgs naming E3 while suggestedProducts named
+  // onboarding. Priced per engagement, not per seat.
+  {
+    id: "prod-m365-onboarding-0011",
+    name: "Microsoft 365 onboarding & migration (one-time)",
+    vendorName: "Microsoft",
+    sku: "M365_ONBOARDING_MIGRATION",
+    shortDescription:
+      "One-time professional services engagement covering Microsoft 365 tenant onboarding and mailbox migration.",
+    unitOfMeasurement: "Engagement",
+    pricing: [
+      {
+        billingTerm: "One-Time",
+        commitmentTerm: "Monthly",
+        partnerBuyRate: 4250.0,
+        suggestedRetailPrice: 5000.0,
+      },
+    ],
+  },
 ];
 
 // ─── Subscriptions ───────────────────────────────────────────────────────────
@@ -1256,8 +1282,8 @@ export const subscriptions: Subscription[] = [
   {
     id: "sub-coastline-onboarding-004",
     companyId: COASTLINE_ID,
-    productId: "prod-m365-e3-0003",
-    productName: "M365 onboarding & migration (one-time)",
+    productId: "prod-m365-onboarding-0011",
+    productName: "Microsoft 365 onboarding & migration (one-time)",
     quantity: 1,
     startDate: "2025-04-07",
     createdAt: "2025-04-01",
@@ -1279,7 +1305,7 @@ export const subscriptions: Subscription[] = [
     id: "sub-bright-defender-trial-003",
     companyId: BRIGHT_ID,
     productId: "prod-defender-biz-0007",
-    productName: "Microsoft Defender for Office 365 (Plan 1) — trial",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 5,
     startDate: "2025-05-10",
     createdAt: "2025-05-08",
