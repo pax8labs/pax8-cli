@@ -31,7 +31,7 @@ These never mutate state. Run them freely, in parallel, and as often as needed.
 - `pax8 today` — morning brief / do-list (composite of dashboard + renewals + audit + recs + trials)
 - `pax8 doctor` — diagnostics only
 - `pax8 webhooks logs [id]` — delivery history (read-only; the `retry` subcommand is a write)
-- `pax8 auth status`, `pax8 config show`, `pax8 config path`, `pax8 demo status`, `pax8 telemetry status`, `pax8 cache status`, `pax8 version`, `pax8 explain <term>`, `pax8 completions <shell>` — local introspection
+- `pax8 auth status`, `pax8 config show`, `pax8 config path`, `pax8 demo status`, `pax8 telemetry status`, `pax8 cache status`, `pax8 version`, `pax8 explain <term>`, `pax8 completions <shell>` (prints a script to stdout — **but its documented usage appends to `~/.bashrc` / `~/.zshrc`, or truncates a fish completions file with `>`. Redirecting it is a local write: confirm first**)
 - `pax8 upgrade --check` — reports whether a newer version exists; never installs
 
 `pax8 recommendations email <n>` drafts a customer-ready email and prints a `mailto:` URL. It never sends anything, so the draft itself is read-only — but `--open` launches the user's mail client. Don't pass `--open` without asking.
@@ -44,12 +44,18 @@ For every write command below:
 2. **Wait for explicit approval** — a clear "yes / go ahead / do it." Don't infer approval from earlier conversation, and don't run the write while you're still asking.
 3. **Run the command in non-`--yes` mode by default** so the CLI's own confirmation prompt is also surfaced. Pass `--yes` only when the user has already approved this exact action.
    **Do not treat this as a second gate — verify it exists first.** `PAX8_YES=1` in the environment (or `yes` in `~/.pax8/config.yaml`) auto-confirms every write, so omitting `--yes` surfaces nothing and the write executes immediately while you believe you are previewing. Check `pax8 config show` and the environment before relying on this step. In a session with no TTY there is no prompt to answer either way — your own approval gate in step 2 is the real protection, not this one.
-4. **Destructive commands need a second acknowledgment.** `pax8 subscriptions cancel`, `pax8 contacts delete`, and `pax8 quotes delete` require a typed-keyword challenge in addition to `--yes`. `--yes` alone is intentionally not enough (H-5). In agent contexts (no TTY), pass `PAX8_CONFIRM_DESTRUCTIVE=<keyword>` **as a single-invocation prefix** — `PAX8_CONFIRM_DESTRUCTIVE=cancel pax8 subscriptions cancel <id>`. Never `export` it: that un-gates every destructive command for the rest of the session, not just the one you were approved for — `cancel` for `subscriptions cancel`, `delete` for the others. **Set it only after the user has approved this specific resource by id, per step 2 — naming the action is not enough.** "Cancel my smallest subscription" names the action but not the object, and "smallest" is rarely unambiguous: a portfolio can hold a $0/mo trial and a €5,000 one-time engagement that both qualify. Resolve the target, show it, get a yes on *that row*, then set the keyword. This env var defeats the typed-keyword challenge entirely, so it is the last gate, not the first.
-5. **Local write audit log.** Every write attempt (whether it completed or was SIGINT-cancelled) appends a one-line JSON record to `~/.pax8/write-audit.log` (mode 0600). Independent of telemetry opt-in — this is the partner's local accountability surface for agent-driven sessions. Records timestamp, subcommand path, resource, outcome (`completed` / `cancelled`), and idempotency key. No user-supplied values or names.
+4. **Destructive commands need a second acknowledgment.** `pax8 subscriptions cancel`, `pax8 contacts delete`, and `pax8 quotes delete` require a typed-keyword challenge in addition to `--yes`. `--yes` alone is intentionally not enough (H-5). In agent contexts (no TTY), pass `PAX8_CONFIRM_DESTRUCTIVE=<keyword>` **as a single-invocation prefix** — the keyword is `cancel` for `subscriptions cancel` and `delete` for `contacts delete` / `quotes delete`:
+
+   ```
+   PAX8_CONFIRM_DESTRUCTIVE=cancel pax8 subscriptions cancel <id>
+   ```
+
+   **Never `export` it.** An exported value un-gates every destructive command for the rest of the session, not just the one you were approved for. **Set it only after the user has approved this specific resource by id, per step 2 — naming the action is not enough.** "Cancel my smallest subscription" names the action but not the object, and "smallest" is rarely unambiguous: a portfolio can hold a $0/mo trial and a €5,000 one-time engagement that both qualify. Resolve the target, show it, get a yes on *that row*, then set the keyword. This env var defeats the typed-keyword challenge entirely, so it is the last gate, not the first.
+5. **Local write audit log.** Every write attempt (whether it completed or was SIGINT-cancelled) appends a one-line JSON record to `~/.pax8/write-audit.log` (mode 0600). Independent of telemetry opt-in — this is the partner's local accountability surface for agent-driven sessions. Records timestamp, subcommand path, resource, and outcome (`completed` / `cancelled`). No user-supplied values or names. **It does not distinguish a `--dry-run` preview from a real order** — a dry run logs `{"command":"orders create","outcome":"completed"}` identically, and the promised idempotency key is absent (#718). Don't cite this log to a user as evidence that something was or wasn't really placed.
 
 Write commands — Pax8 API state:
 
-- `pax8 recommendations act` — places real orders. Always interactive; only invoke during a human-in-the-loop session.
+- `pax8 recommendations act` — places real orders for **every** recommendation in the filtered set. Only invoke during a human-in-the-loop session. Without a TTY it fails closed (exit 1, "Cannot show interactive picker"), placing nothing — that is the safe outcome, **not a reason to reach for the escape hatch it suggests.** Its recovery steps offer `--yes`, which skips the picker and orders the whole filtered set in one shot (13 recommendations in the current demo fixture, not the 3 `today` shows you). Never follow that recovery step without the user having approved the entire matching set, enumerated. Note the CLI's own help text says non-interactive mode "opts in to skipping that gate" — that wording is wrong; it refuses (#718).
 - `pax8 invoices dispute` — files a billing dispute against a discrepancy.
 - `pax8 orders create` — places a real order, charges the partner, creates a subscription.
 - `pax8 clients create`, `pax8 clients update` — partner-account-level customer-record changes.
@@ -96,6 +102,7 @@ This applies identically to `nextActions[]` on any command, `items[].action` on 
 ### Known defects — do not execute blindly
 
 - **`orderArgs` / `orderCommand` can name the wrong product (#707).** When a recommendation's gap SKU is missing from the catalog, the order builder falls back to the *reference* product — the SKU the customer already has — while `suggestedProducts[0]` still names the intended one, and `productAvailable` still reads `true`. **Before previewing or executing any order derived from a recommendation, resolve the `--product` value in `orderArgs` against `pax8 products show <id>` and confirm its name matches `suggestedProducts[0]`.** If they disagree, say so and stop; do not place the order. `orderCommand` renders a product ID rather than a name, so a human preview will not catch this either.
+- **A `today` growth item cannot be checked against #707 on its own (#707).** `items[].action.args` on a `growth-high` item carries the same possibly-wrong `--product` as `orderArgs`, but the item has only `action`, `companyId`, `companyName`, `kind`, `monthlyImpact`, `priority`, `summary` — **no `suggestedProducts`**, so there is nothing to compare against. Before acting on any `orders create` action from `today`, re-fetch `pax8 recommendations list --json --top 0`, match the row on `companyId` + the product named in `summary`, and run the #707 check against *that* row's `suggestedProducts[0]`. The wrong-SKU order in the current fixture reaches agents through exactly this path, and it sorts first because #710 inflates its impact.
 - **`nextActions[].args` is missing on `dashboard`, `invoices audit`, `cost sim`, and `subscriptions renewals` (#708).** See the Output-flags table. Where `args` is absent there is no safe way to execute the suggestion — surface `command` to the user as text and let them run it; never tokenize it yourself.
 
 If you're unsure whether a command counts as a write, default to confirming. Better one extra prompt than one unintended order.
@@ -125,7 +132,7 @@ Examples:
 
   Then show the user the preview, get approval, and run it for real **without** `--dry-run`. Omitting `--yes` on the real run is not itself a safety net — see the write protocol, step 3.
 
-  **The preview is not always obtainable.** For a product needing a commitment term, the CLI resolves it from an existing subscription on that company. A customer buying their first SKU — or their first of that commitment shape — has nothing to resolve from, so `--dry-run` fails exactly like the real order would:
+  **The preview is not always obtainable (#717).** For a product needing a commitment term, the CLI resolves it from an existing subscription on that company. A customer buying their first SKU — or their first of that commitment shape — has nothing to resolve from, so `--dry-run` fails exactly like the real order would:
 
   ```
   "causes": ["Product … requires a commitment term",
@@ -134,9 +141,9 @@ Examples:
 
   Check first with `pax8 subscriptions list --company "<name>" --json | jq '[.subscriptions[].commitment]'` — all `null` means no preview is available. **Do not improvise a `--commitment-term-id` from another customer's subscription.** Report that the order can't be validated from the CLI and hand it back to the user; a first-SKU order is a portal flow.
 
-  **The CLI's own `recoverySteps` for this error do not work.** It suggests `--commitment-term Monthly` / `--commitment-term 1-Year`; both return the identical error. Don't loop on them — the error's recovery hints are advisory, and this one is wrong.
+  **The CLI's own `recoverySteps` for this error do not work (#717).** It suggests `--commitment-term Monthly` / `--commitment-term 1-Year`; both return the identical error. Don't loop on them — the error's recovery hints are advisory, and this one is wrong.
 
-  **Dry-run money fields are bare numbers**, not `{ amount, currency }`: `monthlyCost: 150`, `annualCost: 1800`, `unitPrice: 6`. Reading `.amount` here yields `undefined`. The `{ amount, currency }` rule holds for computed rollups (`dashboard`, `today`, `report *`), not for this response.
+  **Dry-run money fields are bare numbers (#717)**, not `{ amount, currency }`: `monthlyCost: 150`, `annualCost: 1800`, `unitPrice: 6`. Reading `.amount` here yields `undefined`. The `{ amount, currency }` rule holds for computed rollups (`dashboard`, `today`, `report *`), not for this response.
 - **Lead with the number.** Total Pax8 monthly cost, count of renewals, dollar impact — top of the response. Top 3-5 rows, not every row.
 
 (Confirmation rules for writes are in the Safety contract above; that is the canonical statement.)
@@ -195,9 +202,9 @@ Every entry also carries a `description` field, useful for previews.
 Two commands break the envelope rule — check these before assuming:
 
 - **`recommendations list`** → `{ recommendations, totalAvailable }` (#521), no `page`.
-- **`quotes line-items list <quote-id>`** → a **bare JSON array**, no envelope and no `page`. Iterate it directly; `.items` and `.page` are both `null`.
+- **`quotes line-items list <quote-id>`** → a **bare JSON array**, no envelope and no `page`. Iterate it directly; `.items` and `.page` are both `null` (#716).
 
-**Ignore `_`-prefixed keys.** `clients list` emits `_num`, and `clients list --coverage` adds `_coverage`, `_missing`, `_potential` — table-rendering artifacts that duplicate the real fields in display form (`_coverage: "3/7"` vs `coverage: "3/7"`, `_missing: "email, identity"` vs `missingCategories: ["email","identity"]`). Always read the unprefixed field; the `_` ones are pre-formatted strings, not data.
+**Ignore `_`-prefixed keys (#716).** `clients list` emits `_num`, and `clients list --coverage` adds `_coverage`, `_missing`, `_potential` — table-rendering artifacts that duplicate the real fields in display form (`_coverage: "3/7"` vs `coverage: "3/7"`, `_missing: "email, identity"` vs `missingCategories: ["email","identity"]`). Always read the unprefixed field; the `_` ones are pre-formatted strings, not data.
 
 Result size: list commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost rollups, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 
@@ -253,8 +260,10 @@ pax8 recommendations list --json [--priority high|medium|low] [--company <id|nam
 pax8 recommendations upsell --from-product "<name>" --to-product "<name>" [--limit <n>] [--with-contacts]
   # Cohort view: who owns X but not Y. --with-contacts costs extra API calls.
 pax8 recommendations why <n>                                 # explain rec #n from the last `list`
-  # Currently throws a raw TypeError (#715) — if it fails, fall back to
-  # the `reason` / `rationaleSnippet` fields already on the list output.
+  # BROKEN (#715): `recommendations list` writes no cache, so `why` and
+  # `email` always throw a raw TypeError — in table mode as well as --json.
+  # Don't try to prime it by running `list` first; that isn't the problem.
+  # Use the `reason` / `rationaleSnippet` fields on the list rows instead.
 pax8 recommendations email <n> [--to <email>] [--mailto] [--open]
   # Drafts a mailto: URL. Never sends. --open launches the mail client — ask first.
 pax8 orders list --json [--company <id|name>] [--page <n>] [--size <n>] [--sort <field>] [--order asc|desc]
