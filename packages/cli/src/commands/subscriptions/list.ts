@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import {
   SubscriptionStatusSchema,
@@ -274,26 +275,14 @@ Examples:
           const top = subsList[0];
           if (top) {
             const showArgs = ["pax8", "subscriptions", "show", String(top.id)];
-            nextActions.push({
-              command: displayCommandFromArgs(showArgs),
-              args: showArgs,
-              description: `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`,
-            });
+            nextActions.push(buildAction(showArgs, `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`));
           }
           if (trials.length > 0) {
             const trialArgs = ["pax8", "subscriptions", "list", "--status", "Trial", "--json"];
-            nextActions.push({
-              command: displayCommandFromArgs(trialArgs),
-              args: trialArgs,
-              description: `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`,
-            });
+            nextActions.push(buildAction(trialArgs, `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`));
           }
           const renewalsArgs = ["pax8", "subscriptions", "renewals", "--json", "--with-actions"];
-          nextActions.push({
-            command: displayCommandFromArgs(renewalsArgs),
-            args: renewalsArgs,
-            description: "Check upcoming renewals before they auto-renew",
-          });
+          nextActions.push(buildAction(renewalsArgs, "Check upcoming renewals before they auto-renew"));
           process.stdout.write(
             JSON.stringify({ subscriptions: subsList, page: pageEnvelope, nextActions }, null, 2) + "\n"
           );

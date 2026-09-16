@@ -430,13 +430,17 @@ export function buildNextPageAction(
   page: PageEnvelope,
   nextPageArgs: readonly string[],
   resourceSingular: string,
-): { command: string; args: string[]; description: string } | null {
+): { command: string; args: string[]; description: string; isWrite: boolean } | null {
   if (!hasNextPage(page)) return null;
   const plural = `${resourceSingular}s`;
   return {
     command: displayCommandFromArgs(nextPageArgs),
     args: [...nextPageArgs],
     description: `Fetch the next page of ${plural} (page ${page.number + 1} of ${page.totalPages})`,
+    // Pagination is always a read. Stamped explicitly rather than left
+    // absent so every emitted action carries the field (#708) — an agent
+    // checking `isWrite` should never find it undefined and have to guess.
+    isWrite: false,
   };
 }
 

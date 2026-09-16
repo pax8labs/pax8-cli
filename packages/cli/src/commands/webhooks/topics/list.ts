@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction, type EmittedAction } from "../../../lib/actions.js";
 import chalk from "chalk";
 import { buildContext } from "../../../lib/context.js";
 import { output, singlePageEnvelope } from "../../../lib/output.js";
@@ -53,14 +54,19 @@ Examples:
         // we synthesize a single-page envelope.
         const page = singlePageEnvelope(sorted.length);
         if (options.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          const nextActions: EmittedAction[] = [];
           if (sorted.length > 0) {
-            nextActions.push({
-              command:
-                'pax8 webhooks create --url https://example.com/hook --display-name "My webhook" --topics ' +
-                sorted[0].topic,
-              description: "Create a webhook subscribed to this topic",
-            });
+            nextActions.push(
+              buildAction(
+                [
+                  "webhooks", "create",
+                  "--url", "https://example.com/hook",
+                  "--display-name", "My webhook",
+                  "--topics", sorted[0].topic,
+                ],
+                "Create a webhook subscribed to this topic",
+              ),
+            );
           }
           process.stdout.write(
             JSON.stringify({ topics: sorted, page, nextActions }, null, 2) + "\n",

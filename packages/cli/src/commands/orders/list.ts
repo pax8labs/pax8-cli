@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import { ApiError, isApiTimeoutError, ERROR_API_TIMEOUT } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
@@ -168,11 +169,7 @@ Examples:
           if (pageAction) nextActions.push(pageAction);
           if (orders.length > 0) {
             const showArgs = ["pax8", "orders", "show", String(orders[0].id)];
-            nextActions.push({
-              command: displayCommandFromArgs(showArgs),
-              args: showArgs,
-              description: `Drill into the most recent order on this page`,
-            });
+            nextActions.push(buildAction(showArgs, `Drill into the most recent order on this page`));
           }
           process.stdout.write(
             JSON.stringify({ orders, page: pageEnvelope, nextActions }, null, 2) + "\n",
