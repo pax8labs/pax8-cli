@@ -320,6 +320,46 @@ describe("pax8 doctor — installed-skill drift (#720)", () => {
     expect(action?.args).toEqual(["pax8", "skill", "install", "--global"]);
   });
 
+  it("reports the most serious drift first, not the first scope in order", async () => {
+    // A stale project copy must not hide a modified global one: the
+    // modified copy is the more serious finding, and it is the one whose
+    // fix needs --force. Scope order alone would report the project's.
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-skill-order-"));
+    try {
+      const { createHash } = await import("node:crypto");
+      const projectSkillDir = path.join(projectDir, ".claude", "skills", "pax8");
+      await fs.mkdir(projectSkillDir, { recursive: true });
+      const oldContent = "---\nname: pax8\ndescription: older\n---\n\nOld.\n";
+      await fs.writeFile(path.join(projectSkillDir, "SKILL.md"), oldContent, "utf-8");
+      await fs.writeFile(
+        path.join(projectSkillDir, ".pax8-skill.json"),
+        JSON.stringify({
+          source: "@pax8/cli",
+          cliVersion: "0.0.1",
+          installedAt: new Date(0).toISOString(),
+          checksum: `sha256:${createHash("sha256").update(oldContent, "utf-8").digest("hex")}`,
+        }) + "\n",
+        "utf-8",
+      );
+
+      await runCliExpectSuccess(["skill", "install", "--yes"], env());
+      await fs.appendFile(globalSkillPath(), "\nEdited by hand.\n", "utf-8");
+
+      const result = await runCli(["doctor", "--json"], env(), { cwd: projectDir });
+      const payload = JSON.parse(result.stdout) as {
+        checks: { name: string; detail?: string }[];
+        nextActions: { command: string; args: string[] }[];
+      };
+      const check = payload.checks.find((c) => c.name === "Claude skill");
+      expect(check?.detail).toContain("locally modified");
+      expect(check?.detail).toContain("global copy");
+      const action = payload.nextActions.find((a) => a.command.startsWith("pax8 skill install"));
+      expect(action?.args).toEqual(["pax8", "skill", "install", "--global", "--force"]);
+    } finally {
+      await fs.rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(process.platform === "win32")(
     "names a symlinked copy as such and suggests no install that would fail",
     async () => {

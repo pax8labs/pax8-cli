@@ -131,7 +131,9 @@ export interface TelemetryEvent {
   upgrade_to?: string;
   /**
    * For `skill install`: outcome of the run
-   * (printed | unchanged | created | updated | cancelled).
+   * (printed | unchanged | created | updated | cancelled | refused —
+   * `refused` covers the paths that throw before installing: a modified
+   * copy without `--force`, a symlink, an unreadable file).
    */
   skill_action?: string;
   /** For `skill install`: install target (global | project). */

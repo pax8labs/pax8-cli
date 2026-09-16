@@ -130,6 +130,16 @@ Claude Code loads skills at session start — start a new session afterwards.`,
       const installed = readInstalledSkill(scope);
       const state = classifyInstall(installed, shipped.checksum);
 
+      // Staged before any refusal path so the states this telemetry exists
+      // to count — a partner sitting on a modified or unreadable copy —
+      // aren't the ones that go unrecorded. `emit()` overwrites
+      // `skill_action` with the real outcome when the run gets that far.
+      setTelemetryFields({
+        skill_action: "refused",
+        skill_scope: scope,
+        skill_previous_state: state,
+      });
+
       const emit = (action: InstallAction): void => {
         setTelemetryFields({
           skill_action: action,

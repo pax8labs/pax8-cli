@@ -468,7 +468,14 @@ async function checkClaudeSkill(): Promise<SkillCheck> {
     };
   }
 
-  const drifted = present.filter((s) => s.state !== "current");
+  // Report the most actionable drift first, not just the first scope in
+  // array order. A project copy that is merely stale would otherwise hide
+  // a *modified* global one behind it — and the modified one is both the
+  // more serious finding and the one whose fix needs `--force`.
+  const SEVERITY: Record<string, number> = { modified: 0, unreadable: 1, stale: 2 };
+  const drifted = present
+    .filter((s) => s.state !== "current")
+    .sort((a, b) => (SEVERITY[a.state] ?? 9) - (SEVERITY[b.state] ?? 9));
   if (drifted.length === 0) {
     return {
       check: {
