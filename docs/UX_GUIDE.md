@@ -468,7 +468,7 @@ Two delivery modes, depending on the response shape:
 
 Composite-summary commands (`today`) additionally carry a per-item `action: { command, args, description }` slot — same argv contract as `nextActions[]`. Agents pick an item by priority, then spawn `item.action.args.slice(1)` directly without ever re-deriving the command line.
 
-The opt-in flag for list commands exists because the default contract is "list commands return a flat array" — agents that already parse `pax8 ... list --json` as an array of records don't break. If they want hints, they pass `--with-actions` and accept the wrapped envelope.
+`--with-actions` is opt-in for historical reasons: it predates #483, when list commands really did return a bare array and adding `nextActions` meant restructuring the response. Since #483 every list command is already an envelope, so the flag is now purely additive — it appends `nextActions` beside the existing `<resourceKey>` and `page` keys rather than changing the shape. Agents that ignore the flag see exactly what they saw before.
 
 The resource key inside the envelope matches the resource name (`companies`, `subscriptions`, `renewals`, `recommendations`, `webhooks`, `logs`, `invoices`). Diagnostic siblings (e.g. `unmatchedProducts` on recommendations) ride alongside `nextActions`.
 

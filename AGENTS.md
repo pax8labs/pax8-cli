@@ -18,7 +18,7 @@ When asked anything about Pax8 data, your first action should be a shell call. N
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
 | Pax8 cost / monthly spend / annualized spend | `pax8 dashboard --json 2>/dev/null` (top-line `monthlyCost.amount` / `annualCost.amount`) or `pax8 clients more "<name>" --json` for per-client breakdown. `pax8 report subscriptions --by vendor --json` for grouped Pax8 cost. |
-| growth / portfolio trend | `pax8 dashboard --json 2>/dev/null` (see `topCustomers`, `highPriorityRecs`, `potentialPax8MonthlyUplift`) or `pax8 subscriptions list --json --size 1000` for raw data |
+| growth / portfolio trend | `pax8 dashboard --json 2>/dev/null` (see `topCustomers`, `highPriorityRecs`, `potentialMonthlyUplift`) or `pax8 subscriptions list --json --size 1000` for raw data |
 | recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
@@ -91,11 +91,11 @@ If unsure whether a command counts as a write, default to confirming. Better one
 
 | Flag | When to use |
 |---|---|
-| `--json` | Default for agents. Parse it. List commands return flat arrays. |
+| `--json` | Default for agents. Parse it. Every list command returns a wrapped envelope — `{ <resource>: [...], page: {...} }` (#483). The key is the resource name (`companies` for `clients list`), never `items`. `recommendations list` is the exception: `{ recommendations, totalAvailable }`, no `page`. |
 | `--csv` | When the operator asks for a spreadsheet, export, or PSA import. |
 | `--quiet` | Suppress output entirely (rare; mostly for write commands you're chaining). |
 | `--ids-only` | Pipe one command's output into another's `--company` filter. |
-| `--with-actions` | Wrap list-command JSON as `{ items, nextActions }` so suggested next commands ride along. Each `nextActions[]` entry carries both `command` (display string, never tokenize this) and `args` (argv array — spawn `args.slice(1)` directly, never via a shell) per #562. Available on every list command and on single-object commands (`dashboard`, `invoices audit`) which always include `nextActions` inline. |
+| `--with-actions` | Add a `nextActions` key to the envelope so suggested next commands ride along — additive, it never restructures the envelope. Each entry carries both `command` (display string) and `args` (argv array — spawn `args.slice(1)` via the Bash tool's argv form, never tokenize `command`) per #562. **Not universal:** accepted by `clients list`, `subscriptions list`, `subscriptions renewals`, `invoices list`, `orders list`, `webhooks list`, `webhooks logs`, `webhooks topics list`, and `recommendations list`. Rejected outright (exit 1, `ERROR_INVALID_INPUT`) by `products list`, `products search`, `quotes list`, `contacts list`, `usage list`, and `invoices items` — don't pass it speculatively. Single-object commands (`dashboard`, `invoices audit`, `today`) always include `nextActions` inline and need no flag. |
 
 ## Result size
 
