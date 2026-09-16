@@ -115,7 +115,13 @@ function pickRate(plan: ProductPricingPlan, quantity: number): { unitPrice: numb
     }
   }
   return {
-    unitPrice: chosen.suggestedRetailPrice,
+    // partnerBuyRate, not suggestedRetailPrice. `cost sim` reports the
+    // partner's Pax8 cost delta, and `current` is derived from the
+    // subscription's own price (the buy rate on the wire) — pricing
+    // `proposed` at retail put the two sides of the comparison on
+    // different bases and overstated every simulated increase. Falls back
+    // to retail only when a rate row omits the buy rate.
+    unitPrice: chosen.partnerBuyRate ?? chosen.suggestedRetailPrice,
     tierStart: chosen.startQuantityRange ?? 0,
   };
 }

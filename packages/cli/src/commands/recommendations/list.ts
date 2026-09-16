@@ -118,6 +118,67 @@ async function promptLine(question: string): Promise<string> {
   });
 }
 
+/**
+ * Persist the numbered recommendation list so `recommendations why <n>`,
+ * `recommendations email <n>`, and the REPL's bare-number drill-in can
+ * resolve an index back to a recommendation.
+ *
+ * Called from BOTH the JSON and table paths. It previously lived only in
+ * the table branch, which is unreachable whenever stdout is not a TTY —
+ * `getOutputFormat()` returns "json" for piped output (`lib/context.ts`).
+ * Every agent, and every piped shell invocation, therefore left the cache
+ * unwritten, and each subsequent `why <n>` / `email <n>` failed with "No
+ * cached recommendations found". Not flaky: broken by construction for
+ * every non-interactive caller (#715).
+ *
+ * Best effort by design — a drill-in convenience must never fail the
+ * command that produced the data.
+ */
+async function savePendingActions(recs: Recommendation[]): Promise<void> {
+  try {
+    const { mkdirSync } = await import("fs");
+    const { join } = await import("path");
+    // #458/#469: route through getConfigDir() (so PAX8_CONFIG_DIR is
+    // honored) and safeWriteFileSync (mode 0o600, O_NOFOLLOW) — partner
+    // data shouldn't land in ~/.pax8 with the default umask.
+    const dir = getConfigDir();
+    mkdirSync(dir, { recursive: true });
+    safeWriteFileSync(
+      join(dir, "pending-actions.json"),
+      JSON.stringify(
+        recs.map((r, i) => ({
+          key: String(i + 1),
+          // #509: persist `orderArgs` (argv array) alongside the
+          // display-only `orderCommand`. The REPL drill-in and
+          // `recommendations act` both prefer `orderArgs` — it carries
+          // names with shell metacharacters ("O'Brien & Sons") safely as
+          // single argv elements with no tokenizer round-trip.
+          rec: {
+            companyId: r.companyId,
+            companyName: r.companyName,
+            title: r.title,
+            orderArgs: r.orderArgs,
+            orderCommand: r.orderCommand,
+            suggestedProducts: r.suggestedProducts,
+            targetSeats: r.targetSeats,
+            // #655 / UXR F5: persist rationale so `recommendations why <n>`
+            // can drill in without re-running the engine.
+            type: r.type,
+            priority: r.priority,
+            opportunityType: r.opportunityType,
+            reason: r.reason,
+            rationaleSnippet: r.rationaleSnippet,
+            estimatedMrrUplift: r.estimatedMrrUplift,
+            productAvailable: r.productAvailable,
+          },
+        })),
+      ),
+    );
+  } catch {
+    /* best effort */
+  }
+}
+
 export const recommendationsListCommand = new Command("list")
   .description("Analyze customer portfolios and recommend products")
   .option("--company <id|name>", "Filter to a specific company")
@@ -310,6 +371,10 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       const capped = topCap === 0 ? recs : recs.slice(0, topCap);
 
       if (ctx.outputFormat === "json") {
+        // Same cache the table path writes. Agents and piped shells land
+        // here (getOutputFormat returns "json" for non-TTY stdout), and
+        // they need `why <n>` / `email <n>` to resolve too (#715).
+        await savePendingActions(capped);
         if (options.withActions) {
           // Built from `orderArgs`, not `orderCommand`. The latter is a
           // display string interpolating a partner-controlled companyName
@@ -474,48 +539,8 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       // Suggest recommendations act
       process.stderr.write(chalk.dim(`  Walk through all: `) + chalk.cyan(replCmd("pax8 recommendations act")) + "\n");
 
-      // Save pending actions for REPL mode.
-      // #458/#469: route through getConfigDir() (so PAX8_CONFIG_DIR is honored)
-      // and safeWriteFileSync (mode 0o600, O_NOFOLLOW) — partner-tenant data
-      // shouldn't land in ~/.pax8 with the default umask.
-      try {
-        const { mkdirSync } = await import("fs");
-        const { join } = await import("path");
-        const dir = getConfigDir();
-        mkdirSync(dir, { recursive: true });
-        safeWriteFileSync(
-          join(dir, "pending-actions.json"),
-          JSON.stringify(
-            displayRecs.map((r, i) => ({
-              key: String(i + 1),
-              // #509: persist `orderArgs` (argv-style array) alongside the
-              // display-only `orderCommand` string. The REPL drill-in
-              // (`packages/cli/src/lib/repl.ts`) and `recommendations act`
-              // both prefer `orderArgs` — it carries names with shell
-              // metacharacters (AT&T, "O'Brien & Sons", etc.) safely as
-              // single argv elements without any tokenizer round-trip.
-              rec: {
-                companyId: r.companyId,
-                companyName: r.companyName,
-                title: r.title,
-                orderArgs: r.orderArgs,
-                orderCommand: r.orderCommand,
-                suggestedProducts: r.suggestedProducts,
-                targetSeats: r.targetSeats,
-                // #655 / UXR F5: persist rationale so `recommendations why <n>`
-                // can drill in without re-running the engine.
-                type: r.type,
-                priority: r.priority,
-                opportunityType: r.opportunityType,
-                reason: r.reason,
-                rationaleSnippet: r.rationaleSnippet,
-                estimatedMrrUplift: r.estimatedMrrUplift,
-                productAvailable: r.productAvailable,
-              },
-            })),
-          ),
-        );
-      } catch { /* best effort */ }
+      await savePendingActions(displayRecs);
+
 
       // Interactive prompt — use shared promptNextSteps
       const steps: NextStep[] = displayRecs.map((r, i) => {

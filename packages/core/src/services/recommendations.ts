@@ -563,7 +563,20 @@ function buildOrderArtifacts(
 
 export function getRecommendations(
   subscriptions: SubscriptionInput[],
-  products?: Array<{ id: string; name: string; vendorName?: string; pricing?: Array<{ billingTerm: string; suggestedRetailPrice: number }> }>,
+  // `partnerBuyRate` is optional so existing embedders that only pass
+  // `suggestedRetailPrice` keep compiling — but uplift is documented as
+  // additional *Pax8 cost*, so the buy rate is what it should be priced at
+  // when available. See the fallback in the price map below.
+  products?: Array<{
+    id: string;
+    name: string;
+    vendorName?: string;
+    pricing?: Array<{
+      billingTerm: string;
+      suggestedRetailPrice: number;
+      partnerBuyRate?: number;
+    }>;
+  }>,
   companies?: Array<{ id: string; name: string }>,
 ): RecommendationReport {
   // Group subscriptions by company
@@ -588,8 +601,15 @@ export function getRecommendations(
     for (const p of products) {
       const monthlyRate = p.pricing?.find((r) => r.billingTerm === "Monthly");
       if (monthlyRate) {
+        // partnerBuyRate, not suggestedRetailPrice. `estimatedMrrUplift` is
+        // documented as *additional Pax8 cost* — what the partner would pay
+        // Pax8 — so pricing it at retail overstated every opportunity and
+        // put it on a different basis from the cost rollups it sits beside
+        // in `dashboard` and `today`.
         productPriceMap.set(p.name.toLowerCase(), {
-          price: monthlyRate.suggestedRetailPrice,
+          // Falls back to retail only when the caller didn't supply a buy
+          // rate; the figure is then retail and overstates Pax8 cost.
+          price: monthlyRate.partnerBuyRate ?? monthlyRate.suggestedRetailPrice,
           billingTerm: "Monthly",
         });
       }
