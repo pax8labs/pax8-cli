@@ -102,6 +102,9 @@ export type TelemetryExtraFields = Partial<
     | "upgrade_method"
     | "upgrade_from"
     | "upgrade_to"
+    | "skill_action"
+    | "skill_scope"
+    | "skill_previous_state"
   >
 >;
 

@@ -13,6 +13,14 @@ import {
   resolveDemoModeWithSourceAsync,
   disableDemoHint,
 } from "../lib/context.js";
+import { buildAction, type EmittedAction } from "../lib/actions.js";
+import {
+  classifyInstall,
+  readInstalledSkill,
+  readShippedSkill,
+  summarizeDrift,
+  type SkillScope,
+} from "../lib/skill-asset.js";
 
 // Build-time injected by tsup (see packages/cli/tsup.config.ts). At runtime
 // inside `pax8 doctor --json` we surface this in the structured envelope so
@@ -403,6 +411,74 @@ async function checkCacheDir(): Promise<CheckResult> {
   }
 }
 
+/**
+ * Claude-skill drift (#720).
+ *
+ * The skill is the agent-facing safety contract. A partner who ran
+ * `pax8 skill install` once and upgraded the CLI five times since is
+ * running an old contract against a new command surface, and nothing
+ * tells them — which is the same failure this repo spent a release cycle
+ * on when `.claude/skills/pax8/SKILL.md` sat six months behind the
+ * canonical file (#714).
+ *
+ * Not installed is a pass, not a failure: most partners don't use Claude
+ * Code, and doctor shouldn't ✗ at them for it. Same posture as the MCP
+ * check above. An installed copy that has *drifted* is a real ✗ — the
+ * contract that's loaded is not the contract that was reviewed.
+ */
+async function checkClaudeSkill(): Promise<CheckResult> {
+  const name = "Claude skill";
+  const shipped = readShippedSkill();
+  if (!shipped) {
+    return {
+      name,
+      passed: false,
+      detail: "skill.md is missing from this installation — reinstall @pax8/cli",
+    };
+  }
+
+  const scopes: SkillScope[] = ["project", "global"];
+  const present = scopes
+    .map((scope) => ({ scope, installed: readInstalledSkill(scope) }))
+    .map((s) => ({ ...s, state: classifyInstall(s.installed, shipped.checksum) }))
+    .filter((s) => s.state !== "absent");
+
+  if (present.length === 0) {
+    return {
+      name,
+      passed: true,
+      detail: `not installed — run ${replCmd("pax8 skill install")} to use this CLI from Claude Code`,
+    };
+  }
+
+  const drifted = present.filter((s) => s.state !== "current");
+  if (drifted.length === 0) {
+    return {
+      name,
+      passed: true,
+      detail: `up to date (${present.map((s) => s.scope).join(", ")})`,
+    };
+  }
+
+  const worst = drifted[0];
+  const version = worst.installed.meta?.cliVersion;
+  const how =
+    worst.state === "modified"
+      ? "locally modified"
+      : `stale${version ? ` — written by pax8-cli ${version}` : ""}`;
+  const drift =
+    worst.installed.content !== undefined
+      ? `; ${summarizeDrift(shipped.content, worst.installed.content)}`
+      : "";
+  return {
+    name,
+    passed: false,
+    detail:
+      `${worst.scope} copy at ${worst.installed.path} is ${how}${drift}. ` +
+      `Run: ${replCmd(`pax8 skill install --${worst.scope}${worst.state === "modified" ? " --force" : ""}`)}`,
+  };
+}
+
 export const doctorCommand = new Command("doctor")
   .description("Run diagnostic checks")
   .addHelpText(
@@ -432,7 +508,7 @@ Examples:
     }
 
     // Run all checks in parallel for speed
-    const [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, apiCs, cacheC, telC, mcpC] = await Promise.all([
+    const [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, apiCs, cacheC, telC, mcpC, skillC] = await Promise.all([
       checkNodeVersion(),
       checkApiBase(),
       checkConfigFile(),
@@ -444,8 +520,9 @@ Examples:
       checkCacheDir(),
       checkTelemetry(),
       checkMcp(),
+      checkClaudeSkill(),
     ]);
-    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, ...apiCs, cacheC, telC, mcpC];
+    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, ...apiCs, cacheC, telC, mcpC, skillC];
 
     let allPassed = true;
     for (const check of checks) {
@@ -465,39 +542,62 @@ Examples:
       // Per-§12 "Next-action hints": single-object summaries carry
       // `nextActions` inline. Surface only the most useful follow-ups based
       // on what failed; cap at five.
-      const nextActions: { command: string; description: string }[] = [];
+      //
+      // Built through `buildAction()` (#708/#722) so each entry carries the
+      // spawn-safe argv and an `isWrite` flag. Doctor suggests writes —
+      // `auth login`, `config init`, `skill install` all mutate local state
+      // — and an agent deciding whether to ask first reads `isWrite`, not
+      // the command string.
+      const nextActions: EmittedAction[] = [];
       const authFailed = checks.find(
         (c) => c.name === "Authentication configured" && !c.passed,
       );
       if (authFailed) {
-        nextActions.push({
-          command: "pax8 auth login --client-id <id> --client-secret <secret>",
-          description: "Authenticate so subsequent commands can reach the Pax8 API",
-        });
+        nextActions.push(
+          buildAction(
+            ["auth", "login", "--client-id", "<id>", "--client-secret", "<secret>"],
+            "Authenticate so subsequent commands can reach the Pax8 API",
+          ),
+        );
       }
       const configFailed = checks.find(
         (c) => c.name === "Config file" && !c.passed,
       );
       if (configFailed) {
-        nextActions.push({
-          command: "pax8 config init",
-          description: "Create the local config file at ~/.pax8/config.yaml",
-        });
+        nextActions.push(
+          buildAction(
+            ["config", "init"],
+            "Create the local config file at ~/.pax8/config.yaml",
+          ),
+        );
       }
       const tokenFailed = checks.find(
         (c) => c.name === "Token fetch" && !c.passed,
       );
       if (tokenFailed) {
-        nextActions.push({
-          command: "pax8 auth login",
-          description: "Re-authenticate — current credentials are not exchangeable for a token",
-        });
+        nextActions.push(
+          buildAction(
+            ["auth", "login"],
+            "Re-authenticate — current credentials are not exchangeable for a token",
+          ),
+        );
+      }
+      const skillFailed = checks.find((c) => c.name === "Claude skill" && !c.passed);
+      if (skillFailed) {
+        nextActions.push(
+          buildAction(
+            ["skill", "install"],
+            "Refresh the installed Claude skill — the loaded agent safety contract has drifted from this CLI",
+          ),
+        );
       }
       if (allPassed) {
-        nextActions.push({
-          command: "pax8 dashboard --json",
-          description: "Diagnostics clean — pull a portfolio summary to confirm end-to-end",
-        });
+        nextActions.push(
+          buildAction(
+            ["dashboard", "--json"],
+            "Diagnostics clean — pull a portfolio summary to confirm end-to-end",
+          ),
+        );
       }
 
       process.stdout.write(

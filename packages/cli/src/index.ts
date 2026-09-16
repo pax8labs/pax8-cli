@@ -22,6 +22,7 @@ import { registerContactsCommands } from "./commands/contacts/index.js";
 import { registerQuotesCommands } from "./commands/quotes/index.js";
 import { registerCostCommands } from "./commands/cost/index.js";
 import { registerReportCommands } from "./commands/report/index.js";
+import { registerSkillCommands } from "./commands/skill/index.js";
 import { dashboardCommand } from "./commands/dashboard.js";
 import { todayCommand } from "./commands/today.js";
 import { doctorCommand } from "./commands/doctor.js";
@@ -118,6 +119,7 @@ export function createProgram(): Command {
   registerQuotesCommands(program);
   registerCostCommands(program);
   registerReportCommands(program);
+  registerSkillCommands(program);
   program.addCommand(dashboardCommand);
   program.addCommand(todayCommand);
   program.addCommand(initCommand);

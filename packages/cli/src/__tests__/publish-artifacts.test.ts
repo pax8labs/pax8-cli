@@ -57,4 +57,31 @@ describe("publish artifacts", () => {
       `tarball file list missing the preinstall script. Files: ${JSON.stringify(filePaths)}`,
     ).toContain("scripts/check-prerequisites.js");
   });
+
+  /**
+   * #720: `pax8 skill install` reads the Claude skill out of the installed
+   * package. `packages/claude-skill` is `private: true` and the CLI packs
+   * only `dist`, so before the build copied `skill.md` into `dist/` the
+   * agent safety contract shipped in neither published artifact — the
+   * command would have been installed everywhere with nothing to install.
+   *
+   * This asserts the tarball, not the working tree, for the same reason as
+   * the preinstall test above: a local `pnpm install` runs against the
+   * source directory and would never notice.
+   */
+  it("npm pack tarball includes dist/skill.md (skill install prereq) (#720)", async () => {
+    const { stdout, stderr } = await execFileAsync("npm", ["pack", "--dry-run", "--json"], {
+      cwd: CLI_PKG,
+      env: process.env,
+      ...NPM_OPTS,
+    });
+    const parsed = JSON.parse(stdout) as Array<{ files?: Array<{ path: string }> }>;
+    expect(parsed, `expected one package entry from npm pack --json; stderr=${stderr}`).toHaveLength(1);
+    const filePaths = (parsed[0].files ?? []).map((f) => f.path);
+    expect(
+      filePaths,
+      `tarball is missing dist/skill.md — did scripts/bundle-skill.mjs run? ` +
+        `Files: ${JSON.stringify(filePaths)}`,
+    ).toContain("dist/skill.md");
+  });
 });

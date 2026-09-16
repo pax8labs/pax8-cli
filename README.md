@@ -218,6 +218,7 @@ pax8 webhooks list|create|update|delete|enable|disable # Subscription endpoints
 pax8 webhooks logs|test|topics                         # Delivery history, fire test deliveries, list topics
 pax8 usage list|show                                   # Metered usage (Azure consumption, etc.)
 pax8 config init|show|set|path                         # Config file management
+pax8 skill install                                     # Install the Claude Code skill (see Claude AI Integration)
 pax8 init                                              # First-run setup wizard
 pax8 completions bash                                  # Shell completions (bash/zsh/fish/powershell)
 pax8 report-bug                                        # File a sanitized GitHub issue from the last failure (see Reporting bugs)
@@ -352,7 +353,24 @@ Available tools: clients, subscriptions, renewals, invoices, invoice audits, rec
 
 ### Setup (Claude Code)
 
-The skill wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible). See `packages/claude-skill/skill.md`.
+The skill ships inside the `@pax8/cli` package, but nothing installs it for you — Claude Code loads skills from `~/.claude/skills/`, which an npm install has no business writing to. One command puts it there:
+
+```bash
+pax8 skill install              # ~/.claude/skills/pax8/SKILL.md — all projects
+pax8 skill install --project    # ./.claude/skills/pax8/SKILL.md — this repo only
+pax8 skill install --print      # read it first; installs nothing
+```
+
+Then start a new Claude Code session — skills are loaded at session start.
+
+The skill wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible) **and with the read/write safety contract**: which commands are reads, which mutate real state, and what has to be confirmed before an order is placed. Without it, an agent is improvising around a CLI that can spend money. The canonical copy is [`packages/claude-skill/skill.md`](packages/claude-skill/skill.md).
+
+Upgrading the CLI does not update an installed copy. `pax8 doctor` compares the two and tells you when yours has fallen behind:
+
+```bash
+pax8 doctor                     # ✗ Claude skill (global copy … is stale …)
+pax8 skill install --force      # refresh a copy you have edited yourself
+```
 
 ### Example
 
@@ -464,6 +482,7 @@ The CLI also honors two ambient environment variables (no opt-in required) and s
 | `credentialed` | always | Boolean — whether any credential source was configured at emit time (never the credentials themselves) |
 | `recs_presented`, `recs_ordered`, `recs_skipped`, `recs_mrr_captured` | `recommendations act` | Aggregate counts only |
 | `order_success`, `order_total_dollars`, `order_mrr_impact`, `order_seats` | `orders create` | Aggregate transaction outcome only |
+| `skill_action`, `skill_scope`, `skill_previous_state` | `skill install` | Fixed enums — the outcome, whether the target was global or project, and whether the copy on disk was absent / current / stale. Never the path |
 
 **Identity — `distinct_id` and the account group.** The anonymous `distinct_id` is a random UUID (`crypto.randomUUID()`) generated once and persisted at `<config-dir>/telemetry-id`. It is not derived from your hostname, username, or any machine attribute, so it can't be regenerated from an AD/LDAP record. Because it is per-install, the same person on two machines (or in ephemeral CI, where `~/.pax8` doesn't persist) counts as multiple `distinct_id`s.
 
