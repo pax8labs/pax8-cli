@@ -1,5 +1,126 @@
 # @pax8/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- [#726](https://github.com/pax8labs/pax8-cli/pull/726) [`667e472`](https://github.com/pax8labs/pax8-cli/commit/667e472fb49754085462cc33beb99561ab4bcefd) Thanks [@jidulberger](https://github.com/jidulberger)! - feat(skill): ship the Claude skill to partners — `pax8 skill install` ([#720](https://github.com/pax8labs/pax8-cli/issues/720))
+
+  **The agent safety contract reached nobody outside this repo.** `packages/claude-skill/skill.md` is where the read/write classification lives — which commands run autonomously, which need explicit approval, the `isWrite` rule, the [#707](https://github.com/pax8labs/pax8-cli/issues/707) pre-order SKU check. It shipped in neither published artifact: `@pax8/cli` packs only `dist`, and `@pax8/claude-skill` is `private: true`. A partner running Claude Code against `pax8` got an agent improvising around a CLI that can place real orders.
+
+  Two claims in the docs said otherwise. `packages/claude-skill/README.md` said the skill "is auto-discovered by Claude Code once `@pax8/cli` is installed and on `PATH`" — Claude Code discovers skills from `~/.claude/skills/<name>/SKILL.md` or a project's `.claude/skills/`, and an npm install writes to neither. The root README had a "Setup (Claude Code)" heading with no setup under it. Both are corrected, along with a `companies` alias the claude-skill README still advertised after [#476](https://github.com/pax8labs/pax8-cli/issues/476) removed it.
+
+  **`pax8 skill install`**, not a postinstall hook. A postinstall that writes into `~/.claude` is invisible, fires on CI installs, and mutates a directory owned by a different tool; installing an instruction file that governs whether an agent asks before spending money should be a deliberate act.
+
+  ```
+  pax8 skill install [--global|--project] [--force] [--print] [--yes]
+  ```
+
+  - `--global` (default) → `~/.claude/skills/pax8/SKILL.md`, honoring `CLAUDE_CONFIG_DIR`; `--project` → `./.claude/skills/pax8/`.
+  - `--print` writes the skill to stdout and installs nothing — a read, so it stays raw markdown even under `--json`.
+  - An install already matching the shipped copy is a no-op, not a rewrite.
+  - A copy the CLI can't prove it wrote is **not** overwritten. Each install records a `.pax8-skill.json` provenance file, which is what separates _stale_ (our content, older version — refreshed without ceremony) from _edited_ (the partner's own changes — refused, with a line-count summary and the first differing line, until `--force`).
+  - Classified as a **write** in the safety contract and in `WRITE_COMMAND_PATHS`, so `isWrite: true` rides on every suggestion of it. Without a TTY and without `--yes` it refuses rather than installing unattended.
+  - A symlinked `SKILL.md` is refused outright rather than silently replaced — a symlink there is somebody's deliberate wiring to a checkout.
+
+  **`pax8 doctor` now reports drift.** A partner who installed once and upgraded the CLI five times is running an old contract against a new command surface, with nothing to tell them — the same failure this repo spent a release cycle on when `.claude/skills/pax8/SKILL.md` sat six months behind the canonical file ([#714](https://github.com/pax8labs/pax8-cli/issues/714)). Not installed is a pass (most partners don't use Claude Code); an installed copy that has drifted is a `✗` naming the exact command that fixes it. Doctor's `nextActions` now go through `buildAction()` so each carries spawn-safe argv and an `isWrite` flag — it suggests `auth login`, `config init`, and now `skill install`, all of which mutate local state.
+
+  **Distribution.** The build copies the canonical `skill.md` into `packages/cli/dist/`, which `files` already packs — no third tracked copy of a file that already exists twice. `npm pack --dry-run` is asserted in CI, because a build that skipped the copy step would install the command everywhere with nothing to install.
+
+  **If you script against `pax8 doctor --json`:** this adds a check that can newly report `passed: false` on an environment that was previously clean — a Claude skill installed at some earlier CLI version and never refreshed. Nothing else about the envelope changes. Each non-`current` state gets its own wording and its own remedy (`stale` → a plain refresh, `modified` → `--force`, unreadable or symlinked → no install can fix it, so no `nextAction` is emitted), because collapsing them all to "stale" sends a partner whose file is permission-denied off to fix a version problem they don't have.
+
+  Telemetry gains three fixed-enum fields (`skill_action`, `skill_scope`, `skill_previous_state`) — no paths, no content. How many partners are running a stale safety contract is the question this issue exists to answer.
+
+### Patch Changes
+
+- [#727](https://github.com/pax8labs/pax8-cli/pull/727) [`923cc8c`](https://github.com/pax8labs/pax8-cli/commit/923cc8ce8cd8e46ca333e413c21bc1094ef5d613) Thanks [@jidulberger](https://github.com/jidulberger)! - fix(audit): report findings when a scope has active subscriptions but no invoices ([#709](https://github.com/pax8labs/pax8-cli/issues/709))
+
+  **`invoices audit` returned a clean bill of health for any scope holding active subscriptions and no invoice.** It short-circuited on an empty invoice-item list and rendered a green checkmark _before the auditor ran_, discarding an already-fetched, already-company-filtered subscription list. The audit was effectively invoice-first: a company with no invoice had nothing to filter to and fell through to success.
+
+  ```console
+  $ pax8 invoices audit --company "Acme Corp"
+    ✓ No invoices found for current period.
+
+  $ pax8 invoices audit --json | jq '[.discrepancies[]|select(.companyName=="Acme Corp")]|length'
+  5
+  ```
+
+  Acme Corp is the largest gap in the demo fixture — 25 seats across 5 products, none invoiced — and it read as clean when audited directly. On the large fixture (1,000 companies, 5,000 active subscriptions, 0 invoices) the entire portfolio audited clean with `itemsAudited: 0`, output byte-identical to "audited everything, found nothing". `auditInvoices()` already handled an empty invoice list correctly — every unmatched active subscription becomes a `missing` discrepancy — so the fix is to stop discarding the subscriptions and let it run. A company-scoped audit now agrees row-for-row with the unscoped audit filtered to that company.
+
+  **Only the current period can be reconciled, and `--month` now says so instead of guessing.** `invoices.list` is month-filtered but the subscription fetch is not: `subscriptions.streamAll()` returns what is active _right now_ and carries no history. A past month is missing subscriptions cancelled since; a future month has not happened. Emitting `missing` rows for either would invent findings for subscriptions that did not exist in the audited period, and emitting a checkmark would repeat the false all-clear. Both non-current cases now report an explicit unreconciled warning naming how many subscriptions went unchecked, with the reason matched to the direction. The warning goes to **stderr**, so `--json | jq` pipelines are unaffected and the documented envelope shape is unchanged.
+
+  Note that `itemsAudited: 0` still cannot be distinguished from "audited, all clean" by a `--json` consumer — the warning addresses the human case only. That half of [#709](https://github.com/pax8labs/pax8-cli/issues/709) remains open.
+
+- [#723](https://github.com/pax8labs/pax8-cli/pull/723) [`0b40eb6`](https://github.com/pax8labs/pax8-cli/commit/0b40eb63d896565a5ebc3bee11605a6c3fcfabfb) Thanks [@jidulberger](https://github.com/jidulberger)! - fix(pricing): report Pax8 cost at partnerBuyRate, and make `recommendations why`/`email` work when piped ([#711](https://github.com/pax8labs/pax8-cli/issues/711), [#715](https://github.com/pax8labs/pax8-cli/issues/715))
+
+  **Every "Pax8 cost" figure in demo mode was retail.** The demo fixture set `subscription.price` from `suggestedRetailPrice` rather than `partnerBuyRate` — so `dashboard`, `report *`, `today`, and `clients more` all reported what the _customer_ pays rather than what the _partner_ pays Pax8, which is what those commands claim to measure. 23 subscriptions repriced. Portfolio monthly cost on the demo fixture moves from $1,760.41 to $1,354.10. Non-USD and zero-price rows are handled separately: the GBP row keeps its currency ratio rather than being flattened to a USD rate.
+
+  Demo mode is the test posture and the screenshot/demo surface, so this is what every golden-path test, README figure, and recorded demo has been showing.
+
+  **Two production code paths were on the wrong basis too**, and the reprice is what exposed them — with a retail-priced fixture both sides agreed, so nothing looked wrong:
+
+  - `simulateCostChange` priced `proposed` from `suggestedRetailPrice` while `current` came from the subscription's own price. Once the fixture was corrected the two sides of the comparison were on different bases: a Business Basic → Premium swap reported **+$425/mo** where the real Pax8 cost delta is **+$325/mo**.
+  - The recommendations engine priced `estimatedMrrUplift` from retail. Fixing it required widening `getRecommendations`'s public signature, which only ever accepted `suggestedRetailPrice` — the engine had no access to the buy rate at all.
+
+  Both fall back to `suggestedRetailPrice` when a rate row carries no buy rate, so embedders on the older shape keep working; the resulting figure is then retail and overstates cost.
+
+  **`recommendations why <n>` and `email <n>` could never work for a non-interactive caller.** They resolve `<n>` through a cache that `recommendations list` wrote **only in its table-render path** — and `getOutputFormat()` returns `"json"` whenever stdout isn't a TTY. So the cache was written interactively and never for a pipe, a script, or an agent, and every such invocation failed with "No cached recommendations found". Not flaky: broken by construction for every non-interactive caller. The write now happens on both paths.
+
+  **Test-design note.** The cost-simulator unit fixtures derived `partnerBuyRate = suggestedRetailPrice × 0.9`, which meant every test asserting tier selection or delta arithmetic _also_ silently asserted which pricing basis the simulator reads — one behaviour change broke twelve unrelated tests. The generic helpers now carry the same figure in both rates so each test asserts one thing, and the basis is covered by two dedicated tests: one that the buy rate wins when both are present, one that the retail fallback still works.
+
+  Two invariant assertions (`arrRenewing ≈ mrrRenewing × 12`, `annualCost ≈ monthlyCost × 12`) were bounded at ±0.05, which only held while every fixture price was a whole number. Both aggregates are derived from unrounded monthly figures and then rounded, so they can differ by up to `12 × 0.005`. Now bounded at that derivation plus a float epsilon.
+
+- [#738](https://github.com/pax8labs/pax8-cli/pull/738) [`be4c0e5`](https://github.com/pax8labs/pax8-cli/commit/be4c0e52123e7055acacc830cb9ef1e1cdd2972b) Thanks [@jidulberger](https://github.com/jidulberger)! - fix(dispute): match `invoices dispute` output to the discrepancy direction, and refuse to file off-TTY ([#728](https://github.com/pax8labs/pax8-cli/issues/728))
+
+  **Every user-facing surface of `invoices dispute` assumed an overcharge.** Discrepancy types split into "Pax8 owes the partner" (`overcharge`, `unexpected`) and "the partner owes Pax8" (`undercharge`, `missing`), and only the first was ever exercised. The generated portal ticket derived its impact label from the finding but hardcoded the closing remedy, so an under-billing produced a ticket reading `$2,400.00 undercharge` … `issue a credit memo` — asking Pax8 billing support for a credit on money the partner owes. The demo fixture is 9 of 12 the partner-owes direction, so most generated tickets contradicted themselves. The terminal framing had the same defect: heading, prompt, spinner and success line all said "dispute", and you do not dispute your own un-billed usage.
+
+  All of this copy now lives in one `DISPUTE_COPY` object keyed by direction, selected by a single classifier shared with the impact label, so the label, the ticket and the terminal framing cannot disagree again. The partner-owes wording is deliberately non-prescriptive — it names no remedy mechanism and asks Pax8 to name one, rather than asserting billing process in a partner-facing artifact.
+
+  Direction is derived from the discrepancy `type`, not the sign of `dollarImpact`. The sign is correct for every row the auditor currently emits but is a proxy: a zero-impact row (a zero-priced SKU — a free add-on or a $0 trial — that is mis-invoiced) is not `> 0`, so a zero-dollar `overcharge` would have been framed as an under-billing report.
+
+  **BEHAVIOR CHANGE — non-interactive `invoices dispute` now requires `--yes`.** Filing is a write, but whether it proceeded unconfirmed depended on the shape of stdin rather than on approval: `< /dev/null` wrote nothing only because readline hit EOF and the prompt's callback never fired, while a single empty line answered the prompt and `confirm(…, { default: true })` mapped `""` to yes. So `echo | pax8 invoices dispute --discrepancy X` filed a dispute with no approval, as would any agent harness handing a command an empty stdin line — and the `/dev/null` case looked like a gate while not being one.
+
+  It now fails closed with `ERROR_INVALID_INPUT`, matching the existing non-TTY write guards in `upgrade.ts`, `auth/login.ts` and `recommendations/act.ts`. **Automation that relied on the old behavior will break**; the migration is one flag — pass `--yes` (or set `PAX8_YES=1`) to file without prompting, which the error's recovery steps name directly. Interactive use is unchanged.
+
+- [#722](https://github.com/pax8labs/pax8-cli/pull/722) [`3e6a597`](https://github.com/pax8labs/pax8-cli/commit/3e6a597ac21f92c0d9778550cfbc3d06ff3dbd5e) Thanks [@jidulberger](https://github.com/jidulberger)! - feat(actions): every suggested action carries a spawn-safe argv and an `isWrite` flag ([#708](https://github.com/pax8labs/pax8-cli/issues/708))
+
+  Several commands suggest what to do next — `nextActions[]` on list and summary commands, `items[].action` on `today`, `orderArgs` on `recommendations list`. Two properties of those payloads were inconsistent, and both matter for agent runtimes.
+
+  **`args` was missing on several surfaces.** `command` is a display string that interpolates partner-controlled values (company names, product names) and is unsafe to hand to a shell — [#462](https://github.com/pax8labs/pax8-cli/issues/462)/[#562](https://github.com/pax8labs/pax8-cli/issues/562) established that agents must spawn `args.slice(1)` instead. But `dashboard`, `invoices audit`, `cost sim`, `subscriptions renewals`, `recommendations list`, and the three `webhooks` list surfaces emitted no `args` at all, leaving an agent following the contract with nothing to spawn and a string it was explicitly told never to tokenize. `cost sim` was the sharp edge: its only suggestion is an `orders create` with an interpolated company name. `recommendations list` was the subtle one — it emitted `orderCommand` (the unsafe display form) as the only executable field while `orderArgs` sat unused on the same record.
+
+  **Nothing said whether a suggested command writes.** Read commands routinely suggest writes: `invoices audit` emits five `invoices dispute` calls, `today` emits `recommendations act` and `orders create`. Nothing in the payload distinguished those from the harmless suggestions beside them, so an agent had to match the command string against a prose table in the docs to decide whether it needed approval — exactly the kind of inference that fails silently, and the failure places real orders.
+
+  Every emitted action now carries `{ command, args, description, isWrite }`, built through a single `buildAction()` helper so the display string is derived from the same argv the agent runs and the two cannot drift. `isWrite` covers local-machine mutations (`demo on`, `config set`, `cache clear`) as well as Pax8 API writes, and classification prefix-matches subcommand paths to depth 3 — so `webhooks logs` is a read while `webhooks logs retry` is a write.
+
+  The agent rule collapses from _"resolve the command path against the read/write lists, then apply the approval protocol if it lands on the write side"_ to _"never spawn an action with `isWrite: true` without explicit user approval."_
+
+  `--dry-run` deliberately does not make an action `isWrite: false`: safety shouldn't depend on a flag that can be dropped when a command is copied.
+
+  Purely additive — existing consumers reading `command` and `description` are unaffected.
+
+- [#721](https://github.com/pax8labs/pax8-cli/pull/721) [`66ba48f`](https://github.com/pax8labs/pax8-cli/commit/66ba48f5283d22dec9414fff3943f208f5f046e2) Thanks [@jidulberger](https://github.com/jidulberger)! - fix(recommendations): don't amortize One-Time SKUs as recurring uplift ([#710](https://github.com/pax8labs/pax8-cli/issues/710)), and give the onboarding fixture its own product ([#707](https://github.com/pax8labs/pax8-cli/issues/707))
+
+  `estimatedMrrUplift` was computed as `price × seats` at all three call sites in the recommendations engine, with `billingTerm` never entering the calculation. `productPriceMap` held bare numbers, so the term was discarded at lookup time. A €5,000 One-Time onboarding SKU across 39 seats therefore reported **$195,000/mo of recurring uplift**, and `dashboard.potentialMonthlyUplift` came out at $204,445 against a portfolio whose total monthly cost is $1,760.41 — 116× the entire book.
+
+  The shared `subscriptionMrr()` helper already handles this correctly (`One-Time` / `Trial` / `Activation` contribute 0, fixed in [#465](https://github.com/pax8labs/pax8-cli/issues/465)) and its docstring calls itself "the single source of truth for MRR calculation across the codebase." That wasn't true: the engine imported it for _current_ MRR and bypassed it for _uplift_. All three uplift sites now route through it, and `productPriceMap` carries the billing term alongside the price.
+
+  Portfolio uplift on the demo fixture drops from $204,445 to $9,445.
+
+  Note the One-Time recommendation now reports `estimatedMrrUplift: 0`, which is correct for a field named MRR but leaves a real one-time opportunity showing no value. Representing that properly needs a separate non-recurring field; out of scope here.
+
+  ***
+
+  Separately, `sub-coastline-onboarding-004` carried `productId: "prod-m365-e3-0003"` — Microsoft 365 E3 — while its `productName` said "M365 onboarding & migration (one-time)". `findSeatGaps` takes both from the same row, so the resulting recommendation suggested onboarding while its `orderArgs` named E3, a product the customer already held 40 seats of. Since `orderCommand` renders a product ID rather than a name, neither an agent nor a partner could spot it in a preview.
+
+  The row borrowed E3's id because the fixture's `ProductPricing.billingTerm` was typed `"Monthly" | "Annual"`, so a One-Time professional-services SKU couldn't be expressed in the catalog at all. That type now accepts the full `BillingTermSchema` union, the SKU has its own `prod-m365-onboarding-0011` entry, and the subscription points at it.
+
+  Two adjacent fixture inconsistencies surfaced and are fixed with it: the trial subscription's `productName` carried a "— trial" suffix that disagreed with the catalog (trial-ness is already in `billingTerm: "Trial"`, and nothing keys off the name), and the onboarding SKU is renamed to the "Microsoft …" prefix every other Microsoft product in the catalog uses.
+
+  A contract test now asserts that every recommendation's `orderArgs --product` resolves to a catalog product whose name equals `suggestedProducts[0]`, so a future productId/productName disagreement fails CI instead of surfacing as an agent placing the wrong order.
+
+- Updated dependencies [[`667e472`](https://github.com/pax8labs/pax8-cli/commit/667e472fb49754085462cc33beb99561ab4bcefd)]:
+  - @pax8/core@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes
