@@ -438,8 +438,14 @@ describe("invoices audit --company scoping (false all-clear regression)", () => 
 // cancelled since is absent from the fetch entirely. So the audit must report
 // neither a checkmark (the original false all-clear) nor `missing` rows
 // (findings invented for subs that did not exist in that period).
-describe("invoices audit --month on a past period", () => {
+describe("invoices audit --month outside the current period", () => {
   const PAST = "2024-01";
+  // A FUTURE month is unreconcilable for a different reason — it has not
+  // happened — but the same rule applies: do not invent findings for a period
+  // that cannot be reconciled. An earlier guard covered only the past, so
+  // `--month 2027-06` emitted 25 `missing` rows worth -$18,316 for a period
+  // that had not occurred.
+  const FUTURE = "2027-06";
 
   it("warns on stderr that subscriptions were not reconciled", async () => {
     const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST, "--json"]);
@@ -461,6 +467,38 @@ describe("invoices audit --month on a past period", () => {
     const report = JSON.parse(r.stdout);
     expect(report.discrepancies).toEqual([]);
     expect(report.itemsAudited).toBe(0);
+  });
+
+
+  it("does not invent missing rows for a future period", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", FUTURE, "--json"]);
+    const report = JSON.parse(r.stdout);
+    expect(report.discrepancies).toEqual([]);
+    expect(report.itemsAudited).toBe(0);
+  });
+
+  it("warns that a future period has not occurred", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", FUTURE, "--json"]);
+    expect(r.stderr).toMatch(/NOT reconciled/);
+    expect(r.stderr).toMatch(/has not occurred yet/i);
+    expect(r.stderr).toMatch(/not a clean bill of health/i);
+  });
+
+  it("renders no success checkmark for a future period", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", FUTURE], {
+      PAX8_OUTPUT_FORMAT: "table",
+    });
+    expect(r.stdout).not.toContain("✓");
+  });
+
+  it("still reconciles the CURRENT period normally", async () => {
+    // The guard must not swallow the only month that CAN be reconciled.
+    const now = new Date();
+    const current = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", current, "--json"]);
+    const report = JSON.parse(r.stdout);
+    expect(report.itemsAudited).toBeGreaterThan(0);
+    expect(report.discrepancies.length).toBeGreaterThan(0);
   });
 
   it("keeps stdout valid JSON in the documented envelope shape", async () => {

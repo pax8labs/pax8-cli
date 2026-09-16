@@ -130,11 +130,18 @@ JSON output (--json):
       // unscoped audit listed five `missing` rows for that same company — a
       // false negative on a reconciliation tool, on the account with the
       // largest gap in the fixture.
+      // Computed once when the scope has no invoice items and reused as the
+      // final report if we fall through to case (c) — the inputs are identical
+      // there (`itemsResult.content` is empty), so re-running the auditor would
+      // duplicate the whole reconciliation on what is now a common path.
+      let emptyScopeReport: ReturnType<typeof auditInvoices> | undefined;
+
       if (allItems.length === 0) {
         // Reuse the auditor's own active-status filter rather than
         // re-implementing it here; with no invoice items its itemsAudited is
         // exactly the count of active subscriptions it would reconcile.
-        const activeSubCount = auditInvoices([], normalizedSubs).itemsAudited;
+        emptyScopeReport = auditInvoices([], normalizedSubs);
+        const activeSubCount = emptyScopeReport.itemsAudited;
 
         // (a) Genuinely nothing in scope — no invoices AND no active subs.
         //     A checkmark is honest here.
@@ -166,15 +173,18 @@ JSON output (--json):
         //     here would invent findings for subscriptions that did not exist
         //     in the audited period; emitting a checkmark would repeat the
         //     false all-clear. Report the gap instead.
-        if (isPastMonth(options.month)) {
+        const otherMonth = compareToCurrentMonth(options.month);
+        if (otherMonth !== "current") {
           if (ctx.outputFormat !== "quiet") {
             const monthLabel = formatMonthLabel(options.month!);
+            const why =
+              otherMonth === "past"
+                ? `subscription history is\n    only available as of today, so a past period cannot be audited\n    against it.`
+                : `that period has not occurred yet, so\n    there is nothing to reconcile against.`;
             process.stderr.write(
               `\n  ${chalk.yellow("⚠")} No invoiced line items for ${monthLabel}.\n` +
                 `    ${activeSubCount} active subscription${activeSubCount === 1 ? "" : "s"} ` +
-                `${activeSubCount === 1 ? "was" : "were"} NOT reconciled — subscription history is\n` +
-                `    only available as of today, so a past period cannot be audited\n` +
-                `    against it.\n\n` +
+                `${activeSubCount === 1 ? "was" : "were"} NOT reconciled — ${why}\n\n` +
                 `    ${chalk.dim("This is not a clean bill of health.")}\n\n`,
             );
           }
@@ -201,8 +211,8 @@ JSON output (--json):
         //     the same company.
       }
 
-      // Run audit
-      const report = auditInvoices(itemsResult.content, normalizedSubs);
+      // Run audit (reusing the empty-scope report when one was computed above)
+      const report = emptyScopeReport ?? auditInvoices(itemsResult.content, normalizedSubs);
 
       // Stamp each discrepancy with a stable ID so `pax8 invoices dispute
       // --discrepancy <id>` can locate it without re-auditing under the user's
@@ -342,17 +352,26 @@ JSON output (--json):
   });
 
 /**
- * True when `month` (YYYY-MM) names a period earlier than the current one.
+ * Classify `month` (YYYY-MM) against the current period.
+ *
+ * Only the CURRENT period can be reconciled against the subscription list,
+ * because `subscriptions.streamAll()` returns what is active right now and
+ * carries no history. A PAST month is missing subscriptions that have since
+ * been cancelled; a FUTURE month has not happened at all. Emitting `missing`
+ * rows for either would invent findings, so both are reported as unreconciled
+ * — an earlier version guarded only the past, which let a future `--month`
+ * produce discrepancies for a period that had not occurred.
  *
  * Compared in UTC to match how the demo fixture derives its invoice dates
  * (`monthsAgo()` in demo-data.ts) so a partner near a month boundary sees the
  * same classification the fixtures were built against.
  */
-function isPastMonth(month: string | undefined): boolean {
-  if (!month) return false;
+function compareToCurrentMonth(month: string | undefined): "current" | "past" | "future" {
+  if (!month) return "current";
   const now = new Date();
   const current = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-  return month < current;
+  if (month === current) return "current";
+  return month < current ? "past" : "future";
 }
 
 function formatMonthLabel(month: string): string {
