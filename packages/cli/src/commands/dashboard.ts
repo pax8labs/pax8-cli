@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction, type EmittedAction } from "../lib/actions.js";
 import chalk from "chalk";
 import { buildContext } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
@@ -298,40 +299,53 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
 
       // ── JSON output ──────────────────────────────────────────────
       if (ctx.outputFormat === "json") {
-        const nextActions: { command: string; description: string }[] = [];
+        const nextActions: EmittedAction[] = [];
 
         if (renewals.urgentCount > 0) {
-          nextActions.push({
-            command: "pax8 subscriptions renewals --json",
-            description: `Review ${renewals.urgentCount} urgent renewal${renewals.urgentCount > 1 ? "s" : ""} (${formatCurrency(renewals.totalMrrRenewing)}/mo renewing)`,
-          });
+          nextActions.push(
+            buildAction(
+              ["subscriptions", "renewals", "--json"],
+              `Review ${renewals.urgentCount} urgent renewal${renewals.urgentCount > 1 ? "s" : ""} (${formatCurrency(renewals.totalMrrRenewing)}/mo renewing)`,
+            ),
+          );
         } else if (renewals.items.length > 0) {
-          nextActions.push({
-            command: "pax8 subscriptions renewals --json",
-            description: `Review ${renewals.items.length} upcoming renewal${renewals.items.length > 1 ? "s" : ""}`,
-          });
+          nextActions.push(
+            buildAction(
+              ["subscriptions", "renewals", "--json"],
+              `Review ${renewals.items.length} upcoming renewal${renewals.items.length > 1 ? "s" : ""}`,
+            ),
+          );
         }
 
         if (highRecs.length > 0) {
-          nextActions.push({
-            command: "pax8 recommendations list --json",
-            description: `Explore ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"} (${formatCurrency(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0))}/mo additional Pax8 cost)`,
-          });
+          nextActions.push(
+            buildAction(
+              ["recommendations", "list", "--json"],
+              `Explore ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"} (${formatCurrency(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0))}/mo additional Pax8 cost)`,
+            ),
+          );
         }
 
         if (trials.length > 0) {
-          nextActions.push({
-            command: "pax8 subscriptions list --status Trial --json",
-            description: `Review ${trials.length} active trial${trials.length > 1 ? "s" : ""} to convert or cancel`,
-          });
+          nextActions.push(
+            buildAction(
+              ["subscriptions", "list", "--status", "Trial", "--json"],
+              `Review ${trials.length} active trial${trials.length > 1 ? "s" : ""} to convert or cancel`,
+            ),
+          );
         }
 
         // Add top customer drilldown
         if (topCustomers.length > 0) {
-          nextActions.push({
-            command: `pax8 clients more "${topCustomers[0].name}" --json`,
-            description: `Drill into top customer ${topCustomers[0].name}`,
-          });
+          // Company name in its own argv slot rather than interpolated
+          // into a quoted string — shell metacharacters in a partner's
+          // customer name cannot break out (#462/#562).
+          nextActions.push(
+            buildAction(
+              ["clients", "more", topCustomers[0].name, "--json"],
+              `Drill into top customer ${topCustomers[0].name}`,
+            ),
+          );
         }
 
         // JSON field-naming note: the dollar figures here are the partner's

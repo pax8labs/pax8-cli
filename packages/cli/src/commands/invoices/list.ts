@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
 import {
@@ -230,25 +231,13 @@ Examples:
           );
           if (unpaid.length > 0) {
             const showArgs = ["pax8", "invoices", "show", String(unpaid[0].id)];
-            nextActions.push({
-              command: displayCommandFromArgs(showArgs),
-              args: showArgs,
-              description: `Review the first unpaid invoice (${unpaid.length} unpaid total)`,
-            });
+            nextActions.push(buildAction(showArgs, `Review the first unpaid invoice (${unpaid.length} unpaid total)`));
           } else if (invoices.length > 0) {
             const showArgs = ["pax8", "invoices", "show", String(invoices[0].id)];
-            nextActions.push({
-              command: displayCommandFromArgs(showArgs),
-              args: showArgs,
-              description: "Drill into the most recent invoice",
-            });
+            nextActions.push(buildAction(showArgs, "Drill into the most recent invoice"));
           }
           const auditArgs = ["pax8", "invoices", "audit", "--json"];
-          nextActions.push({
-            command: displayCommandFromArgs(auditArgs),
-            args: auditArgs,
-            description: "Audit invoices against active subscriptions for billing discrepancies",
-          });
+          nextActions.push(buildAction(auditArgs, "Audit invoices against active subscriptions for billing discrepancies"));
           process.stdout.write(
             JSON.stringify({ invoices, page: pageEnvelope, nextActions }, null, 2) + "\n"
           );

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import {
   getConfigDir,
@@ -310,13 +311,16 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       if (ctx.outputFormat === "json") {
         if (options.withActions) {
+          // Built from `orderArgs`, not `orderCommand`. The latter is a
+          // display string interpolating a partner-controlled companyName
+          // (#462) — emitting it as the only executable form left agents
+          // with nothing safe to spawn. Filtering on orderArgs also drops
+          // recommendations whose product could not be resolved, so a
+          // suggestion is never emitted without a runnable argv (#708).
           const nextActions = capped
-            .filter((r) => r.orderCommand)
+            .filter((r) => r.orderArgs && r.orderArgs.length > 0)
             .slice(0, 5)
-            .map((r) => ({
-              command: r.orderCommand!,
-              description: `${r.title} for ${r.companyName}`,
-            }));
+            .map((r) => buildAction(r.orderArgs!, `${r.title} for ${r.companyName}`));
           process.stdout.write(
             JSON.stringify(
               {

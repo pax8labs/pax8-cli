@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
@@ -53,7 +54,7 @@ JSON output (--json):
     "totalUndercharge": number,
     "netImpact": number,
     "itemsAudited": number,
-    "nextActions": [{ "command": string, "description": string }]
+    "nextActions": [{ "command": string, "args": string[], "description": string, "isWrite": boolean }]
   }`
   )
   .action(async (options, command) => {
@@ -150,12 +151,23 @@ JSON output (--json):
 
       // JSON output
       if (ctx.outputFormat === "json") {
+        // Every one of these is `invoices dispute` — a write emitted by a
+        // read command. `isWrite: true` is what stops an agent filing five
+        // disputes off the back of running an audit (#708).
         const nextActions = stampedDiscrepancies
           .slice(0, 5)
-          .map((d) => ({
-            command: `pax8 invoices dispute --discrepancy ${d.discrepancyId}${options.month ? ` --month ${options.month}` : ""}`,
-            description: `File a dispute for ${d.companyName} — ${d.productName} (${d.type}, Δ${d.delta > 0 ? "+" : ""}${d.delta})`,
-          }));
+          .map((d) =>
+            buildAction(
+              [
+                "invoices",
+                "dispute",
+                "--discrepancy",
+                d.discrepancyId,
+                ...(options.month ? ["--month", String(options.month)] : []),
+              ],
+              `File a dispute for ${d.companyName} — ${d.productName} (${d.type}, Δ${d.delta > 0 ? "+" : ""}${d.delta})`,
+            ),
+          );
         process.stdout.write(
           JSON.stringify(
             { ...report, discrepancies: stampedDiscrepancies, nextActions },

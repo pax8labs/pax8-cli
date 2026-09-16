@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import { getUpcomingRenewals } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
@@ -158,10 +159,12 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         if (options.withActions) {
           const nextActions = report.items
             .slice(0, 5)
-            .map((item) => ({
-              command: `pax8 subscriptions show ${item.subscriptionId}`,
-              description: `View renewal details for ${item.companyName} — ${item.productName} (${item.daysUntilRenewal}d)`,
-            }));
+            .map((item) =>
+              buildAction(
+                ["subscriptions", "show", item.subscriptionId],
+                `View renewal details for ${item.companyName} — ${item.productName} (${item.daysUntilRenewal}d)`,
+              ),
+            );
           process.stdout.write(
             JSON.stringify({ renewals: renewalItems, page, nextActions }, null, 2) + "\n",
           );

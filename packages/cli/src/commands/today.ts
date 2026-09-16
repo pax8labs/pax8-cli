@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction, type EmittedAction } from "../lib/actions.js";
 import chalk from "chalk";
 import {
   auditInvoices,
@@ -71,7 +72,7 @@ export interface TodayItem {
    * `args.slice(1)` directly — never tokenize `command`. Matches the #562
    * contract used everywhere else in the CLI.
    */
-  action: { command: string; args: string[]; description: string };
+  action: EmittedAction;
 }
 
 // ── Data fetch ───────────────────────────────────────────────────────────────
@@ -235,17 +236,10 @@ function buildRenewalItems(renewals: { items: RenewalItem[] }): {
       summary: `${r.productName} renews in ${r.daysUntilRenewal}d`,
       daysUntil: r.daysUntilRenewal,
       monthlyImpact: { amount: Number(r.mrrRenewing.toFixed(2)), currency: renewalCurrency(r) },
-      action: {
-        command: `pax8 subscriptions renewals --within ${r.daysUntilRenewal <= 7 ? 7 : 30}d`,
-        args: [
-          "pax8",
-          "subscriptions",
-          "renewals",
-          "--within",
-          `${r.daysUntilRenewal <= 7 ? 7 : 30}d`,
-        ],
-        description: `Walk the renewal triage`,
-      },
+      action: buildAction(
+        ["subscriptions", "renewals", "--within", `${r.daysUntilRenewal <= 7 ? 7 : 30}d`],
+        `Walk the renewal triage`,
+      ),
     };
     if (r.daysUntilRenewal <= 7) urgent.push(item);
     else upcoming.push(item);
@@ -275,11 +269,10 @@ function buildAuditItems(discrepancies: StampedDiscrepancy[], currency: string):
       companyName: d.companyName,
       summary: `${formatCurrency(Math.abs(d.dollarImpact))} ${verb} on ${d.productName}`,
       monthlyImpact: { amount: Number(d.dollarImpact.toFixed(2)), currency },
-      action: {
-        command: `pax8 invoices dispute --discrepancy ${d.discrepancyId}`,
-        args: ["pax8", "invoices", "dispute", "--discrepancy", d.discrepancyId],
-        description: `File a dispute for ${d.companyName}`,
-      },
+      action: buildAction(
+        ["invoices", "dispute", "--discrepancy", d.discrepancyId],
+        `File a dispute for ${d.companyName}`,
+      ),
     } satisfies TodayItem;
   });
 }
@@ -316,11 +309,12 @@ function buildGrowthItems(highRecs: Recommendation[], currency: string): TodayIt
       companyName: r.companyName,
       summary: `add ${r.suggestedProducts?.[0] ?? r.title}`,
       monthlyImpact: { amount: Number(uplift.toFixed(2)), currency },
-      action: {
-        command: args.join(" "),
-        args,
-        description: `Place the order for ${r.companyName}`,
-      },
+      // `args` is the recommendation's own orderArgs. Routing it through
+      // buildAction gives it a properly quoted display string (rather than
+      // a raw join, which mis-renders any name containing a space) and
+      // stamps isWrite — this is `orders create`, the single most
+      // consequential action `today` can suggest.
+      action: buildAction(args, `Place the order for ${r.companyName}`),
     };
   });
 }
@@ -354,10 +348,8 @@ function buildTrialItems(allSubs: Subscription[], currency: string): TodayItem[]
       summary: `${sub.productName ?? "trial"} trial ends in ${daysUntil}d`,
       daysUntil,
       monthlyImpact: { amount: Number(monthly.toFixed(2)), currency: sub.currencyCode ?? currency },
-      action: {
-        command: `pax8 subscriptions list --status Trial --company "${sub.companyName ?? sub.companyId}"`,
-        args: [
-          "pax8",
+      action: buildAction(
+        [
           "subscriptions",
           "list",
           "--status",
@@ -365,8 +357,8 @@ function buildTrialItems(allSubs: Subscription[], currency: string): TodayItem[]
           "--company",
           sub.companyName ?? sub.companyId,
         ],
-        description: `Review the trial`,
-      },
+        `Review the trial`,
+      ),
     });
   }
   // Soonest deadlines first.
@@ -723,34 +715,41 @@ async function runToday(options: Record<string, unknown>, cmd: Command): Promise
         auditInFlat.reduce((s, i) => s + Math.abs(i.monthlyImpact.amount), 0).toFixed(2),
       );
 
-      const nextActions: { command: string; args: string[]; description: string }[] = [];
+      const nextActions: EmittedAction[] = [];
       if (urgentRenewalsInFlat.length > 0) {
-        nextActions.push({
-          command: "pax8 subscriptions renewals --within 7d",
-          args: ["pax8", "subscriptions", "renewals", "--within", "7d"],
-          description: `Walk ${urgentRenewalsInFlat.length} urgent renewal${urgentRenewalsInFlat.length > 1 ? "s" : ""}`,
-        });
+        nextActions.push(
+          buildAction(
+            ["subscriptions", "renewals", "--within", "7d"],
+            `Walk ${urgentRenewalsInFlat.length} urgent renewal${urgentRenewalsInFlat.length > 1 ? "s" : ""}`,
+          ),
+        );
       }
       if (auditInFlat.length > 0) {
-        nextActions.push({
-          command: "pax8 invoices audit",
-          args: ["pax8", "invoices", "audit"],
-          description: `Review ${auditInFlat.length} invoice discrepanc${auditInFlat.length > 1 ? "ies" : "y"}`,
-        });
+        nextActions.push(
+          buildAction(
+            ["invoices", "audit"],
+            `Review ${auditInFlat.length} invoice discrepanc${auditInFlat.length > 1 ? "ies" : "y"}`,
+          ),
+        );
       }
       if (growthInFlat.length > 0) {
-        nextActions.push({
-          command: "pax8 recommendations act --priority high",
-          args: ["pax8", "recommendations", "act", "--priority", "high"],
-          description: `Walk ${growthInFlat.length} high-priority growth opportunit${growthInFlat.length > 1 ? "ies" : "y"}`,
-        });
+        // `recommendations act` places orders for the WHOLE filtered set —
+        // 13 where this brief showed 3. isWrite: true is the only thing in
+        // the payload that distinguishes it from the reads beside it (#708).
+        nextActions.push(
+          buildAction(
+            ["recommendations", "act", "--priority", "high"],
+            `Walk ${growthInFlat.length} high-priority growth opportunit${growthInFlat.length > 1 ? "ies" : "y"}`,
+          ),
+        );
       }
       if (trialsInFlat.length > 0) {
-        nextActions.push({
-          command: "pax8 subscriptions list --status Trial",
-          args: ["pax8", "subscriptions", "list", "--status", "Trial"],
-          description: `Review ${trialsInFlat.length} expiring trial${trialsInFlat.length > 1 ? "s" : ""}`,
-        });
+        nextActions.push(
+          buildAction(
+            ["subscriptions", "list", "--status", "Trial"],
+            `Review ${trialsInFlat.length} expiring trial${trialsInFlat.length > 1 ? "s" : ""}`,
+          ),
+        );
       }
 
       const payload = {

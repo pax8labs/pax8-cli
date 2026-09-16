@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import {
   getRecommendations,
@@ -363,29 +364,17 @@ Examples:
             : result.content;
           for (const c of ranked.slice(0, 3)) {
             const moreArgs = ["pax8", "clients", "more", String(c.name)];
-            nextActions.push({
-              command: displayCommandFromArgs(moreArgs),
-              args: moreArgs,
-              description: `Drill into ${c.name}`,
-            });
+            nextActions.push(buildAction(moreArgs, `Drill into ${c.name}`));
           }
           if (coverageMap) {
             const top = ranked.find((c) => (coverageMap!.get(String(c.id))?.estimatedUplift ?? 0) > 0);
             if (top) {
               const recsArgs = ["pax8", "recommendations", "list", "--company", String(top.name), "--json"];
-              nextActions.push({
-                command: displayCommandFromArgs(recsArgs),
-                args: recsArgs,
-                description: `Review growth opportunities for ${top.name}`,
-              });
+              nextActions.push(buildAction(recsArgs, `Review growth opportunities for ${top.name}`));
             }
           } else {
             const coverageArgs = ["pax8", "clients", "list", "--coverage", "--json"];
-            nextActions.push({
-              command: displayCommandFromArgs(coverageArgs),
-              args: coverageArgs,
-              description: "Re-run with portfolio coverage analysis to surface gaps",
-            });
+            nextActions.push(buildAction(coverageArgs, "Re-run with portfolio coverage analysis to surface gaps"));
           }
           process.stdout.write(
             JSON.stringify({ companies: numbered, page: pageEnvelope, nextActions }, null, 2) + "\n",

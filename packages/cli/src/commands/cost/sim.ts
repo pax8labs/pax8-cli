@@ -22,6 +22,7 @@ import { collectAllSubscriptions } from "../../lib/subs-stream.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { validateEnum } from "../../lib/validate.js";
+import { buildAction } from "../../lib/actions.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
@@ -106,8 +107,10 @@ JSON output (--json):
     },
     "notes": string[],                    // human-readable caveats (e.g. SKU swap, term change)
     "nextActions": [{                     // ready-to-run follow-up commands
-      "command": string,                  // e.g. "pax8 orders create --company ..."
-      "description": string
+      "command": string,                  // DISPLAY ONLY — never pass to a shell
+      "args": string[],                   // argv to spawn; args[0] === "pax8"
+      "description": string,
+      "isWrite": boolean                  // true ⇒ needs explicit approval first
     }]
   }`,
   )
@@ -279,11 +282,26 @@ JSON output (--json):
       if (ctx.outputFormat === "quiet") return;
 
       if (ctx.outputFormat === "json") {
+        // #708: build from argv so the company/product names land in their
+        // own slots. This action is an `orders create` — a write — and the
+        // emitted `isWrite: true` is what tells an agent to stop and ask
+        // rather than spawn it off the back of a read-only simulation.
         const nextActions = [
-          {
-            command: `pax8 orders create --company "${company.name}" --product "${proposedProduct.name}" --quantity ${proposedQuantity} --billing-term ${result.proposed.billingTerm}`,
-            description: `Place this change as an order for ${company.name}`,
-          },
+          buildAction(
+            [
+              "orders",
+              "create",
+              "--company",
+              company.name,
+              "--product",
+              proposedProduct.name,
+              "--quantity",
+              String(proposedQuantity),
+              "--billing-term",
+              String(result.proposed.billingTerm),
+            ],
+            `Place this change as an order for ${company.name}`,
+          ),
         ];
         process.stdout.write(
           JSON.stringify(

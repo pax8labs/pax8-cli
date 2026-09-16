@@ -93,17 +93,16 @@ pax8 today            (a read)  →  nextActions: `pax8 recommendations act --pr
                                 →  items[].action: `pax8 orders create --company … --quantity 39`  (write)
 ```
 
-**Before spawning any suggested action, resolve its command path against the read/write lists above, and apply the write protocol if it lands on the write side.** The argv contract (`args.slice(1)`, never tokenize `command`) protects against shell injection — it says nothing about whether the command should run at all. Both checks are required, and the second one is the one that stops an unintended order.
+**Every suggested action carries an `isWrite` boolean. Never spawn one with `isWrite: true` without explicit user approval.** The argv contract (`args.slice(1)`, never tokenize `command`) protects against shell injection — it says nothing about whether the command should run at all. Both checks are required, and the second one is what stops an unintended order.
 
 This applies identically to `nextActions[]` on any command, `items[].action` on `today`, and `orderArgs` on `recommendations list`. There is no surface where a suggested action is pre-approved.
 
-(Tracking: #708 proposes an `isWrite` flag on every emitted action. Until that ships, the cross-reference is manual and it is on you to do it.)
+(Before #708 this was a manual cross-reference against a prose table — match the command string, hope you got it right. The field replaced that.)
 
 ### Known defects — do not execute blindly
 
 - **Verify the SKU before every recommendation-derived order.** Resolve the `--product` value in `orderArgs` against `pax8 products show <id>` and confirm its name matches `suggestedProducts[0]`. If they disagree, say so and stop. This is cheap (one read) and catches a whole class: `orderCommand` renders a product **ID**, not a name, so neither you nor the partner can spot a wrong SKU from the preview alone. #707 was exactly this — a subscription whose `productId` pointed at Microsoft 365 E3 while its `productName` said onboarding, which made the engine emit an order for 39 seats of a product the customer already owned. That specific case is fixed and pinned by a contract test; the check stays because the next one won't be.
 - **A `today` growth item cannot be checked against #707 on its own (#707).** `items[].action.args` on a `growth-high` item carries the same possibly-wrong `--product` as `orderArgs`, but the item has only `action`, `companyId`, `companyName`, `kind`, `monthlyImpact`, `priority`, `summary` — **no `suggestedProducts`**, so there is nothing to compare against. Before acting on any `orders create` action from `today`, re-fetch `pax8 recommendations list --json --top 0`, match the row on `companyId` + the product named in `summary`, and run the #707 check against *that* row's `suggestedProducts[0]`. The wrong-SKU order in the current fixture reaches agents through exactly this path, and it sorts first because #710 inflates its impact.
-- **`nextActions[].args` is missing on `dashboard`, `invoices audit`, `cost sim`, and `subscriptions renewals` (#708).** See the Output-flags table. Where `args` is absent there is no safe way to execute the suggestion — surface `command` to the user as text and let them run it; never tokenize it yourself.
 
 If you're unsure whether a command counts as a write, default to confirming. Better one extra prompt than one unintended order.
 
@@ -173,6 +172,14 @@ Every `--json` list command emits:
 
 `page.number` is 1-based and matches `--page`. Compare `<resource>.length` against `page.totalElements` to detect pagination, then walk with `--page N --size M`. Endpoints without server-side pagination (webhooks list/logs/topics, usage list, products search, subscriptions renewals) return the same `{ <resource>, page }` shape with a single fully-populated page. There is no marker distinguishing them from paginated endpoints — `singlePageEnvelope` is the name of the internal helper, **not a key you will find in the output.** Don't go looking for it.
 
+Two commands break the envelope rule — check these before assuming:
+
+- **`recommendations list`** → `{ recommendations, totalAvailable }` (#521), no `page`.
+- **`quotes line-items list <quote-id>`** → a **bare JSON array**, no envelope and no `page`. Iterate it directly; `.items` and `.page` are both `null` (#716).
+
+**Ignore `_`-prefixed keys (#716).** `clients list` emits `_num`, and `clients list --coverage` adds `_coverage`, `_missing`, `_potential` — table-rendering artifacts that duplicate the real fields in display form (`_coverage: "3/7"` vs `coverage: "3/7"`, `_missing: "email, identity"` vs `missingCategories: ["email","identity"]`). Always read the unprefixed field; the `_` ones are pre-formatted strings, not data.
+
+
 ### Which commands accept `--with-actions`
 
 Accepted: `clients list`, `subscriptions list`, `subscriptions renewals`, `invoices list`, `orders list`, `webhooks list`, `webhooks logs`, `webhooks topics list`, `recommendations list`.
@@ -181,30 +188,29 @@ Rejected — **exit 1, `ERROR_INVALID_INPUT`**, not silently ignored: `products 
 
 Single-object commands (`dashboard`, `invoices audit`, `today`, `cost sim`) emit `nextActions` inline and need no flag.
 
-### Which emitted actions carry `args` (#708)
+### Suggested actions carry their own classification (#708)
 
-The #562 contract is `command` (display string) + `args` (argv array, `args[0] === "pax8"`), and you spawn `args.slice(1)` via the Bash tool's argv form. **`args` is currently absent on four surfaces:**
+Every entry in `nextActions[]`, every `items[].action` on `today`, and `orderArgs` on `recommendations list` has the same four fields:
 
-| Surface | `args` present? |
-|---|---|
-| `clients list --with-actions` (and other accepted list commands) | yes |
-| `today` — both `nextActions[]` and `items[].action` | yes |
-| `recommendations list` — `orderArgs` | yes |
-| `dashboard` | **no** |
-| `invoices audit` | **no** |
-| `cost sim` | **no** |
-| `subscriptions renewals --with-actions` | **no** |
+```jsonc
+{
+  "command": "pax8 invoices dispute --discrepancy disc-e5b720d8eb7b",  // DISPLAY ONLY
+  "args": ["pax8", "invoices", "dispute", "--discrepancy", "disc-e5b720d8eb7b"],
+  "description": "File a dispute for Summit Healthcare Partners",
+  "isWrite": true
+}
+```
 
-Where `args` is absent, **do not fall back to tokenizing `command`** — that's the injection path #562 exists to close, and `cost sim` interpolates raw partner-controlled company and product names straight into its string. Show the user `command` as text and let them run it.
+**The rule is one line: never spawn an action with `isWrite: true` without explicit user approval.**
 
-Every entry also carries a `description` field, useful for previews.
+You no longer cross-reference the command against the read/write lists above — the CLI classifies it for you, and the classification is pinned by a contract test against the same write list this document uses. `isWrite` covers local-machine mutations (`demo on`, `config set`, `cache clear`) as well as Pax8 API writes.
 
-Two commands break the envelope rule — check these before assuming:
+Two things it does not do:
 
-- **`recommendations list`** → `{ recommendations, totalAvailable }` (#521), no `page`.
-- **`quotes line-items list <quote-id>`** → a **bare JSON array**, no envelope and no `page`. Iterate it directly; `.items` and `.page` are both `null` (#716).
+- **It does not make `--dry-run` safe.** A dry-run order is still `isWrite: true`, deliberately — safety shouldn't depend on a flag that can be dropped when the command is copied.
+- **It does not replace the argv rule.** Spawn `args.slice(1)`; never tokenize `command`, which interpolates partner-controlled names for human display.
 
-**Ignore `_`-prefixed keys (#716).** `clients list` emits `_num`, and `clients list --coverage` adds `_coverage`, `_missing`, `_potential` — table-rendering artifacts that duplicate the real fields in display form (`_coverage: "3/7"` vs `coverage: "3/7"`, `_missing: "email, identity"` vs `missingCategories: ["email","identity"]`). Always read the unprefixed field; the `_` ones are pre-formatted strings, not data.
+Read commands routinely emit writes — `invoices audit` yields five `invoices dispute` calls, `today` yields `recommendations act` and `orders create`. That is exactly what the field is for.
 
 Result size: list commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost rollups, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 

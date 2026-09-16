@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction, type EmittedAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
 import { output, singlePageEnvelope } from "../../lib/output.js";
@@ -55,23 +56,33 @@ Examples:
         // paginated, so agents get a single contract for every list shape.
         const page = singlePageEnvelope(webhooks.length);
         if (options.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          const nextActions: EmittedAction[] = [];
           if (webhooks.length === 0) {
-            nextActions.push({
-              command:
-                "pax8 webhooks create --url <url> --display-name <name> --topics <comma-separated-topics>",
-              description: "Create your first webhook subscription",
-            });
+            // Placeholder tokens ride in argv slots. isWrite is true, so an
+            // agent stops for approval before it could ever spawn them
+            // literally — at which point the partner supplies real values.
+            nextActions.push(
+              buildAction(
+                [
+                  "webhooks", "create",
+                  "--url", "<url>",
+                  "--display-name", "<name>",
+                  "--topics", "<comma-separated-topics>",
+                ],
+                "Create your first webhook subscription",
+              ),
+            );
           } else {
             const first = webhooks[0];
-            nextActions.push({
-              command: `pax8 webhooks test ${first.id}`,
-              description: "Send a test delivery to verify the endpoint",
-            });
-            nextActions.push({
-              command: `pax8 webhooks logs ${first.id}`,
-              description: "View recent delivery history",
-            });
+            nextActions.push(
+              buildAction(
+                ["webhooks", "test", first.id],
+                "Send a test delivery to verify the endpoint",
+              ),
+            );
+            nextActions.push(
+              buildAction(["webhooks", "logs", first.id], "View recent delivery history"),
+            );
           }
           process.stdout.write(
             JSON.stringify({ webhooks, page, nextActions }, null, 2) + "\n",

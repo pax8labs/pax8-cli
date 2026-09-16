@@ -40,6 +40,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCli, runCliExpectSuccess } from "./test-utils.js";
+import { WRITE_COMMAND_PATHS, type EmittedAction } from "../lib/actions.js";
 
 // Repo root: this file is at packages/cli/src/__tests__/, so up four.
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -207,12 +208,6 @@ let COMMAND_PATHS: string[] = [];
 // lint bans.
 
 type JsonRecord = Record<string, unknown>;
-
-interface EmittedAction {
-  command?: unknown;
-  args?: unknown;
-  description?: unknown;
-}
 
 interface TodayItem {
   action?: EmittedAction;
@@ -519,44 +514,36 @@ describe("agent-contract surface pinning (#704)", () => {
     });
   });
 
-  describe("emitted actions (#708) — args presence and write classification", () => {
+  describe("emitted actions (#708)", () => {
     /**
-     * Every surface that emits actions, and whether its entries carry
-     * `args`. This is NOT the contract we want — #708 tracks backfilling
-     * `args` everywhere — it is the contract that ships today, pinned so
-     * the skill's per-surface table can't silently go stale in either
-     * direction. When #708 lands, flip the flags here and in skill.md
-     * together.
+     * Every surface that suggests a next command. Before #708, `args` was
+     * missing on four of them and `isWrite` existed nowhere — so an agent
+     * had to match the command string against a prose table in the skill
+     * to decide whether approval was needed, and `invoices audit` hands
+     * out five `invoices dispute` calls.
      */
-    const ACTION_SURFACES: {
-      args: string[];
-      path: string;
-      hasArgs: boolean;
-    }[] = [
-      { args: ["today", "--json"], path: "nextActions", hasArgs: true },
-      { args: ["today", "--json"], path: "items[].action", hasArgs: true },
+    const ACTION_SURFACES: { args: string[]; path: string }[] = [
+      { args: ["today", "--json"], path: "nextActions" },
+      { args: ["today", "--json"], path: "items[].action" },
+      { args: ["dashboard", "--json"], path: "nextActions" },
+      { args: ["invoices", "audit", "--json"], path: "nextActions" },
       {
-        args: ["clients", "list", "--json", "--with-actions"],
+        args: ["cost", "sim", "--company", "Acme Corp", "--product",
+               "prod-aad-p1-0008", "--quantity", "5", "--json"],
         path: "nextActions",
-        hasArgs: true,
       },
-      { args: ["dashboard", "--json"], path: "nextActions", hasArgs: false },
-      {
-        args: ["invoices", "audit", "--json"],
-        path: "nextActions",
-        hasArgs: false,
-      },
-      {
-        args: ["subscriptions", "renewals", "--json", "--with-actions"],
-        path: "nextActions",
-        hasArgs: false,
-      },
+      { args: ["subscriptions", "renewals", "--json", "--with-actions"], path: "nextActions" },
+      { args: ["clients", "list", "--json", "--with-actions"], path: "nextActions" },
+      { args: ["subscriptions", "list", "--json", "--with-actions"], path: "nextActions" },
+      { args: ["invoices", "list", "--json", "--with-actions"], path: "nextActions" },
+      { args: ["orders", "list", "--json", "--with-actions"], path: "nextActions" },
+      { args: ["recommendations", "list", "--json", "--with-actions"], path: "nextActions" },
+      { args: ["webhooks", "list", "--json", "--with-actions"], path: "nextActions" },
+      { args: ["webhooks", "logs", "--json", "--with-actions"], path: "nextActions" },
+      { args: ["webhooks", "topics", "list", "--json", "--with-actions"], path: "nextActions" },
     ];
 
-    function collectActions(
-      payload: ActionPayload,
-      path: string,
-    ): EmittedAction[] {
+    function collectActions(payload: ActionPayload, path: string): EmittedAction[] {
       if (path === "nextActions") return payload.nextActions ?? [];
       return (payload.items ?? [])
         .map((i) => i.action)
@@ -564,8 +551,8 @@ describe("agent-contract surface pinning (#704)", () => {
     }
 
     it.each(ACTION_SURFACES)(
-      "`pax8 $args.0` $path — args present: $hasArgs",
-      async ({ args, path, hasArgs }) => {
+      "`pax8 $args.0 $args.1` $path — every entry carries args and isWrite",
+      async ({ args, path }) => {
         const result = await runCliExpectSuccess(args, { PAX8_DEMO: "1" });
         const actions = collectActions(parse<ActionPayload>(result.stdout), path);
         expect(actions.length).toBeGreaterThan(0);
@@ -573,55 +560,78 @@ describe("agent-contract surface pinning (#704)", () => {
           expect(typeof a.command).toBe("string");
           expect(
             Array.isArray(a.args),
-            `\`pax8 ${args.join(" ")}\` ${path}: expected args ${hasArgs ? "present" : "absent"} ` +
-              `but got the opposite. If #708 landed, flip hasArgs here AND update the ` +
-              `"Which emitted actions carry args" table in ${SKILL_PATH} — an agent that ` +
-              `trusts a stale table either crashes or falls back to tokenizing \`command\`.`,
-          ).toBe(hasArgs);
-          if (hasArgs) expect(a.args[0]).toBe("pax8");
+            `\`pax8 ${args.join(" ")}\` ${path}: an entry has no \`args\`. Without it an agent ` +
+              `has only the display string, which it is forbidden to tokenize — so it either ` +
+              `crashes or falls back to the injection path #562 exists to close. Build actions ` +
+              `with buildAction() from lib/actions.ts.`,
+          ).toBe(true);
+          expect((a.args as string[])[0]).toBe("pax8");
+          expect(
+            typeof a.isWrite,
+            `\`pax8 ${args.join(" ")}\` ${path}: an entry has no \`isWrite\`. Agents decide ` +
+              `whether to ask for approval from this field; absent, they fall back to matching ` +
+              `the command string against prose, which is how unintended writes happen.`,
+          ).toBe("boolean");
         }
       },
     );
 
-    it("skill.md warns that read commands emit write commands", () => {
-      // The specific hazard: `invoices audit` and `today` are reads whose
-      // payloads contain `invoices dispute` / `orders create` /
-      // `recommendations act`. An agent told only "spawn args.slice(1)"
-      // runs them. Assert the warning survives future edits.
-      const skill = readSkill();
-      expect(skill).toContain("Suggested actions are not permission to act");
-      for (const phrase of [
-        "Read commands emit write commands",
-        "resolve its command path against the read/write lists",
-      ]) {
-        expect(
-          skill.includes(phrase),
-          `${SKILL_PATH} lost the phrase "${phrase}". The read/write check on emitted ` +
-            `actions is load-bearing — without it the argv contract only prevents shell ` +
-            `injection, not unintended writes.`,
-        ).toBe(true);
+    it("classifies emitted actions correctly, including nested write paths", async () => {
+      // `webhooks logs` vs `webhooks logs retry` is the interesting pair —
+      // shared prefix, opposite classification — and exercises depth-3 matching.
+      const cases = [
+        { args: ["invoices", "audit", "--json"],
+          write: ["pax8 invoices dispute"], read: [] as string[] },
+        { args: ["today", "--json"],
+          write: ["pax8 recommendations act"],
+          read: ["pax8 invoices audit", "pax8 subscriptions renewals"] },
+        { args: ["webhooks", "logs", "--json", "--with-actions"],
+          write: ["pax8 webhooks logs retry"], read: [] as string[] },
+        { args: ["webhooks", "list", "--json", "--with-actions"],
+          write: ["pax8 webhooks test"], read: ["pax8 webhooks logs "] },
+      ];
+
+      for (const c of cases) {
+        const payload = parse<ActionPayload>(
+          (await runCliExpectSuccess(c.args, { PAX8_DEMO: "1" })).stdout,
+        );
+        const actions = payload.nextActions ?? [];
+        for (const prefix of c.write) {
+          const hits = actions.filter((a) => String(a.command).startsWith(prefix));
+          expect(
+            hits.length,
+            `no action starting "${prefix}" from \`pax8 ${c.args.join(" ")}\``,
+          ).toBeGreaterThan(0);
+          for (const h of hits) {
+            expect(h.isWrite, `"${String(h.command)}" must be isWrite: true`).toBe(true);
+          }
+        }
+        for (const prefix of c.read) {
+          for (const h of actions.filter((a) => String(a.command).startsWith(prefix))) {
+            expect(h.isWrite, `"${String(h.command)}" must be isWrite: false`).toBe(false);
+          }
+        }
       }
     });
 
-    it("read commands really do emit write commands (the hazard is real)", async () => {
-      // If this ever fails it is GOOD news — it means the CLI stopped
-      // handing writes out of read payloads. Relax the skill's warning
-      // only when this test says the hazard is gone.
-      const WRITE_PREFIXES = [
-        "pax8 invoices dispute",
-        "pax8 orders create",
-        "pax8 recommendations act",
-      ];
-      const audit = parse<ActionPayload>(
-        (await runCliExpectSuccess(["invoices", "audit", "--json"], {
-          PAX8_DEMO: "1",
-        })).stdout,
-      );
-      const emitted = (audit.nextActions ?? []).map((a) => String(a.command));
+    it("every write path in the code is named in the skill's write contract", () => {
+      // A mutating command missing from WRITE_COMMAND_PATHS ships as
+      // isWrite: false — the one direction that causes damage.
+      const skill = readSkill();
+      const missing = [...WRITE_COMMAND_PATHS].filter((path) => !skill.includes(path));
       expect(
-        emitted.some((c) => WRITE_PREFIXES.some((w) => c.startsWith(w))),
-        "invoices audit no longer emits write commands — if that is intentional, " +
-          `the corresponding warning in ${SKILL_PATH} can be softened.`,
+        missing,
+        `These write paths are in WRITE_COMMAND_PATHS but not named in ${SKILL_PATH}:\n` +
+          missing.map((m) => `  pax8 ${m}`).join("\n") +
+          `\n\nCode and contract must agree — the skill is what a human reviews.`,
+      ).toEqual([]);
+    });
+
+    it("skill.md documents the isWrite rule", () => {
+      expect(
+        readSkill().includes("isWrite"),
+        `${SKILL_PATH} must document \`isWrite\` — it is now how agents decide whether a ` +
+          `suggested action needs approval.`,
       ).toBe(true);
     });
   });
