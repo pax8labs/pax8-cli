@@ -1,8 +1,12 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
+import { DISPUTE_COPY } from "../commands/invoices/dispute.js";
 
 describe("pax8 invoices", () => {
   describe("invoices list", () => {
@@ -507,6 +511,60 @@ describe("invoices audit --month outside the current period", () => {
     expect(Object.keys(report).sort()).toEqual(
       ["discrepancies", "itemsAudited", "netImpact", "totalOvercharge", "totalUndercharge"].sort(),
     );
+  });
+});
+
+// Every discrepancy type walked end to end: unscoped audit finds it, the
+// company-scoped audit still finds it (the scoping regression), and the
+// dispute draft's remedy matches the direction of the finding (the template
+// regression). Both bugs shipped because only `overcharge` was ever exercised.
+describe("audit → drill-in → dispute, per discrepancy type", () => {
+  const TYPES = ["overcharge", "undercharge", "missing", "unexpected"] as const;
+  let disputesDir: string;
+
+  beforeEach(async () => {
+    disputesDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-audit-type-"));
+  });
+  afterEach(async () => {
+    await fs.rm(disputesDir, { recursive: true, force: true });
+  });
+
+  it.each(TYPES)("%s: audit → scoped re-find → direction-correct dispute", async (type) => {
+    const unscoped = JSON.parse(
+      (await runCliExpectSuccess(["invoices", "audit", "--json"])).stdout,
+    );
+    const row = unscoped.discrepancies.find((d: { type: string }) => d.type === type);
+    expect(row, `fixture has no ${type} row to exercise`).toBeDefined();
+
+    // Drill in: the same finding must survive company scoping.
+    const scoped = JSON.parse(
+      (await runCliExpectSuccess(["invoices", "audit", "--json", "--company", row.companyName]))
+        .stdout,
+    );
+    const same = scoped.discrepancies.find(
+      (d: { discrepancyId: string }) => d.discrepancyId === row.discrepancyId,
+    );
+    expect(same, `${type} row for ${row.companyName} vanished under --company`).toBeDefined();
+    expect(same.dollarImpact).toBe(row.dollarImpact);
+
+    // Dispute: remedy must match the direction of the money.
+    const draft = JSON.parse(
+      (
+        await runCliExpectSuccess(
+          ["invoices", "dispute", "--discrepancy", row.discrepancyId, "--yes", "--json"],
+          { PAX8_DISPUTES_DIR: disputesDir },
+        )
+      ).stdout,
+    );
+    // Direction, not literal wording — the partner-owes copy is pending
+    // sign-off (#728) and must stay free to change without touching tests.
+    const tpl: string = draft.portalTemplate;
+    const expected = row.dollarImpact > 0 ? DISPUTE_COPY.partnerIsOwed : DISPUTE_COPY.partnerOwes;
+    const wrong = row.dollarImpact > 0 ? DISPUTE_COPY.partnerOwes : DISPUTE_COPY.partnerIsOwed;
+    expect(tpl).toContain(row.dollarImpact > 0 ? "overcharge" : "undercharge");
+    expect(tpl).toContain(expected.opening);
+    expect(tpl).toContain(expected.remedy);
+    expect(tpl).not.toContain(wrong.remedy);
   });
 });
 

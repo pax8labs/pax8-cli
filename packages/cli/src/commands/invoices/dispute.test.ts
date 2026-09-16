@@ -6,6 +6,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { runCli, runCliExpectSuccess, runCliExpectFailure } from "../../__tests__/test-utils.js";
+import { DISPUTE_COPY } from "./dispute.js";
 
 describe("invoices dispute (closed-loop counterpart to audit)", () => {
   let disputesDir: string;
@@ -136,5 +137,159 @@ describe("invoices dispute (closed-loop counterpart to audit)", () => {
     for (const action of report.nextActions) {
       expect(action.command).toMatch(/^pax8 invoices dispute --discrepancy disc-[a-f0-9]{12}/);
     }
+  });
+
+  // The portal template used to hardcode the overcharge remedy ("issue a
+  // credit memo") for every discrepancy type, so an undercharge ticket asked
+  // billing support for a credit on money the partner actually owes. The
+  // pre-fix coverage only asserted two generic strings, which is why it shipped.
+  describe("portal template matches the discrepancy direction", () => {
+    async function templateFor(type: string): Promise<string> {
+      const auditResult = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+      const report = JSON.parse(auditResult.stdout);
+      const row = report.discrepancies.find((d: { type: string }) => d.type === type);
+      expect(row, `fixture has no ${type} discrepancy to exercise`).toBeDefined();
+      const result = await runCliExpectSuccess(
+        ["invoices", "dispute", "--discrepancy", row.discrepancyId, "--yes", "--json"],
+        { PAX8_DISPUTES_DIR: disputesDir },
+      );
+      return JSON.parse(result.stdout).portalTemplate;
+    }
+
+    // Assertions reference DISPUTE_COPY rather than literal sentences. The
+    // `partnerOwes` wording is pending sign-off (#728); pinning the strings
+    // here would make provisional phrasing a contract that a later correction
+    // has to break a test to change. What must stay true is the DIRECTION:
+    // the impact line and the remedy never disagree.
+    it.each([
+      ["overcharge"],
+      ["unexpected"],
+    ])("%s gets the partner-is-owed copy", async (type) => {
+      const tpl = await templateFor(type);
+      expect(tpl).toContain("overcharge");
+      expect(tpl).toContain(DISPUTE_COPY.partnerIsOwed.opening);
+      expect(tpl).toContain(DISPUTE_COPY.partnerIsOwed.remedy);
+      expect(tpl).not.toContain(DISPUTE_COPY.partnerOwes.remedy);
+    });
+
+    it.each([
+      ["undercharge"],
+      ["missing"],
+    ])("%s gets the partner-owes copy", async (type) => {
+      const tpl = await templateFor(type);
+      expect(tpl).toContain("undercharge");
+      expect(tpl).toContain(DISPUTE_COPY.partnerOwes.opening);
+      expect(tpl).toContain(DISPUTE_COPY.partnerOwes.remedy);
+      // The regression: never serve the credit-memo remedy on money owed.
+      expect(tpl).not.toContain(DISPUTE_COPY.partnerIsOwed.remedy);
+    });
+
+    it("the two directions never share copy", () => {
+      expect(DISPUTE_COPY.partnerIsOwed.remedy).not.toBe(DISPUTE_COPY.partnerOwes.remedy);
+      expect(DISPUTE_COPY.partnerIsOwed.opening).not.toBe(DISPUTE_COPY.partnerOwes.opening);
+    });
+
+    it("no template ever pairs an undercharge impact line with the owed-to-partner remedy", async () => {
+      const auditResult = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+      const report = JSON.parse(auditResult.stdout);
+      for (const row of report.discrepancies) {
+        const result = await runCliExpectSuccess(
+          ["invoices", "dispute", "--discrepancy", row.discrepancyId, "--yes", "--json"],
+          { PAX8_DISPUTES_DIR: disputesDir },
+        );
+        const tpl = JSON.parse(result.stdout).portalTemplate;
+        if (tpl.includes("undercharge")) {
+          expect(tpl, `${row.type} ${row.discrepancyId} contradicts itself`).not.toContain(
+            DISPUTE_COPY.partnerIsOwed.remedy,
+          );
+        }
+      }
+    });
+  });
+
+  // Filing is a write; without a TTY there is nobody to approve it. Before the
+  // guard the outcome depended on the shape of stdin rather than on approval:
+  // `< /dev/null` wrote nothing only because readline's callback never fired,
+  // while a single empty line answered the prompt and confirm(..., {default:
+  // true}) mapped "" to yes — so `echo | pax8 invoices dispute --discrepancy X`
+  // filed a dispute unapproved, as would any agent harness supplying an empty
+  // stdin line. Matches the non-TTY write guards in upgrade.ts,
+  // auth/login.ts and recommendations/act.ts.
+  describe("non-TTY filing requires --yes", () => {
+    async function discId(): Promise<string> {
+      const r = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+      return JSON.parse(r.stdout).discrepancies[0].discrepancyId;
+    }
+
+    it("refuses to file without --yes when stdin is not a TTY", async () => {
+      const result = await runCliExpectFailure(
+        ["invoices", "dispute", "--discrepancy", await discId(), "--json"],
+        { PAX8_DISPUTES_DIR: disputesDir },
+      );
+      expect(result.stderr).toMatch(/stdin is not a TTY/i);
+      const envelope = JSON.parse(result.stderr.slice(result.stderr.indexOf("{")));
+      expect(envelope.code).toBe("ERROR_INVALID_INPUT");
+    });
+
+    it("writes no draft when it refuses", async () => {
+      await runCliExpectFailure(
+        ["invoices", "dispute", "--discrepancy", await discId()],
+        { PAX8_DISPUTES_DIR: disputesDir },
+      );
+      const files = await fs.readdir(disputesDir);
+      expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(0);
+    });
+
+    it("still files when --yes is passed", async () => {
+      const result = await runCliExpectSuccess(
+        ["invoices", "dispute", "--discrepancy", await discId(), "--yes", "--json"],
+        { PAX8_DISPUTES_DIR: disputesDir },
+      );
+      expect(JSON.parse(result.stdout).status).toBe("draft");
+      const files = await fs.readdir(disputesDir);
+      expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(1);
+    });
+  });
+
+  // The terminal framing had the same defect as the portal template: heading,
+  // prompt and success line all said "dispute", which reads wrong for an
+  // under-billing — you do not dispute your own un-billed usage (#728).
+  // Asserted against DISPUTE_COPY so the labels stay renameable.
+  describe("terminal framing matches the discrepancy direction", () => {
+    async function framingFor(type: string): Promise<string> {
+      const audit = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+      const row = JSON.parse(audit.stdout).discrepancies.find(
+        (d: { type: string }) => d.type === type,
+      );
+      expect(row, `fixture has no ${type} row`).toBeDefined();
+      const r = await runCliExpectSuccess(
+        ["invoices", "dispute", "--discrepancy", row.discrepancyId, "--yes"],
+        { PAX8_DISPUTES_DIR: disputesDir, PAX8_OUTPUT_FORMAT: "table" },
+      );
+      return r.stderr;
+    }
+
+    it.each([["overcharge"], ["unexpected"]])(
+      "%s is framed as the partner-is-owed artifact",
+      async (type) => {
+        const out = await framingFor(type);
+        expect(out).toContain(DISPUTE_COPY.partnerIsOwed.label);
+        expect(out).not.toContain(DISPUTE_COPY.partnerOwes.label);
+      },
+    );
+
+    it.each([["undercharge"], ["missing"]])(
+      "%s is framed as the partner-owes artifact",
+      async (type) => {
+        const out = await framingFor(type);
+        expect(out).toContain(DISPUTE_COPY.partnerOwes.label);
+        expect(out).not.toContain(DISPUTE_COPY.partnerIsOwed.label);
+      },
+    );
+
+    it("the two directions never share a label or noun", () => {
+      expect(DISPUTE_COPY.partnerIsOwed.label).not.toBe(DISPUTE_COPY.partnerOwes.label);
+      expect(DISPUTE_COPY.partnerIsOwed.noun).not.toBe(DISPUTE_COPY.partnerOwes.noun);
+    });
   });
 });
