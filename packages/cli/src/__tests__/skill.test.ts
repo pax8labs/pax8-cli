@@ -275,7 +275,7 @@ describe("pax8 doctor — installed-skill drift (#720)", () => {
     expect(result.stdout).toContain("pax8 skill install");
   });
 
-  it("emits a write-flagged nextAction for the drift in --json mode", async () => {
+  it("emits a write-flagged nextAction carrying the scope and --force", async () => {
     await runCliExpectSuccess(["skill", "install", "--yes"], env());
     await fs.appendFile(globalSkillPath(), "\nDrift.\n", "utf-8");
 
@@ -287,6 +287,63 @@ describe("pax8 doctor — installed-skill drift (#720)", () => {
     expect(action, "doctor should suggest refreshing a drifted skill").toBeDefined();
     // `skill install` writes into ~/.claude; an agent must confirm first.
     expect(action?.isWrite).toBe(true);
-    expect(action?.args).toEqual(["pax8", "skill", "install"]);
+    // A bare `pax8 skill install` would be refused on a modified copy — an
+    // agent that spawned the suggestion would follow it and still be stale.
+    expect(action?.args).toEqual(["pax8", "skill", "install", "--global", "--force"]);
   });
+
+  it("suggests a plain refresh (no --force) for a stale-but-unedited copy", async () => {
+    const dir = path.join(claudeDir, "skills", "pax8");
+    await fs.mkdir(dir, { recursive: true });
+    const oldContent = "---\nname: pax8\ndescription: an older contract\n---\n\nOld.\n";
+    await fs.writeFile(path.join(dir, "SKILL.md"), oldContent, "utf-8");
+    const { createHash } = await import("node:crypto");
+    await fs.writeFile(
+      path.join(dir, ".pax8-skill.json"),
+      JSON.stringify({
+        source: "@pax8/cli",
+        cliVersion: "0.0.1",
+        installedAt: new Date(0).toISOString(),
+        checksum: `sha256:${createHash("sha256").update(oldContent, "utf-8").digest("hex")}`,
+      }) + "\n",
+      "utf-8",
+    );
+
+    const result = await runCli(["doctor", "--json"], env(), { cwd: claudeDir });
+    const payload = JSON.parse(result.stdout) as {
+      checks: { name: string; detail?: string }[];
+      nextActions: { command: string; args: string[] }[];
+    };
+    const check = payload.checks.find((c) => c.name === "Claude skill");
+    expect(check?.detail).toContain("written by pax8-cli 0.0.1");
+    const action = payload.nextActions.find((a) => a.command.startsWith("pax8 skill install"));
+    expect(action?.args).toEqual(["pax8", "skill", "install", "--global"]);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "names a symlinked copy as such and suggests no install that would fail",
+    async () => {
+      // `install` refuses a symlink with or without --force, so pointing an
+      // agent at it would just hand back an error. Saying "stale" here would
+      // be worse still: it names a version problem the partner doesn't have.
+      const dir = path.join(claudeDir, "skills", "pax8");
+      await fs.mkdir(dir, { recursive: true });
+      const decoy = path.join(claudeDir, "decoy.md");
+      await fs.writeFile(decoy, "decoy\n", "utf-8");
+      await fs.symlink(decoy, path.join(dir, "SKILL.md"));
+
+      const result = await runCli(["doctor", "--json"], env(), { cwd: claudeDir });
+      const payload = JSON.parse(result.stdout) as {
+        checks: { name: string; passed: boolean; detail?: string }[];
+        nextActions: { command: string }[];
+      };
+      const check = payload.checks.find((c) => c.name === "Claude skill");
+      expect(check?.passed).toBe(false);
+      expect(check?.detail).toContain("symlink");
+      expect(check?.detail).not.toContain("stale");
+      expect(
+        payload.nextActions.find((a) => a.command.startsWith("pax8 skill install")),
+      ).toBeUndefined();
+    },
+  );
 });

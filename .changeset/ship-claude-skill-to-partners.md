@@ -26,4 +26,6 @@ pax8 skill install [--global|--project] [--force] [--print] [--yes]
 
 **Distribution.** The build copies the canonical `skill.md` into `packages/cli/dist/`, which `files` already packs — no third tracked copy of a file that already exists twice. `npm pack --dry-run` is asserted in CI, because a build that skipped the copy step would install the command everywhere with nothing to install.
 
+**If you script against `pax8 doctor --json`:** this adds a check that can newly report `passed: false` on an environment that was previously clean — a Claude skill installed at some earlier CLI version and never refreshed. Nothing else about the envelope changes. Each non-`current` state gets its own wording and its own remedy (`stale` → a plain refresh, `modified` → `--force`, unreadable or symlinked → no install can fix it, so no `nextAction` is emitted), because collapsing them all to "stale" sends a partner whose file is permission-denied off to fix a version problem they don't have.
+
 Telemetry gains three fixed-enum fields (`skill_action`, `skill_scope`, `skill_previous_state`) — no paths, no content. How many partners are running a stale safety contract is the question this issue exists to answer.

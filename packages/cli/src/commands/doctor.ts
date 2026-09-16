@@ -426,14 +426,28 @@ async function checkCacheDir(): Promise<CheckResult> {
  * check above. An installed copy that has *drifted* is a real ✗ — the
  * contract that's loaded is not the contract that was reviewed.
  */
-async function checkClaudeSkill(): Promise<CheckResult> {
+interface SkillCheck {
+  check: CheckResult;
+  /**
+   * argv that would actually fix what the check found — carrying the
+   * scope, and `--force` when the drifted copy is one `install` would
+   * otherwise refuse. `null` when no install can fix it (an unreadable or
+   * symlinked copy needs a human).
+   */
+  installArgs: string[] | null;
+}
+
+async function checkClaudeSkill(): Promise<SkillCheck> {
   const name = "Claude skill";
   const shipped = readShippedSkill();
   if (!shipped) {
     return {
-      name,
-      passed: false,
-      detail: "skill.md is missing from this installation — reinstall @pax8/cli",
+      check: {
+        name,
+        passed: false,
+        detail: "skill.md is missing from this installation — reinstall @pax8/cli",
+      },
+      installArgs: null,
     };
   }
 
@@ -445,37 +459,65 @@ async function checkClaudeSkill(): Promise<CheckResult> {
 
   if (present.length === 0) {
     return {
-      name,
-      passed: true,
-      detail: `not installed — run ${replCmd("pax8 skill install")} to use this CLI from Claude Code`,
+      check: {
+        name,
+        passed: true,
+        detail: `not installed — run ${replCmd("pax8 skill install")} to use this CLI from Claude Code`,
+      },
+      installArgs: null,
     };
   }
 
   const drifted = present.filter((s) => s.state !== "current");
   if (drifted.length === 0) {
     return {
-      name,
-      passed: true,
-      detail: `up to date (${present.map((s) => s.scope).join(", ")})`,
+      check: {
+        name,
+        passed: true,
+        detail: `up to date (${present.map((s) => s.scope).join(", ")})`,
+      },
+      installArgs: null,
     };
   }
 
   const worst = drifted[0];
   const version = worst.installed.meta?.cliVersion;
-  const how =
-    worst.state === "modified"
-      ? "locally modified"
-      : `stale${version ? ` — written by pax8-cli ${version}` : ""}`;
+
+  // Each state gets its own wording and its own remedy. Collapsing them —
+  // "stale" for anything that isn't "modified" — sends a partner whose
+  // file is permission-denied off to fix a version problem they don't have.
+  let how: string;
+  let installArgs: string[] | null;
+  if (worst.installed.isSymlink) {
+    how = "a symlink — this CLI won't write through one";
+    installArgs = null;
+  } else if (worst.state === "unreadable") {
+    how = `unreadable (${worst.installed.readError ?? "no reason reported"})`;
+    installArgs = null;
+  } else if (worst.state === "modified") {
+    how = "locally modified";
+    installArgs = ["skill", "install", `--${worst.scope}`, "--force"];
+  } else {
+    how = `stale${version ? ` — written by pax8-cli ${version}` : ""}`;
+    installArgs = ["skill", "install", `--${worst.scope}`];
+  }
+
   const drift =
     worst.installed.content !== undefined
       ? `; ${summarizeDrift(shipped.content, worst.installed.content)}`
       : "";
+  const remedy = installArgs
+    ? ` Run: ${replCmd(`pax8 ${installArgs.join(" ")}`)}`
+    : ` Inspect ${worst.installed.path} by hand, or write a fresh copy with ` +
+      `${replCmd("pax8 skill install --print")} > <path>.`;
+
   return {
-    name,
-    passed: false,
-    detail:
-      `${worst.scope} copy at ${worst.installed.path} is ${how}${drift}. ` +
-      `Run: ${replCmd(`pax8 skill install --${worst.scope}${worst.state === "modified" ? " --force" : ""}`)}`,
+    check: {
+      name,
+      passed: false,
+      detail: `${worst.scope} copy at ${worst.installed.path} is ${how}${drift}.${remedy}`,
+    },
+    installArgs,
   };
 }
 
@@ -522,7 +564,7 @@ Examples:
       checkMcp(),
       checkClaudeSkill(),
     ]);
-    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, ...apiCs, cacheC, telC, mcpC, skillC];
+    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, ...apiCs, cacheC, telC, mcpC, skillC.check];
 
     let allPassed = true;
     for (const check of checks) {
@@ -582,11 +624,15 @@ Examples:
           ),
         );
       }
-      const skillFailed = checks.find((c) => c.name === "Claude skill" && !c.passed);
-      if (skillFailed) {
+      // Only when an install can actually fix it, and with the scope and
+      // --force the check already worked out. A bare `pax8 skill install`
+      // would target the wrong scope on a project drift, and be refused
+      // outright on a modified copy — an agent spawning the argv would
+      // follow the suggestion and still be stale.
+      if (!skillC.check.passed && skillC.installArgs) {
         nextActions.push(
           buildAction(
-            ["skill", "install"],
+            skillC.installArgs,
             "Refresh the installed Claude skill — the loaded agent safety contract has drifted from this CLI",
           ),
         );
