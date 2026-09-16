@@ -28,7 +28,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, existsSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -174,38 +174,69 @@ function readMeta(dir: string): SkillMeta | undefined {
   }
 }
 
-/** Inspect the installed copy for a scope. Never throws. */
+/**
+ * Inspect the installed copy for a scope. Never throws.
+ *
+ * Opens the file **once**, with `O_NOFOLLOW`, and reads through that
+ * descriptor. Two reasons it isn't the obvious `lstat()`-then-`readFile()`:
+ *
+ *   1. That pair is a check-then-use race (CodeQL `js/file-system-race`) —
+ *      the thing we stat need not be the thing we then read.
+ *   2. `O_NOFOLLOW` makes the symlink answer a property of the open itself
+ *      (`ELOOP`) rather than a separate observation, so we never read
+ *      *through* a link we're about to refuse to write through.
+ *
+ * `O_NOFOLLOW` is POSIX-only; on Windows the constant is absent and the
+ * flag degrades to 0, exactly as it does in `safeWriteFileSync`. A
+ * symlinked `SKILL.md` there reads as an ordinary file whose contents
+ * differ from ours, which lands in `modified` — still refused without
+ * `--force`, just without the sharper message.
+ */
 export function readInstalledSkill(scope: SkillScope): InstalledSkill {
   const dir = skillInstallDir(scope);
   const filePath = skillInstallPath(scope);
-  let stats;
+  const base = { scope, dir, path: filePath };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const noFollow: number = (fsConstants as any).O_NOFOLLOW ?? 0;
+  let fd: number;
   try {
-    stats = lstatSync(filePath);
-  } catch {
-    return { scope, dir, path: filePath, exists: false, isSymlink: false };
-  }
-  const isSymlink = stats.isSymbolicLink();
-  try {
-    const content = readFileSync(filePath, "utf-8");
+    fd = openSync(filePath, fsConstants.O_RDONLY | noFollow);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { ...base, exists: false, isSymlink: false };
+    }
+    if (code === "ELOOP") {
+      return { ...base, exists: true, isSymlink: true };
+    }
     return {
-      scope,
-      dir,
-      path: filePath,
+      ...base,
+      exists: true,
+      isSymlink: false,
+      readError: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  try {
+    const content = readFileSync(fd, "utf-8");
+    return {
+      ...base,
       exists: true,
       content,
       checksum: checksum(content),
       meta: readMeta(dir),
-      isSymlink,
+      isSymlink: false,
     };
   } catch (err) {
     return {
-      scope,
-      dir,
-      path: filePath,
+      ...base,
       exists: true,
-      isSymlink,
+      isSymlink: false,
       readError: err instanceof Error ? err.message : String(err),
     };
+  } finally {
+    closeSync(fd);
   }
 }
 

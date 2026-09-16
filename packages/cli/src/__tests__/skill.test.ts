@@ -224,7 +224,12 @@ describe("pax8 skill install", () => {
     await fs.access(globalSkillPath());
   });
 
-  it("refuses to write through a symlink", async () => {
+  // POSIX only. The refusal rides on `O_NOFOLLOW` (ELOOP on open), which
+  // doesn't exist on Windows — there a symlinked SKILL.md reads as an
+  // ordinary file with different contents and lands in `modified`, still
+  // refused without --force. Creating a symlink on Windows also needs
+  // elevation, so the fixture itself wouldn't build.
+  it.skipIf(process.platform === "win32")("refuses to write through a symlink", async () => {
     // A symlink here is almost always deliberate — someone pointed the
     // skill at a checkout. Replacing it silently would break that setup.
     const dir = path.join(claudeDir, "skills", "pax8");
