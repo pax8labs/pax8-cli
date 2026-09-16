@@ -469,6 +469,35 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
         process.stderr.write(`  ${chalk.dim("Discrepancy ID:".padEnd(18))}${discId}\n\n`);
       }
 
+      // Filing a dispute is a write, so it must not proceed unconfirmed when
+      // there is no human to confirm. Without this guard the outcome depended
+      // on the exact shape of stdin rather than on approval:
+      //
+      //   < /dev/null       readline hits EOF, the question callback never
+      //                     fires, the promise never settles, node exits 0 —
+      //                     nothing written, but by accident, not by gate.
+      //   printf '\n' |     an empty line answers the prompt, and
+      //                     confirm(..., { default: true }) maps "" to yes,
+      //                     so the draft is FILED with no approval.
+      //
+      // `echo | pax8 invoices dispute --discrepancy X` therefore filed a
+      // dispute, as would any agent harness that hands a command an empty
+      // stdin line. Fail closed instead, matching the non-TTY write guards
+      // already in upgrade.ts, auth/login.ts and recommendations/act.ts.
+      const autoYes = !!allOpts.yes || process.env.PAX8_YES === "1";
+      if (!autoYes && !process.stdin.isTTY) {
+        throw new CliError(
+          "Cannot file a dispute without confirmation — stdin is not a TTY",
+          ["`pax8 invoices dispute` needs a terminal to confirm the filing"],
+          [
+            `Pass ${replCmd("--yes")} to file without prompting`,
+            `Or review the discrepancy first: ${replCmd("pax8 invoices audit --json")}`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+
       const ok = await confirm(`File this ${uiCopy.noun}?`, { default: true });
       if (!ok) {
         if (ctx.outputFormat !== "json" && ctx.outputFormat !== "quiet") {

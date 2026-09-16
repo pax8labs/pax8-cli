@@ -207,6 +207,50 @@ describe("invoices dispute (closed-loop counterpart to audit)", () => {
     });
   });
 
+  // Filing is a write; without a TTY there is nobody to approve it. Before the
+  // guard the outcome depended on the shape of stdin rather than on approval:
+  // `< /dev/null` wrote nothing only because readline's callback never fired,
+  // while a single empty line answered the prompt and confirm(..., {default:
+  // true}) mapped "" to yes — so `echo | pax8 invoices dispute --discrepancy X`
+  // filed a dispute unapproved, as would any agent harness supplying an empty
+  // stdin line. Matches the non-TTY write guards in upgrade.ts,
+  // auth/login.ts and recommendations/act.ts.
+  describe("non-TTY filing requires --yes", () => {
+    async function discId(): Promise<string> {
+      const r = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+      return JSON.parse(r.stdout).discrepancies[0].discrepancyId;
+    }
+
+    it("refuses to file without --yes when stdin is not a TTY", async () => {
+      const result = await runCliExpectFailure(
+        ["invoices", "dispute", "--discrepancy", await discId(), "--json"],
+        { PAX8_DISPUTES_DIR: disputesDir },
+      );
+      expect(result.stderr).toMatch(/stdin is not a TTY/i);
+      const envelope = JSON.parse(result.stderr.slice(result.stderr.indexOf("{")));
+      expect(envelope.code).toBe("ERROR_INVALID_INPUT");
+    });
+
+    it("writes no draft when it refuses", async () => {
+      await runCliExpectFailure(
+        ["invoices", "dispute", "--discrepancy", await discId()],
+        { PAX8_DISPUTES_DIR: disputesDir },
+      );
+      const files = await fs.readdir(disputesDir);
+      expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(0);
+    });
+
+    it("still files when --yes is passed", async () => {
+      const result = await runCliExpectSuccess(
+        ["invoices", "dispute", "--discrepancy", await discId(), "--yes", "--json"],
+        { PAX8_DISPUTES_DIR: disputesDir },
+      );
+      expect(JSON.parse(result.stdout).status).toBe("draft");
+      const files = await fs.readdir(disputesDir);
+      expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(1);
+    });
+  });
+
   // The terminal framing had the same defect as the portal template: heading,
   // prompt and success line all said "dispute", which reads wrong for an
   // under-billing — you do not dispute your own un-billed usage (#728).
