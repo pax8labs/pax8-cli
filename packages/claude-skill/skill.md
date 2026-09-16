@@ -172,6 +172,14 @@ Every `--json` list command emits:
 
 `page.number` is 1-based and matches `--page`. Compare `<resource>.length` against `page.totalElements` to detect pagination, then walk with `--page N --size M`. Endpoints without server-side pagination (webhooks list/logs/topics, usage list, products search, subscriptions renewals) return the same `{ <resource>, page }` shape with a single fully-populated page. There is no marker distinguishing them from paginated endpoints — `singlePageEnvelope` is the name of the internal helper, **not a key you will find in the output.** Don't go looking for it.
 
+Two commands break the envelope rule — check these before assuming:
+
+- **`recommendations list`** → `{ recommendations, totalAvailable }` (#521), no `page`.
+- **`quotes line-items list <quote-id>`** → a **bare JSON array**, no envelope and no `page`. Iterate it directly; `.items` and `.page` are both `null` (#716).
+
+**Ignore `_`-prefixed keys (#716).** `clients list` emits `_num`, and `clients list --coverage` adds `_coverage`, `_missing`, `_potential` — table-rendering artifacts that duplicate the real fields in display form (`_coverage: "3/7"` vs `coverage: "3/7"`, `_missing: "email, identity"` vs `missingCategories: ["email","identity"]`). Always read the unprefixed field; the `_` ones are pre-formatted strings, not data.
+
+
 ### Which commands accept `--with-actions`
 
 Accepted: `clients list`, `subscriptions list`, `subscriptions renewals`, `invoices list`, `orders list`, `webhooks list`, `webhooks logs`, `webhooks topics list`, `recommendations list`.
@@ -203,54 +211,6 @@ Two things it does not do:
 - **It does not replace the argv rule.** Spawn `args.slice(1)`; never tokenize `command`, which interpolates partner-controlled names for human display.
 
 Read commands routinely emit writes — `invoices audit` yields five `invoices dispute` calls, `today` yields `recommendations act` and `orders create`. That is exactly what the field is for.
-
-### The list envelope (#483)
-
-Every `--json` list command emits:
-
-```jsonc
-{
-  "<resource>": [ /* rows */ ],
-  "page": { "number": 1, "size": 25, "totalElements": 137, "totalPages": 6 }
-}
-```
-
-**The key is the resource name, never `items`.** `clients list` → `companies`. `subscriptions list` → `subscriptions`. `invoices items` → `items`. `subscriptions renewals` → `renewals`. `webhooks logs` → `logs`. Also: `invoices`, `orders`, `quotes`, `contacts`, `webhooks`, `topics`, `products`, `usage`, `recommendations`.
-
-`page.number` is 1-based and matches `--page`. Compare `<resource>.length` against `page.totalElements` to detect pagination, then walk with `--page N --size M`. Endpoints without server-side pagination (webhooks list/logs/topics, usage list, products search, subscriptions renewals) return the same `{ <resource>, page }` shape with a single fully-populated page. There is no marker distinguishing them from paginated endpoints — `singlePageEnvelope` is the name of the internal helper, **not a key you will find in the output.** Don't go looking for it.
-
-### Which commands accept `--with-actions`
-
-Accepted: `clients list`, `subscriptions list`, `subscriptions renewals`, `invoices list`, `orders list`, `webhooks list`, `webhooks logs`, `webhooks topics list`, `recommendations list`.
-
-Rejected — **exit 1, `ERROR_INVALID_INPUT`**, not silently ignored: `products list`, `products search`, `quotes list`, `contacts list`, `usage list`, `invoices items`. Don't pass it speculatively.
-
-Single-object commands (`dashboard`, `invoices audit`, `today`, `cost sim`) emit `nextActions` inline and need no flag.
-
-### Which emitted actions carry `args` (#708)
-
-The #562 contract is `command` (display string) + `args` (argv array, `args[0] === "pax8"`), and you spawn `args.slice(1)` via the Bash tool's argv form. **`args` is currently absent on four surfaces:**
-
-| Surface | `args` present? |
-|---|---|
-| `clients list --with-actions` (and other accepted list commands) | yes |
-| `today` — both `nextActions[]` and `items[].action` | yes |
-| `recommendations list` — `orderArgs` | yes |
-| `dashboard` | **no** |
-| `invoices audit` | **no** |
-| `cost sim` | **no** |
-| `subscriptions renewals --with-actions` | **no** |
-
-Where `args` is absent, **do not fall back to tokenizing `command`** — that's the injection path #562 exists to close, and `cost sim` interpolates raw partner-controlled company and product names straight into its string. Show the user `command` as text and let them run it.
-
-Every entry also carries a `description` field, useful for previews.
-
-Two commands break the envelope rule — check these before assuming:
-
-- **`recommendations list`** → `{ recommendations, totalAvailable }` (#521), no `page`.
-- **`quotes line-items list <quote-id>`** → a **bare JSON array**, no envelope and no `page`. Iterate it directly; `.items` and `.page` are both `null` (#716).
-
-**Ignore `_`-prefixed keys (#716).** `clients list` emits `_num`, and `clients list --coverage` adds `_coverage`, `_missing`, `_potential` — table-rendering artifacts that duplicate the real fields in display form (`_coverage: "3/7"` vs `coverage: "3/7"`, `_missing: "email, identity"` vs `missingCategories: ["email","identity"]`). Always read the unprefixed field; the `_` ones are pre-formatted strings, not data.
 
 Result size: list commands default to `--size 25`. For portfolio-wide analysis (Pax8 cost rollups, audits, recommendations) use `--size 1000`. Don't fetch 1000 if the user asked for "top 5."
 
