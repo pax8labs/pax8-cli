@@ -676,7 +676,10 @@ describe("agent-contract surface pinning (#704)", () => {
       const result = await runCliExpectSuccess(["dashboard", "--json"], {
         PAX8_DEMO: "1",
       });
-      const d = parse<JsonRecord>(result.stdout);
+      interface DashboardPayload extends JsonRecord {
+        topCustomers: { monthlyCost?: MoneyLike }[];
+      }
+      const d = parse<DashboardPayload>(result.stdout);
 
       for (const field of ["monthlyCost", "annualCost"]) {
         const money = d[field] as MoneyLike | undefined;
@@ -691,7 +694,7 @@ describe("agent-contract surface pinning (#704)", () => {
 
       expect(Array.isArray(d.topCustomers)).toBe(true);
       expect(d.topCustomers.length).toBeGreaterThan(0);
-      expect(typeof d.topCustomers[0].monthlyCost.amount).toBe("number");
+      expect(typeof d.topCustomers[0]?.monthlyCost?.amount).toBe("number");
 
       // Other top-level keys the skill's "Portfolio Pax8 cost" recipe names.
       for (const k of [
@@ -794,11 +797,14 @@ describe("agent-contract surface pinning (#704)", () => {
         ["subscriptions", "renewals", "--json", "--within", "30d"],
         { PAX8_DEMO: "1" },
       );
-      const payload = parse<JsonRecord>(result.stdout);
+      interface RenewalsPayload extends JsonRecord {
+        renewals: { mrrRenewing?: unknown }[];
+      }
+      const payload = parse<RenewalsPayload>(result.stdout);
       expect(payload.totalMrrRenewing).toBeUndefined();
       expect(payload.renewals.length).toBeGreaterThan(0);
       // The per-row field the recipe tells agents to sum.
-      expect(typeof payload.renewals[0].mrrRenewing).toBe("number");
+      expect(typeof payload.renewals[0]?.mrrRenewing).toBe("number");
     });
   });
 });
