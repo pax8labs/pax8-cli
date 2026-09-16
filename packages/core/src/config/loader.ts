@@ -5,7 +5,9 @@ import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
 import * as path from "node:path";
 import YAML from "yaml";
+import type { ZodError } from "zod";
 import { ConfigSchema, type Config } from "./schema.js";
+import { ConfigValidationError, describeConfigIssues } from "./config-error.js";
 import { validateConfigDir } from "../security/validate-env.js";
 
 const DEFAULT_CONFIG_DIR = path.join(homedir(), ".pax8");
@@ -54,9 +56,14 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     if (e?.code === "ENOENT") {
       return getDefaultConfig();
     }
-    // If it's a Zod validation error, re-throw as-is
+    // A schema failure here is a problem with the user's own file, not
+    // with anything the API returned. Re-throwing the bare ZodError let it
+    // reach the CLI renderer's API-response branch, which reported a
+    // version-less config.yaml as "The Pax8 API returned an unexpected
+    // response" on commands that made no request at all (#729).
     if (e?.name === "ZodError") {
-      throw err;
+      const zodErr = err as ZodError;
+      throw new ConfigValidationError(filePath, describeConfigIssues(zodErr), zodErr);
     }
     throw err;
   }

@@ -285,6 +285,7 @@ export {
   ensureConfigDir,
 } from "./config/loader.js";
 export { ConfigSchema } from "./config/schema.js";
+export { ConfigValidationError, describeConfigIssues } from "./config/config-error.js";
 export type { Config } from "./config/schema.js";
 
 // ─── Security: env var validation + safe file writes ────────────────────────

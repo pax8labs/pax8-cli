@@ -16,10 +16,12 @@ import {
   TokenManager,
   CredentialStore,
   loadConfig,
+  ConfigValidationError,
   ERROR_AUTH_MISSING,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
 import { CliError } from "./errors.js";
+import chalk from "chalk";
 import { replCmd } from "./confirm.js";
 
 export interface ApiClient {
@@ -135,6 +137,29 @@ export function resolveDemoMode(config: { demo?: boolean }): boolean {
 }
 
 /**
+ * Warn once per process that the config on disk is being ignored (#729).
+ *
+ * Both config reads below fall back to defaults when the file fails
+ * validation, which is the right resilience posture — a malformed config
+ * shouldn't make every command unrunnable. But falling back *silently*
+ * is what let a version-less `config.yaml` sit there while `demo: true`
+ * inside it did nothing and the user was told "Not authenticated".
+ *
+ * stderr, so `--json` pipelines are unaffected. Deduped because both
+ * `resolveDemoModeWithSourceAsync` and `buildContext` can hit it in one run.
+ */
+let warnedInvalidConfig = false;
+function warnInvalidConfig(err: unknown): void {
+  if (!(err instanceof ConfigValidationError) || warnedInvalidConfig) return;
+  warnedInvalidConfig = true;
+  process.stderr.write(
+    chalk.yellow(`  ⚠ Ignoring invalid config at ${err.filePath}\n`) +
+      chalk.dim(`    ${err.issues.join("; ")}\n`) +
+      chalk.dim(`    Using defaults. Fix it with: ${replCmd("pax8 config init")}\n`),
+  );
+}
+
+/**
  * Like `resolveDemoModeAsync` but also returns *where* demo mode came from
  * (`env` | `config` | `null`). Callers that need to tell users how to turn
  * demo off — `auth login`, `auth status`, `doctor` — use this so the hint
@@ -159,8 +184,10 @@ export async function resolveDemoModeWithSourceAsync(): Promise<{
   try {
     const cfg = await loadConfig();
     if (cfg.demo === true) return { isDemo: true, source: "config" };
-  } catch {
-    // Config unreadable — fall through; treat as demo off.
+  } catch (err) {
+    // Config unreadable — fall through; treat as demo off, but say so when
+    // the file exists and is merely invalid (#729).
+    warnInvalidConfig(err);
   }
   return { isDemo: false, source: null };
 }
@@ -185,16 +212,19 @@ export async function buildContext(
 ): Promise<CommandContext> {
   const verbose = options.verbose ?? false;
 
-  const config = await loadConfig(options.config).catch(() => ({
-    version: "1.0" as const,
-    defaults: {
-      output_format: "table" as const,
-      page_size: 50,
-      confirm_destructive: true,
-    },
-    cache: { enabled: false, ttl_hours: 24 },
-    telemetry: { enabled: false },
-  }));
+  const config = await loadConfig(options.config).catch((err: unknown) => {
+    warnInvalidConfig(err);
+    return {
+      version: "1.0" as const,
+      defaults: {
+        output_format: "table" as const,
+        page_size: 50,
+        confirm_destructive: true,
+      },
+      cache: { enabled: false, ttl_hours: 24 },
+      telemetry: { enabled: false },
+    };
+  });
 
   // Extract `demo` rather than passing the whole Config union — the union
   // branch for an empty config object doesn't include `demo`, so passing
