@@ -92,19 +92,72 @@ interface DisputeDraft {
   portalTemplate: string;
 }
 
+/**
+ * Partner-facing copy for the generated portal ticket, keyed by which
+ * direction the money runs.
+ *
+ * `partnerIsOwed` covers `overcharge` / `unexpected`: Pax8 billed more than
+ * the subscriptions justify, so a credit is the remedy.
+ *
+ * `partnerOwes` covers `undercharge` / `missing`: Pax8 billed less, so the
+ * partner owes money and a credit memo is the wrong ask entirely. This is the
+ * case that was previously served the overcharge remedy (#728).
+ *
+ * The `partnerOwes` copy asks Pax8 to name the remedy rather than asserting
+ * one, so it claims no billing process. If a Pax8 billing doc later supplies
+ * prescriptive language, replace the two strings in this object: nothing else
+ * changes, and no test asserts their literal text (#728).
+ *
+ * Centralised so the wording lives in exactly one place: tests reference
+ * these constants rather than hardcoding sentences, so correcting the copy
+ * is a one-object edit that cannot silently diverge from what the tests pin.
+ */
+export const DISPUTE_COPY = {
+  partnerIsOwed: {
+    // CLI-facing labels. Not sent to Pax8 — the portal ticket is the
+    // partner-facing artifact; these only name the thing in the terminal.
+    label: "Dispute Draft",
+    noun: "dispute draft",
+    opening: `I'd like to dispute a billing discrepancy detected by automated reconciliation.`,
+    remedy: `Please review and adjust the invoice or issue a credit memo.`,
+  },
+  partnerOwes: {
+    // You do not "dispute" your own un-billed usage, so the heading, prompt
+    // and success line all read wrong for this direction (#728). These are
+    // local UI strings rather than billing process, so they are not gated on
+    // the same sign-off as `opening` / `remedy` below.
+    label: "Under-billing Report",
+    noun: "under-billing report",
+    // Deliberately non-prescriptive: it names no remedy mechanism (no credit,
+    // no corrected invoice, no rebill) and asks Pax8 to name one instead.
+    // Asserting a mechanism here would be inventing billing process in a
+    // partner-facing artifact, which is what #728 exists to prevent.
+    opening: `I'm reporting a billing discrepancy found by automated reconciliation — this period appears under-billed against our active subscriptions.`,
+    remedy: `Please confirm whether this is expected, and if not, advise how the difference will be billed.`,
+  },
+} as const;
+
 function buildPortalTemplate(d: Omit<DisputeDraft, "id" | "portalTemplate" | "status" | "createdAt">): string {
   const sign = d.delta > 0 ? "+" : "";
-  const impactLabel =
-    d.dollarImpact > 0
-      ? `${formatCurrency(d.dollarImpact)} overcharge`
-      : `${formatCurrency(Math.abs(d.dollarImpact))} undercharge`;
+  // Derive the direction ONCE and drive both the impact label and the
+  // remedy sentence from it. Previously the label branched on dollarImpact
+  // while the remedy was hardcoded to the overcharge case, so an undercharge
+  // ticket read "$2,400.00 undercharge ... issue a credit memo" — asking
+  // billing support for a credit on money the partner actually owes.
+  const partnerIsOwed = d.dollarImpact > 0;
+  const impactLabel = partnerIsOwed
+    ? `${formatCurrency(d.dollarImpact)} overcharge`
+    : `${formatCurrency(Math.abs(d.dollarImpact))} undercharge`;
+  const copy = partnerIsOwed ? DISPUTE_COPY.partnerIsOwed : DISPUTE_COPY.partnerOwes;
+  const openingLine = copy.opening;
+  const remedyLine = copy.remedy;
   const period = d.month ? d.month : "current period";
   const lines = [
     `Subject: Billing discrepancy — ${d.companyName} — ${d.productName} (${period})`,
     "",
     `Hi Pax8 billing team,`,
     "",
-    `I'd like to dispute a billing discrepancy detected by automated reconciliation.`,
+    openingLine,
     "",
     `  Company:           ${d.companyName} (${d.companyId})`,
     `  Product:           ${d.productName}`,
@@ -122,7 +175,7 @@ function buildPortalTemplate(d: Omit<DisputeDraft, "id" | "portalTemplate" | "st
     lines.push(`  ${d.reason}`);
     lines.push("");
   }
-  lines.push(`Please review and adjust the invoice or issue a credit memo.`);
+  lines.push(remedyLine);
   lines.push("");
   lines.push(`— Filed via pax8-cli`);
   return lines.join("\n");
@@ -391,13 +444,17 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
 
       // ── Preview ──────────────────────────────────────────────────────────
       const sign = target.delta > 0 ? "+" : "";
+      // Same direction test that drives the portal template, so the terminal
+      // framing can never disagree with the ticket it is previewing.
+      const uiCopy =
+        target.dollarImpact > 0 ? DISPUTE_COPY.partnerIsOwed : DISPUTE_COPY.partnerOwes;
       const impactLabel =
         target.dollarImpact > 0
           ? `${formatCurrency(target.dollarImpact)} overcharge`
           : `${formatCurrency(Math.abs(target.dollarImpact))} undercharge`;
 
       if (ctx.outputFormat !== "json" && ctx.outputFormat !== "quiet") {
-        process.stderr.write(chalk.bold("\n  📝 Dispute Draft:\n\n"));
+        process.stderr.write(chalk.bold(`\n  📝 ${uiCopy.label}:\n\n`));
         process.stderr.write(`  ${chalk.dim("Company:".padEnd(18))}${target.companyName}\n`);
         process.stderr.write(`  ${chalk.dim("Product:".padEnd(18))}${target.productName}\n`);
         if (month) process.stderr.write(`  ${chalk.dim("Period:".padEnd(18))}${month}\n`);
@@ -412,7 +469,7 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
         process.stderr.write(`  ${chalk.dim("Discrepancy ID:".padEnd(18))}${discId}\n\n`);
       }
 
-      const ok = await confirm("File this dispute draft?", { default: true });
+      const ok = await confirm(`File this ${uiCopy.noun}?`, { default: true });
       if (!ok) {
         if (ctx.outputFormat !== "json" && ctx.outputFormat !== "quiet") {
           process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
@@ -430,7 +487,7 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
         ...draftBase,
       };
 
-      const writeSpinner = createSpinner("Filing dispute...").start();
+      const writeSpinner = createSpinner(`Filing ${uiCopy.noun}...`).start();
       const done = markWriteInFlight("invoices", undefined, idempotencyKey);
       let filePath: string;
       try {
@@ -438,7 +495,7 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
       } finally {
         done();
       }
-      writeSpinner.succeed("Dispute draft filed");
+      writeSpinner.succeed(`${uiCopy.label} filed`);
 
       // ── Output ───────────────────────────────────────────────────────────
       if (ctx.outputFormat === "json") {
@@ -448,7 +505,7 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
           nextActions: [
             {
               command: `cat "${filePath}"`,
-              description: "View the full dispute draft (incl. portal template)",
+              description: `View the full ${uiCopy.noun} (incl. portal template)`,
             },
             {
               command: `pax8 invoices audit --month ${month ?? new Date().toISOString().slice(0, 7)} --json`,
