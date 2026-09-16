@@ -36,6 +36,7 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCli, runCliExpectSuccess } from "./test-utils.js";
@@ -43,6 +44,8 @@ import { runCli, runCliExpectSuccess } from "./test-utils.js";
 // Repo root: this file is at packages/cli/src/__tests__/, so up four.
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const SKILL_PATH = "packages/claude-skill/skill.md";
+// The copy Claude Code actually loads when working inside this repo.
+const INSTALLED_SKILL_PATH = ".claude/skills/pax8/SKILL.md";
 
 function readSkill(): string {
   return readFileSync(join(REPO_ROOT, SKILL_PATH), "utf-8");
@@ -283,6 +286,48 @@ const LIST_ENVELOPES: {
   { args: ["quotes", "list"], key: "quotes", withActions: false },
   { args: ["usage", "list"], key: "usage", withActions: false },
 ];
+
+describe("skill distribution", () => {
+  /**
+   * The canonical skill lives at `packages/claude-skill/skill.md`, but the
+   * file Claude Code actually reads inside this repo is
+   * `.claude/skills/pax8/SKILL.md`. Those had diverged for six months —
+   * `.gitignore` excluded all of `.claude/`, so the loaded copy was a
+   * pre-launch stub that no PR could see, review, or update. Every
+   * correction landed in the canonical file and reached nobody.
+   *
+   * A symlink would be the obvious fix, but Windows checkouts turn symlinks
+   * into plain files containing a path, which would break skill loading
+   * there silently. So both files are tracked and this asserts they match:
+   * a stale copy is now a red build instead of a six-month drift.
+   */
+  it("the installed skill matches the canonical one byte-for-byte", () => {
+    const canonical = readFileSync(join(REPO_ROOT, SKILL_PATH), "utf-8");
+    const installed = readFileSync(join(REPO_ROOT, INSTALLED_SKILL_PATH), "utf-8");
+    expect(
+      installed === canonical,
+      `${INSTALLED_SKILL_PATH} has drifted from ${SKILL_PATH}.\n` +
+        `Run:  cp ${SKILL_PATH} ${INSTALLED_SKILL_PATH}\n\n` +
+        `The .claude copy is what Claude Code loads in this repo — editing only ` +
+        `the canonical file means your change reaches no agent working here.`,
+    ).toBe(true);
+  });
+
+  it("the installed skill is tracked by git", () => {
+    // `.gitignore` excludes `.claude/*` and re-includes only `skills/`.
+    // If that negation is ever dropped, the file silently leaves review again.
+    const tracked = execFileSync("git", ["ls-files", INSTALLED_SKILL_PATH], {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    }).trim();
+    expect(
+      tracked,
+      `${INSTALLED_SKILL_PATH} is not tracked by git — check the ` +
+        `"!.claude/skills/" negation in .gitignore. Untracked is how this ` +
+        `file went stale for six months.`,
+    ).toBe(INSTALLED_SKILL_PATH);
+  });
+});
 
 describe("agent-contract surface pinning (#704)", () => {
   beforeAll(async () => {
