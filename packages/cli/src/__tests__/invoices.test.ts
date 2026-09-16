@@ -375,6 +375,103 @@ describe("pax8 invoices", () => {
  * `JSON.parse(stderr)` directly. The envelope is the JSON object that
  * starts at the first `{` in stderr.
  */
+
+// The audit used to start from invoices: `invoices.list({ companyId })`
+// returning nothing short-circuited to a green checkmark BEFORE the auditor
+// ran, discarding an already-fetched, already-company-filtered subscription
+// list. So a company with active subs and no invoice at all read as clean.
+// Acme Corp — the largest gap in the fixture, 25 seats across 5 products with
+// nothing invoiced — reported "No invoices found" when audited directly while
+// the unscoped audit listed all five rows.
+describe("invoices audit --company scoping (false all-clear regression)", () => {
+  async function auditJson(args: string[] = []) {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--json", ...args]);
+    return JSON.parse(r.stdout);
+  }
+
+  it("a company with active subs and no invoice reports findings, not a clean bill", async () => {
+    const scoped = await auditJson(["--company", "Acme Corp"]);
+    expect(scoped.discrepancies.length).toBeGreaterThan(0);
+    // itemsAudited: 0 alongside zero discrepancies is the signature of the
+    // bug — nothing was examined, rendered as if everything were fine.
+    expect(scoped.itemsAudited).toBeGreaterThan(0);
+    expect(scoped.netImpact).toBeLessThan(0);
+    for (const d of scoped.discrepancies) {
+      expect(d.type).toBe("missing");
+      expect(d.invoicedQuantity).toBe(0);
+      expect(d.activeQuantity).toBeGreaterThan(0);
+    }
+  });
+
+  it("scoped audit agrees row-for-row with the unscoped audit filtered to that company", async () => {
+    const key = (d: Record<string, unknown>) =>
+      [d.productName, d.type, d.delta, d.dollarImpact].join("|");
+    const scoped = await auditJson(["--company", "Acme Corp"]);
+    const unscoped = await auditJson();
+    const fromUnscoped = unscoped.discrepancies
+      .filter((d: { companyName: string }) => d.companyName === "Acme Corp")
+      .map(key)
+      .sort();
+    expect(scoped.discrepancies.map(key).sort()).toEqual(fromUnscoped);
+    expect(fromUnscoped.length).toBeGreaterThan(0);
+  });
+
+  it("no company with active subscriptions ever audits as itemsAudited: 0", async () => {
+    const subs = JSON.parse(
+      (await runCliExpectSuccess(["subscriptions", "list", "--status", "Active", "--size", "1000", "--json"]))
+        .stdout,
+    );
+    const companies: string[] = [
+      ...new Set(subs.subscriptions.map((s: { companyName: string }) => s.companyName)),
+    ] as string[];
+    expect(companies.length).toBeGreaterThan(0);
+    for (const name of companies) {
+      const report = await auditJson(["--company", name]);
+      expect(report.itemsAudited, `${name} audited nothing despite active subs`).toBeGreaterThan(0);
+    }
+  });
+});
+
+// A PAST month cannot be reconciled from this data at all: `invoices.list` is
+// month-filtered but `subscriptions.streamAll()` is not, and auditInvoices()
+// keeps only currently-active subs. A sub live in the audited month and
+// cancelled since is absent from the fetch entirely. So the audit must report
+// neither a checkmark (the original false all-clear) nor `missing` rows
+// (findings invented for subs that did not exist in that period).
+describe("invoices audit --month on a past period", () => {
+  const PAST = "2024-01";
+
+  it("warns on stderr that subscriptions were not reconciled", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST, "--json"]);
+    expect(r.stderr).toMatch(/No invoiced line items for/i);
+    expect(r.stderr).toMatch(/NOT reconciled/);
+    expect(r.stderr).toMatch(/not a clean bill of health/i);
+  });
+
+  it("does not render a success checkmark", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST], {
+      PAX8_OUTPUT_FORMAT: "table",
+    });
+    expect(r.stdout).not.toContain("✓");
+    expect(r.stdout).not.toMatch(/No invoices found for/i);
+  });
+
+  it("does not invent missing rows for a period it cannot reconcile", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST, "--json"]);
+    const report = JSON.parse(r.stdout);
+    expect(report.discrepancies).toEqual([]);
+    expect(report.itemsAudited).toBe(0);
+  });
+
+  it("keeps stdout valid JSON in the documented envelope shape", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST, "--json"]);
+    const report = JSON.parse(r.stdout);
+    expect(Object.keys(report).sort()).toEqual(
+      ["discrepancies", "itemsAudited", "netImpact", "totalOvercharge", "totalUndercharge"].sort(),
+    );
+  });
+});
+
 function extractJsonEnvelope(stderr: string): string {
   const start = stderr.indexOf("{");
   if (start < 0) throw new Error("no JSON envelope in stderr: " + stderr);
