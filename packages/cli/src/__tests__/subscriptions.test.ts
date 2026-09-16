@@ -386,8 +386,17 @@ describe("pax8 subscriptions renewals", () => {
       // The pre-launch at-risk aliases were dropped.
       expect(item).not.toHaveProperty("mrrAtRisk");
       expect(item).not.toHaveProperty("arrAtRisk");
-      // JSON output rounds to 2dp; allow a tiny rounding delta.
-      expect(item.arrRenewing).toBeCloseTo(item.mrrRenewing * 12, 1);
+      // arrRenewing is computed from the UNROUNDED monthly figure and then
+      // rounded to 2dp, so it can differ from `round(mrr) × 12` by up to
+      // 12 × 0.005 = 0.06. The old ±0.05 tolerance only held while every
+      // fixture price was a whole number — #711 repriced to partnerBuyRate
+      // and introduced halves (16.5 × 85 / 12 = 116.875 → 116.88).
+      // 12 × half-a-cent, plus an epsilon: the bound is exactly attainable,
+      // so IEEE-754 noise lands a hair above it without the slack.
+      const maxRoundingDelta = 12 * 0.005 + 1e-9;
+      expect(
+        Math.abs(item.arrRenewing - item.mrrRenewing * 12),
+      ).toBeLessThanOrEqual(maxRoundingDelta);
     }
   });
 

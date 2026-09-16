@@ -434,8 +434,12 @@ describe("pax8 report subscriptions", () => {
 
   // Post-#439 normalization fix: 2-Year and 3-Year monthly cost MUST equal
   // (price × quantity) / 24 and / 36 respectively. The demo fixture has a
-  // Coastline 2-Year M365 E3 (40 seats × $36 / 24 = $60/mo) and a Pinnacle
-  // 3-Year M365 E5 (15 seats × $57 / 36 = $23.75/mo).
+  // Coastline 2-Year M365 E3 (40 seats × $32 / 24 = $53.33/mo) and a
+  // Pinnacle 3-Year M365 E5 (15 seats × $52 / 36 = $21.67/mo).
+  //
+  // Figures are partnerBuyRate, not suggestedRetailPrice — #711 repriced
+  // the fixture after it emerged that every "Pax8 cost" the CLI reported
+  // in demo mode was actually retail.
   it("--by billing-term 2-Year cost reflects post-#439 normalization (divide by 24)", async () => {
     const { stdout } = await runCliExpectSuccess([
       "report",
@@ -449,8 +453,8 @@ describe("pax8 report subscriptions", () => {
       (g: { groupName: string }) => g.groupName === "2-Year",
     );
     expect(twoYear).toBeDefined();
-    // Coastline's 40 × $36 / 24 = $60/mo. Allow a tiny rounding tolerance.
-    expect(twoYear.monthlyCost.amount).toBeCloseTo(60, 1);
+    // Coastline's 40 × $32 / 24 = $53.33/mo. Allow a tiny rounding tolerance.
+    expect(twoYear.monthlyCost.amount).toBeCloseTo(53.33, 1);
   });
 
   it("--by billing-term 3-Year cost reflects post-#439 normalization (divide by 36)", async () => {
@@ -466,8 +470,8 @@ describe("pax8 report subscriptions", () => {
       (g: { groupName: string }) => g.groupName === "3-Year",
     );
     expect(threeYear).toBeDefined();
-    // Pinnacle's 15 × $57 / 36 = $23.75/mo.
-    expect(threeYear.monthlyCost.amount).toBeCloseTo(23.75, 1);
+    // Pinnacle's 15 × $52 / 36 = $21.67/mo.
+    expect(threeYear.monthlyCost.amount).toBeCloseTo(21.67, 1);
   });
 
   it("annualCost equals monthlyCost × 12 per group", async () => {
@@ -480,7 +484,17 @@ describe("pax8 report subscriptions", () => {
     ]);
     const data = JSON.parse(stdout);
     for (const g of data.groups) {
-      expect(g.annualCost.amount).toBeCloseTo(g.monthlyCost.amount * 12, 1);
+      // annualCost is derived from the UNROUNDED monthly figure and then
+      // rounded to 2dp, so it can differ from `round(monthly) × 12` by up
+      // to 12 × 0.005 = 0.06. The old ±0.05 tolerance only ever held
+      // because every fixture price was a whole number; #711 repriced to
+      // partnerBuyRate and introduced halves (16.5, 3.5, 4.5).
+      // 12 × half-a-cent, plus an epsilon: the bound is exactly attainable,
+      // so IEEE-754 noise lands a hair above it without the slack.
+      const maxRoundingDelta = 12 * 0.005 + 1e-9;
+      expect(
+        Math.abs(g.annualCost.amount - g.monthlyCost.amount * 12),
+      ).toBeLessThanOrEqual(maxRoundingDelta);
     }
   });
 

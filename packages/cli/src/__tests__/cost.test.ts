@@ -53,11 +53,15 @@ describe("pax8 cost", () => {
       expect(data.current.productName).toMatch(/Business Basic/);
       expect(data.proposed.productName).toMatch(/Business Premium/);
       expect(data.proposed.quantity).toBe(25);
-      // Premium $22 × 25 = 550/mo; Basic $6 × 25 = 150/mo → delta 400/mo
-      expect(data.current.monthly).toBe(150);
-      expect(data.proposed.monthly).toBe(550);
-      expect(data.delta.monthly).toBe(400);
-      expect(data.delta.annual).toBe(4800);
+      // partnerBuyRate, not retail (#711): Premium $18 × 25 = 450/mo;
+      // Basic $5 × 25 = 125/mo → delta 325/mo. `cost sim` reports the
+      // partner's Pax8 cost, and `current` comes from the subscription's
+      // own price, so pricing `proposed` at retail compared two different
+      // bases and overstated the increase.
+      expect(data.current.monthly).toBe(125);
+      expect(data.proposed.monthly).toBe(450);
+      expect(data.delta.monthly).toBe(325);
+      expect(data.delta.annual).toBe(3900);
       expect(Array.isArray(data.nextActions)).toBe(true);
       expect(data.nextActions[0].command).toMatch(/pax8 orders create/);
     });
@@ -81,9 +85,10 @@ describe("pax8 cost", () => {
       expect(data.current).not.toBeNull();
       expect(data.current.quantity).toBe(15);
       expect(data.proposed.quantity).toBe(25);
-      // Annual: 22 × 15 / 12 = 27.5/mo current; 22 × 25 / 12 = 45.83/mo proposed
-      expect(data.current.monthly).toBeCloseTo(27.5, 2);
-      expect(data.proposed.monthly).toBeCloseTo(45.83, 2);
+      // Annual at partnerBuyRate (#711): 16.5 × 15 / 12 = 20.63/mo current;
+      // 16.5 × 25 / 12 = 34.38/mo proposed.
+      expect(data.current.monthly).toBeCloseTo(20.63, 2);
+      expect(data.proposed.monthly).toBeCloseTo(34.38, 2);
       expect(data.delta.monthly).toBeGreaterThan(0);
     });
 
@@ -158,7 +163,7 @@ describe("pax8 cost", () => {
       // Should parse as JSON without an explicit --json flag
       const data = JSON.parse(result.stdout);
       expect(data.companyName).toBe("Bright Minds Academy");
-      expect(data.delta.monthly).toBe(400);
+      expect(data.delta.monthly).toBe(325);
     });
   });
 
