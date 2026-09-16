@@ -101,29 +101,15 @@ JSON output (--json):
 
       spinner.stop();
 
-      // If no invoices/items, short circuit
-      if (allItems.length === 0) {
-        if (ctx.outputFormat === "json") {
-          process.stdout.write(
-            JSON.stringify(
-              { discrepancies: [], totalOvercharge: 0, totalUndercharge: 0, netImpact: 0, itemsAudited: 0 },
-              null,
-              2,
-            ) + "\n",
-          );
-        } else if (ctx.outputFormat !== "quiet") {
-          const monthLabel = options.month ? formatMonthLabel(options.month) : "current";
-          process.stdout.write(`\n  ${chalk.green("✓")} No invoices found for ${monthLabel} period.\n\n`);
-        }
-        return;
-      }
-
       const itemsResult = { content: allItems };
 
       // Normalize subscriptions for audit matching:
       // The auditor matches on subscriptionId first, falling back to companyId+productId.
       // Invoice items don't have subscriptionId, so we map subscriptions to use
       // companyId+productId matching by omitting the id field and setting subscriptionId undefined.
+      //
+      // Hoisted above the empty-invoice branch below, which needs the auditor's
+      // own notion of "active" to decide what to report.
       const normalizedSubs = allSubs.map((s) => {
         const { id, ...rest } = s;
         return {
@@ -133,8 +119,100 @@ JSON output (--json):
         };
       });
 
-      // Run audit
-      const report = auditInvoices(itemsResult.content, normalizedSubs);
+      // No invoiced line items in scope. What that MEANS depends on whether
+      // there is anything on the subscription side to reconcile against.
+      //
+      // Previously this branch fired on `allItems.length === 0` alone and
+      // always rendered a green checkmark, which made the audit invoice-first:
+      // a company with active subscriptions and no invoice at all had nothing
+      // to filter to and fell through to a clean bill of health.
+      // `pax8 invoices audit --company "Acme Corp"` reported clean while the
+      // unscoped audit listed five `missing` rows for that same company — a
+      // false negative on a reconciliation tool, on the account with the
+      // largest gap in the fixture.
+      // Computed once when the scope has no invoice items and reused as the
+      // final report if we fall through to case (c) — the inputs are identical
+      // there (`itemsResult.content` is empty), so re-running the auditor would
+      // duplicate the whole reconciliation on what is now a common path.
+      let emptyScopeReport: ReturnType<typeof auditInvoices> | undefined;
+
+      if (allItems.length === 0) {
+        // Reuse the auditor's own active-status filter rather than
+        // re-implementing it here; with no invoice items its itemsAudited is
+        // exactly the count of active subscriptions it would reconcile.
+        emptyScopeReport = auditInvoices([], normalizedSubs);
+        const activeSubCount = emptyScopeReport.itemsAudited;
+
+        // (a) Genuinely nothing in scope — no invoices AND no active subs.
+        //     A checkmark is honest here.
+        if (activeSubCount === 0) {
+          if (ctx.outputFormat === "json") {
+            process.stdout.write(
+              JSON.stringify(
+                { discrepancies: [], totalOvercharge: 0, totalUndercharge: 0, netImpact: 0, itemsAudited: 0 },
+                null,
+                2,
+              ) + "\n",
+            );
+          } else if (ctx.outputFormat !== "quiet") {
+            const monthLabel = options.month ? formatMonthLabel(options.month) : "current";
+            process.stdout.write(`\n  ${chalk.green("✓")} No invoices found for ${monthLabel} period.\n\n`);
+          }
+          return;
+        }
+
+        // (b) A PAST month with active subs. We cannot reconcile this and we
+        //     must not pretend otherwise in either direction.
+        //
+        //     `invoices.list` is month-filtered but the subscription fetch is
+        //     not: `subscriptions.streamAll({ companyId })` returns what is
+        //     active RIGHT NOW, and auditInvoices() keeps only status
+        //     "active". So a subscription that was live in the audited month
+        //     and has since been cancelled is absent from the fetch entirely
+        //     — no filter over this data recovers it. Emitting `missing` rows
+        //     here would invent findings for subscriptions that did not exist
+        //     in the audited period; emitting a checkmark would repeat the
+        //     false all-clear. Report the gap instead.
+        const otherMonth = compareToCurrentMonth(options.month);
+        if (otherMonth !== "current") {
+          if (ctx.outputFormat !== "quiet") {
+            const monthLabel = formatMonthLabel(options.month!);
+            const why =
+              otherMonth === "past"
+                ? `subscription history is\n    only available as of today, so a past period cannot be audited\n    against it.`
+                : `that period has not occurred yet, so\n    there is nothing to reconcile against.`;
+            process.stderr.write(
+              `\n  ${chalk.yellow("⚠")} No invoiced line items for ${monthLabel}.\n` +
+                `    ${activeSubCount} active subscription${activeSubCount === 1 ? "" : "s"} ` +
+                `${activeSubCount === 1 ? "was" : "were"} NOT reconciled — ${why}\n\n` +
+                `    ${chalk.dim("This is not a clean bill of health.")}\n\n`,
+            );
+          }
+          if (ctx.outputFormat === "json") {
+            // Envelope shape is unchanged — the warning rides on stderr so
+            // `--json | jq` stays valid. Note itemsAudited: 0 still cannot be
+            // distinguished from "audited, all clean" by a JSON consumer;
+            // that is the known #709 gap, tracked separately.
+            process.stdout.write(
+              JSON.stringify(
+                { discrepancies: [], totalOvercharge: 0, totalUndercharge: 0, netImpact: 0, itemsAudited: 0 },
+                null,
+                2,
+              ) + "\n",
+            );
+          }
+          return;
+        }
+
+        // (c) Current period with active subs — "active now" IS the correct
+        //     population, so those subs genuinely should have been invoiced.
+        //     Fall through: auditInvoices() marks every unmatched sub
+        //     `missing`, which is exactly what the unscoped audit reports for
+        //     the same company.
+      }
+
+      // Run audit (reusing the empty-scope report when one was computed above)
+      const report = emptyScopeReport ?? auditInvoices(itemsResult.content, normalizedSubs);
 
       // Stamp each discrepancy with a stable ID so `pax8 invoices dispute
       // --discrepancy <id>` can locate it without re-auditing under the user's
@@ -272,6 +350,29 @@ JSON output (--json):
       await handleCommandError(error, spinner, "Failed to audit invoices");
     }
   });
+
+/**
+ * Classify `month` (YYYY-MM) against the current period.
+ *
+ * Only the CURRENT period can be reconciled against the subscription list,
+ * because `subscriptions.streamAll()` returns what is active right now and
+ * carries no history. A PAST month is missing subscriptions that have since
+ * been cancelled; a FUTURE month has not happened at all. Emitting `missing`
+ * rows for either would invent findings, so both are reported as unreconciled
+ * — an earlier version guarded only the past, which let a future `--month`
+ * produce discrepancies for a period that had not occurred.
+ *
+ * Compared in UTC to match how the demo fixture derives its invoice dates
+ * (`monthsAgo()` in demo-data.ts) so a partner near a month boundary sees the
+ * same classification the fixtures were built against.
+ */
+function compareToCurrentMonth(month: string | undefined): "current" | "past" | "future" {
+  if (!month) return "current";
+  const now = new Date();
+  const current = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  if (month === current) return "current";
+  return month < current ? "past" : "future";
+}
 
 function formatMonthLabel(month: string): string {
   const [year, m] = month.split("-");
