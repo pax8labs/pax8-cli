@@ -627,23 +627,26 @@ describe("agent-contract surface pinning (#704)", () => {
   });
 
   describe("recommendations orderArgs (#707)", () => {
-    it("documents the wrong-product defect until the CLI is fixed", () => {
-      const skill = readSkill();
+    it("keeps telling agents to verify the SKU before ordering", () => {
+      // #707 is fixed, but the guard is defence-in-depth against the next
+      // productId/productName disagreement, and it costs one read.
       expect(
-        skill.includes("#707"),
-        `${SKILL_PATH} must keep the #707 warning while orderArgs can name the wrong ` +
-          `product. Remove it only when the test below starts passing.`,
+        readSkill().includes("Verify the SKU before every recommendation-derived order"),
+        `${SKILL_PATH} dropped the pre-order SKU check. The specific #707 fixture bug ` +
+          `is fixed, but orderCommand still renders a product ID rather than a name, ` +
+          `so a wrong SKU remains invisible in a human preview.`,
       ).toBe(true);
     });
 
-    it.fails(
-      "orderArgs --product should resolve to suggestedProducts[0] (#707 — currently broken)",
+    it(
+      "orderArgs --product resolves to suggestedProducts[0] (#707)",
       async () => {
-        // Marked `.fails` deliberately: this encodes the CORRECT contract
-        // and documents that the CLI violates it today. When #707 is
-        // fixed this test starts passing, vitest flags it as an
-        // unexpected pass, and whoever fixed it removes `.fails` and the
-        // skill's #707 warning in the same commit.
+        // Was `it.fails` while #707 was open. The fixture had a
+        // subscription whose productId pointed at M365 E3 while its
+        // productName said onboarding, so the engine faithfully emitted an
+        // orderArgs naming the wrong SKU. Now a real assertion: any future
+        // row whose productId and productName disagree fails here rather
+        // than surfacing as an agent placing the wrong order.
         const recs = parse<{ recommendations: RecommendationRow[] }>(
           (await runCliExpectSuccess(
             ["recommendations", "list", "--json", "--top", "0"],
