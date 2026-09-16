@@ -77,6 +77,7 @@ Write commands — local machine state (no Pax8 API call, but still mutations th
 - `pax8 init` — bootstraps configuration (or enables demo mode).
 - `pax8 demo on`, `pax8 demo off` — flips persistent demo mode, changing whether every later command hits the live API. Getting this backwards means either fake answers presented as real, or real writes the user thought were simulated.
 - `pax8 cache clear` — discards the local response cache.
+- `pax8 skill install` — writes **this file** into `~/.claude/skills/pax8/SKILL.md` (or `./.claude/skills/pax8/` with `--project`), a directory owned by Claude Code rather than by the CLI. It refuses to overwrite a copy it cannot prove it wrote; `--force` is the deliberate override. Without a TTY and without `--yes` it refuses rather than installing unattended — an agent must not install an instruction file the partner never saw. `pax8 skill install --print` writes the skill to stdout and installs nothing; that form is a read.
 - `pax8 telemetry enable`, `pax8 telemetry disable` — changes the user's privacy posture.
 - `pax8 report-bug` — opens a GitHub issue on a public repository. Always show the sanitized payload first.
 - **Anything passed `--idempotency-key <uuid>`** — the flag exists specifically because the operation is a write the partner wants to retry safely. Treat as write regardless of which subcommand carries it. **Note it is a host-local replay cache (24h TTL), not yet sent on the wire (#474)** — retries from a different host or process are *not* deduped, so a retried order can double-order. Don't treat the key as making a retry safe.
@@ -321,6 +322,13 @@ pax8 webhooks logs retry <log-id>                     # re-delivers a failed eve
 pax8 recommendations act [--company <id|name>] [--product <name>] [--priority high|medium|low] [--yes]
   # Multi-select picker + one batch confirmation. --yes places the whole
   # matching set without prompting — only with approval for that whole set.
+pax8 skill install [--global|--project] [--force] [--print] [--yes]
+  # Installs this contract where Claude Code loads it. --global (default)
+  # → ~/.claude/skills/pax8/SKILL.md; --project → ./.claude/skills/pax8/.
+  # An install already matching the shipped copy is a no-op. A modified
+  # copy needs --force. `--print` is read-only (stdout).
+  # `pax8 doctor` reports an installed copy that has drifted from the one
+  # the running CLI ships — a stale copy is a stale safety contract.
 ```
 
 ### Read commands (continued)

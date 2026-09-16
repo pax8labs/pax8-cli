@@ -68,6 +68,11 @@ describe("README snippet smoke", () => {
 
   // Skip predicates for snippets we can't safely run in a subprocess test.
   function isInteractiveWrite(line: string): boolean {
+    // `skill install` writes into ~/.claude and refuses to run unattended
+    // without --yes (#720). `--print` only writes to stdout, so it runs.
+    if (/\bskill install\b/.test(line)) {
+      return !/--yes|-y\b|--print/.test(line);
+    }
     if (
       /\b(orders create|recommendations act|invoices dispute|companies (create|update)|subscriptions (update|cancel)|contacts (create|update|delete)|quotes (create|update|delete)|webhooks (create|delete|test))\b/.test(
         line

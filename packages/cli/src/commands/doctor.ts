@@ -13,6 +13,14 @@ import {
   resolveDemoModeWithSourceAsync,
   disableDemoHint,
 } from "../lib/context.js";
+import { buildAction, type EmittedAction } from "../lib/actions.js";
+import {
+  classifyInstall,
+  readInstalledSkill,
+  readShippedSkill,
+  summarizeDrift,
+  type SkillScope,
+} from "../lib/skill-asset.js";
 
 // Build-time injected by tsup (see packages/cli/tsup.config.ts). At runtime
 // inside `pax8 doctor --json` we surface this in the structured envelope so
@@ -403,6 +411,123 @@ async function checkCacheDir(): Promise<CheckResult> {
   }
 }
 
+/**
+ * Claude-skill drift (#720).
+ *
+ * The skill is the agent-facing safety contract. A partner who ran
+ * `pax8 skill install` once and upgraded the CLI five times since is
+ * running an old contract against a new command surface, and nothing
+ * tells them — which is the same failure this repo spent a release cycle
+ * on when `.claude/skills/pax8/SKILL.md` sat six months behind the
+ * canonical file (#714).
+ *
+ * Not installed is a pass, not a failure: most partners don't use Claude
+ * Code, and doctor shouldn't ✗ at them for it. Same posture as the MCP
+ * check above. An installed copy that has *drifted* is a real ✗ — the
+ * contract that's loaded is not the contract that was reviewed.
+ */
+interface SkillCheck {
+  check: CheckResult;
+  /**
+   * argv that would actually fix what the check found — carrying the
+   * scope, and `--force` when the drifted copy is one `install` would
+   * otherwise refuse. `null` when no install can fix it (an unreadable or
+   * symlinked copy needs a human).
+   */
+  installArgs: string[] | null;
+}
+
+async function checkClaudeSkill(): Promise<SkillCheck> {
+  const name = "Claude skill";
+  const shipped = readShippedSkill();
+  if (!shipped) {
+    return {
+      check: {
+        name,
+        passed: false,
+        detail: "skill.md is missing from this installation — reinstall @pax8/cli",
+      },
+      installArgs: null,
+    };
+  }
+
+  const scopes: SkillScope[] = ["project", "global"];
+  const present = scopes
+    .map((scope) => ({ scope, installed: readInstalledSkill(scope) }))
+    .map((s) => ({ ...s, state: classifyInstall(s.installed, shipped.checksum) }))
+    .filter((s) => s.state !== "absent");
+
+  if (present.length === 0) {
+    return {
+      check: {
+        name,
+        passed: true,
+        detail: `not installed — run ${replCmd("pax8 skill install")} to use this CLI from Claude Code`,
+      },
+      installArgs: null,
+    };
+  }
+
+  // Report the most actionable drift first, not just the first scope in
+  // array order. A project copy that is merely stale would otherwise hide
+  // a *modified* global one behind it — and the modified one is both the
+  // more serious finding and the one whose fix needs `--force`.
+  const SEVERITY: Record<string, number> = { modified: 0, unreadable: 1, stale: 2 };
+  const drifted = present
+    .filter((s) => s.state !== "current")
+    .sort((a, b) => (SEVERITY[a.state] ?? 9) - (SEVERITY[b.state] ?? 9));
+  if (drifted.length === 0) {
+    return {
+      check: {
+        name,
+        passed: true,
+        detail: `up to date (${present.map((s) => s.scope).join(", ")})`,
+      },
+      installArgs: null,
+    };
+  }
+
+  const worst = drifted[0];
+  const version = worst.installed.meta?.cliVersion;
+
+  // Each state gets its own wording and its own remedy. Collapsing them —
+  // "stale" for anything that isn't "modified" — sends a partner whose
+  // file is permission-denied off to fix a version problem they don't have.
+  let how: string;
+  let installArgs: string[] | null;
+  if (worst.installed.isSymlink) {
+    how = "a symlink — this CLI won't write through one";
+    installArgs = null;
+  } else if (worst.state === "unreadable") {
+    how = `unreadable (${worst.installed.readError ?? "no reason reported"})`;
+    installArgs = null;
+  } else if (worst.state === "modified") {
+    how = "locally modified";
+    installArgs = ["skill", "install", `--${worst.scope}`, "--force"];
+  } else {
+    how = `stale${version ? ` — written by pax8-cli ${version}` : ""}`;
+    installArgs = ["skill", "install", `--${worst.scope}`];
+  }
+
+  const drift =
+    worst.installed.content !== undefined
+      ? `; ${summarizeDrift(shipped.content, worst.installed.content)}`
+      : "";
+  const remedy = installArgs
+    ? ` Run: ${replCmd(`pax8 ${installArgs.join(" ")}`)}`
+    : ` Inspect ${worst.installed.path} by hand, or write a fresh copy with ` +
+      `${replCmd("pax8 skill install --print")} > <path>.`;
+
+  return {
+    check: {
+      name,
+      passed: false,
+      detail: `${worst.scope} copy at ${worst.installed.path} is ${how}${drift}.${remedy}`,
+    },
+    installArgs,
+  };
+}
+
 export const doctorCommand = new Command("doctor")
   .description("Run diagnostic checks")
   .addHelpText(
@@ -432,7 +557,7 @@ Examples:
     }
 
     // Run all checks in parallel for speed
-    const [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, apiCs, cacheC, telC, mcpC] = await Promise.all([
+    const [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, apiCs, cacheC, telC, mcpC, skillC] = await Promise.all([
       checkNodeVersion(),
       checkApiBase(),
       checkConfigFile(),
@@ -444,8 +569,9 @@ Examples:
       checkCacheDir(),
       checkTelemetry(),
       checkMcp(),
+      checkClaudeSkill(),
     ]);
-    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, ...apiCs, cacheC, telC, mcpC];
+    const checks: CheckResult[] = [nodeV, apiBase, configF, authC, credPerms, tokenCachePerms, tokenC, ...apiCs, cacheC, telC, mcpC, skillC.check];
 
     let allPassed = true;
     for (const check of checks) {
@@ -465,39 +591,66 @@ Examples:
       // Per-§12 "Next-action hints": single-object summaries carry
       // `nextActions` inline. Surface only the most useful follow-ups based
       // on what failed; cap at five.
-      const nextActions: { command: string; description: string }[] = [];
+      //
+      // Built through `buildAction()` (#708/#722) so each entry carries the
+      // spawn-safe argv and an `isWrite` flag. Doctor suggests writes —
+      // `auth login`, `config init`, `skill install` all mutate local state
+      // — and an agent deciding whether to ask first reads `isWrite`, not
+      // the command string.
+      const nextActions: EmittedAction[] = [];
       const authFailed = checks.find(
         (c) => c.name === "Authentication configured" && !c.passed,
       );
       if (authFailed) {
-        nextActions.push({
-          command: "pax8 auth login --client-id <id> --client-secret <secret>",
-          description: "Authenticate so subsequent commands can reach the Pax8 API",
-        });
+        nextActions.push(
+          buildAction(
+            ["auth", "login", "--client-id", "<id>", "--client-secret", "<secret>"],
+            "Authenticate so subsequent commands can reach the Pax8 API",
+          ),
+        );
       }
       const configFailed = checks.find(
         (c) => c.name === "Config file" && !c.passed,
       );
       if (configFailed) {
-        nextActions.push({
-          command: "pax8 config init",
-          description: "Create the local config file at ~/.pax8/config.yaml",
-        });
+        nextActions.push(
+          buildAction(
+            ["config", "init"],
+            "Create the local config file at ~/.pax8/config.yaml",
+          ),
+        );
       }
       const tokenFailed = checks.find(
         (c) => c.name === "Token fetch" && !c.passed,
       );
       if (tokenFailed) {
-        nextActions.push({
-          command: "pax8 auth login",
-          description: "Re-authenticate — current credentials are not exchangeable for a token",
-        });
+        nextActions.push(
+          buildAction(
+            ["auth", "login"],
+            "Re-authenticate — current credentials are not exchangeable for a token",
+          ),
+        );
+      }
+      // Only when an install can actually fix it, and with the scope and
+      // --force the check already worked out. A bare `pax8 skill install`
+      // would target the wrong scope on a project drift, and be refused
+      // outright on a modified copy — an agent spawning the argv would
+      // follow the suggestion and still be stale.
+      if (!skillC.check.passed && skillC.installArgs) {
+        nextActions.push(
+          buildAction(
+            skillC.installArgs,
+            "Refresh the installed Claude skill — the loaded agent safety contract has drifted from this CLI",
+          ),
+        );
       }
       if (allPassed) {
-        nextActions.push({
-          command: "pax8 dashboard --json",
-          description: "Diagnostics clean — pull a portfolio summary to confirm end-to-end",
-        });
+        nextActions.push(
+          buildAction(
+            ["dashboard", "--json"],
+            "Diagnostics clean — pull a portfolio summary to confirm end-to-end",
+          ),
+        );
       }
 
       process.stdout.write(

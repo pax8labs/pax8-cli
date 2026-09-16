@@ -45,9 +45,20 @@ function autoConfirmDestructive(args: string[], env?: Record<string, string>): s
   return DESTRUCTIVE_KEYWORDS[positional];
 }
 
+/**
+ * Extra spawn controls. `cwd` exists for commands whose behavior depends
+ * on where they were run — `pax8 skill install --project` resolves its
+ * target against the process cwd, so asserting it requires a throwaway
+ * directory rather than the repo root (#720).
+ */
+export interface RunCliOptions {
+  cwd?: string;
+}
+
 export async function runCli(
   args: string[],
-  env?: Record<string, string>
+  env?: Record<string, string>,
+  opts?: RunCliOptions
 ): Promise<CliResult> {
   const autoKeyword = autoConfirmDestructive(args, env);
   const finalEnv: Record<string, string> = {
@@ -72,6 +83,7 @@ export async function runCli(
       // (the 5000-sub fixture is ~5 MB as jsonl). Bumping to 32 MB gives
       // every test enough headroom without any practical cost.
       maxBuffer: 32 * 1024 * 1024,
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (error: unknown) {
@@ -127,9 +139,10 @@ export async function runCliWithInput(
 
 export async function runCliExpectSuccess(
   args: string[],
-  env?: Record<string, string>
+  env?: Record<string, string>,
+  opts?: RunCliOptions
 ): Promise<CliResult> {
-  const result = await runCli(args, env);
+  const result = await runCli(args, env, opts);
   if (result.exitCode !== 0) {
     throw new Error(
       `Expected CLI to succeed but got exit code ${result.exitCode}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`
@@ -140,9 +153,10 @@ export async function runCliExpectSuccess(
 
 export async function runCliExpectFailure(
   args: string[],
-  env?: Record<string, string>
+  env?: Record<string, string>,
+  opts?: RunCliOptions
 ): Promise<CliResult> {
-  const result = await runCli(args, env);
+  const result = await runCli(args, env, opts);
   if (result.exitCode === 0) {
     throw new Error(
       `Expected CLI to fail but got exit code 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`

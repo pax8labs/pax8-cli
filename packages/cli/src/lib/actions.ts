@@ -68,6 +68,8 @@ export interface EmittedAction {
  * Local-machine mutations are included alongside API writes: `demo on`
  * changes whether every later command hits the live API, and `config set`
  * / `auth logout` / `cache clear` all change state the partner owns.
+ * `skill install` goes further and writes into `~/.claude`, a directory
+ * owned by a different tool (#720).
  */
 export const WRITE_COMMAND_PATHS: ReadonlySet<string> = new Set([
   // ── Pax8 API state ──
@@ -102,6 +104,7 @@ export const WRITE_COMMAND_PATHS: ReadonlySet<string> = new Set([
   "demo on",
   "demo off",
   "cache clear",
+  "skill install",
   "telemetry enable",
   "telemetry disable",
   "init",

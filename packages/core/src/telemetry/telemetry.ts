@@ -129,6 +129,22 @@ export interface TelemetryEvent {
   upgrade_from?: string;
   /** For upgrade: version upgraded to (latest available). */
   upgrade_to?: string;
+  /**
+   * For `skill install`: outcome of the run
+   * (printed | unchanged | created | updated | cancelled | refused —
+   * `refused` covers the paths that throw before installing: a modified
+   * copy without `--force`, a symlink, an unreadable file).
+   */
+  skill_action?: string;
+  /** For `skill install`: install target (global | project). */
+  skill_scope?: string;
+  /**
+   * For `skill install`: what was already on disk
+   * (absent | current | stale | modified | unreadable). Answers the
+   * question #720 exists for — how many partners are running a skill
+   * that has fallen behind the CLI.
+   */
+  skill_previous_state?: string;
 }
 
 /**
@@ -398,6 +414,11 @@ export class Telemetry {
             ...(event.upgrade_method !== undefined && { upgrade_method: event.upgrade_method }),
             ...(event.upgrade_from !== undefined && { upgrade_from: event.upgrade_from }),
             ...(event.upgrade_to !== undefined && { upgrade_to: event.upgrade_to }),
+            ...(event.skill_action !== undefined && { skill_action: event.skill_action }),
+            ...(event.skill_scope !== undefined && { skill_scope: event.skill_scope }),
+            ...(event.skill_previous_state !== undefined && {
+              skill_previous_state: event.skill_previous_state,
+            }),
           },
         });
       }
