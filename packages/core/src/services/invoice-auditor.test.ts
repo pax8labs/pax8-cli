@@ -349,4 +349,47 @@ describe("auditInvoices", () => {
     expect(report.discrepancies[0].dollarImpact).toBe(3600); // 300 * 12
     expect(report.totalOvercharge).toBe(3600);
   });
+
+  // These three cases are what the `invoices audit` command branches on when a
+  // scope contains no invoiced line items. The CLI cannot exercise the
+  // empty/empty case against either demo fixture (every fixture company has
+  // active subscriptions), so the semantics are pinned here instead.
+  describe("no invoice items in scope", () => {
+    const sub = (over: Record<string, unknown> = {}) => ({
+      id: "s1",
+      companyId: "co-1",
+      companyName: "Acme",
+      productName: "M365",
+      quantity: 10,
+      price: 10,
+      status: "Active",
+      ...over,
+    });
+
+    it("nothing at all to reconcile reports nothing audited", () => {
+      const report = auditInvoices([], []);
+      expect(report.discrepancies).toEqual([]);
+      expect(report.itemsAudited).toBe(0);
+      expect(report.netImpact).toBe(0);
+    });
+
+    it("active subs with no invoice become `missing`, and are counted as audited", () => {
+      const report = auditInvoices([], [sub()]);
+      expect(report.discrepancies).toHaveLength(1);
+      expect(report.discrepancies[0].type).toBe("missing");
+      expect(report.discrepancies[0].invoicedQuantity).toBe(0);
+      expect(report.discrepancies[0].activeQuantity).toBe(10);
+      expect(report.discrepancies[0].dollarImpact).toBe(-100);
+      // itemsAudited > 0 is what distinguishes "examined, found gaps" from
+      // "examined nothing" — the CLI reads it to decide whether a clean bill
+      // of health is honest.
+      expect(report.itemsAudited).toBe(1);
+    });
+
+    it("non-active subs are not reconcilable and count as nothing audited", () => {
+      const report = auditInvoices([], [sub({ status: "Cancelled" })]);
+      expect(report.discrepancies).toEqual([]);
+      expect(report.itemsAudited).toBe(0);
+    });
+  });
 });
