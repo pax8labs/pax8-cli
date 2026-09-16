@@ -14,6 +14,7 @@ import {
   safeWriteFileSync,
   validateConfigDir,
   type Pax8ErrorCode,
+  type AuditDiscrepancy,
 } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -112,6 +113,20 @@ interface DisputeDraft {
  * these constants rather than hardcoding sentences, so correcting the copy
  * is a one-object edit that cannot silently diverge from what the tests pin.
  */
+/**
+ * Which way the money runs for a discrepancy.
+ *
+ * Keyed on `type`, not on the sign of `dollarImpact`. The sign is the right
+ * answer for every row the auditor currently produces, but it is a proxy: a
+ * zero-impact row (a zero-priced SKU — a free add-on or a $0 trial — that is
+ * mis-invoiced) is not `> 0`, so an `overcharge` of zero dollars would be
+ * classified as partner-owes and framed as an under-billing report. `type` is
+ * the auditor's own classification and cannot disagree with itself.
+ */
+export function partnerIsOwedFor(type: AuditDiscrepancy["type"]): boolean {
+  return type === "overcharge" || type === "unexpected";
+}
+
 export const DISPUTE_COPY = {
   partnerIsOwed: {
     // CLI-facing labels. Not sent to Pax8 — the portal ticket is the
@@ -144,7 +159,7 @@ function buildPortalTemplate(d: Omit<DisputeDraft, "id" | "portalTemplate" | "st
   // while the remedy was hardcoded to the overcharge case, so an undercharge
   // ticket read "$2,400.00 undercharge ... issue a credit memo" — asking
   // billing support for a credit on money the partner actually owes.
-  const partnerIsOwed = d.dollarImpact > 0;
+  const partnerIsOwed = partnerIsOwedFor(d.type);
   const impactLabel = partnerIsOwed
     ? `${formatCurrency(d.dollarImpact)} overcharge`
     : `${formatCurrency(Math.abs(d.dollarImpact))} undercharge`;
@@ -446,8 +461,9 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
       const sign = target.delta > 0 ? "+" : "";
       // Same direction test that drives the portal template, so the terminal
       // framing can never disagree with the ticket it is previewing.
-      const uiCopy =
-        target.dollarImpact > 0 ? DISPUTE_COPY.partnerIsOwed : DISPUTE_COPY.partnerOwes;
+      const uiCopy = partnerIsOwedFor(target.type)
+        ? DISPUTE_COPY.partnerIsOwed
+        : DISPUTE_COPY.partnerOwes;
       const impactLabel =
         target.dollarImpact > 0
           ? `${formatCurrency(target.dollarImpact)} overcharge`
