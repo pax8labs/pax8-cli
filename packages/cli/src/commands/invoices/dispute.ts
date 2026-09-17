@@ -476,13 +476,20 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
       const sign = target.delta > 0 ? "+" : "";
       // Same direction test that drives the portal template, so the terminal
       // framing can never disagree with the ticket it is previewing.
-      const uiCopy = partnerIsOwedFor(target.type)
-        ? DISPUTE_COPY.partnerIsOwed
-        : DISPUTE_COPY.partnerOwes;
-      const impactLabel =
-        target.dollarImpact > 0
-          ? `${formatCurrency(target.dollarImpact)} overcharge`
-          : `${formatCurrency(Math.abs(target.dollarImpact))} undercharge`;
+      //
+      // The impact label has to come from it too. It previously branched on
+      // `target.dollarImpact > 0` while the framing came from `type`, so the
+      // two disagreed at exactly the case `partnerIsOwedFor` exists to handle:
+      // a zero-impact `overcharge` (a zero-priced SKU — free add-on or $0
+      // trial — that is mis-invoiced) rendered as "$0.00 undercharge" under a
+      // "Dispute Draft" heading, while the template it was previewing said
+      // "$0.00 overcharge". The comment above claimed they could not disagree;
+      // that was true of the template and not of this block.
+      const partnerIsOwed = partnerIsOwedFor(target.type);
+      const uiCopy = partnerIsOwed ? DISPUTE_COPY.partnerIsOwed : DISPUTE_COPY.partnerOwes;
+      const impactLabel = `${formatCurrency(Math.abs(target.dollarImpact))} ${
+        partnerIsOwed ? "overcharge" : "undercharge"
+      }`;
 
       if (ctx.outputFormat !== "json" && ctx.outputFormat !== "quiet") {
         process.stderr.write(chalk.bold(`\n  📝 ${uiCopy.label}:\n\n`));

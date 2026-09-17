@@ -136,6 +136,27 @@ JSON output (--json):
       // duplicate the whole reconciliation on what is now a common path.
       let emptyScopeReport: ReturnType<typeof auditInvoices> | undefined;
 
+      // Whether the audited period can be reconciled AT ALL is a property of
+      // the period, not of whether this particular scope happened to return
+      // invoice items — so it is classified here, above the empty-items
+      // branch.
+      //
+      // `invoices.list` is month-filtered but the subscription fetch is not:
+      // `subscriptions.streamAll({ companyId })` returns what is active RIGHT
+      // NOW, and auditInvoices() keeps only status "active". For any period
+      // other than the current one that population is wrong in both
+      // directions — a subscription live then and cancelled since is absent
+      // (so its invoice line looks `unexpected`), and one added since is
+      // present (so it looks `missing`). Neither is a real finding.
+      //
+      // This used to live inside `if (allItems.length === 0)`, which meant a
+      // past month WITH invoice items skipped the check entirely and
+      // reconciled those lines against today's subscriptions — producing
+      // exactly the invented rows the guard exists to prevent. Unreachable on
+      // the demo fixture, whose historical invoices carry no line items, and
+      // reachable in production, where they do.
+      const period = compareToCurrentMonth(options.month);
+
       if (allItems.length === 0) {
         // Reuse the auditor's own active-status filter rather than
         // re-implementing it here; with no invoice items its itemsAudited is
@@ -173,12 +194,11 @@ JSON output (--json):
         //     here would invent findings for subscriptions that did not exist
         //     in the audited period; emitting a checkmark would repeat the
         //     false all-clear. Report the gap instead.
-        const otherMonth = compareToCurrentMonth(options.month);
-        if (otherMonth !== "current") {
+        if (period !== "current") {
           if (ctx.outputFormat !== "quiet") {
             const monthLabel = formatMonthLabel(options.month!);
             const why =
-              otherMonth === "past"
+              period === "past"
                 ? `subscription history is\n    only available as of today, so a past period cannot be audited\n    against it.`
                 : `that period has not occurred yet, so\n    there is nothing to reconcile against.`;
             process.stderr.write(
@@ -209,6 +229,21 @@ JSON output (--json):
         //     Fall through: auditInvoices() marks every unmatched sub
         //     `missing`, which is exactly what the unscoped audit reports for
         //     the same company.
+      }
+
+      // A non-current period that DOES have invoice items still cannot be
+      // reconciled reliably, for the reason above. The findings are not
+      // suppressed — some are real, and refusing outright would remove a
+      // capability partners use — but they are not presented as trustworthy
+      // either. Warn on stderr so `--json | jq` stays valid, then report.
+      if (period !== "current" && allItems.length > 0 && ctx.outputFormat !== "quiet") {
+        const monthLabel = formatMonthLabel(options.month!);
+        process.stderr.write(
+          `\n  ${chalk.yellow("⚠")} ${monthLabel} is not the current period.\n` +
+            `    Subscriptions are only available as of today, so these findings may\n` +
+            `    include rows for subscriptions that did not exist in that period —\n` +
+            `    and miss ones that have since been cancelled.\n\n`,
+        );
       }
 
       // Run audit (reusing the empty-scope report when one was computed above)

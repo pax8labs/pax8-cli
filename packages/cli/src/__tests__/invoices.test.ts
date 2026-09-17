@@ -495,6 +495,27 @@ describe("invoices audit --month outside the current period", () => {
     expect(r.stdout).not.toContain("✓");
   });
 
+  // The period check governs regardless of whether the scope returned invoice
+  // items — it used to live inside the empty-items branch, so a past month
+  // WITH items skipped it and reconciled those lines against today's
+  // subscriptions. That path needs a past month carrying line items, which the
+  // demo fixture does not have (historical invoices are header-only), so what
+  // is asserted here is the other half: the warning must not fire on the
+  // current period, where "active now" IS the right population.
+  it("does not warn about period mismatch on the current period", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+    expect(r.stderr).not.toMatch(/not the current period/i);
+    const report = JSON.parse(r.stdout);
+    expect(report.discrepancies.length).toBeGreaterThan(0);
+  });
+
+  it("does not warn about period mismatch on an explicitly-current --month", async () => {
+    const now = new Date();
+    const current = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", current, "--json"]);
+    expect(r.stderr).not.toMatch(/not the current period/i);
+  });
+
   it("still reconciles the CURRENT period normally", async () => {
     // The guard must not swallow the only month that CAN be reconciled.
     const now = new Date();

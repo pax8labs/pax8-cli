@@ -324,4 +324,26 @@ describe("invoices dispute (closed-loop counterpart to audit)", () => {
     expect(JSON.stringify(envelope.causes)).toMatch(/live mode will never match/);
     expect(JSON.stringify(envelope.recoverySteps)).toMatch(/demo off/);
   });
+
+  // The preview's impact label used to branch on the sign of dollarImpact
+  // while the heading came from the discrepancy type, so the two could
+  // disagree — a zero-impact `overcharge` previewed as "$0.00 undercharge"
+  // under a "Dispute Draft" heading. Both now come from partnerIsOwedFor().
+  // Every fixture row has non-zero impact, so what this pins is that the
+  // heading and the impact word never contradict each other.
+  it("the preview heading and impact label always agree in direction", async () => {
+    const audit = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+    for (const row of JSON.parse(audit.stdout).discrepancies) {
+      const r = await runCliExpectSuccess(
+        ["invoices", "dispute", "--discrepancy", row.discrepancyId, "--yes"],
+        { PAX8_DISPUTES_DIR: disputesDir, PAX8_OUTPUT_FORMAT: "table" },
+      );
+      const owedToPartner = r.stderr.includes(DISPUTE_COPY.partnerIsOwed.label);
+      const saysOvercharge = /Impact:.*overcharge/.test(r.stderr);
+      expect(
+        owedToPartner,
+        `${row.type} ${row.discrepancyId}: heading and impact label disagree`,
+      ).toBe(saysOvercharge);
+    }
+  });
 });
