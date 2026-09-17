@@ -277,8 +277,7 @@ JSON output (--json):
             command: ["quotes", "delete", quote.id],
           });
         }
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
         process.stderr.write(
           chalk.dim(
             `  You can also change the expiration or replace line items — run ${chalk.cyan(replCmd("pax8 quotes update --help"))} for syntax.\n\n`,

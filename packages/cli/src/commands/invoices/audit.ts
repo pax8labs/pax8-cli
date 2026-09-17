@@ -339,12 +339,14 @@ JSON output (--json):
           const command = ["invoices", "dispute", "--discrepancy", d.discrepancyId, ...monthArgs];
           return {
             key: String(i + 1),
-            label: `${chalk.cyan(replCmd(`pax8 invoices dispute --discrepancy ${d.discrepancyId}`))}  ${chalk.dim(`${d.companyName} — ${d.productName}`)}`,
+            // Company and product are already on the numbered discrepancy
+            // line directly above this menu, so repeating them here only
+            // overran terminal width (#731).
+            label: chalk.cyan(replCmd(`pax8 invoices dispute --discrepancy ${d.discrepancyId}`)),
             command,
           };
         });
-        process.stderr.write(chalk.dim("  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to audit invoices");

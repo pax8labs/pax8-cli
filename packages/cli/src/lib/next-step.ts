@@ -32,10 +32,18 @@ export interface NextStep {
  */
 export async function promptNextSteps(
   steps: NextStep[],
-  options?: { renderList?: boolean },
+  options?: { renderList?: boolean; header?: string },
 ): Promise<void> {
   if (!process.stdin.isTTY) return;
   if (steps.length === 0) return;
+
+  // The section header belongs here, not at the call site. Every caller used
+  // to write "Try next:" to stderr immediately before calling this function,
+  // which returns early off-TTY — so every piped or agent invocation ended on
+  // a header promising suggestions that never arrived. 18 commands did it
+  // (#731 reported `invoices audit`; the rest were the same shape). Printing
+  // it after the early returns means the header cannot outlive its list.
+  if (options?.header) process.stderr.write(chalk.dim(options.header));
 
   // Embedded-list mode: print each option before the prompt. Otherwise the
   // prompt below references a "1-N" range with no visible menu (the bug

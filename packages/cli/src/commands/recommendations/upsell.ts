@@ -246,8 +246,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
             String(m.fromSeats),
           ],
         }));
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to compute upsell cohort");

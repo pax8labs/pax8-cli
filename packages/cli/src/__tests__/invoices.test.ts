@@ -568,6 +568,45 @@ describe("audit → drill-in → dispute, per discrepancy type", () => {
   });
 });
 
+
+// promptNextSteps() returns early when stdin is not a TTY, but 18 commands
+// wrote their "Try next:" header to stderr immediately BEFORE calling it. So
+// every piped or agent invocation ended on a section header promising
+// suggestions that never arrived (#731 reported `invoices audit`; the rest
+// were the same shape). The header now lives inside the helper, after its
+// early returns, so it cannot outlive the list it introduces.
+describe("Try next: header never renders without its list (#731)", () => {
+  const ORPHAN = /Try next:\s*$/;
+
+  it.each([
+    [["invoices", "audit"]],
+    [["invoices", "audit", "--company", "Acme Corp"]],
+    [["subscriptions", "renewals"]],
+    [["invoices", "show", "inv-summit-curr-001"]],
+  ])("%s does not end on an orphan header off-TTY", async (args: string[]) => {
+    const r = await runCliExpectSuccess(args, { PAX8_OUTPUT_FORMAT: "table" });
+    expect(r.stderr).not.toMatch(ORPHAN);
+    expect(r.stdout).not.toMatch(ORPHAN);
+  });
+
+  it("the dispute menu label does not repeat the company and product", async () => {
+    // Both are already on the numbered discrepancy line directly above the
+    // menu; repeating them is what overran terminal width.
+    const r = await runCliExpectSuccess(["invoices", "audit", "--company", "Redwood Manufacturing"], {
+      PAX8_OUTPUT_FORMAT: "table",
+    });
+    const combined = r.stdout + r.stderr;
+    // The product name appears once, on the discrepancy line — not again in a
+    // line that also carries the dispute command.
+    const linesWithCommand = combined
+      .split("\n")
+      .filter((l) => l.includes("invoices dispute --discrepancy"));
+    for (const line of linesWithCommand) {
+      expect(line).not.toContain("Redwood Manufacturing");
+    }
+  });
+});
+
 function extractJsonEnvelope(stderr: string): string {
   const start = stderr.indexOf("{");
   if (start < 0) throw new Error("no JSON envelope in stderr: " + stderr);

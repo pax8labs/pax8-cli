@@ -402,8 +402,7 @@ Note:
         label: `${chalk.cyan(replCmd(`pax8 quotes line-items list ${updated.id}`))}  ${chalk.dim("inspect line items")}`,
         command: ["quotes", "line-items", "list", String(updated.id)],
       });
-      process.stderr.write(chalk.dim("  Try next:\n"));
-      await promptNextSteps(steps, { renderList: true });
+      await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
     } catch (error) {
       await handleCommandError(error, undefined, "Failed to update quote");
     }
