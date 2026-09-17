@@ -23,9 +23,17 @@ concurrency:
 
 jobs:
   claude-review:
+    # Also skip on dependabot-authored PRs. Dependabot PRs land on
+    # branches in the same repo (so the head.repo.full_name check
+    # above doesn't catch them), but GitHub withholds repo secrets
+    # from dependabot-triggered runs by default. Without this guard
+    # `ANTHROPIC_API_KEY` is empty and the action fails — a red X on
+    # every routine dep bump. Dependabot PRs are formulaic and don't
+    # need AI review anyway.
     if: >-
       github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
