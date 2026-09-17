@@ -173,9 +173,18 @@ describe("pax8 products", () => {
     // UXR F7 (#653): the human table doesn't expose product IDs, so the
     // "Try next" picker must not surface a raw ID either — labels use the
     // product name, and the numeric pick spawns `products show` silently.
-    // (The numbered menu itself only renders under a TTY — see
-    // `promptNextSteps` in lib/next-step.ts — so we assert on the "Try
-    // next:" header and the no-ID contract, not the numbered rows.)
+    //
+    // This used to also assert `toContain("Try next:")` as a proxy for "the
+    // affordance is present", because off-TTY the header was the only part
+    // that rendered — the numbered rows come from `promptNextSteps`, which
+    // returns early without a TTY. That proxy only worked because the header
+    // was written unconditionally, which meant every piped run ended on a
+    // header introducing nothing (#731). The header now lives inside the
+    // helper, so off-TTY neither renders and the proxy is gone.
+    //
+    // What remains testable here is the no-ID contract, which is the actual
+    // subject of #653. The numbered rows themselves need a TTY harness — see
+    // #735, which tracks exactly that gap.
     it("table mode does not leak product IDs into the next-step affordance", async () => {
       const result = await runCli(
         ["products", "search", "microsoft"],
@@ -186,7 +195,8 @@ describe("pax8 products", () => {
         /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
       );
       expect(combined).not.toMatch(/pax8 products show prod-/);
-      expect(combined).toContain("Try next:");
+      // #731: no header without the list it introduces.
+      expect(combined).not.toMatch(/Try next:\s*$/);
     });
 
     // Contract: `--json` output shape is machine-facing and byte-stable —

@@ -124,8 +124,7 @@ Examples:
               command: ["products", "show", String(rec.id)],
             };
           });
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          await promptNextSteps(steps, { renderList: true });
+          await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
           process.stderr.write(
             chalk.dim(
               `  Place an order — run ${chalk.cyan(replCmd("pax8 orders create --help"))} for syntax.\n\n`,

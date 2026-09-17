@@ -495,6 +495,27 @@ describe("invoices audit --month outside the current period", () => {
     expect(r.stdout).not.toContain("✓");
   });
 
+  // The period check governs regardless of whether the scope returned invoice
+  // items — it used to live inside the empty-items branch, so a past month
+  // WITH items skipped it and reconciled those lines against today's
+  // subscriptions. That path needs a past month carrying line items, which the
+  // demo fixture does not have (historical invoices are header-only), so what
+  // is asserted here is the other half: the warning must not fire on the
+  // current period, where "active now" IS the right population.
+  it("does not warn about period mismatch on the current period", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+    expect(r.stderr).not.toMatch(/not the current period/i);
+    const report = JSON.parse(r.stdout);
+    expect(report.discrepancies.length).toBeGreaterThan(0);
+  });
+
+  it("does not warn about period mismatch on an explicitly-current --month", async () => {
+    const now = new Date();
+    const current = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", current, "--json"]);
+    expect(r.stderr).not.toMatch(/not the current period/i);
+  });
+
   it("still reconciles the CURRENT period normally", async () => {
     // The guard must not swallow the only month that CAN be reconciled.
     const now = new Date();
@@ -565,6 +586,45 @@ describe("audit → drill-in → dispute, per discrepancy type", () => {
     expect(tpl).toContain(expected.opening);
     expect(tpl).toContain(expected.remedy);
     expect(tpl).not.toContain(wrong.remedy);
+  });
+});
+
+
+// promptNextSteps() returns early when stdin is not a TTY, but 18 commands
+// wrote their "Try next:" header to stderr immediately BEFORE calling it. So
+// every piped or agent invocation ended on a section header promising
+// suggestions that never arrived (#731 reported `invoices audit`; the rest
+// were the same shape). The header now lives inside the helper, after its
+// early returns, so it cannot outlive the list it introduces.
+describe("Try next: header never renders without its list (#731)", () => {
+  const ORPHAN = /Try next:\s*$/;
+
+  it.each([
+    [["invoices", "audit"]],
+    [["invoices", "audit", "--company", "Acme Corp"]],
+    [["subscriptions", "renewals"]],
+    [["invoices", "show", "inv-summit-curr-001"]],
+  ])("%s does not end on an orphan header off-TTY", async (args: string[]) => {
+    const r = await runCliExpectSuccess(args, { PAX8_OUTPUT_FORMAT: "table" });
+    expect(r.stderr).not.toMatch(ORPHAN);
+    expect(r.stdout).not.toMatch(ORPHAN);
+  });
+
+  it("the dispute menu label does not repeat the company and product", async () => {
+    // Both are already on the numbered discrepancy line directly above the
+    // menu; repeating them is what overran terminal width.
+    const r = await runCliExpectSuccess(["invoices", "audit", "--company", "Redwood Manufacturing"], {
+      PAX8_OUTPUT_FORMAT: "table",
+    });
+    const combined = r.stdout + r.stderr;
+    // The product name appears once, on the discrepancy line — not again in a
+    // line that also carries the dispute command.
+    const linesWithCommand = combined
+      .split("\n")
+      .filter((l) => l.includes("invoices dispute --discrepancy"));
+    for (const line of linesWithCommand) {
+      expect(line).not.toContain("Redwood Manufacturing");
+    }
   });
 });
 

@@ -135,8 +135,7 @@ Notes:
           command: ["contacts", "delete", String(contact.id), "--company", company.name],
         },
       ];
-      process.stderr.write(chalk.dim("  Try next:\n"));
-      await promptNextSteps(steps, { renderList: true });
+      await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
       process.stderr.write(
         chalk.dim(
           `  Update this contact — run ${chalk.cyan(replCmd("pax8 contacts update --help"))} for syntax.\n\n`,
