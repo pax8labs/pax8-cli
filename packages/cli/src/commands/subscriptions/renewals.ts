@@ -263,8 +263,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
             command: ["clients", "more", top.companyName],
           },
         ];
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
         // Static advisory below the pickable list — the `--quantity <n>`
         // command can't be picked interactively (needs a value), but the
         // suggestion is still worth surfacing.

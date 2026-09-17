@@ -149,8 +149,7 @@ Notes:
           command: ["clients", "more", company.name],
         },
       ];
-      process.stderr.write(chalk.dim("  Try next:\n"));
-      await promptNextSteps(steps, { renderList: true });
+      await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
     } catch (error) {
       await handleCommandError(error, undefined, "Failed to create contact");
     }

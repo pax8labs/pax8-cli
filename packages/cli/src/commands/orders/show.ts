@@ -148,8 +148,7 @@ Examples:
             command: ["orders", "list", "--company", String(order.companyName ?? companyId)],
           },
         ];
-        process.stderr.write(chalk.dim("  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to show order");

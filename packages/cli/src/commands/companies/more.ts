@@ -353,8 +353,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
             command: ["orders", "list", "--company", company.name],
           },
         ];
-        process.stderr.write(chalk.dim("  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
