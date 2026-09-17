@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   ApiError,
+  ConfigValidationError,
   CredentialStore,
   ERROR_API_TIMEOUT,
   ERROR_API_VALIDATION,
@@ -335,6 +336,22 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
     }
     if (error.docsUrl) env.docsUrl = error.docsUrl;
     return env;
+  }
+
+  // A config file that fails validation is the user's own file, not an API
+  // payload. Checked before the ZodError branch below, whose message and
+  // recovery steps ("the API returned an unexpected response", "try a
+  // different query") are all wrong for it (#729).
+  if (error instanceof ConfigValidationError) {
+    return {
+      code: ERROR_INVALID_INPUT,
+      message: prefix + `Your config file is not valid: ${error.filePath}`,
+      causes: error.issues,
+      recoverySteps: [
+        "Fix the file by hand, or recreate it with: pax8 config init",
+        "Inspect the current values with: pax8 config show",
+      ],
+    };
   }
 
   if (error instanceof ZodError) {
@@ -688,6 +705,21 @@ export async function handleCommandError(
     }
 
     process.stderr.write("\n");
+  } else if (error instanceof ConfigValidationError) {
+    // Local file, not a response. No upgrade hint, no "try a different
+    // query" — neither applies to a malformed config.yaml (#729).
+    process.stderr.write(
+      chalk.red.bold(`\n  ✗ ${prefix}`) +
+        chalk.red(`  Your config file is not valid.\n`) +
+        chalk.dim(`    ${safe(error.filePath)}\n\n`),
+    );
+    for (const issue of error.issues) {
+      process.stderr.write(chalk.dim(`    • ${safe(issue)}\n`));
+    }
+    process.stderr.write(
+      chalk.yellow(`\n    → Fix the file by hand, or recreate it: ${replCmd("pax8 config init")}\n`) +
+        chalk.yellow(`    → Inspect the current values: ${replCmd("pax8 config show")}\n\n`),
+    );
   } else if (error instanceof ZodError) {
     // Zod validation errors mean the API returned an unexpected shape.
     // formatZodError can echo back response field values, so redact too.
