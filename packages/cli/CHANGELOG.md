@@ -1,5 +1,53 @@
 # @pax8/cli
 
+## 0.3.1
+
+### Patch Changes
+
+- [#739](https://github.com/pax8labs/pax8-cli/pull/739) [`3a79a7c`](https://github.com/pax8labs/pax8-cli/commit/3a79a7cbb5abc11b528bb7bd12182ed438f89f10) Thanks [@jidulberger](https://github.com/jidulberger)! - fix(config): `config set` writes a schema-valid file, and a bad config stops blaming the API ([#729](https://github.com/pax8labs/pax8-cli/issues/729))
+
+  **`pax8 config set` on a config dir with no `config.yaml` wrote a file with no `version` key.** That file fails schema validation and is discarded on every subsequent load — so the value never took effect while the command reported `✓ Set demo = true`. Reported as "`config set demo` silently does nothing"; `demo` was never the problem. Every key was affected.
+
+  Three changes, each closing a different part of the silence:
+
+  - **The version is stamped** when creating a config from scratch, or when an existing file lacks one.
+  - **Values are validated before they reach disk.** `pax8 config set defaults.page_size 999` now fails with `Number must be less than or equal to 100` and leaves the file byte-identical, rather than persisting an out-of-range value that poisons every later read. Keys the schema doesn't recognise are refused too — `ConfigSchema` strips unknown keys, so those previously "succeeded" and vanished on the next read. The file written is still the sparse object rather than the parsed one: parsing materializes every schema default, which would freeze today's defaults into the user's file and stop future changes reaching them.
+  - **A malformed config reports itself as a config problem.** `loadConfig()` let Zod's own error escape, and the CLI renderer treats a bare `ZodError` as "the Pax8 API returned an unexpected response" — so a version-less `config.yaml` produced an API error on a command that made no request:
+
+    ```
+    ✗ The Pax8 API returned an unexpected response.
+      "version": expected 1.0, got undefined
+    ```
+
+    `@pax8/core` now throws a typed `ConfigValidationError` carrying the file path and the failing fields, and the CLI renders it with recovery steps that apply to a local file.
+
+  Commands still fall back to defaults when the config is unreadable — a malformed file shouldn't make every command unrunnable — but they now say so once per run on stderr, so `--json` pipelines are unaffected. Silent fallback is what let `demo: true` sit in a file while the user was told "Not authenticated".
+
+  `ConfigValidationError` and `describeConfigIssues` are new exports from `@pax8/core`; nothing else in the config surface changed.
+
+- [#740](https://github.com/pax8labs/pax8-cli/pull/740) [`8f8a6f2`](https://github.com/pax8labs/pax8-cli/commit/8f8a6f281d1ffd2963de89a036c458295f1fef45) Thanks [@jidulberger](https://github.com/jidulberger)! - docs: teach `pax8 init --demo` instead of a per-command `PAX8_DEMO=1` prefix ([#737](https://github.com/pax8labs/pax8-cli/issues/737))
+
+  The README taught demo mode as an inline prefix. That prefix applies to **one command**, and forgetting it on the next one doesn't error — it silently runs against live data. The only signal you left demo mode is the _absence_ of the `✨ Demo mode` banner. This already caused a live-mode command during hands-on testing.
+
+  The README now leads with `pax8 init --demo`, which persists, and keeps `PAX8_DEMO=1 pax8 <cmd>` as the documented one-shot / CI form with its single-command scope stated explicitly. `pax8 demo status` and `pax8 demo off` are surfaced alongside it, since "which mode am I in?" is the question the banner answers badly.
+
+  **The agent-facing docs keep the prefix, deliberately.** `pax8 init --demo` is a write — it changes whether every later command reaches the live API — so instructing an agent to run it would contradict the safety contract in the same file that defines it. `skill.md` and `AGENTS.md` instead make the per-invocation scope explicit, say why it matters (a call that loses the prefix runs against the partner's live account, where `orders create` spends real money), point at `pax8 demo status` as the direct answer rather than inferring from a banner that's easy to miss in a transcript, and mark persistent demo mode as something to suggest rather than run.
+
+  Docs only — no behaviour change. `skill.md` ships inside the package as of [#720](https://github.com/pax8labs/pax8-cli/issues/720), so this rides out with the next release.
+
+- [#743](https://github.com/pax8labs/pax8-cli/pull/743) [`0960b45`](https://github.com/pax8labs/pax8-cli/commit/0960b45a7e70d95601b79b3c02a67991f54e4ff1) Thanks [@jidulberger](https://github.com/jidulberger)! - fix(cli): stop printing next-step headers with nothing under them, and fix two `invoices dispute` output defects ([#731](https://github.com/pax8labs/pax8-cli/issues/731), [#733](https://github.com/pax8labs/pax8-cli/issues/733), [#730](https://github.com/pax8labs/pax8-cli/issues/730))
+
+  **Every piped run of 18 commands ended on an empty section header.** `promptNextSteps()` returns early when stdin is not a TTY, but each caller wrote its `Try next:` header to stderr immediately _before_ calling it — so any non-interactive invocation printed a header introducing suggestions that never arrived. [#731](https://github.com/pax8labs/pax8-cli/issues/731) reported it for `invoices audit`; it was `subscriptions renewals`, `invoices show`, `cost sim`, `clients more`, `quotes *`, `contacts *`, `orders show`, `products search` and more. The header now lives inside the helper, after its early returns, so it cannot outlive its list. Commands that write their suggestion lines directly rather than through the helper were never affected.
+
+  The interactive dispute menu also repeated the company and product after the command, which are already on the numbered discrepancy line directly above it — that repetition is what overran terminal width.
+
+  **`invoices dispute` rendered a command that does not exist.** Its closing hint spliced the command and its description with a single space, unlike every other next-step line in the CLI, producing `pax8 invoices audit re-audit later to confirm resolution`. The line above it had the mirror problem — prose rendered in cyan, the runnable-command colour — so an instruction to paste into the Pax8 portal read as something to execute.
+
+  **A failed discrepancy lookup never said which data source it searched.** Discrepancy IDs are derived from the data that produced them, so an ID minted under demo mode can never match in live. The old error called that staleness and sent the user to re-run an audit that would keep minting IDs from the same source. It now names the active mode, explains why an ID from the other mode cannot match, and gives the mode-specific recovery step.
+
+- Updated dependencies [[`3a79a7c`](https://github.com/pax8labs/pax8-cli/commit/3a79a7cbb5abc11b528bb7bd12182ed438f89f10)]:
+  - @pax8/core@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes
