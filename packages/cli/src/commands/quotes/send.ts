@@ -155,8 +155,7 @@ Note:
           command: ["clients", "more", companyId],
         });
       }
-      process.stderr.write(chalk.dim("  Try next:\n"));
-      await promptNextSteps(steps, { renderList: true });
+      await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
       process.stderr.write(
         chalk.dim(
           `  Verify QUOTE.Accepted webhook delivery — run ${chalk.cyan(replCmd("pax8 webhooks list"))} to inspect subscribers.\n\n`,

@@ -158,8 +158,7 @@ Examples:
             command: ["clients", "more", company.name],
           },
         ];
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
         process.stderr.write(
           chalk.dim(
             `  Add another contact — run ${chalk.cyan(replCmd("pax8 contacts create --help"))} for syntax.\n\n`,

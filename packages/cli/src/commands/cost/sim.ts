@@ -447,8 +447,7 @@ JSON output (--json):
         command: ["clients", "more", company.name],
       });
       process.stderr.write("\n");
-      process.stderr.write(chalk.dim("  Try next:\n"));
-      await promptNextSteps(steps, { renderList: true });
+      await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
     } catch (error) {
       spinner.stop();
       handleCommandError(error, undefined, "Cost simulation failed");

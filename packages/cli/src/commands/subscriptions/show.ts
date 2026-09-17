@@ -164,8 +164,7 @@ provisioning detail.`
           label: `${chalk.cyan(replCmd(`pax8 subscriptions cancel ${id}`))}  ${chalk.dim("cancel this subscription")}`,
           command: ["subscriptions", "cancel", id],
         });
-        process.stderr.write(chalk.dim("  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
         process.stderr.write(
           chalk.dim(
             `  You can also adjust quantity or billing term — run ${chalk.cyan(replCmd("pax8 subscriptions update --help"))} for syntax.\n\n`,
