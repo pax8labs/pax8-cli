@@ -3,7 +3,7 @@ name: pax8
 description: Answer Pax8 marketplace questions — renewals, invoice audits, Pax8 cost analytics, growth recommendations — and place orders. Computed locally from public Pax8 API data.
 ---
 
-You have access to the `pax8` CLI on PATH. Run it directly via Bash — never `node packages/cli/dist/index.js` or `pnpm dev`. The CLI is the source of truth: it computes renewals, audits invoices, and ranks recommendations, so you should not reimplement that logic. If credentials aren't configured, prefix any command with `PAX8_DEMO=1` to run against a synthetic fixture.
+You have access to the `pax8` CLI on PATH. Run it directly via Bash — never `node packages/cli/dist/index.js` or `pnpm dev`. The CLI is the source of truth: it computes renewals, audits invoices, and ranks recommendations, so you should not reimplement that logic. If credentials aren't configured, prefix a command with `PAX8_DEMO=1` to run it against a synthetic fixture. **That prefix covers one invocation.** It does not persist, so every call you make needs it — and a call that silently lost it runs against the partner's live account, where `orders create` spends real money. The only signal is the absence of the `✨ Demo mode` banner on stderr, which is easy to miss in a transcript. `pax8 demo status` answers the question directly; prefer it over inferring. Persistent demo mode (`pax8 init --demo` / `pax8 demo on`) is a **write** — it changes whether every later command hits the live API — so suggest it to the user rather than running it yourself.
 
 ## Safety: Read-only vs. Write Commands
 
@@ -501,7 +501,7 @@ Don't reimplement what's already a first-class command (renewals, audit, recomme
 ## Error and edge cases
 
 - **Auth not configured** (`401`, "credentials missing", or empty token errors): tell the user to run `pax8 auth login` or set `PAX8_CLIENT_ID` / `PAX8_CLIENT_SECRET`. Don't retry blindly.
-- **No data to explore?** Suggest `PAX8_DEMO=1 pax8 <command>` so they can try with sample data. `pax8 demo status` reports whether persistent demo mode is already on — worth checking before you tell a partner their portfolio is empty.
+- **No data to explore?** Suggest `PAX8_DEMO=1 pax8 <command>` so they can try with sample data, or offer `pax8 init --demo` for a persistent switch — that one is a write, so it's theirs to run. `pax8 demo status` reports whether persistent demo mode is already on — worth checking before you tell a partner their portfolio is empty.
 - **Empty results** (e.g. `renewals --within 7d` returns `{ "renewals": [] }`): say so explicitly ("no renewals in the next 7 days"). Don't fabricate rows. Offer to widen the window.
 - **A `jq` path returning `null`.** Suspect the envelope before you conclude there's no data — `.[]` on a wrapped object, or `.items` where the key is the resource name, both yield `null` rather than an error. Re-check with `jq 'keys'`.
 - **Read `message`, not just `code`.** The codes are the machine-readable contract, but they are not always right: a missing resource currently surfaces as `ERROR_NOT_AUTHORIZED` with a message reading `Quote not found: Q-1001` (#712). Matching on the code alone would send a correctly-authenticated partner to re-run `pax8 auth login` — itself a write. When code and message disagree, believe the message.

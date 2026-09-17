@@ -11,7 +11,7 @@ Published on npm as `@pax8/cli`. We're using engagement signals (installs, issue
 - **Answers the API doesn't** — renewals, invoice audit, upsell recommendations, Pax8 cost analytics computed locally from raw Pax8 data
 - **Closes the loop** — `pax8 recommendations act` walks portfolio gaps and places the orders, so insight and action live in the same tool
 - **Works for humans and agents identically** — every command emits structured JSON, so a Claude Code skill, a shell pipeline, or a person at a terminal all use the same surface
-- **Demo mode** — `PAX8_DEMO=1` runs every command against an in-memory fixture, no credentials required
+- **Demo mode** — `pax8 init --demo` points every command at an in-memory fixture, no credentials required
 
 ## Why This Exists
 
@@ -78,23 +78,23 @@ pax8 upgrade --check  # just report current vs latest, don't install
 
 ## Demo Flow (90 seconds)
 
-Run with demo data by prefixing `PAX8_DEMO=1`:
+Switch to demo data once, then run whatever you like:
 
 ```bash
-PAX8_DEMO=1 pax8 dashboard               # Pax8 monthly cost, renewals, growth opportunities
-PAX8_DEMO=1 pax8 recommendations list    # Cross-sell and seat gap opportunities
-PAX8_DEMO=1 pax8 recommendations act     # Walk through and place orders (y/s/q)
-PAX8_DEMO=1 pax8 clients list            # Browse customers (type # to drill in)
-PAX8_DEMO=1 pax8 clients show "Acme"    # Full customer summary
+pax8 init --demo                         # Persistent — every later command uses the fixture
+pax8 dashboard                           # Pax8 monthly cost, renewals, growth opportunities
+pax8 recommendations list                # Cross-sell and seat gap opportunities
+pax8 recommendations act                 # Walk through and place orders (y/s/q)
+pax8 clients list                        # Browse customers (type # to drill in)
+pax8 clients show "Acme"                 # Full customer summary
 ```
 
-Or if you installed globally:
+Every command prints a `✨ Demo mode` banner while it's on. Turn it off with `pax8 demo off`, and check at any time with `pax8 demo status`.
+
+To run a single command against the fixture without changing anything persistent, prefix it instead — **the prefix applies to that one command only**:
 
 ```bash
-pax8 init --demo                         # Enable demo mode persistently
-pax8 dashboard
-pax8 recommendations list
-pax8 recommendations act
+PAX8_DEMO=1 pax8 dashboard
 ```
 
 ## Commands
@@ -325,21 +325,27 @@ pax8 doctor   # confirms the active API base in its output
 
 ## Demo Mode
 
-Run any command against sample data without API credentials by prefixing with `PAX8_DEMO=1`:
-
-```bash
-PAX8_DEMO=1 pax8 dashboard
-PAX8_DEMO=1 pax8 recommendations act
-```
-
-Alternatively, enable demo mode persistently in your config:
+Run against a built-in fixture with no API credentials. Enable it once:
 
 ```bash
 pax8 init --demo
-pax8 dashboard              # Now runs with sample data by default
+pax8 dashboard              # and every command after it, until you turn it off
 ```
 
-Disable demo mode with `pax8 init --demo off`.
+```bash
+pax8 demo status            # Is it on, and where did that come from?
+pax8 demo off               # Back to the live API
+```
+
+`pax8 init --demo off` does the same as `pax8 demo off`.
+
+For a single command — CI, a one-off check, or anything that shouldn't change persistent state — use the environment variable instead:
+
+```bash
+PAX8_DEMO=1 pax8 dashboard
+```
+
+**That prefix covers exactly one command.** The next command without it talks to the live API, and the only signal is the absence of the `✨ Demo mode` banner. If you are running a sequence, or driving the CLI from a script or an agent, prefer `pax8 init --demo` so the mode can't lapse between calls.
 
 ## Claude AI Integration
 

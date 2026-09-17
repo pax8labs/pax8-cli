@@ -4,7 +4,7 @@
 
 This file is for any AI agent or automation runtime that wants to use the `pax8` CLI: Cursor, aider, OpenCode, Continue, scripted Anthropic / OpenAI-API agents, CI bots, anything that can run a shell command. Claude Code users can also load `packages/claude-skill/skill.md` directly — it carries the same contract with Claude-specific framing.
 
-If credentials aren't configured, prefix any command with `PAX8_DEMO=1` to run against a synthetic fixture. Run `pax8` from PATH directly — never `node packages/cli/dist/index.js` or `pnpm dev`. The CLI is the source of truth: it computes renewals, audits invoices, and ranks recommendations, so don't reimplement that logic.
+If credentials aren't configured, prefix a command with `PAX8_DEMO=1` to run it against a synthetic fixture. **That prefix covers one invocation** — it does not persist, so every call needs it, and a call that lost it runs against the operator's live account. `pax8 demo status` reports the current mode; prefer asking over inferring from the `✨ Demo mode` banner. Persistent demo mode (`pax8 init --demo`) is a write — suggest it, don't run it. Run `pax8` from PATH directly — never `node packages/cli/dist/index.js` or `pnpm dev`. The CLI is the source of truth: it computes renewals, audits invoices, and ranks recommendations, so don't reimplement that logic.
 
 ## ACT FIRST — pick the right command and run it
 
@@ -171,7 +171,7 @@ Don't reimplement what's already a first-class command (renewals, audit, recomme
 Errors emitted under `--json` are structured envelopes on stderr with a stable `code` field — one of the `ERROR_*` constants in [`packages/core/src/errors/codes.ts`](packages/core/src/errors/codes.ts). Branch on the code, not the message string.
 
 - **Auth not configured** (`ERROR_AUTH_MISSING`, `ERROR_AUTH_EXPIRED`, or HTTP 401): report that credentials are missing or expired and recommend `pax8 auth login` or setting `PAX8_CLIENT_ID` / `PAX8_CLIENT_SECRET`. Don't retry blindly.
-- **No data to explore?** Suggest `PAX8_DEMO=1 pax8 <command>` for sample data.
+- **No data to explore?** Suggest `PAX8_DEMO=1 pax8 <command>` for sample data, or `pax8 init --demo` for a persistent switch the operator runs themselves. Check `pax8 demo status` before reporting an empty portfolio.
 - **Empty results** (e.g. `renewals --within 7d` returns `[]`): report it plainly ("no renewals in the next 7 days"). Don't fabricate rows. Offer to widen the window.
 - **Rate limit** (`ERROR_RATE_LIMITED`, HTTP 429): pause, summarize what you got, and surface the limit. Don't hammer.
 - **Diagnostic before giving up.** If something feels off (stale cache, weird timeouts, auth issues), `pax8 doctor` is the one-shot health check. Don't run it preemptively.
