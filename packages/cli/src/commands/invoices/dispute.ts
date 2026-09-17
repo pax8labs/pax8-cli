@@ -266,11 +266,26 @@ async function findDiscrepancy(
       (d) => discrepancyId({ companyId: d.companyId, productName: d.productName, type: d.type, month: opts.month }) === opts.discrepancy,
     );
     if (!target) {
+      // #730: name the active mode. Discrepancy IDs are derived from the data
+      // that produced them, so an ID minted under demo mode can never match in
+      // live and vice versa — but the old message described that as staleness
+      // and sent the user to re-run an audit that would keep minting IDs from
+      // the same source they already had. Re-running is the right fix for a
+      // genuinely stale ID and useless for a mode mismatch; the message could
+      // not distinguish them because it never said which mode it had searched.
+      const mode = ctx.isDemo ? "demo" : "live";
+      const otherMode = ctx.isDemo ? "live" : "demo";
       throw new CliError(
-        `No discrepancy matches ID "${opts.discrepancy}"`,
-        ["The discrepancy ID couldn't be located in the current audit."],
+        `No discrepancy matches ID "${opts.discrepancy}" in ${mode} data`,
         [
-          `Re-run ${replCmd("pax8 invoices audit --json")} to get fresh discrepancy IDs.`,
+          `The audit of ${mode} data produced no discrepancy with that ID.`,
+          `Discrepancy IDs are derived from the data that produced them, so an ID from ${otherMode} mode will never match here.`,
+        ],
+        [
+          `Re-run ${replCmd("pax8 invoices audit --json")} to get fresh ${mode} discrepancy IDs.`,
+          ctx.isDemo
+            ? `If that ID came from live data, turn demo mode off first: ${replCmd("pax8 demo off")}.`
+            : `If that ID came from demo mode, re-run the audit with ${replCmd("PAX8_DEMO=1 pax8 invoices audit --json")}.`,
           `Or pass --company and --product instead.`,
         ],
         undefined,
@@ -576,8 +591,17 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
       }
       process.stdout.write("\n");
       process.stderr.write(chalk.dim("  Next steps:\n"));
-      process.stderr.write(`    ${chalk.cyan(`Paste the template above into the Pax8 portal billing support form.`)}\n`);
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 invoices audit`))} ${chalk.dim("re-audit later to confirm resolution")}\n\n`);
+      // #733: cyan is the runnable-command colour everywhere else in the CLI,
+      // so prose rendered in it reads as something to paste. This line is an
+      // instruction, not a command — render it as prose.
+      process.stderr.write(`    ${chalk.dim("Paste the template above into the Pax8 portal billing support form.")}\n`);
+      // #733: this used a SINGLE space between the command and its
+      // description, unlike every other next-step line in the CLI, which uses
+      // two. With a description that also opened on a verb it rendered as
+      // `pax8 invoices audit re-audit later to confirm resolution` — a command
+      // that does not exist, and no way for a reader or an agent to see where
+      // the runnable part ended.
+      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 invoices audit`))}  ${chalk.dim("to confirm resolution later")}\n\n`);
 
           return true;
         },

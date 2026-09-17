@@ -292,4 +292,36 @@ describe("invoices dispute (closed-loop counterpart to audit)", () => {
       expect(DISPUTE_COPY.partnerIsOwed.noun).not.toBe(DISPUTE_COPY.partnerOwes.noun);
     });
   });
+
+  // #733: the closing hint spliced a command and its description with a single
+  // space, unlike every other next-step line in the CLI, so it rendered as
+  // `pax8 invoices audit re-audit later to confirm resolution` — a command that
+  // does not exist.
+  it("does not splice the closing hint into a non-existent command (#733)", async () => {
+    const audit = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+    const discId = JSON.parse(audit.stdout).discrepancies[0].discrepancyId;
+    const r = await runCliExpectSuccess(
+      ["invoices", "dispute", "--discrepancy", discId, "--yes"],
+      { PAX8_DISPUTES_DIR: disputesDir, PAX8_OUTPUT_FORMAT: "table" },
+    );
+    expect(r.stderr).not.toMatch(/pax8 invoices audit re-audit/);
+    // The runnable part must be delimited from the prose that follows it.
+    expect(r.stderr).toMatch(/pax8 invoices audit {2,}/);
+  });
+
+  // #730: discrepancy IDs are derived from the data that produced them, so an
+  // ID minted in demo mode can never match in live. The old message called
+  // that staleness and sent the user to re-run the audit, which would keep
+  // minting IDs from the same source — it never said which mode it searched.
+  it("names the active mode when a discrepancy ID does not match (#730)", async () => {
+    const r = await runCliExpectFailure(
+      ["invoices", "dispute", "--discrepancy", "disc-000000000000", "--yes", "--json"],
+      { PAX8_DISPUTES_DIR: disputesDir },
+    );
+    const envelope = JSON.parse(r.stderr.slice(r.stderr.indexOf("{")));
+    expect(envelope.code).toBe("ERROR_INVALID_INPUT");
+    expect(envelope.message).toMatch(/demo data/);
+    expect(JSON.stringify(envelope.causes)).toMatch(/live mode will never match/);
+    expect(JSON.stringify(envelope.recoverySteps)).toMatch(/demo off/);
+  });
 });
