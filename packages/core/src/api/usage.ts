@@ -36,7 +36,11 @@ export class UsageApi {
   ): Promise<PaginatedResponse<UsageSummary>> {
     const raw = await this.client.get<unknown>(
       `/subscriptions/${subscriptionId}/usage-summaries`,
-      params as Record<string, string | number | undefined>,
+      {
+        ...params,
+        // Omitting direction can make the API generate invalid `ORDER BY id null` SQL.
+        sort: "resourceGroup,asc",
+      },
     );
     return PaginatedUsageSummarySchema.parse(raw);
   }
