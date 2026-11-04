@@ -53,7 +53,7 @@ MSPs using Pax8 today face:
 - Link to relevant Pax8 docs or portal pages when the CLI can't help
 
 ### 6. Progressive disclosure
-- Simple commands stay simple: `pax8 companies list`
+- Simple commands stay simple: `pax8 clients list`
 - Power features are discoverable but not in the way: `--renewing-within`, `--include-usage`, `--bulk`
 - Help text includes real-world examples, not just flag descriptions
 
@@ -141,15 +141,15 @@ pax8 auth logout                   # Clear stored credentials
 ### Companies
 
 ```
-pax8 companies list                        # List all companies
-pax8 companies show <id|name>              # Company details
-pax8 companies show <id|name> --subscriptions  # Include active subscriptions
-pax8 companies create --name "Acme Corp"   # Create new company
-pax8 companies update <id> --name "New Name"
+pax8 clients list                        # List all companies
+pax8 clients show <id|name>              # Company details
+pax8 clients show <id|name> --subscriptions  # Include active subscriptions
+pax8 clients create --name "Acme Corp"   # Create new company
+pax8 clients update <id> --name "New Name"
 ```
 
 **Smart behaviors:**
-- Fuzzy name matching: `pax8 companies show acme` finds "Acme Corp LLC"
+- Fuzzy name matching: `pax8 clients show acme` finds "Acme Corp LLC"
 - `show` auto-includes subscription summary (count + estimated MRR) without extra flags
 - `list` shows inline estimated MRR per company when data is cached
 
@@ -284,12 +284,24 @@ pax8 webhooks delete <id>
 
 ### Reports (computed — fills API gap)
 
+The original PRD enumerated four `pax8 report …` commands (mrr / renewals /
+growth / licenses) framed around partner-revenue MRR. That framing was
+retired pre-v0.1.0 review (#443 — Bret Pittenger reshape) because Pax8's
+internal Unified Semantic Layer (Voyager Alliance) reserves the
+"Partner Gross MRR" term for the partner's **cost paid to Pax8**, not
+their resale revenue. The current surface mirrors that taxonomy:
+
 ```
-pax8 report mrr [--by company|product|vendor]     # Monthly recurring revenue
-pax8 report renewals [--within <days>]             # Renewal calendar
-pax8 report growth [--months <n>]                  # MRR trend over time
-pax8 report licenses [--underutilized]             # License count analysis
+pax8 report subscriptions --by company|product|vendor  # Pax8-cost grouped
+pax8 report concentration                              # Customer-concentration risk
+pax8 report renewals [--within <days>]                 # Renewal calendar
+pax8 subscriptions renewals                            # Same surface, daily-workflow shape
+pax8 dashboard                                         # Portfolio Pax8-cost summary
 ```
+
+Historical `pax8 report mrr` and `pax8 report growth` were removed in
+#443; `computeMrr` / `computeGrowth` remain in `@pax8/core` for
+embeddable reuse (v0.2 reporting work).
 
 ### Configuration
 
@@ -412,7 +424,7 @@ These are limitations of the Pax8 API that the CLI works around with local compu
 |-----|-------------|----------------|
 | **No future-dated changes** | Local scheduler: `pax8 subscriptions schedule` stores intent, executes via cron at target date | `scheduler.ts` — SQLite or JSON state file, `pax8 scheduler run` for cron execution |
 | **No bulk/batch API** | Parallel executor with rate-limit awareness: `pax8 orders create --from bulk.yaml` | `bulk-executor.ts` — concurrent API calls with configurable parallelism (default 5), automatic backoff on 429 |
-| **No reporting/analytics** | Computed reports: `pax8 report mrr`, `pax8 report growth`, `pax8 report renewals` | `analytics.ts` — pulls raw subscription/invoice data, computes MRR/ARR/churn/growth client-side |
+| **No reporting/analytics** | Computed reports: `pax8 report subscriptions`, `pax8 report concentration`, `pax8 report renewals` (Pax8-cost framed per #443) | `analytics.ts` — pulls raw subscription/invoice data, computes Pax8 cost / renewal exposure / concentration client-side |
 | **No renewal intelligence** | `pax8 subscriptions renewals` — parses `commitmentTermEndDate` across all subscriptions | `renewal-tracker.ts` — aggregates subscription data, sorts by urgency, flags action-required items |
 | **No billing reconciliation** | `pax8 invoices audit` — diffs invoice line items against active subscription quantities | `invoice-auditor.ts` — cross-references invoice items with subscription state, flags discrepancies |
 | **No product search** | `pax8 products search` — local full-text search over cached product catalog | `cache.ts` — daily product catalog sync, fuzzy matching |
@@ -456,7 +468,7 @@ For gaps requiring Pax8 changes, the CLI provides the best available alternative
 
 **Table output (default for TTY):**
 ```
-$ pax8 companies list
+$ pax8 clients list
 
   Name                 ID                                     Subscriptions   Est. MRR
   Acme Corp            a1b2c3d4-e5f6-7890-abcd-ef1234567890   12             $2,450.00
@@ -468,13 +480,13 @@ $ pax8 companies list
 
 **JSON output (for pipes/scripts):**
 ```
-$ pax8 companies list --json
+$ pax8 clients list --json
 [{"name":"Acme Corp","id":"a1b2c3d4...","subscriptions":12,"mrr":2450.00}, ...]
 ```
 
 **CSV output (for spreadsheets):**
 ```
-$ pax8 companies list --csv > companies.csv
+$ pax8 clients list --csv > clients.csv
 ```
 
 ### Progress & Feedback

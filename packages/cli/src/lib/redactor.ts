@@ -48,10 +48,18 @@ const TOKEN_CHARS = "A-Za-z0-9_\\-+/";
 
 // macOS / Linux home paths. The capture preserves the suffix so the tail
 // (e.g. `/.pax8/config.yaml`) remains useful for debugging.
+//
+// The eslint-plugin-security rule flags this as a potentially-unsafe regex
+// because of the nested optional group, but each character class excludes
+// the path separator (`/`) and whitespace, so backtracking is bounded by
+// the input length — no quadratic catastrophic-backtracking shape.
+// eslint-disable-next-line security/detect-unsafe-regex
 const POSIX_HOME_RE = /\/(?:Users|home)\/[^/\s"'`]+(\/[^\s"'`]*)?/g;
 
 // Windows home paths. Both backslash and forward-slash forms appear in
-// stringified paths; handle both.
+// stringified paths; handle both. Same bounded-backtracking shape as
+// POSIX_HOME_RE above; the inner character classes exclude the separators.
+// eslint-disable-next-line security/detect-unsafe-regex
 const WIN_HOME_RE = /[Cc]:[\\/]Users[\\/][^\\/\s"'`]+([\\/][^\s"'`]*)?/g;
 
 // Tilde-style home references — only when followed by a path separator so we
@@ -64,16 +72,24 @@ const TILDE_HOME_RE = /~(\/[^\s"'`]*)/g;
 const HEX_TOKEN_RE = /\b[0-9a-fA-F]{32,}\b/g;
 
 // Long base64-ish opaque strings that look like API tokens / client_secrets.
-// Pax8 client secrets are roughly 40–60 chars of base64; we use a 32+ floor
-// with required mixed character classes to avoid eating English words.
-// Excluded: pure-alpha words, pure-digit numbers, hex (covered above).
+// Pax8 client secrets are roughly 40–60 chars of base64; we use a 32+ floor.
+// L-4 fix: the prior version required mixed-case AND a digit, which let
+// pure-lowercase ≥32-char tokens (e.g. nanoid-style API keys, slugged
+// secrets) slip through entirely. The relaxation here drops the
+// character-class lookaheads: any ≥32-char run of token-character bytes
+// bounded by non-token-chars is redacted. The word-boundary anchors (the
+// `(?<![TOKEN_CHARS])` lookbehind and the embedded `(?![TOKEN_CHARS])`
+// lookahead) prevent matching inside a longer alphanumeric run, and the
+// 32-char floor keeps English prose safe — the longest commonly-written
+// English word is "antidisestablishmentarianism" at 28 chars, under the
+// floor. The handful of >32 char technical compound words that exist
+// (e.g. medical terminology) showing up in a bug report is acceptable
+// over-redaction for a privacy-first error pipeline; the `<REDACTED:TOKEN>`
+// marker tells a human reviewer something was scrubbed.
 const OPAQUE_TOKEN_RE = new RegExp(
   `(?<![${TOKEN_CHARS}])` +
-    `(?=[${TOKEN_CHARS}]{32,}(?![${TOKEN_CHARS}]))` +
-    `(?=[${TOKEN_CHARS}]*[A-Z])` +
-    `(?=[${TOKEN_CHARS}]*[a-z])` +
-    `(?=[${TOKEN_CHARS}]*[0-9])` +
-    `[${TOKEN_CHARS}]{32,}`,
+    `[${TOKEN_CHARS}]{32,}` +
+    `(?![${TOKEN_CHARS}])`,
   "g",
 );
 
@@ -157,6 +173,51 @@ function redactStringArray(
   return arr.map((s) => redactString(s, argTokens));
 }
 
+// #473: harvest "quoted-string" substrings from message / causes /
+// recoverySteps and treat them as additional argTokens. This closes the
+// upstream-resolved-name leak: when a CliError site interpolates an
+// API-resolved company / contact / product name into its error text via the
+// canonical `Foo not found: "${name}"` pattern, the name is *not* in argv
+// (so `extractCommandAndFlags` doesn't pick it up) but it IS inside double
+// or single quotes in the cause text. Treating those quoted strings as
+// argTokens fan-out lets the existing positional-arg redaction strip them
+// uniformly.
+//
+// Caveats:
+//   - We harvest from the same strings the redactor is about to scrub.
+//   - We respect the existing 2-char floor; very short quoted strings
+//     (`""`, `"x"`) are skipped to avoid runaway over-redaction.
+//   - The character class is `[^\n]` (not `[^"\n]` / `[^'\n]`) so the greedy
+//     quantifier extends from the *first* quote to the *last* matching quote
+//     on a logical line. This is deliberate — a partner name like
+//     `Acme" $(echo PWNED) "` produces a cause string with multiple `"`s
+//     inside the same logical span (`"Acme" $(echo PWNED) ""`), and a
+//     character-class-restricted regex would only harvest the inner
+//     `"Acme"` chunk, leaving `$(echo PWNED)` naked in the report. By
+//     allowing inner quotes in the captured run, the whole hostile span
+//     becomes one argToken and the existing redactString pass scrubs it
+//     atomically. Trade-off: a legitimate cause with two unrelated quoted
+//     terms on the same line (e.g. `Matched "Foo" against "Bar"`) collapses
+//     into a single `<REDACTED:ARG>` covering everything between the
+//     outermost quotes — acceptable over-redaction for a bug-report
+//     pipeline whose default posture is "scrub more than less."
+//   - This is best-effort. CliError sites that interpolate a name *without*
+//     quoting it (e.g. `"Subscription Acme Corp — not found"`) still slip
+//     through this specific extractor. Such sites should be migrated to
+//     quote their interpolated values; until then they need an explicit
+//     argToken pass at the catch site.
+const QUOTED_RE = /"([^\n]{2,})"|'([^\n]{2,})'/g;
+
+function extractQuotedTokens(input: string | undefined): string[] {
+  if (!input) return [];
+  const found: string[] = [];
+  for (const m of input.matchAll(QUOTED_RE)) {
+    const tok = m[1] ?? m[2];
+    if (tok && tok.trim().length >= 2) found.push(tok);
+  }
+  return found;
+}
+
 /**
  * Redact every string-typed field of an envelope. Numeric / structural fields
  * pass through untouched.
@@ -169,31 +230,95 @@ function redactStringArray(
  * `Company not found: "${input}"`). Without this, a normal company name
  * doesn't match any of the existing UUID / email / path / token patterns
  * and would slip through to the report. See #170.
+ *
+ * In addition to the caller-supplied `argTokens`, we now auto-augment the
+ * token list with any quoted substrings found in `message` / `causes` /
+ * `recoverySteps`. This catches upstream-resolved names (company /
+ * contact / product names returned by the Pax8 API and threaded into a
+ * `CliError.causes[]` entry via the canonical `… "${name}"` pattern) that
+ * are not in argv. See #473.
  */
+/**
+ * L-5 helper: recursively walk a value (object / array / primitive) and apply
+ * `redactString(_, allTokens)` to every string encountered. Depth-capped so a
+ * pathological structure can't blow the stack or pin a CPU. Non-string
+ * primitives (numbers, booleans, null) pass through unchanged.
+ *
+ * The envelope-level redactor names a closed set of fields (`message`,
+ * `causes[]`, `recoverySteps[]`, `docsUrl`, `command`, `flags[]`) and scrubs
+ * each individually. If a future code path attaches a nested object to the
+ * envelope (e.g. `details = { partnerEmail: "..." }`), those nested strings
+ * would otherwise sail through the named-field pass untouched. This deep
+ * walker is the defense-in-depth backstop: after the named-field pass runs,
+ * we re-walk the full envelope and scrub any string we find. Idempotent —
+ * already-redacted markers like `<REDACTED:UUID>` re-run through the rules
+ * with no further change.
+ */
+const DEEP_WALK_MAX_DEPTH = 8;
+
+function redactDeep(value: unknown, allTokens: string[], depth = 0): unknown {
+  if (depth > DEEP_WALK_MAX_DEPTH) return value;
+  if (typeof value === "string") return redactString(value, allTokens);
+  if (Array.isArray(value)) {
+    return value.map((v) => redactDeep(v, allTokens, depth + 1));
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = redactDeep(v, allTokens, depth + 1);
+    }
+    return out;
+  }
+  return value;
+}
+
 export function redactEnvelope(
   env: BugReportEnvelope,
   argTokens: string[] = [],
 ): BugReportEnvelope {
+  // #473: combine caller-supplied argTokens with quoted-string tokens
+  // harvested from the envelope's own message / causes / recoverySteps.
+  // The harvested tokens cover the upstream-resolved-name path that the
+  // argv-derived tokens cannot see.
+  const harvested: string[] = [
+    ...extractQuotedTokens(env.message),
+    ...(env.causes ?? []).flatMap(extractQuotedTokens),
+    ...(env.recoverySteps ?? []).flatMap(extractQuotedTokens),
+  ];
+  // Dedupe — same string showing up in argv and inside quotes in the
+  // message is the common case (the user typed "Acme Corp", we interpolated
+  // it back into the error). One pass is enough.
+  const allTokens = [...new Set([...argTokens, ...harvested])];
+
   const out: BugReportEnvelope = { ...env };
-  out.message = redactString(env.message ?? "", argTokens);
+  out.message = redactString(env.message ?? "", allTokens);
   if (env.code !== undefined) out.code = env.code; // codes are a closed registry — safe.
-  if (env.causes !== undefined) out.causes = redactStringArray(env.causes, argTokens);
+  if (env.causes !== undefined) out.causes = redactStringArray(env.causes, allTokens);
   if (env.recoverySteps !== undefined) {
-    out.recoverySteps = redactStringArray(env.recoverySteps, argTokens);
+    out.recoverySteps = redactStringArray(env.recoverySteps, allTokens);
   }
-  if (env.docsUrl !== undefined) out.docsUrl = redactString(env.docsUrl, argTokens);
+  if (env.docsUrl !== undefined) out.docsUrl = redactString(env.docsUrl, allTokens);
   // `command` is constructed at envelope-write time as `<subcmd path>
   // <REDACTED:ARG> ...`, so the raw arg values shouldn't be present here —
   // but pass argTokens defensively in case a caller hands us a pre-built
   // command string.
-  if (env.command !== undefined) out.command = redactString(env.command, argTokens);
+  if (env.command !== undefined) out.command = redactString(env.command, allTokens);
   // Flags are flag *names* only by construction; redact defensively in case
   // a future code path puts a value here.
-  if (env.flags !== undefined) out.flags = redactStringArray(env.flags, argTokens);
+  if (env.flags !== undefined) out.flags = redactStringArray(env.flags, allTokens);
   // Versions and OS are non-PII metadata; pass through.
   if (env.cli_version !== undefined) out.cli_version = env.cli_version;
   if (env.node_version !== undefined) out.node_version = env.node_version;
   if (env.os !== undefined) out.os = env.os;
   if (env.timestamp !== undefined) out.timestamp = env.timestamp;
-  return out;
+
+  // L-5: defense-in-depth deep walk. The named-field pass above only knows
+  // about the declared BugReportEnvelope keys. If a future code path
+  // attaches an ad-hoc nested object (e.g. `env.details = { partnerEmail:
+  // "..." }`), the new strings would otherwise reach the bug-report payload
+  // unredacted. The walker re-scans the full envelope and scrubs every
+  // string it encounters. Idempotent — re-running redactString on already-
+  // redacted text produces the same text. Depth-capped at 8.
+  const deepRedacted = redactDeep(out, allTokens) as BugReportEnvelope;
+  return deepRedacted;
 }

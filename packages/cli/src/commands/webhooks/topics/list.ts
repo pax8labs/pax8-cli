@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction, type EmittedAction } from "../../../lib/actions.js";
 import chalk from "chalk";
 import { buildContext } from "../../../lib/context.js";
-import { output } from "../../../lib/output.js";
+import { output, singlePageEnvelope } from "../../../lib/output.js";
 import { createSpinner } from "../../../lib/spinner.js";
 import { handleCommandError } from "../../../lib/errors.js";
 import { replCmd } from "../../../lib/confirm.js";
@@ -48,21 +49,32 @@ Examples:
       }
 
       if (ctx.outputFormat === "json") {
+        // #483: wrap as { topics, page } for shape parity with every
+        // other list command. The topics endpoint isn't paginated, so
+        // we synthesize a single-page envelope.
+        const page = singlePageEnvelope(sorted.length);
         if (options.withActions) {
-          const nextActions: { command: string; description: string }[] = [];
+          const nextActions: EmittedAction[] = [];
           if (sorted.length > 0) {
-            nextActions.push({
-              command:
-                'pax8 webhooks create --url https://example.com/hook --display-name "My webhook" --topics ' +
-                sorted[0].topic,
-              description: "Create a webhook subscribed to this topic",
-            });
+            nextActions.push(
+              buildAction(
+                [
+                  "webhooks", "create",
+                  "--url", "https://example.com/hook",
+                  "--display-name", "My webhook",
+                  "--topics", sorted[0].topic,
+                ],
+                "Create a webhook subscribed to this topic",
+              ),
+            );
           }
           process.stdout.write(
-            JSON.stringify({ topics: sorted, nextActions }, null, 2) + "\n",
+            JSON.stringify({ topics: sorted, page, nextActions }, null, 2) + "\n",
           );
         } else {
-          process.stdout.write(JSON.stringify(sorted, null, 2) + "\n");
+          process.stdout.write(
+            JSON.stringify({ topics: sorted, page }, null, 2) + "\n",
+          );
         }
         return;
       }

@@ -16,13 +16,13 @@ vi.mock("readline", () => ({
 
 // Mock spawn so we don't actually launch a child process in tests where
 // the user "selects" a step.
-const spawnedCommands: Array<{ args: string[] }> = [];
+const spawnedCommands: Array<{ cmd: string; args: string[] }> = [];
 vi.mock("child_process", async (importActual) => {
   const actual = await importActual<typeof import("child_process")>();
   return {
     ...actual,
-    spawn: (_cmd: string, args: string[]) => {
-      spawnedCommands.push({ args });
+    spawn: (cmd: string, args: string[]) => {
+      spawnedCommands.push({ cmd, args });
       const handlers: Record<string, () => void> = {};
       // Synchronously invoke the close handler on next tick.
       const obj = {
@@ -147,7 +147,7 @@ describe("promptNextSteps", () => {
     expect(spawnedCommands).toHaveLength(0);
   });
 
-  it("spawns the picked step's command when the user enters a valid key", async () => {
+  it("spawns the picked step's command via the active CLI entrypoint (#457)", async () => {
     Object.defineProperty(process.stdin, "isTTY", {
       value: true,
       writable: true,
@@ -163,6 +163,14 @@ describe("promptNextSteps", () => {
     await promptNextSteps(steps);
 
     expect(spawnedCommands).toHaveLength(1);
-    expect(spawnedCommands[0].args).toEqual(["subscriptions", "list"]);
+    // #457: drill-in launches `node <cliPath> <args>` instead of `pax8 <args>`,
+    // so a CLI launched without `pax8` on PATH still drills in correctly.
+    // First element after the cliPath is the resource; the rest are the
+    // command's args verbatim.
+    expect(spawnedCommands[0].cmd).toBe("node");
+    const [cliPath, ...args] = spawnedCommands[0].args;
+    expect(typeof cliPath).toBe("string");
+    expect(cliPath.length).toBeGreaterThan(0);
+    expect(args).toEqual(["subscriptions", "list"]);
   });
 });

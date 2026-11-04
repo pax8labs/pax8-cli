@@ -2,20 +2,40 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
-import { SubscriptionStatusSchema, type SubscriptionStatus } from "@pax8/core";
+import {
+  SubscriptionStatusSchema,
+  type SubscriptionStatus,
+  BillingTermSchema,
+  type BillingTerm,
+} from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+  displayCommandFromArgs,
+  renderReplNavHint,
+} from "../../lib/output.js";
+import { saveLastListContext } from "../../lib/last-list.js";
+import { wireListDrillIn } from "../../lib/list-drill-in.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import {
   formatStatus,
-  formatCurrency,
+  formatCurrencyNullable,
   formatCompanyName,
 } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
-import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
-import { validateEnum } from "../../lib/validate.js";
+import {
+  enrichProductNames,
+  enrichCompanyNames,
+  buildCompanyNameMap,
+} from "../../lib/enrich-subscriptions.js";
+import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
 
 // Single source of truth for `--status` accepted values. Mirrors the
 // public OpenAPI enum for `GET /subscriptions`'s `status` query parameter
@@ -24,7 +44,24 @@ import { validateEnum } from "../../lib/validate.js";
 const SUBSCRIPTION_STATUS_VALUES = SubscriptionStatusSchema.options as readonly SubscriptionStatus[];
 const SUBSCRIPTION_STATUS_HELP = SUBSCRIPTION_STATUS_VALUES.join(", ");
 
+// #398: `GET /subscriptions` exposes `billingTerm` as a server-side filter
+// per the public OpenAPI. Same fail-fast enum-validation pattern as
+// `--status` so a typo fails at the CLI boundary instead of round-tripping
+// and returning `[]`.
+const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
+const BILLING_TERM_HELP = BILLING_TERM_VALUES.join(", ");
+
+// #398: `--sort` accepts spec field names (the public OpenAPI doesn't
+// enumerate which fields are sortable, but the documented set across
+// related list endpoints is consistent). Accepts both bare field names
+// (default direction ascending) and `field,asc` / `field,desc` shapes;
+// anything not on this list is rejected client-side.
+const SUBSCRIPTION_SORT_FIELDS = ["quantity", "startDate", "endDate", "createdAt"] as const;
+const SUBSCRIPTION_SORT_HELP = `Sort by field (${SUBSCRIPTION_SORT_FIELDS.join(", ")}); append :desc for descending (e.g. quantity:desc)`;
+
+// #418: leading `_num` column makes rows pickable by number in the REPL.
 const columns: Column[] = [
+  { key: "_num", header: "#" },
   {
     key: "id",
     header: "ID",
@@ -41,14 +78,20 @@ const columns: Column[] = [
   { key: "billingTerm", header: "Term" },
   {
     key: "price",
-    header: "Price",
-    // Append the ISO-4217 currency code only when it isn't USD. Common case
-    // stays unchanged; non-USD partners get e.g. `$1,234.56 EUR` so the unit
-    // isn't silently misread as dollars. Surfaced in #273 (fixes #6).
+    // #657 / UXR F9: partners couldn't tell whether the `Price` column
+    // meant their cost or the customer's cost. Rename to `Partner Price`
+    // (what the partner pays Pax8) so the semantic is unambiguous at a
+    // glance, matching the label already used in `products show --pricing`.
+    header: "Partner Price",
+    // Thread the row's `currencyCode` through `formatCurrency` so the
+    // rendered symbol matches the subscription's actual currency (#472).
+    // Previously this layered a `" EUR"` suffix on top of a hard-coded
+    // `"$"`; now `formatCurrency` handles the unit directly via
+    // `Intl.NumberFormat`. #657: use the null-aware helper so a missing
+    // upstream `price` renders as `—` instead of the ambiguous `$0.00`.
     format: (v, row) => {
       const code = String((row as { currencyCode?: string } | undefined)?.currencyCode ?? "USD");
-      const price = formatCurrency(Number(v));
-      return code === "USD" ? price : `${price} ${code}`;
+      return formatCurrencyNullable(v == null ? null : Number(v), code);
     },
   },
 ];
@@ -65,8 +108,19 @@ export const subscriptionsListCommand = new Command("list")
     "--status <status>",
     `Filter by status (${SUBSCRIPTION_STATUS_HELP})`
   )
+  // #398: spec-backed filters previously dropped at the CLI boundary.
+  // `--billing-term` accepts the canonical BillingTerm enum (validated
+  // before any network call). `--product` is a productId UUID — no
+  // resolveProduct() here because the user typically pastes the ID from
+  // a prior `subscriptions list --json` row.
+  .option(
+    "--billing-term <term>",
+    `Filter by billing term (${BILLING_TERM_HELP})`
+  )
+  .option("--product <productId>", "Filter by product ID (UUID)")
+  .option("--sort <field>", SUBSCRIPTION_SORT_HELP)
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "25")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .option("--with-actions", "Wrap JSON output as { subscriptions, nextActions } instead of a flat array")
   .addHelpText(
@@ -76,6 +130,9 @@ Examples:
   pax8 subscriptions list
   pax8 subscriptions list --company "Summit Healthcare Partners"
   pax8 subscriptions list --status Active
+  pax8 subscriptions list --billing-term Annual
+  pax8 subscriptions list --product 11111111-2222-3333-4444-555555555555
+  pax8 subscriptions list --sort quantity:desc
   pax8 subscriptions list --size 10 --page 2
   pax8 subscriptions list --json
   pax8 subscriptions list --json --with-actions
@@ -93,6 +150,22 @@ Examples:
       validateEnum(allOpts.status, SUBSCRIPTION_STATUS_VALUES, "--status", {
         cmdHint: "pax8 subscriptions list",
       });
+      // #398: fail-fast on --billing-term typos before any network call,
+      // same vocabulary as the existing --status validator.
+      validateEnum(allOpts.billingTerm, BILLING_TERM_VALUES, "--billing-term", {
+        cmdHint: "pax8 subscriptions list",
+      });
+      // #398: --sort accepts `field` or `field:asc` / `field:desc`. Wire form
+      // is `field,asc` / `field,desc` (comma separator); the user-facing
+      // separator is `:` to avoid shell-quoting surprises with the literal
+      // comma. Validate the field part client-side; anything unknown is
+      // rejected here so a typo doesn't silently no-op against the wire.
+      if (allOpts.sort) {
+        const [field] = String(allOpts.sort).split(":");
+        validateEnum(field, SUBSCRIPTION_SORT_FIELDS, "--sort", {
+          cmdHint: "pax8 subscriptions list",
+        });
+      }
     } catch (error) {
       await handleCommandError(error);
     }
@@ -104,20 +177,42 @@ Examples:
         ? await resolveCompanyId(ctx, allOpts.company)
         : undefined;
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
+      // #518: cap `--size` at LIST_SIZE_CAP (1000) — a 50k-row pull
+      // returns multiple megabytes of JSON and is hostile to agents,
+      // CI runners, and `jq` consumers. Clamp + warn instead.
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 25);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
+      // #398: translate the user-friendly `field:direction` shape into the
+      // wire's `field,direction` shape. The Pax8 API uses comma as the
+      // sort separator per its OpenAPI examples.
+      const sortParam = allOpts.sort
+        ? String(allOpts.sort).replace(":", ",")
+        : undefined;
       const result = await ctx.api.subscriptions.list({
         companyId,
         status: allOpts.status,
+        billingTerm: allOpts.billingTerm,
+        productId: allOpts.product,
+        sort: sortParam,
         page: apiPage,
-        size: parseInt(allOpts.size, 10),
+        size: sizeResult.size,
       });
 
       const subs = result.content as Record<string, unknown>[];
-      // Enrich product and company names in parallel
-      const companiesPromise = ctx.api.companies.list({ size: 200 });
+      // #483: page the companies catalog (uncapped) in parallel with the
+      // product-name enrichment so subscriptions referencing customers
+      // beyond row 200 still render the customer name. Previously this
+      // capped at `size: 200`.
+      const nameMapPromise = buildCompanyNameMap(
+        ctx,
+        subs as { companyId?: string }[],
+        { quiet: Boolean(allOpts.quiet), resourceLabel: "subscription" },
+      );
       await enrichProductNames(ctx, subs);
       try {
-        const companies = await companiesPromise;
-        const nameMap = new Map((companies.content as Array<{ id: string; name: string }>).map(c => [c.id, c.name]));
+        const nameMap = await nameMapPromise;
         enrichCompanyNames(nameMap, subs);
       } catch { /* best effort */ }
 
@@ -130,30 +225,72 @@ Examples:
         return;
       }
 
-      if (ctx.outputFormat === "json" && options.withActions) {
-        const nextActions: { command: string; description: string }[] = [];
+      // #483: wrap JSON output in `{ subscriptions, page }`. The page
+      // envelope renumbers 1-based to match the `--page` flag the user
+      // would type next. `--with-actions` additionally surfaces a
+      // nextActions array (next-page hint + drill-in + renewal check).
+      //
+      // #562: build the next-page invocation as a structured argv array
+      // and derive the display string from it. Each user-supplied flag
+      // value (--company, --product, --sort, etc.) lands in its own argv
+      // slot — no string interpolation, no quote-breakout risk. The
+      // display form (`nextPageCommand`) goes only to the human footer;
+      // the argv (`nextPageArgs`) feeds buildNextPageAction so agents
+      // get a spawn-safe `args` field on the nextActions entry.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const nextPageArgs: string[] = [
+        "pax8", "subscriptions", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.company ? ["--company", String(allOpts.company)] : []),
+        ...(allOpts.status ? ["--status", String(allOpts.status)] : []),
+        ...(allOpts.billingTerm ? ["--billing-term", String(allOpts.billingTerm)] : []),
+        ...(allOpts.product ? ["--product", String(allOpts.product)] : []),
+        ...(allOpts.sort ? ["--sort", String(allOpts.sort)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
+
+      // #418: row numbers continue across pages — wire numbered rows for
+      // the table renderer and the REPL's drill-in lookup.
+      const startNum = result.page.number * result.page.size;
+      const numbered = subs.map((row, i) => ({
+        ...row,
+        _num: String(startNum + i + 1),
+      }));
+
+      if (ctx.outputFormat === "json") {
         const subsList = result.content;
-        const trials = subsList.filter((s) => (s.status ?? "").toLowerCase() === "trial");
-        const top = subsList[0];
-        if (top) {
-          nextActions.push({
-            command: `pax8 subscriptions show ${top.id}`,
-            description: `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`,
-          });
+        if (options.withActions) {
+          // #562: every nextActions entry carries both a `command` display
+          // string and a structured `args` argv array. Agents spawn
+          // `args.slice(1)`; never tokenize `command`.
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
+          const pageAction = buildNextPageAction(
+            pageEnvelope,
+            [...nextPageArgs, "--json"],
+            "subscription",
+          );
+          if (pageAction) nextActions.push(pageAction);
+          const trials = subsList.filter((s) => (s.status ?? "").toLowerCase() === "trial");
+          const top = subsList[0];
+          if (top) {
+            const showArgs = ["pax8", "subscriptions", "show", String(top.id)];
+            nextActions.push(buildAction(showArgs, `View details for the first subscription (${(top as Record<string, unknown>).productName ?? "subscription"})`));
+          }
+          if (trials.length > 0) {
+            const trialArgs = ["pax8", "subscriptions", "list", "--status", "Trial", "--json"];
+            nextActions.push(buildAction(trialArgs, `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`));
+          }
+          const renewalsArgs = ["pax8", "subscriptions", "renewals", "--json", "--with-actions"];
+          nextActions.push(buildAction(renewalsArgs, "Check upcoming renewals before they auto-renew"));
+          process.stdout.write(
+            JSON.stringify({ subscriptions: subsList, page: pageEnvelope, nextActions }, null, 2) + "\n"
+          );
+        } else {
+          process.stdout.write(
+            JSON.stringify({ subscriptions: subsList, page: pageEnvelope }, null, 2) + "\n"
+          );
         }
-        if (trials.length > 0) {
-          nextActions.push({
-            command: "pax8 subscriptions list --status Trial --json",
-            description: `Review ${trials.length} trial subscription${trials.length > 1 ? "s" : ""} to convert or cancel`,
-          });
-        }
-        nextActions.push({
-          command: "pax8 subscriptions renewals --json --with-actions",
-          description: "Check upcoming renewals before they auto-renew",
-        });
-        process.stdout.write(
-          JSON.stringify({ subscriptions: result.content, nextActions }, null, 2) + "\n"
-        );
         return;
       }
 
@@ -165,7 +302,7 @@ Examples:
         emptyReasons.push("This tenant has no subscriptions yet.");
       }
 
-      output(result.content, {
+      output(numbered, {
         format: ctx.outputFormat,
         columns,
         emptyState: {
@@ -189,10 +326,36 @@ Examples:
         },
       });
 
-      if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} subscriptions\n\n`)
-        );
+      if (ctx.outputFormat === "table") {
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "subscription",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
+        renderReplNavHint(pageEnvelope);
+        // #456: persist context for REPL back/n/p navigation. Guarded
+        // against re-entry from the REPL's own rewrite of those shortcuts.
+        const userArgv = process.argv.slice(2);
+        const first = userArgv[0];
+        if (userArgv.length > 0 && first !== "back" && first !== "n" && first !== "p") {
+          await saveLastListContext({
+            command: userArgv,
+            page: {
+              number: pageEnvelope.number,
+              totalPages: pageEnvelope.totalPages,
+            },
+          });
+        }
+        // #418: pickable drill-in — type `3` to drill into subscription #3.
+        await wireListDrillIn({
+          rows: subs as { id: string }[],
+          resource: "subscriptions",
+          startNum,
+          getLabel: (row) => {
+            const r = row as Record<string, unknown>;
+            return String(r.productName ?? r.companyName ?? "Subscription");
+          },
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list subscriptions");

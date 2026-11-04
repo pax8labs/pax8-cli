@@ -4,6 +4,7 @@
 import chalk from "chalk";
 import { createInterface } from "readline";
 import { spawn } from "child_process";
+import { resolveCliPath } from "./repl.js";
 
 export interface NextStep {
   key: string;
@@ -31,10 +32,18 @@ export interface NextStep {
  */
 export async function promptNextSteps(
   steps: NextStep[],
-  options?: { renderList?: boolean },
+  options?: { renderList?: boolean; header?: string },
 ): Promise<void> {
   if (!process.stdin.isTTY) return;
   if (steps.length === 0) return;
+
+  // The section header belongs here, not at the call site. Every caller used
+  // to write "Try next:" to stderr immediately before calling this function,
+  // which returns early off-TTY — so every piped or agent invocation ended on
+  // a header promising suggestions that never arrived. 18 commands did it
+  // (#731 reported `invoices audit`; the rest were the same shape). Printing
+  // it after the early returns means the header cannot outlive its list.
+  if (options?.header) process.stderr.write(chalk.dim(options.header));
 
   // Embedded-list mode: print each option before the prompt. Otherwise the
   // prompt below references a "1-N" range with no visible menu (the bug
@@ -74,8 +83,29 @@ export async function promptNextSteps(
 
   process.stderr.write("\n");
 
+  // #457: reuse the active CLI entrypoint instead of hardcoding `pax8` on
+  // PATH. The REPL already does this via `resolveCliPath(process.argv[1])`
+  // (see lib/repl.ts) — drill-in from a non-PATH launch (`node dist/index.js`,
+  // a yarn -g install in an unusual prefix, etc.) was the only remaining
+  // call site that assumed `pax8` was discoverable.
+  let cliPath: string;
+  try {
+    cliPath = resolveCliPath(process.argv[1]);
+  } catch {
+    // Best-effort fallback to the legacy behavior when we can't resolve
+    // process.argv[1] (e.g. embedded callers in a future MCP wrapper).
+    return new Promise<void>((resolve) => {
+      const child = spawn("pax8", picked.command, {
+        stdio: "inherit",
+        env: process.env,
+      });
+      child.on("error", () => resolve());
+      child.on("close", () => resolve());
+    });
+  }
+
   return new Promise<void>((resolve, _reject) => {
-    const child = spawn("pax8", picked.command, {
+    const child = spawn("node", [cliPath, ...picked.command], {
       stdio: "inherit",
       env: process.env,
     });

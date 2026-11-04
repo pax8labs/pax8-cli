@@ -2,25 +2,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction, type EmittedAction } from "../lib/actions.js";
 import chalk from "chalk";
-import { buildContext, warnIfTruncated } from "../lib/context.js";
+import { buildContext } from "../lib/context.js";
 import { createSpinner } from "../lib/spinner.js";
 import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
-import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
+import { getUpcomingRenewals } from "@pax8/core";
 import { getRecommendations } from "@pax8/core";
-import type { Subscription, Company, Product, Order, RenewalReport, Recommendation } from "@pax8/core";
+import type { Subscription, RenewalReport, Recommendation } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
+import { collectSubsWithSpinner } from "../lib/subs-stream.js";
+import { emitWarnings, type WarningRecord } from "../lib/aggregator-fetch.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // Internal name `cost` reflects what these numbers actually are: the
 // partner's monthly cost to Pax8 (price × quantity, amortized monthly).
-// Previously framed as partner-side "MRR" — corrected per Bret Pittenger's
-// reporting-domain review. The math is unchanged; the labels and the
-// CLI's own JSON field names are.
+// Previously framed as partner-side "MRR" — corrected per the reporting-
+// domain review: these are wholesale costs paid to Pax8, not partner-side
+// resale revenue. The math is unchanged; the labels and the CLI's own JSON
+// field names are.
 interface CompanyStats {
   name: string;
   cost: number;
@@ -151,7 +155,7 @@ function renderGrowthSection(
   divider();
   // Wording note: "uplift" here is the additional Pax8 monthly cost to the
   // partner if these recs were ordered (unit price × seats). It is not the
-  // partner's resale revenue. See Bret Pittenger's reporting-domain review.
+  // partner's resale revenue.
   out.write(chalk.bold(`  Growth Opportunities  `) + chalk.green.bold(`${formatCurrency(uplift)}/mo`) + chalk.dim(` potential Pax8 cost uplift\n\n`));
   for (const r of highRecs.slice(0, 10)) {
     const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
@@ -163,50 +167,113 @@ function renderGrowthSection(
   out.write(chalk.dim(`\n    → ${replCmd("pax8 recommendations act")}  walk through and order\n`));
 }
 
+// ── Data fetch ───────────────────────────────────────────────────────────────
+
+/**
+ * Result shape returned by the fetch layer. We derive the page-wrapper
+ * type from the actual api method signatures rather than re-declaring it
+ * because the bundled `@pax8/core` .d.ts exposes two structurally similar
+ * `PaginatedResponse` types (an internal wire-shape and a re-exported
+ * variant), and using `Awaited<ReturnType<...>>` keeps us aligned with
+ * whichever the api method actually returns.
+ */
+type CtxApi = Awaited<ReturnType<typeof buildContext>>["api"];
+type CompaniesListResult = Awaited<ReturnType<CtxApi["companies"]["list"]>>;
+type ProductsListResult = Awaited<ReturnType<CtxApi["products"]["list"]>>;
+type OrdersListResult = Awaited<ReturnType<CtxApi["orders"]["list"]>>;
+
+export interface DashboardFetchedData {
+  allSubs: Subscription[];
+  companiesResult: CompaniesListResult;
+  productsResult: ProductsListResult;
+  ordersResult: OrdersListResult;
+  /**
+   * Per-feed warnings collected during the parallel fetch. Returned as
+   * structured data (rather than written directly to stderr) so this
+   * helper is unit-testable in isolation. The command layer calls
+   * `emitWarnings(process.stderr, data.warnings)` at the appropriate
+   * point in the run sequence. See #635.
+   */
+  warnings: WarningRecord[];
+}
+
+export async function fetchAll(
+  ctx: Awaited<ReturnType<typeof buildContext>>,
+  spinner: ReturnType<typeof createSpinner>,
+): Promise<DashboardFetchedData> {
+  // Fetch companies/products/orders in parallel with the subscription
+  // stream. Subscriptions are the heaviest resource and now walk every
+  // page via `streamAll()` (#613) so partners with >1000 subs no longer
+  // get silently truncated portfolio totals. The other three resources
+  // stay single-page — none of dashboard's outputs grow with their
+  // count past the first 200 (companies are used as a name lookup,
+  // products for recommendations enrichment, orders for the recent-
+  // activity window).
+  const [companiesSettled, productsSettled, ordersSettled, subsSettled] = await Promise.allSettled([
+    ctx.api.companies.list({ size: 200 }),
+    ctx.api.products.list({ size: 200 }),
+    ctx.api.orders.list({ size: 200 }),
+    collectSubsWithSpinner(ctx.api.subscriptions.streamAll(), spinner, "dashboard"),
+  ]);
+
+  const emptyPage = { number: 0, size: 0, totalPages: 0, totalElements: 0 };
+  const companiesResult: CompaniesListResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [], page: { ...emptyPage } };
+  const productsResult: ProductsListResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [], page: { ...emptyPage } };
+  const ordersResult: OrdersListResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [], page: { ...emptyPage } };
+  const allSubs: Subscription[] = subsSettled.status === 'fulfilled' ? subsSettled.value : [];
+
+  // Collect partial-failure warnings as structured data so the partial-
+  // failure logic is unit-testable. The command layer emits these via
+  // `emitWarnings()` once the fetch returns. We never throw here — a
+  // single feed failure should still produce a partial dashboard — but
+  // the partner needs to know the numbers are incomplete (#635).
+  const warnings: WarningRecord[] = [];
+  if (companiesSettled.status === 'rejected') {
+    warnings.push({
+      feed: "companies",
+      severity: "warn",
+      message: "Could not load companies",
+    });
+  }
+  if (subsSettled.status === 'rejected') {
+    warnings.push({
+      feed: "subscriptions",
+      severity: "warn",
+      message: "Could not load subscriptions",
+    });
+  }
+  if (productsSettled.status === 'rejected') {
+    warnings.push({
+      feed: "products",
+      severity: "warn",
+      message: "Could not load products",
+    });
+  }
+
+  return { allSubs, companiesResult, productsResult, ordersResult, warnings };
+}
+
 // ── Command ──────────────────────────────────────────────────────────────────
 
-// The dashboard handler is extracted so the canonical `dashboard` command and
-// the deprecated `status` alias share the same implementation; the alias is
-// just a thin wrapper that prints a stderr deprecation notice before invoking
-// `runDashboard()`. Will be removed in v1.0 (mirrors the `--events` → `--topics`
-// deprecation in `pax8 webhooks create`).
 async function runDashboard(options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, cmd: Command): Promise<void> {
     const allOpts = cmd.optsWithGlobals();
     const ctx = await buildContext(allOpts);
     const spinner = createSpinner("Loading dashboard...").start();
 
     try {
-      const [companiesSettled, subsSettled, productsSettled, ordersSettled] = await Promise.allSettled([
-        ctx.api.companies.list({ size: 200 }),
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE }),
-        ctx.api.products.list({ size: 200 }),
-        ctx.api.orders.list({ size: 200 }),
-      ]);
+      const { allSubs, companiesResult, productsResult, ordersResult, warnings } = await fetchAll(ctx, spinner);
 
-      const emptyPage = { number: 0, totalPages: 0, totalElements: 0 };
-      const companiesResult = companiesSettled.status === 'fulfilled' ? companiesSettled.value : { content: [] as Company[], page: { ...emptyPage } };
-      const subsResult = subsSettled.status === 'fulfilled' ? subsSettled.value : { content: [] as Subscription[], page: { ...emptyPage } };
-      const productsResult = productsSettled.status === 'fulfilled' ? productsSettled.value : { content: [] as Product[], page: { ...emptyPage } };
-      const ordersResult = ordersSettled.status === 'fulfilled' ? ordersSettled.value : { content: [] as Order[], page: { ...emptyPage } };
-
-      if (companiesSettled.status === 'rejected') {
-        process.stderr.write(chalk.yellow("  ⚠ Could not load companies\n"));
-      }
-      if (subsSettled.status === 'rejected') {
-        process.stderr.write(chalk.yellow("  ⚠ Could not load subscriptions\n"));
-      }
-      if (productsSettled.status === 'rejected') {
-        process.stderr.write(chalk.yellow("  ⚠ Could not load products\n"));
-      }
+      // Surface partial-failure warnings before further processing so the
+      // partner sees them in the same place as before the refactor (#635).
+      // The fetch helper returns them as structured data; this layer owns
+      // I/O.
+      emitWarnings(process.stderr, warnings);
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) {
         companyNames.set(c.id, c.name);
       }
 
-      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
-
-      const allSubs = subsResult.content;
       enrichCompanyNames(companyNames, allSubs);
       await enrichProductNames(ctx, allSubs);
 
@@ -214,8 +281,6 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
 
       // Recent orders (today)
       const today = new Date().toISOString().slice(0, 10);
-      // #385: read canonical `createdAt`. `createdDate` is still dual-emitted
-      // on `--json` for back-compat; removal in v0.3.0.
       const recentOrders = ordersResult.content
         .filter((o) => o.createdAt.startsWith(today))
         .map((o) => ({
@@ -234,40 +299,53 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
 
       // ── JSON output ──────────────────────────────────────────────
       if (ctx.outputFormat === "json") {
-        const nextActions: { command: string; description: string }[] = [];
+        const nextActions: EmittedAction[] = [];
 
         if (renewals.urgentCount > 0) {
-          nextActions.push({
-            command: "pax8 subscriptions renewals --json",
-            description: `Review ${renewals.urgentCount} urgent renewal${renewals.urgentCount > 1 ? "s" : ""} (${formatCurrency(renewals.totalMrrRenewing)}/mo renewing)`,
-          });
+          nextActions.push(
+            buildAction(
+              ["subscriptions", "renewals", "--json"],
+              `Review ${renewals.urgentCount} urgent renewal${renewals.urgentCount > 1 ? "s" : ""} (${formatCurrency(renewals.totalMrrRenewing)}/mo renewing)`,
+            ),
+          );
         } else if (renewals.items.length > 0) {
-          nextActions.push({
-            command: "pax8 subscriptions renewals --json",
-            description: `Review ${renewals.items.length} upcoming renewal${renewals.items.length > 1 ? "s" : ""}`,
-          });
+          nextActions.push(
+            buildAction(
+              ["subscriptions", "renewals", "--json"],
+              `Review ${renewals.items.length} upcoming renewal${renewals.items.length > 1 ? "s" : ""}`,
+            ),
+          );
         }
 
         if (highRecs.length > 0) {
-          nextActions.push({
-            command: "pax8 recommendations list --json",
-            description: `Explore ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"} (${formatCurrency(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0))}/mo additional Pax8 cost)`,
-          });
+          nextActions.push(
+            buildAction(
+              ["recommendations", "list", "--json"],
+              `Explore ${highRecs.length} growth opportunit${highRecs.length > 1 ? "ies" : "y"} (${formatCurrency(highRecs.reduce((s, r) => s + (r.estimatedMrrUplift ?? 0), 0))}/mo additional Pax8 cost)`,
+            ),
+          );
         }
 
         if (trials.length > 0) {
-          nextActions.push({
-            command: "pax8 subscriptions list --status Trial --json",
-            description: `Review ${trials.length} active trial${trials.length > 1 ? "s" : ""} to convert or cancel`,
-          });
+          nextActions.push(
+            buildAction(
+              ["subscriptions", "list", "--status", "Trial", "--json"],
+              `Review ${trials.length} active trial${trials.length > 1 ? "s" : ""} to convert or cancel`,
+            ),
+          );
         }
 
         // Add top customer drilldown
         if (topCustomers.length > 0) {
-          nextActions.push({
-            command: `pax8 clients more "${topCustomers[0].name}" --json`,
-            description: `Drill into top customer ${topCustomers[0].name}`,
-          });
+          // Company name in its own argv slot rather than interpolated
+          // into a quoted string — shell metacharacters in a partner's
+          // customer name cannot break out (#462/#562).
+          nextActions.push(
+            buildAction(
+              ["clients", "more", topCustomers[0].name, "--json"],
+              `Drill into top customer ${topCustomers[0].name}`,
+            ),
+          );
         }
 
         // JSON field-naming note: the dollar figures here are the partner's
@@ -276,11 +354,8 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
         // envelopes ({ amount, currency }) — the canonical Pax8 wire shape
         // used by the v2 quoting API (`QuoteResponse.totals.initialCost`,
         // etc., schema at `packages/core/src/api/types.ts`). Surface-
-        // consistent with the upcoming reporting commands (`report renewals`
-        // / `concentration` / `subscriptions`). The previous flat
-        // `pax8MonthlyCost` / `pax8AnnualCost` numbers and the deprecated
-        // `mrr` / `arr` aliases were dropped in this revision — v0.1.0 is
-        // pre-publish so there's no external contract to preserve.
+        // consistent with the reporting commands (`report renewals` /
+        // `concentration` / `subscriptions`).
         // Currency is read from `Subscription.currencyCode` on the underlying
         // subs (first active sub for aggregates), defaulting to "USD" when
         // missing. Mixed-currency portfolios are out of scope for v0.x.
@@ -306,13 +381,10 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           }),
           renewalsNext30Days: renewals.items.length,
           urgentRenewals: renewals.urgentCount,
-          // `mrrRenewing` is the canonical name introduced in #298. The
-          // `mrrAtRisk` alias is kept for one minor version cycle so existing
-          // scripts don't break. Wire-side fields preserved — not part of the
-          // AmountCurrency reshape (those are partner-side risk-framing
-          // fields on `RenewalReport`, not CLI-aggregated Pax8 cost).
+          // `mrrRenewing` is the canonical name (#298). Wire-side partner-
+          // risk framing field, preserved flat (not part of the
+          // AmountCurrency reshape).
           mrrRenewing: Number(renewals.totalMrrRenewing.toFixed(2)),
-          mrrAtRisk: Number(renewals.totalMrrRenewing.toFixed(2)),
           renewals: renewals.items.slice(0, 10).map((r) => {
             const mrr = Number(r.mrrRenewing.toFixed(2));
             return {
@@ -320,7 +392,6 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
               productName: r.productName,
               daysUntilRenewal: r.daysUntilRenewal,
               mrrRenewing: mrr,
-              mrrAtRisk: mrr,
             };
           }),
           highPriorityRecs: highRecs.length,
@@ -329,10 +400,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           recentOrders: recentOrders.map((o) => ({
             companyName: o.companyName,
             status: o.status,
-            // #385: emit canonical `createdAt` alongside the legacy
-            // `createdDate` alias for one minor version cycle. Removal in v0.3.0.
             createdAt: o.createdAt,
-            createdDate: o.createdAt,
             lineItems: o.lineItems?.map(
               (li: { productId: string; productName?: string; quantity: number }) => ({
                 productName: li.productName ?? li.productId,
@@ -362,8 +430,7 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
       // These figures are partner cost paid to Pax8 (sum of price ×
       // quantity across active subs, amortized monthly). They are NOT
       // partner-side MRR / ARR — that distinction was previously elided
-      // in the headline and got flagged in Bret Pittenger's reporting-
-      // domain review.
+      // in the headline and got flagged in the reporting-domain review.
       out.write("\n");
       out.write(chalk.bold("  Pax8 Business Snapshot\n\n"));
       out.write(`  ${chalk.cyan.bold(formatCurrency(cost))}/mo Pax8 cost  ·  ${chalk.cyan.bold(formatCurrency(annualCost))}/yr annualized\n\n`);
@@ -448,20 +515,29 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
           quickActions.push({
             key: String(quickActions.length + 1),
             label: `${chalk.yellow("~")} ${coName} — ${prodName} trial expiring`,
-            command: ["companies", "more", coName],
+            command: ["clients", "more", coName],
           });
         }
 
-        // Growth recs — link directly to order when available
+        // Growth recs — link directly to order when available.
+        // #509: prefer the structured `orderArgs.slice(1)` over re-tokenizing
+        // the display `orderCommand` string. Names with shell metacharacters
+        // (AT&T, "O'Brien & Sons", etc.) survive intact as single argv
+        // elements; the tokenizer round-trip is avoided.
         for (const r of highRecs.slice(0, 2)) {
           const upliftStr = r.estimatedMrrUplift ? chalk.green(` +${formatCurrency(r.estimatedMrrUplift)}/mo`) : "";
-          const cmd = r.orderCommand
-            ? r.orderCommand.replace(/^pax8\s+/, "")
-            : `recommendations list --company "${r.companyName}"`;
+          let command: string[];
+          if (r.orderArgs && r.orderArgs[0] === "pax8") {
+            command = r.orderArgs.slice(1);
+          } else if (r.orderCommand) {
+            command = tokenizeCmd(r.orderCommand.replace(/^pax8\s+/, ""));
+          } else {
+            command = tokenizeCmd(`recommendations list --company "${r.companyName}"`);
+          }
           quickActions.push({
             key: String(quickActions.length + 1),
             label: `${chalk.green("+")} ${r.companyName} — ${r.suggestedProducts?.[0] ?? r.title}${upliftStr}`,
-            command: tokenizeCmd(cmd),
+            command,
           });
         }
 
@@ -545,27 +621,21 @@ async function runDashboard(options: { all?: boolean; customers?: boolean; renew
     }
 }
 
-// One-line stderr deprecation notice for the legacy `status` alias. Mirrors
-// the `--events`/`--topics` deprecation pattern (#274). Will be removed in v1.0.
-const STATUS_DEPRECATION_NOTICE =
-  "warning: `status` is deprecated; use `dashboard`. Will be removed in v1.0.\n";
-
-function buildDashboardCommand(name: "dashboard" | "status"): Command {
-  const cmd = new Command(name)
-    .description("Quick snapshot of your Pax8 business")
-    .option("--all", "Show full dashboard with all sections")
-    .option("--customers", "Show top customers by Pax8 monthly cost")
-    .option("--renewals", "Show upcoming renewal details")
-    .option("--growth", "Show growth opportunities")
-    .addHelpText(
-      "after",
-      `
+export const dashboardCommand = new Command("dashboard")
+  .description("Quick snapshot of your Pax8 business")
+  .option("--all", "Show full dashboard with all sections")
+  .option("--customers", "Show top customers by Pax8 monthly cost")
+  .option("--renewals", "Show upcoming renewal details")
+  .option("--growth", "Show growth opportunities")
+  .addHelpText(
+    "after",
+    `
 Examples:
-  pax8 ${name}
-  pax8 ${name} --all
-  pax8 ${name} --customers
-  pax8 ${name} --renewals --growth
-  pax8 ${name} --json
+  pax8 dashboard
+  pax8 dashboard --all
+  pax8 dashboard --customers
+  pax8 dashboard --renewals --growth
+  pax8 dashboard --json
 
 JSON output (--json):
   Pax8-cost figures are emitted as wrapped AmountCurrency envelopes
@@ -588,14 +658,12 @@ JSON output (--json):
     }],
     "renewalsNext30Days": number,
     "urgentRenewals": number,             // renewals within 14d
-    "mrrRenewing": number,                // canonical key (#298) — wire-side partner-risk framing, preserved flat
-    "mrrAtRisk": number,                  // DEPRECATED alias of mrrRenewing — removed in a future minor
+    "mrrRenewing": number,                // partner-risk framing, preserved flat
     "renewals": [{
       "companyName": string,
       "productName": string,
       "daysUntilRenewal": number,
-      "mrrRenewing": number,
-      "mrrAtRisk": number                 // DEPRECATED alias
+      "mrrRenewing": number
     }],
     "highPriorityRecs": number,
     "potentialMonthlyUplift": { "amount": number, "currency": string }, // additional Pax8 monthly cost across high-priority recs
@@ -603,39 +671,14 @@ JSON output (--json):
     "recentOrders": [{
       "companyName": string,
       "status": string,
-      "createdAt": string,                // ISO-8601 (canonical, #385)
-      "createdDate": string,              // DEPRECATED alias — removed in v0.3.0
+      "createdAt": string,                // ISO-8601
       "lineItems": [{ "productName": string, "quantity": number }]
     }],
     "nextActions": [{ "command": string, "description": string }]
   }
 
 Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`,
-    )
-    .action(async (options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, c: Command) => {
-      if (name === "status") {
-        process.stderr.write(STATUS_DEPRECATION_NOTICE);
-      }
-      await runDashboard(options, c);
-    });
-
-  if (name === "status") {
-    // Commander short-circuits `--help` before running .action(), so the
-    // deprecation notice is also emitted as a beforeAll help-text hook so
-    // `pax8 status --help` still surfaces the notice on stderr. The hook
-    // returns "" (no extra help-text content) — its sole purpose is the
-    // side-effect of writing to stderr.
-    cmd.addHelpText("beforeAll", () => {
-      process.stderr.write(STATUS_DEPRECATION_NOTICE);
-      return "";
-    });
-  }
-
-  return cmd;
-}
-
-export const dashboardCommand = buildDashboardCommand("dashboard");
-
-// Deprecated alias. Registered with `{ hidden: true }` in src/index.ts so it
-// does not appear in `pax8 --help`. Removal tracked for v1.0.
-export const statusCommand = buildDashboardCommand("status");
+  )
+  .action(async (options: { all?: boolean; customers?: boolean; renewals?: boolean; growth?: boolean }, c: Command) => {
+    await runDashboard(options, c);
+  });

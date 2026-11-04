@@ -7,5 +7,6 @@ dist
 .turbo
 coverage
 .DS_Store
-.claude/
+.claude/*
+!.claude/skills/
 .mcp.json

@@ -7,13 +7,19 @@ import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.j
 describe("pax8 subscriptions list", () => {
   it("lists subscriptions in demo mode", async () => {
     const result = await runCliExpectSuccess(["subscriptions", "list"]);
-    // Non-TTY defaults to JSON
+    // Non-TTY defaults to JSON; #483 wraps the array in { subscriptions, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("id");
-    expect(data[0]).toHaveProperty("productName");
-    expect(data[0]).toHaveProperty("quantity");
+    expect(data).toHaveProperty("subscriptions");
+    expect(data).toHaveProperty("page");
+    expect(Array.isArray(data.subscriptions)).toBe(true);
+    expect(data.subscriptions.length).toBeGreaterThan(0);
+    expect(data.subscriptions[0]).toHaveProperty("id");
+    expect(data.subscriptions[0]).toHaveProperty("productName");
+    expect(data.subscriptions[0]).toHaveProperty("quantity");
+    // #483: page envelope is 1-based and matches what the user would pass next.
+    expect(data.page.number).toBe(1);
+    expect(typeof data.page.totalElements).toBe("number");
+    expect(typeof data.page.totalPages).toBe("number");
   });
 
   it("filters by company ID", async () => {
@@ -24,9 +30,9 @@ describe("pax8 subscriptions list", () => {
       "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    for (const sub of data) {
+    expect(Array.isArray(data.subscriptions)).toBe(true);
+    expect(data.subscriptions.length).toBeGreaterThan(0);
+    for (const sub of data.subscriptions) {
       expect(sub.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     }
   });
@@ -38,25 +44,21 @@ describe("pax8 subscriptions list", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data[0]).toHaveProperty("status");
+    expect(Array.isArray(data.subscriptions)).toBe(true);
+    expect(data.subscriptions[0]).toHaveProperty("status");
   });
 
-  it("emits BOTH `createdDate` and canonical `createdAt` on every row (#385 deprecation window)", async () => {
-    // #385: timestamp field standardization. `createdAt` is the canonical
-    // past-tense camelCase name; `createdDate` is preserved as a deprecated
-    // alias for one minor version cycle so `--json` consumers don't break.
+  it("emits canonical `createdAt` (#385); legacy `createdDate` is dropped", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "list",
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(data.length).toBeGreaterThan(0);
-    for (const row of data) {
-      expect(row).toHaveProperty("createdDate");
+    expect(data.subscriptions.length).toBeGreaterThan(0);
+    for (const row of data.subscriptions) {
       expect(row).toHaveProperty("createdAt");
-      expect(row.createdAt).toBe(row.createdDate);
+      expect(row).not.toHaveProperty("createdDate");
     }
   });
 
@@ -111,12 +113,14 @@ describe("pax8 subscriptions list", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    const eurSub = data.find((s: { id: string }) => s.id === "sub-coastline-e3-001");
+    const eurSub = data.subscriptions.find(
+      (s: { id: string }) => s.id === "sub-coastline-e3-001",
+    );
     expect(eurSub).toBeDefined();
     expect(eurSub.currencyCode).toBe("EUR");
   });
 
-  it("--with-actions wraps in { subscriptions, nextActions }", async () => {
+  it("--with-actions adds nextActions to the { subscriptions, page } envelope", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "list",
@@ -125,6 +129,7 @@ describe("pax8 subscriptions list", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(data).toHaveProperty("subscriptions");
+    expect(data).toHaveProperty("page");
     expect(data).toHaveProperty("nextActions");
     expect(Array.isArray(data.subscriptions)).toBe(true);
     expect(Array.isArray(data.nextActions)).toBe(true);
@@ -133,6 +138,90 @@ describe("pax8 subscriptions list", () => {
       expect(action).toHaveProperty("command");
       expect(action).toHaveProperty("description");
     }
+  });
+
+  // #398: server-side --billing-term / --product / --sort filters on
+  // subscriptions list. Pre-#398 these were dropped at the CLI boundary and
+  // partners with large portfolios had to filter client-side after a full
+  // pull. The new helpers mirror server-side filtering in the mock so demo
+  // mode exercises the same wire shape as the real API.
+  describe("--billing-term / --product / --sort (#398)", () => {
+    it("--billing-term filters server-side and accepts the canonical enum", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "list",
+        "--billing-term",
+        "Annual",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data.subscriptions)).toBe(true);
+      expect(data.subscriptions.length).toBeGreaterThan(0);
+      for (const sub of data.subscriptions) {
+        expect(sub.billingTerm).toBe("Annual");
+      }
+    });
+
+    it("--billing-term fails fast on a typo before any network call", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "list",
+        "--billing-term",
+        "Yearly",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid value for --billing-term: "Yearly"`);
+      // Help-text echo should surface the canonical enum so the partner
+      // self-corrects without round-tripping through `--help`.
+      expect(combined).toContain("Annual");
+      expect(combined).toContain("Monthly");
+    });
+
+    it("--product filters to the requested productId", async () => {
+      // Find a known productId from the demo fixture's first subscription.
+      const all = await runCliExpectSuccess(["subscriptions", "list", "--json"]);
+      const targetProductId = JSON.parse(all.stdout).subscriptions[0].productId;
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "list",
+        "--product",
+        targetProductId,
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.subscriptions.length).toBeGreaterThan(0);
+      for (const sub of data.subscriptions) {
+        expect(sub.productId).toBe(targetProductId);
+      }
+    });
+
+    it("--sort quantity:desc orders results by quantity descending", async () => {
+      const result = await runCliExpectSuccess([
+        "subscriptions",
+        "list",
+        "--sort",
+        "quantity:desc",
+        "--size",
+        "100",
+        "--json",
+      ]);
+      const qty = JSON.parse(result.stdout).subscriptions.map(
+        (s: { quantity: number }) => s.quantity,
+      );
+      const sorted = [...qty].sort((a, b) => b - a);
+      expect(qty).toEqual(sorted);
+    });
+
+    it("--sort rejects unknown sort fields client-side", async () => {
+      const result = await runCliExpectFailure([
+        "subscriptions",
+        "list",
+        "--sort",
+        "ponies",
+      ]);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain(`Invalid value for --sort: "ponies"`);
+    });
   });
 
   // #408 / partner-walkthrough finding #2: a typo'd --status used to silently
@@ -172,7 +261,7 @@ describe("pax8 subscriptions list", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.subscriptions)).toBe(true);
     });
   });
 });
@@ -223,16 +312,19 @@ describe("pax8 subscriptions renewals", () => {
       "subscriptions",
       "renewals",
     ]);
+    // #483: wrapped as { renewals, page }.
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("companyName");
-    expect(data[0]).toHaveProperty("productName");
-    expect(data[0]).toHaveProperty("daysUntilRenewal");
-    expect(data[0]).toHaveProperty("renewalDate");
+    expect(data).toHaveProperty("renewals");
+    expect(data).toHaveProperty("page");
+    expect(Array.isArray(data.renewals)).toBe(true);
+    expect(data.renewals.length).toBeGreaterThan(0);
+    expect(data.renewals[0]).toHaveProperty("companyName");
+    expect(data.renewals[0]).toHaveProperty("productName");
+    expect(data.renewals[0]).toHaveProperty("daysUntilRenewal");
+    expect(data.renewals[0]).toHaveProperty("renewalDate");
   });
 
-  it("--with-actions wraps in { renewals, nextActions }", async () => {
+  it("--with-actions adds nextActions to { renewals, page } envelope", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
       "renewals",
@@ -240,6 +332,7 @@ describe("pax8 subscriptions renewals", () => {
     ]);
     const data = JSON.parse(result.stdout);
     expect(data).toHaveProperty("renewals");
+    expect(data).toHaveProperty("page");
     expect(data).toHaveProperty("nextActions");
     expect(Array.isArray(data.renewals)).toBe(true);
     expect(Array.isArray(data.nextActions)).toBe(true);
@@ -257,8 +350,8 @@ describe("pax8 subscriptions renewals", () => {
       "7d",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    for (const item of data) {
+    expect(Array.isArray(data.renewals)).toBe(true);
+    for (const item of data.renewals) {
       expect(item.daysUntilRenewal).toBeLessThanOrEqual(7);
     }
   });
@@ -274,7 +367,7 @@ describe("pax8 subscriptions renewals", () => {
     expect(result.stdout).toContain("Examples:");
   });
 
-  // ─── #295: arrAtRisk companion + canonical MRR/ARR definitions ────────────
+  // ─── #295/#298: canonical MRR/ARR field names on renewals ─────────────────
   it("includes arrRenewing = mrrRenewing * 12 for every renewal in --json", async () => {
     const result = await runCliExpectSuccess([
       "subscriptions",
@@ -284,20 +377,26 @@ describe("pax8 subscriptions renewals", () => {
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    for (const item of data) {
+    expect(Array.isArray(data.renewals)).toBe(true);
+    expect(data.renewals.length).toBeGreaterThan(0);
+    for (const item of data.renewals) {
       // Canonical names (#298).
       expect(item).toHaveProperty("mrrRenewing");
       expect(item).toHaveProperty("arrRenewing");
-      // Deprecated aliases — kept for one minor version cycle (#298).
-      expect(item).toHaveProperty("mrrAtRisk");
-      expect(item).toHaveProperty("arrAtRisk");
-      // JSON output rounds to 2dp; allow a tiny rounding delta.
-      expect(item.arrRenewing).toBeCloseTo(item.mrrRenewing * 12, 1);
-      // Aliases mirror canonical values exactly.
-      expect(item.mrrAtRisk).toBe(item.mrrRenewing);
-      expect(item.arrAtRisk).toBe(item.arrRenewing);
+      // The pre-launch at-risk aliases were dropped.
+      expect(item).not.toHaveProperty("mrrAtRisk");
+      expect(item).not.toHaveProperty("arrAtRisk");
+      // arrRenewing is computed from the UNROUNDED monthly figure and then
+      // rounded to 2dp, so it can differ from `round(mrr) × 12` by up to
+      // 12 × 0.005 = 0.06. The old ±0.05 tolerance only held while every
+      // fixture price was a whole number — #711 repriced to partnerBuyRate
+      // and introduced halves (16.5 × 85 / 12 = 116.875 → 116.88).
+      // 12 × half-a-cent, plus an epsilon: the bound is exactly attainable,
+      // so IEEE-754 noise lands a hair above it without the slack.
+      const maxRoundingDelta = 12 * 0.005 + 1e-9;
+      expect(
+        Math.abs(item.arrRenewing - item.mrrRenewing * 12),
+      ).toBeLessThanOrEqual(maxRoundingDelta);
     }
   });
 
@@ -308,9 +407,9 @@ describe("pax8 subscriptions renewals", () => {
       "--help",
     ]);
     expect(result.stdout).toContain("Metric definitions:");
-    // Bret Pittenger reporting-domain review: the figures here are the
-    // partner's cost paid to Pax8, not partner-side MRR/ARR. Wire-side
-    // field names (mrrRenewing / arrRenewing) are preserved for back-compat.
+    // Reporting-domain review: the figures here are the partner's cost
+    // paid to Pax8, not partner-side MRR/ARR. Wire-side field names
+    // (mrrRenewing / arrRenewing) are preserved for back-compat.
     expect(result.stdout).toContain("Pax8 monthly cost");
     expect(result.stdout).toContain("Pax8 annual cost");
     expect(result.stdout).toContain("Partner Gross MRR");
@@ -447,9 +546,9 @@ describe("pax8 subscriptions update", () => {
 
   // ─── --billing-term enum mirrors the Pax8 API request body ──────────────
   // The CLI used to advertise only "Monthly or Annual" in help text — a
-  // hand-curated subset that didn't match the API. Fred Lintz flagged that
-  // the API actually accepts seven values. The CLI now mirrors the API
-  // request-body enum at PUT /subscriptions/{id}, fail-fasts on values
+  // hand-curated subset that didn't match the API. Domain review flagged
+  // that the API actually accepts seven values. The CLI now mirrors the
+  // API request-body enum at PUT /subscriptions/{id}, fail-fasts on values
   // outside it, and lets vendor-specific rejections come back from the
   // API (rather than CLI-predicting them).
   //

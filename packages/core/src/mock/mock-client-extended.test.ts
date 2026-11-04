@@ -118,12 +118,16 @@ describe("MockPax8Client — extended coverage", () => {
   });
 
   describe("products.getProvisioningDetails()", () => {
-    it("returns provisioning details for Microsoft product", async () => {
+    it("returns spec-shaped ProvisioningDetail[] for a Microsoft product", async () => {
       const msProduct = (await client.products.list({ vendorName: "Microsoft", size: 1 })).content[0];
       const details = await client.products.getProvisioningDetails(msProduct.id);
-      expect(details.productId).toBe(msProduct.id);
-      expect(details.vendorPrerequisites).toMatch(/tenant/i);
-      expect(details.fields?.map((f) => f.name)).toContain("domain");
+      expect(Array.isArray(details)).toBe(true);
+      expect(details.length).toBeGreaterThan(0);
+      const keys = details.map((d) => d.key);
+      expect(keys).toContain("domain");
+      const domain = details.find((d) => d.key === "domain")!;
+      expect(domain.valueType).toBe("Input");
+      expect(domain.possibleValues).toBeNull();
     });
 
     it("throws NotFoundError for unknown product", async () => {
@@ -456,14 +460,14 @@ describe("MockPax8Client — extended coverage", () => {
     // surface — `{ expiresOn?, introMessage?, published?, status?,
     // termsAndDisclaimers? }`. Passing one field overrides only that one;
     // the rest are read from the existing demo fixture.
-    it("updates a quote's expiresOn", async () => {
+    it("updates a quote's expiresAt (write-side `expiresOn` payload maps to canonical read field)", async () => {
       const all = await client.quotes.list({ size: 100 });
       const firstId = all.content[0].id;
       const result = await client.quotes.update(firstId, {
         expiresOn: "2026-12-31",
       });
       expect(result.id).toBe(firstId);
-      expect(result.expiresOn).toBe("2026-12-31");
+      expect(result.expiresAt).toBe("2026-12-31");
     });
 
     it("rides setStatus through update (status transitions PUT the full body)", async () => {

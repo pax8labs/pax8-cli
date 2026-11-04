@@ -2,24 +2,35 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import {
   getRecommendations,
   getPortfolioCoverage,
   CompanyStatusSchema,
+  getConfigDir,
+  safeWriteFileSync,
   type CompanyStatus,
 } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
-import { ALL_SUBS_PAGE_SIZE } from "@pax8/core";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { replCmd } from "../../lib/confirm.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+  displayCommandFromArgs,
+  renderReplNavHint,
+} from "../../lib/output.js";
 import { formatStatus, formatCompanyName, formatCurrency } from "../../lib/formatters.js";
-import { saveLastList } from "../../lib/last-list.js";
+import { saveLastList, saveLastListContext } from "../../lib/last-list.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
-import { validateEnum } from "../../lib/validate.js";
+import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
 
 const COMPANY_STATUS_VALUES = CompanyStatusSchema.options as readonly CompanyStatus[];
 
@@ -70,7 +81,7 @@ function parseTriBool(raw: unknown): boolean | undefined {
 }
 
 export const companiesListCommand = new Command("list")
-  .description("List all companies")
+  .description("List all clients")
   .option(
     "--status <status>",
     `Filter by status (${COMPANY_STATUS_VALUES.join(", ")})`,
@@ -94,7 +105,7 @@ export const companiesListCommand = new Command("list")
     "Sort by field (name, city, country, state, zip)"
   )
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "25")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .option("--coverage", "Include portfolio coverage analysis")
   .option("--with-actions", "Wrap JSON output as { companies, nextActions } instead of a flat array")
@@ -129,12 +140,21 @@ Examples:
     } catch (error) {
       await handleCommandError(error);
     }
-    const spinner = createSpinner("Fetching companies...").start();
+    const spinner = createSpinner("Fetching clients...").start();
 
     try {
       const ctx = await buildContext(allOpts);
       const userPage = parseInt(allOpts.page, 10);
-      const pageSize = parseInt(allOpts.size, 10);
+      // #518: clamp `--size` to LIST_SIZE_CAP (1000) before issuing the
+      // request. Without this, `clients list --size 50000` paired with a
+      // large portfolio drags multiple megabytes through `output()` and
+      // the post-list saveLastList write — and pushes way past the
+      // documented 1000-row server-side page anyway.
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 25);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
+      const pageSize = sizeResult.size;
       const apiPage = Math.max(userPage - 1, 0); // User sees 1-based, API is 0-based
       // #388: map CLI vocabulary (`--state`, `--zip`, `--self-service`, ...)
       // onto the spec-canonical query-parameter names that `CompaniesApi.list`
@@ -177,10 +197,16 @@ Examples:
       if (wantsCoverage) {
         spinner.text = "Analyzing portfolio coverage...";
 
-        // Fetch all subscriptions for the listed companies
+        // Fetch all subscriptions for the listed companies. #613 Phase 2:
+        // walk every page so portfolio-coverage stats reflect the full
+        // active portfolio across the listed companies, not just the
+        // first page.
         const companyIds = result.content.map((c) => String(c.id));
-        const subsResult = await ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" });
-        const subs = subsResult.content;
+        const subs = await collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ status: "Active" }),
+          spinner,
+          "portfolio coverage",
+        );
 
         // Enrich product names
         await enrichProductNames(ctx, subs);
@@ -255,54 +281,109 @@ Examples:
         }))
       );
 
-      // Save pending actions for REPL number input (typing "3" drills into company #3)
+      // #456: snapshot the argv + paging state so the REPL's `back` / `n` /
+      // `p` commands can resume browsing without retyping flags. The argv
+      // captures the user-facing command (`clients list --status Active
+      // --page 1 --size 25 ...`); the page envelope drives next/prev
+      // navigation. Built from process.argv so we preserve every flag
+      // the user actually typed.
+      const userArgv = process.argv.slice(2);
+      if (userArgv.length > 0 && userArgv[0] !== "back" && userArgv[0] !== "n" && userArgv[0] !== "p") {
+        await saveLastListContext({
+          command: userArgv,
+          page: {
+            number: userPage,
+            totalPages: result.page.totalPages,
+          },
+        });
+      }
+
+      // Save pending actions for REPL number input (typing "3" drills into company #3).
+      // #458/#469: route through getConfigDir() (so PAX8_CONFIG_DIR is honored)
+      // and safeWriteFileSync (mode 0o600, O_NOFOLLOW) — this file contains
+      // partner-tenant business data (company IDs + names) and previously
+      // landed in ~/.pax8 with the default umask.
       try {
-        const { writeFileSync, mkdirSync } = await import("fs");
-        const { homedir } = await import("os");
+        const { mkdirSync } = await import("fs");
         const { join } = await import("path");
-        const dir = join(homedir(), ".pax8");
+        const dir = getConfigDir();
         mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(
-          result.content.map((_c, i) => ({
-            key: String(startNum + i + 1),
-            command: `clients more ${startNum + i + 1}`,
-          }))
-        ));
+        safeWriteFileSync(
+          join(dir, "pending-actions.json"),
+          JSON.stringify(
+            result.content.map((_c, i) => ({
+              key: String(startNum + i + 1),
+              // Must start with `pax8 ` — REPL dispatch at lib/repl.ts:191
+              // requires /^pax8\s+\w/ as defense-in-depth against a tampered
+              // pending-actions.json. Drop the prefix and the bare-number
+              // drill-in silently no-ops.
+              command: `pax8 clients more ${startNum + i + 1}`,
+            })),
+          ),
+        );
       } catch { /* best effort */ }
 
       const columns = coverageMap ? coverageColumns : baseColumns;
 
-      if (ctx.outputFormat === "json" && allOpts.withActions) {
-        const nextActions: { command: string; description: string }[] = [];
-        // Companies with the largest coverage gaps first if available
-        const ranked = coverageMap
-          ? [...result.content].sort((a, b) => {
-              const aGap = coverageMap!.get(String(a.id))?.estimatedUplift ?? 0;
-              const bGap = coverageMap!.get(String(b.id))?.estimatedUplift ?? 0;
-              return bGap - aGap;
-            })
-          : result.content;
-        for (const c of ranked.slice(0, 3)) {
-          nextActions.push({
-            command: `pax8 clients more "${c.name}"`,
-            description: `Drill into ${c.name}`,
-          });
-        }
-        if (coverageMap) {
-          const top = ranked.find((c) => (coverageMap!.get(String(c.id))?.estimatedUplift ?? 0) > 0);
-          if (top) {
-            nextActions.push({
-              command: `pax8 recommendations list --company "${top.name}" --json`,
-              description: `Review growth opportunities for ${top.name}`,
-            });
+      // #483: build the 1-based page envelope once for both JSON and footer.
+      // #562: structured argv form for nextActions; each user-supplied
+      // filter value lands in its own argv slot.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const nextPageArgs: string[] = [
+        "pax8", "clients", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.status ? ["--status", String(allOpts.status)] : []),
+        ...(allOpts.city ? ["--city", String(allOpts.city)] : []),
+        ...(allOpts.country ? ["--country", String(allOpts.country)] : []),
+        ...(allOpts.state ? ["--state", String(allOpts.state)] : []),
+        ...(allOpts.zip ? ["--zip", String(allOpts.zip)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
+
+      if (ctx.outputFormat === "json") {
+        if (allOpts.withActions) {
+          // #562: nextActions entries carry both `command` (display) and
+          // `args` (argv). Agents spawn args.slice(1); never tokenize the
+          // display string. Closes the shell-injection class that was
+          // resolved for orderCommand → orderArgs in #462.
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
+          const pageAction = buildNextPageAction(
+            pageEnvelope,
+            [...nextPageArgs, "--json"],
+            "client",
+          );
+          if (pageAction) nextActions.push(pageAction);
+          // Companies with the largest coverage gaps first if available
+          const ranked = coverageMap
+            ? [...result.content].sort((a, b) => {
+                const aGap = coverageMap!.get(String(a.id))?.estimatedUplift ?? 0;
+                const bGap = coverageMap!.get(String(b.id))?.estimatedUplift ?? 0;
+                return bGap - aGap;
+              })
+            : result.content;
+          for (const c of ranked.slice(0, 3)) {
+            const moreArgs = ["pax8", "clients", "more", String(c.name)];
+            nextActions.push(buildAction(moreArgs, `Drill into ${c.name}`));
           }
+          if (coverageMap) {
+            const top = ranked.find((c) => (coverageMap!.get(String(c.id))?.estimatedUplift ?? 0) > 0);
+            if (top) {
+              const recsArgs = ["pax8", "recommendations", "list", "--company", String(top.name), "--json"];
+              nextActions.push(buildAction(recsArgs, `Review growth opportunities for ${top.name}`));
+            }
+          } else {
+            const coverageArgs = ["pax8", "clients", "list", "--coverage", "--json"];
+            nextActions.push(buildAction(coverageArgs, "Re-run with portfolio coverage analysis to surface gaps"));
+          }
+          process.stdout.write(
+            JSON.stringify({ companies: numbered, page: pageEnvelope, nextActions }, null, 2) + "\n",
+          );
         } else {
-          nextActions.push({
-            command: "pax8 clients list --coverage --json",
-            description: "Re-run with portfolio coverage analysis to surface gaps",
-          });
+          process.stdout.write(
+            JSON.stringify({ companies: numbered, page: pageEnvelope }, null, 2) + "\n",
+          );
         }
-        process.stdout.write(JSON.stringify({ companies: numbered, nextActions }, null, 2) + "\n");
         return;
       }
 
@@ -324,13 +405,13 @@ Examples:
         format: ctx.outputFormat,
         columns,
         emptyState: {
-          headline: "No companies found.",
+          headline: "No clients found.",
           filtersApplied: Object.keys(filtersApplied).length > 0 ? filtersApplied : undefined,
           reasons: emptyReasons.length > 0 ? emptyReasons : undefined,
           suggestions: [
             {
               command: "pax8 clients list",
-              description: "list all companies (no filters)",
+              description: "list all clients (no filters)",
             },
             {
               command: replCmd("pax8 clients create --name <name> ..."),
@@ -345,21 +426,14 @@ Examples:
       });
 
       if (ctx.outputFormat === "table" && result.content.length > 0) {
-        const currentPage = result.page.number; // 0-based from API
-        const totalPages = result.page.totalPages;
-        const totalElements = result.page.totalElements;
-
-        let pageInfo = `${totalElements} companies`;
-        if (totalPages > 1) {
-          pageInfo += ` · page ${currentPage + 1}/${totalPages}`;
-        }
-        process.stderr.write(chalk.dim(`\n  ${pageInfo}\n`));
-
-        if (totalPages > 1 && currentPage < totalPages - 1) {
-          process.stderr.write(
-            chalk.dim("  Next page: ") + chalk.cyan(replCmd(`pax8 clients list --page ${currentPage + 2}`)) + "\n"
-          );
-        }
+        // #483: standardize on the `Page N of M — N records — next: …`
+        // footer used across every list command. Was `500 clients · page 1/20`
+        // with a separate `Next page: …` hint line; consolidated.
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "client",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
 
         if (!allOpts.coverage) {
           process.stderr.write(
@@ -367,17 +441,23 @@ Examples:
           );
         }
 
+        // #456: surface REPL navigation affordances when running inside
+        // the REPL (PAX8_REPL=1). Pre-fix, the partner had to retype
+        // `clients list --page N` to page through; now `n`/`p`/`back`
+        // pull from the saved last-list-context.json.
+        renderReplNavHint(pageEnvelope);
+
         // Interactive: pick a company to drill into
         const steps: NextStep[] = result.content.map(
           (c, i) => ({
             key: String(startNum + i + 1),
             label: String(c.name),
-            command: ["companies", "more", String(c.name)],
+            command: ["clients", "more", String(c.name)],
           })
         );
         await promptNextSteps(steps);
       }
     } catch (error) {
-      await handleCommandError(error, spinner, "Failed to list companies");
+      await handleCommandError(error, spinner, "Failed to list clients");
     }
   });

@@ -7,6 +7,8 @@ Looking for help with `pax8-cli`? Here's where to start.
 - **`pax8 doctor`** — runs diagnostics on your setup (Node version, credentials, API reachability, config file)
 - **`pax8 <command> --help`** — every command documents its flags and gives runnable examples
 - **`pax8 --verbose <command>`** — prints the API path and method to stderr; helpful for troubleshooting
+- **`pax8 version`** — print the installed CLI version (include in every bug report)
+- **`PAX8_DEMO=1 pax8 <command>`** — reproduce against an in-memory fixture to confirm whether the issue is your data or the CLI
 
 ## Bug reports and feature requests
 
@@ -22,7 +24,7 @@ This redacts UUIDs, emails, paths, and tokens before opening the issue draft.
 
 ## Security issues
 
-Don't file public issues for security vulnerabilities. See [SECURITY.md](SECURITY.md) for the disclosure path (security@pax8.com, 48-hour acknowledgment).
+Don't file public issues for security vulnerabilities. See [SECURITY.md](SECURITY.md) for the disclosure path (Pax8's Vulnerability Disclosure Program webform).
 
 ## Questions, ideas, troubleshooting
 

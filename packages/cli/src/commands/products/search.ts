@@ -4,7 +4,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, singlePageEnvelope } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
@@ -59,10 +59,24 @@ Examples:
         { key: "unitOfMeasure", header: "Category", width: 15 },
       ];
 
+      // #483: emit a `{ products, page }` envelope on `--json`. The Pax8
+      // search API isn't paginated end-to-end here (we narrow client-side
+      // after a single-page fetch), so we synthesize a single-page envelope
+      // for shape consistency with the other list commands.
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            { products: matches, page: singlePageEnvelope(matches.length) },
+            null,
+            2,
+          ) + "\n",
+        );
+        return;
+      }
+
       // Route the empty-search case through the standard `output()` helper so
       // it picks up the same "Filters applied:" / "Try next:" block partners
-      // see on every other list command. JSON mode still emits `[]` (the
-      // pipeline contract); CSV still emits a header-only row.
+      // see on every other list command. CSV still emits a header-only row.
       if (matches.length === 0) {
         const filtersApplied: Record<string, string> = { query: `"${query}"` };
         if (options.vendor) filtersApplied.vendor = `"${options.vendor}"`;
@@ -95,19 +109,22 @@ Examples:
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim(`\n  ${matches.length} products\n`));
         if (matches.length > 0) {
-          const first = matches[0] as Record<string, unknown>;
-          // Pickable next step: drill into the top match. `orders create`
-          // needs --company (a value the user has to choose) so it can't be
-          // pickable — surfaced as an affordance pointer below.
-          const steps: NextStep[] = [
-            {
-              key: "1",
-              label: `${chalk.cyan(replCmd(`pax8 products show ${String(first.id)}`))}  ${chalk.dim("view details & pricing")}`,
-              command: ["products", "show", String(first.id)],
-            },
-          ];
-          process.stderr.write(chalk.dim("\n  Try next:\n"));
-          await promptNextSteps(steps, { renderList: true });
+          // UXR F7 (#653): participants couldn't identify the ID to pass to
+          // `pax8 products show` because the table doesn't expose it and the
+          // previous next-step only surfaced the top match's UUID. Now we
+          // pick with product NAME (which is in the table) and let the
+          // command spawn the id silently. Top 5 covers the choice space
+          // without turning into a second table.
+          const pickable = matches.slice(0, 5);
+          const steps: NextStep[] = pickable.map((p, i) => {
+            const rec = p as Record<string, unknown>;
+            return {
+              key: String(i + 1),
+              label: `${chalk.cyan(String(rec.name))}  ${chalk.dim("— view details & pricing")}`,
+              command: ["products", "show", String(rec.id)],
+            };
+          });
+          await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
           process.stderr.write(
             chalk.dim(
               `  Place an order — run ${chalk.cyan(replCmd("pax8 orders create --help"))} for syntax.\n\n`,

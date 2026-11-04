@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
-import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  displayCommandFromArgs,
+} from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency } from "../../lib/formatters.js";
@@ -77,6 +82,29 @@ Examples:
         emptyReasons.push("No invoiced line items are recorded yet.");
       }
 
+      // #483: wrap JSON output as { items, page } and standardize footer.
+      // #562: argv form for next-page nav. items doesn't emit nextActions
+      // today, so only the human pagination footer reads this display
+      // form — but standardize the construction anyway to make any
+      // future --with-actions rollout safe-by-default.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const nextPageArgs: string[] = [
+        "pax8", "invoices", "items",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(options.company ? ["--company", String(options.company)] : []),
+        ...(options.month ? ["--month", String(options.month)] : []),
+        ...(options.invoiceId ? ["--invoice-id", String(options.invoiceId)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
+
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify({ items: result.content, page: pageEnvelope }, null, 2) + "\n",
+        );
+        return;
+      }
+
       output(result.content, {
         format: ctx.outputFormat,
         columns,
@@ -92,10 +120,12 @@ Examples:
         },
       });
 
-      if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} items\n\n`)
-        );
+      if (ctx.outputFormat === "table") {
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "item",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list invoice items");

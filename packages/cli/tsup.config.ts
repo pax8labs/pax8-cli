@@ -15,4 +15,8 @@ export default defineConfig({
   define: {
     __CLI_VERSION__: JSON.stringify(pkg.version),
   },
+  // #720: `pax8 skill install` reads the Claude skill out of the package
+  // at runtime, so the canonical `packages/claude-skill/skill.md` has to
+  // land in `dist/` (which is what `files` packs). See scripts/bundle-skill.mjs.
+  onSuccess: "node scripts/bundle-skill.mjs",
 });

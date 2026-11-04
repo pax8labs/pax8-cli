@@ -205,8 +205,7 @@ Examples:
           command: ["quotes", "send", String(updated.id)],
         },
       ];
-      process.stderr.write(chalk.dim("  Try next:\n"));
-      await promptNextSteps(steps, { renderList: true });
+      await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
     } catch (error) {
       await handleCommandError(error, undefined, "Failed to add line item");
     }

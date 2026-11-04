@@ -9,26 +9,158 @@ import YAML from "yaml";
 import { runCli, runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
 describe("pax8 recommendations", () => {
-  describe("recommendations list", () => {
-    it("returns a flat array of recommendations in JSON by default", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+  // #613 Phase 2: both `recommendations list` and `recommendations upsell`
+  // now walk every page of active subscriptions via `streamAll()` so
+  // cross-sell / coverage-gap opportunities past the first 1000 active
+  // subs are no longer hidden. Pre-fix the stderr truncation warning was
+  // the only signal of partial analysis; post-fix there's none.
+  describe("full-portfolio analysis (#613 Phase 2)", () => {
+    it("`recommendations list` at large scale runs without a truncation warning", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list", "--json", "--top", "0"],
+        { PAX8_DEMO_SCALE: "large" },
+      );
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("companyId");
-      expect(data[0]).toHaveProperty("companyName");
-      expect(data[0]).toHaveProperty("type");
-      expect(data[0]).toHaveProperty("priority");
+      expect(data).toHaveProperty("recommendations");
+      expect(data).toHaveProperty("totalAvailable");
+      // Count-derived assertion (claude-review on #629): a regression
+      // that returns only page 1 would emit no truncation warning, so
+      // warning-absence alone isn't a strong check. At large scale the
+      // engine should surface meaningfully more opportunities than a
+      // single-page fixture could yield — 50 is a generous lower bound
+      // for a 1000-customer fixture but well above what page 1 alone
+      // could produce.
+      expect(data.totalAvailable).toBeGreaterThan(50);
+      expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
     });
 
-    it("--with-actions wraps in { recommendations, nextActions, unmatchedProducts }", async () => {
+    it("`recommendations upsell` at large scale runs without a truncation warning", async () => {
+      const result = await runCliExpectSuccess(
+        [
+          "recommendations",
+          "upsell",
+          "--from-product",
+          "Microsoft 365 Business Basic",
+          "--to-product",
+          "Microsoft 365 Business Premium",
+          "--json",
+        ],
+        { PAX8_DEMO_SCALE: "large" },
+      );
+      // Output is a CohortReport-shaped JSON envelope — just verify it
+      // parses and the truncation warning is absent.
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
+    });
+  });
+
+  describe("recommendations list", () => {
+    // #521: JSON output is now ALWAYS a wrapped envelope
+    // `{ recommendations: [...], totalAvailable: number }`, even without
+    // `--with-actions`. The previous flat-array shape was a footgun on
+    // large portfolios — capping by default but emitting a bare array
+    // silently hid 298 of 308 recs (same anti-pattern #483 fixed
+    // elsewhere). Pre-publish, so OK to break.
+    it("returns a wrapped envelope { recommendations, totalAvailable } in JSON by default", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("recommendations");
+      expect(data).toHaveProperty("totalAvailable");
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(typeof data.totalAvailable).toBe("number");
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      // Default cap = 10
+      expect(data.recommendations.length).toBeLessThanOrEqual(10);
+      // totalAvailable is the pre-cap count and must be >= what was returned.
+      expect(data.totalAvailable).toBeGreaterThanOrEqual(data.recommendations.length);
+      expect(data.recommendations[0]).toHaveProperty("companyId");
+      expect(data.recommendations[0]).toHaveProperty("companyName");
+      expect(data.recommendations[0]).toHaveProperty("type");
+      expect(data.recommendations[0]).toHaveProperty("priority");
+    });
+
+    it("--top <n> caps recommendations to N", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "list", "--json", "--top", "5",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(data.recommendations.length).toBeLessThanOrEqual(5);
+      expect(data.totalAvailable).toBeGreaterThanOrEqual(data.recommendations.length);
+    });
+
+    // `--top 0` is the agent escape hatch — opt out of the cap entirely
+    // and stream every rec the engine produced. Spec'd as the documented
+    // way to recover the pre-#521 unbounded shape for downstream tooling
+    // that wants it.
+    it("--top 0 returns all recommendations (unlimited)", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "list", "--json", "--top", "0",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      // When uncapped, totalAvailable === recommendations.length (no rows hidden).
+      expect(data.totalAvailable).toBe(data.recommendations.length);
+    });
+
+    it("sorts by estimatedMrrUplift DESC with nulls last; priority breaks ties", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "list", "--json", "--top", "0",
+      ]);
+      const data = JSON.parse(result.stdout) as {
+        recommendations: Array<{
+          estimatedMrrUplift: number | null;
+          priority: "high" | "medium" | "low";
+        }>;
+      };
+      const recs = data.recommendations;
+      expect(recs.length).toBeGreaterThan(1);
+
+      // No non-null uplift appears AFTER a null uplift (nulls-last
+      // invariant). Once we cross into the null run, every subsequent
+      // entry must also be null.
+      let sawNull = false;
+      for (const rec of recs) {
+        if (rec.estimatedMrrUplift == null) {
+          sawNull = true;
+        } else {
+          expect(sawNull).toBe(false);
+        }
+      }
+
+      // First item is either the max non-null uplift OR (if every rec
+      // has null uplift) is null.
+      const nonNull = recs.filter((r) => r.estimatedMrrUplift != null);
+      if (nonNull.length > 0) {
+        const maxUplift = Math.max(...nonNull.map((r) => r.estimatedMrrUplift as number));
+        expect(recs[0].estimatedMrrUplift).toBe(maxUplift);
+      }
+
+      // Within a same-uplift run, priority order is high > medium > low.
+      // Walk adjacent pairs with identical non-null uplifts and assert the
+      // priority rank is non-decreasing (lower index → better priority).
+      const rank = { high: 0, medium: 1, low: 2 } as const;
+      for (let i = 1; i < recs.length; i++) {
+        const a = recs[i - 1];
+        const b = recs[i];
+        if (a.estimatedMrrUplift != null && a.estimatedMrrUplift === b.estimatedMrrUplift) {
+          expect(rank[a.priority]).toBeLessThanOrEqual(rank[b.priority]);
+        }
+      }
+    });
+
+    it("--with-actions extends the envelope with nextActions + unmatchedProducts (and totalAvailable)", async () => {
       const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--with-actions"]);
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("recommendations");
+      expect(data).toHaveProperty("totalAvailable");
       expect(data).toHaveProperty("nextActions");
       expect(data).toHaveProperty("unmatchedProducts");
       expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(typeof data.totalAvailable).toBe("number");
       expect(Array.isArray(data.nextActions)).toBe(true);
+      // Default cap still applies under --with-actions.
+      expect(data.recommendations.length).toBeLessThanOrEqual(10);
       expect(data.nextActions.length).toBeLessThanOrEqual(5);
       if (data.nextActions.length > 0) {
         expect(data.nextActions[0]).toHaveProperty("command");
@@ -38,22 +170,22 @@ describe("pax8 recommendations", () => {
 
     it("filters by exact company name", async () => {
       const result = await runCliExpectSuccess([
-        "recommendations", "list", "--company", "Bright Minds Academy", "--json",
+        "recommendations", "list", "--company", "Bright Minds Academy", "--json", "--top", "0",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const rec of data) {
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
         expect(rec.companyName).toBe("Bright Minds Academy");
       }
     });
 
     it("filters by partial company name (contains match)", async () => {
       const result = await runCliExpectSuccess([
-        "recommendations", "list", "--company", "Bright", "--json",
+        "recommendations", "list", "--company", "Bright", "--json", "--top", "0",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const rec of data) {
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
         expect(rec.companyName.toLowerCase()).toContain("bright");
       }
     });
@@ -62,22 +194,22 @@ describe("pax8 recommendations", () => {
       // Simulates: --company Bright Minds Academy (no quotes)
       // Commander captures "Bright", "Minds" and "Academy" become excess args
       const result = await runCliExpectSuccess([
-        "recommendations", "list", "--company", "Bright", "Minds", "Academy", "--json",
+        "recommendations", "list", "--company", "Bright", "Minds", "Academy", "--json", "--top", "0",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const rec of data) {
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
         expect(rec.companyName).toBe("Bright Minds Academy");
       }
     });
 
     it("filters by priority", async () => {
       const result = await runCliExpectSuccess([
-        "recommendations", "list", "--priority", "high", "--json",
+        "recommendations", "list", "--priority", "high", "--json", "--top", "0",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const rec of data) {
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
         expect(rec.priority).toBe("high");
       }
     });
@@ -87,12 +219,14 @@ describe("pax8 recommendations", () => {
         "recommendations", "list", "--company", "NonExistentCorp99999", "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data).toEqual([]);
+      expect(data.recommendations).toEqual([]);
+      expect(data.totalAvailable).toBe(0);
     });
 
     it("JSON output includes both available and unavailable recs for downstream filtering", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
-      const allRecs = JSON.parse(result.stdout);
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
+      const parsed = JSON.parse(result.stdout);
+      const allRecs = parsed.recommendations;
 
       // Some recs should have productAvailable: true, some false
       const available = allRecs.filter((r: { productAvailable: boolean }) => r.productAvailable);
@@ -109,15 +243,44 @@ describe("pax8 recommendations", () => {
     });
 
     it("--include-all shows unavailable recs in JSON output", async () => {
-      const withAll = await runCliExpectSuccess(["recommendations", "list", "--include-all", "--json"]);
-      const withoutAll = await runCliExpectSuccess(["recommendations", "list", "--json"]);
+      const withAll = await runCliExpectSuccess(["recommendations", "list", "--include-all", "--json", "--top", "0"]);
+      const withoutAll = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
 
-      const allRecs = JSON.parse(withAll.stdout);
-      const defaultRecs = JSON.parse(withoutAll.stdout);
+      const allRecs = JSON.parse(withAll.stdout).recommendations;
+      const defaultRecs = JSON.parse(withoutAll.stdout).recommendations;
 
       // Both should return the same set since JSON output is pre-filter
       // (JSON returns all recs; filtering only affects table mode)
       expect(allRecs.length).toBe(defaultRecs.length);
+    });
+
+    // UXR F6 (#652): the hidden-count footer used to end at "no orderable
+    // products in catalog yet" with no follow-up command. Participants
+    // treated it as a dead end. The mixed-case footer now surfaces the
+    // same --include-all recovery hint the empty-state branch already
+    // uses. Large-scale demo fixture has hidden recs; the small default
+    // fixture doesn't, so this test flips PAX8_DEMO_SCALE.
+    it("table mode surfaces --include-all when hidden recs are trimmed", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list", "--top", "0"],
+        { PAX8_OUTPUT_FORMAT: "table", PAX8_DEMO_SCALE: "large" },
+      );
+      expect(result.stderr).toMatch(/more recommendations? hidden/);
+      expect(result.stderr).toMatch(/--include-all/);
+    });
+
+    // #521 footer hint: when the cap fires, table mode must tell the
+    // partner that there's more behind the curtain and how to widen it.
+    // Forcing table mode via PAX8_OUTPUT_FORMAT because a non-TTY stdout
+    // (the test subprocess) otherwise auto-falls back to JSON.
+    it("table mode shows 'Showing top N of M' footer when --top caps the list", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list", "--top", "2"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      // The footer is on stderr (hints/banners are never on stdout).
+      expect(result.stderr).toMatch(/Showing top \d+ of \d+/);
+      expect(result.stderr).toMatch(/--top 0/);
     });
 
     // Issue #195: human render leaked product UUIDs in a "Quick actions"
@@ -163,8 +326,8 @@ describe("pax8 recommendations", () => {
     });
 
     it("--json output still carries the full orderCommand with product id (agent contract)", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
-      const data = JSON.parse(result.stdout) as Array<{ orderCommand: string | null }>;
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
+      const data = (JSON.parse(result.stdout) as { recommendations: Array<{ orderCommand: string | null }> }).recommendations;
       const withCommand = data.filter((r) => r.orderCommand);
       expect(withCommand.length).toBeGreaterThan(0);
       // The JSON `orderCommand` MUST still include `--product <id>` so
@@ -177,15 +340,49 @@ describe("pax8 recommendations", () => {
       ).toBe(true);
     });
 
+    // #509: every actionable recommendation carries `orderArgs` alongside
+    // `orderCommand`. The argv form is the spawn-safe path that consumers
+    // (REPL, recommendations act, dashboard) prefer; the string is
+    // display-only. Pinning the shape here so a future regression that
+    // drops `orderArgs` from JSON output gets caught.
+    it("--json carries orderArgs[] argv-style array alongside orderCommand", async () => {
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
+      const data = (JSON.parse(result.stdout) as {
+        recommendations: Array<{
+          orderCommand: string | null;
+          orderArgs: string[] | null;
+        }>;
+      }).recommendations;
+      const actionable = data.filter((r) => r.orderCommand);
+      expect(actionable.length).toBeGreaterThan(0);
+      for (const rec of actionable) {
+        expect(Array.isArray(rec.orderArgs)).toBe(true);
+        // Fixed argv0 + subcommand path so the REPL drill-in
+        // (`packages/cli/src/lib/repl.ts`) can verify shape before
+        // dispatching.
+        expect(rec.orderArgs!.slice(0, 3)).toEqual(["pax8", "orders", "create"]);
+        // Each element is a single argv slot — no embedded shell
+        // quoting / metacharacters / tokenization required.
+        expect(rec.orderArgs!.every((a) => typeof a === "string")).toBe(true);
+        // Product flag is present in the argv (parallel guarantee to
+        // the orderCommand contract above).
+        const productIdx = rec.orderArgs!.indexOf("--product");
+        expect(productIdx).toBeGreaterThan(0);
+        expect(rec.orderArgs![productIdx + 1]).toMatch(/\S/);
+      }
+    });
+
     // Path B (#375 precursor): every recommendation carries the additive
     // `opportunityType` axis alongside the legacy `type`, using OE's
     // canonical 5-type taxonomy. The legacy `type` is unchanged.
     it("--json carries both legacy type and additive opportunityType (OE 5-type taxonomy)", async () => {
-      const result = await runCliExpectSuccess(["recommendations", "list", "--json"]);
-      const data = JSON.parse(result.stdout) as Array<{
-        type: string;
-        opportunityType: string;
-      }>;
+      const result = await runCliExpectSuccess(["recommendations", "list", "--json", "--top", "0"]);
+      const data = (JSON.parse(result.stdout) as {
+        recommendations: Array<{
+          type: string;
+          opportunityType: string;
+        }>;
+      }).recommendations;
       expect(data.length).toBeGreaterThan(0);
       const allowed = new Set(["Upsell", "Cross-sell", "Add-on", "Upgrade", "Net-new"]);
       for (const rec of data) {
@@ -202,6 +399,295 @@ describe("pax8 recommendations", () => {
           expect(["Cross-sell", "Net-new"]).toContain(rec.opportunityType);
         }
       }
+    });
+  });
+
+  // UXR F5 (#655): the recommendations table now carries a "Rationale"
+  // column and every rec ships a `rationaleSnippet` in --json output.
+  // `pax8 recommendations why <n>` reads the cached pending-actions.json
+  // and drills into a specific rec without hitting the API.
+  describe("recommendations rationale (#655)", () => {
+    it("every --json rec carries a non-empty rationaleSnippet", async () => {
+      const result = await runCliExpectSuccess([
+        "recommendations", "list", "--json", "--top", "0",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.recommendations.length).toBeGreaterThan(0);
+      for (const rec of data.recommendations) {
+        expect(typeof rec.rationaleSnippet).toBe("string");
+        expect(rec.rationaleSnippet.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("table-mode list renders a Rationale column", async () => {
+      const result = await runCliExpectSuccess(
+        ["recommendations", "list", "--top", "5"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      // The column header appears once in the ASCII table row.
+      expect(result.stdout).toContain("Rationale");
+      // At least one seat-gap snippet ("N/M …") lands in the table.
+      expect(result.stdout).toMatch(/\d+\/\d+ /);
+    });
+
+    describe("recommendations why", () => {
+      let tmpConfigDir: string;
+
+      beforeEach(async () => {
+        tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-recs-why-"));
+      });
+
+      afterEach(async () => {
+        await fs.rm(tmpConfigDir, { recursive: true, force: true });
+      });
+
+      it("drills into a recommendation after `list` populates the cache", async () => {
+        const listResult = await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        expect(listResult.exitCode).toBe(0);
+        // pending-actions.json exists and includes the new rationale fields.
+        const cache = JSON.parse(
+          await fs.readFile(path.join(tmpConfigDir, "pending-actions.json"), "utf-8"),
+        );
+        expect(Array.isArray(cache)).toBe(true);
+        expect(cache.length).toBeGreaterThan(0);
+        for (const entry of cache) {
+          expect(entry.rec).toHaveProperty("reason");
+          expect(entry.rec).toHaveProperty("rationaleSnippet");
+          expect(typeof entry.rec.reason).toBe("string");
+        }
+
+        const whyResult = await runCliExpectSuccess(
+          ["recommendations", "why", "1"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        expect(whyResult.stdout).toContain("Recommendation #1");
+        expect(whyResult.stdout).toContain("Why this recommendation");
+        expect(whyResult.stdout).toContain("Why it ranks here");
+        // Cross-links to `pax8 explain` for terminology drill-in.
+        expect(whyResult.stdout).toContain("pax8 explain");
+      });
+
+      it("--json envelope carries reason, rationaleSnippet, seeAlso", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const whyResult = await runCliExpectSuccess(
+          ["recommendations", "why", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const data = JSON.parse(whyResult.stdout);
+        expect(data.index).toBe(1);
+        expect(typeof data.reason).toBe("string");
+        expect(typeof data.rationaleSnippet).toBe("string");
+        expect(Array.isArray(data.seeAlso)).toBe(true);
+        expect(data.seeAlso.length).toBeGreaterThan(0);
+      });
+
+      it("out-of-range index exits 1 with ERROR_RECOMMENDATION_NOT_FOUND", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "999", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        expect(start).toBeGreaterThanOrEqual(0);
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+      });
+
+      it("missing cache exits 1 with a hint to run `recommendations list` first", async () => {
+        // No prior `list` invocation — the cache file doesn't exist in
+        // tmpConfigDir, so `why` must fail loudly with recovery guidance.
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "1"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const combined = result.stdout + result.stderr;
+        expect(combined).toContain("No cached recommendations");
+        expect(combined).toContain("recommendations list");
+      });
+
+      it("corrupt cache exits 1 with ERROR_RECOMMENDATION_NOT_FOUND and a rewrite hint", async () => {
+        // Write malformed JSON to the cache file to simulate a
+        // truncated / partially written pending-actions.json.
+        await fs.writeFile(
+          path.join(tmpConfigDir, "pending-actions.json"),
+          "{not-json,",
+          "utf-8",
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        expect(start).toBeGreaterThanOrEqual(0);
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+        expect(json.recoverySteps.join(" ")).toContain("recommendations list");
+      });
+
+      it("cache with wrong top-level shape exits 1 with a rewrite hint", async () => {
+        // The reader expects an array of {key, rec} entries. A JSON
+        // object at the top level (an older format, or a stray write)
+        // must fail with the same recovery path.
+        await fs.writeFile(
+          path.join(tmpConfigDir, "pending-actions.json"),
+          JSON.stringify({ wrong: "shape" }),
+          "utf-8",
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "why", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+        expect(json.recoverySteps.join(" ")).toContain("recommendations list");
+      });
+
+      it("--help shows the command and an example", async () => {
+        const result = await runCliExpectSuccess(["recommendations", "why", "--help"]);
+        expect(result.stdout).toContain("why");
+        expect(result.stdout).toContain("recommendations why");
+      });
+    });
+
+    // UXR F3 (#658): `pax8 recommendations email <n>` drafts a customer-
+    // ready email from the cached recommendation. The CLI must NOT send —
+    // it emits either a `mailto:` URL, structured JSON, or a human-readable
+    // draft. Same cache-based drill-in as `recommendations why`.
+    describe("recommendations email", () => {
+      let tmpConfigDir: string;
+
+      beforeEach(async () => {
+        tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-recs-email-"));
+      });
+
+      afterEach(async () => {
+        await fs.rm(tmpConfigDir, { recursive: true, force: true });
+      });
+
+      it("default text output shows subject + body + mailto hand-off hint", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        expect(result.stdout).toContain("Subject:");
+        expect(result.stdout).toMatch(/Hi\s+\w/);
+        // Next-step hints on stderr point at both --open and --mailto.
+        expect(result.stderr).toContain("--open");
+        expect(result.stderr).toContain("--mailto");
+        // The raw mailto: URL is surfaced for copy-paste.
+        expect(result.stderr).toContain("mailto:");
+      });
+
+      it("--mailto prints the URL and nothing else on stdout", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1", "--mailto"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        expect(result.stdout.trim().startsWith("mailto:")).toBe(true);
+        // Single-line — pipeable to `open`, `pbcopy`, etc.
+        expect(result.stdout.trim().split("\n").length).toBe(1);
+      });
+
+      it("--to <email> populates the mailto URL", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1", "--to", "alice@example.com", "--mailto"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        // encodeURIComponent turns @ into %40, so both spellings are
+        // acceptable. Match either form.
+        expect(result.stdout).toMatch(/^mailto:alice(@|%40)example\.com\?/);
+      });
+
+      it("--json envelope carries draft.subject / body / mailto / reason", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const data = JSON.parse(result.stdout);
+        expect(data.draft).toBeDefined();
+        expect(typeof data.draft.subject).toBe("string");
+        expect(typeof data.draft.body).toBe("string");
+        expect(typeof data.draft.mailto).toBe("string");
+        expect(data.draft.mailto.startsWith("mailto:")).toBe(true);
+        expect(typeof data.draft.reason).toBe("string");
+        expect(Array.isArray(data.draft.product_summary)).toBe(true);
+      });
+
+      it("percent-encodes special characters in subject and body", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectSuccess(
+          ["recommendations", "email", "1", "--mailto"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const url = result.stdout.trim();
+        // Newlines in the body must be percent-encoded so the mailto: URL
+        // survives a click across every mail client.
+        expect(url).toContain("%0A");
+        // Raw newlines and unencoded ampersands would break mailto handoff.
+        expect(url).not.toMatch(/\n/);
+      });
+
+      it("out-of-range index exits 1 with ERROR_RECOMMENDATION_NOT_FOUND", async () => {
+        await runCli(
+          ["recommendations", "list", "--top", "3"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const result = await runCliExpectFailure(
+          ["recommendations", "email", "999", "--json"],
+          { PAX8_CONFIG_DIR: tmpConfigDir },
+        );
+        const start = result.stderr.indexOf("{");
+        expect(start).toBeGreaterThanOrEqual(0);
+        const json = JSON.parse(result.stderr.slice(start));
+        expect(json.code).toBe("ERROR_RECOMMENDATION_NOT_FOUND");
+      });
+
+      it("missing cache exits 1 with a hint to run `recommendations list` first", async () => {
+        const result = await runCliExpectFailure(
+          ["recommendations", "email", "1"],
+          { PAX8_CONFIG_DIR: tmpConfigDir, PAX8_OUTPUT_FORMAT: "table" },
+        );
+        const combined = result.stdout + result.stderr;
+        expect(combined).toContain("No cached recommendations");
+        expect(combined).toContain("recommendations list");
+      });
+
+      it("--help shows the command and its flags", async () => {
+        const result = await runCliExpectSuccess(["recommendations", "email", "--help"]);
+        expect(result.stdout).toContain("email");
+        expect(result.stdout).toContain("--mailto");
+        expect(result.stdout).toContain("--open");
+        expect(result.stdout).toContain("--to");
+      });
     });
   });
 
@@ -298,20 +784,20 @@ describe("pax8 recommendations", () => {
     });
 
     // Disclosure parity with `recommendations list` (which already calls out
-    // the CLI-local engine, STAX divergence, provisional framing, and
-    // ARC-785/#375 sunset). Mirroring that disclosure onto `act` closes a
-    // gap Randall Ellis raised in the domain review: bulk order placement
-    // against a CLI-side heuristic deserves the same up-front disclosure as
-    // the list command it inherits from.
+    // the CLI-local engine, STAX divergence, provisional framing, and the
+    // first-party Opportunity Explorer sunset path). Mirroring that
+    // disclosure onto `act` closes a gap surfaced in the domain review: bulk
+    // order placement against a CLI-side heuristic deserves the same
+    // up-front disclosure as the list command it inherits from.
     it("--help discloses the CLI-local heuristic nature and provisional engine status", async () => {
       const result = await runCliExpectSuccess(["recommendations", "act", "--help"]);
-      // Names the local engine vs canonical OE
+      // Names the local engine vs canonical Opportunity Explorer
       expect(result.stdout).toContain("CLI-side heuristics");
-      expect(result.stdout).toMatch(/canonical Opportunity Explorer|OE/);
+      expect(result.stdout).toMatch(/canonical Opportunity Explorer|Opportunity Explorer/);
       // STAX divergence callout (consistent with `recommendations list --help`)
       expect(result.stdout).toMatch(/STAX|seat_gap/);
-      // Provisional framing — names the OE first-party API + ARC-785/#375
-      expect(result.stdout).toMatch(/ARC-785|#375|first-party.*API/);
+      // Provisional framing — names the first-party Opportunity Explorer API
+      expect(result.stdout).toMatch(/#375|first-party.*Opportunity Explorer/);
       // Names that bulk action places REAL orders (not a dry run)
       expect(result.stdout).toMatch(/REAL orders|orders API/);
     });

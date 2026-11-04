@@ -25,12 +25,12 @@ export function registerReportCommands(program: Command): void {
       `
 Subcommands:
   renewals       Subscriptions with upcoming commitment-term-end dates
-  concentration  Where your Pax8 spend is concentrated (customer/vendor/product)
-  subscriptions  Active subscriptions grouped by customer, vendor, product, or billing term
+  concentration  Where your Pax8 spend is concentrated (client/vendor/product)
+  subscriptions  Active subscriptions grouped by client, vendor, product, or billing term
 
 Examples:
   pax8 report renewals --within 90
-  pax8 report concentration --by customer --top 5
+  pax8 report concentration --by client --top 5
   pax8 report subscriptions --by billing-term --json
 
 Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`,

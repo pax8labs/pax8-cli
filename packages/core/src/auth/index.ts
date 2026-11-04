@@ -4,3 +4,9 @@
 export { TokenManager } from "./token-manager.js";
 export { CredentialStore } from "./credential-store.js";
 export type { Credentials, PermissionCheckResult } from "./credential-store.js";
+export { TokenCacheStore } from "./token-cache-store.js";
+export type {
+  TokenCacheFile,
+  TokenCacheLookupKey,
+  PermissionCheckResult as TokenCachePermissionCheckResult,
+} from "./token-cache-store.js";

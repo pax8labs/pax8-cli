@@ -46,17 +46,53 @@ vi.mock("node:child_process", async () => {
   };
 });
 
-const CONFIG_DIR = path.join(os.homedir(), ".pax8");
-const CREDENTIALS_FILE = path.join(CONFIG_DIR, "credentials.json");
+// #504: production credential-store now resolves the config dir lazily
+// via `getConfigDir()`, which honors `PAX8_CONFIG_DIR`. Tests set the
+// env var to a per-test mkdtemp directory and recompute the expected
+// paths the same way the production code does — the previous
+// hardcoded `~/.pax8/` assumption would have masked the very bug this
+// fix closes (credentials landing in the real home regardless of env
+// override). The vitest globalSetup already sets
+// `PAX8_ALLOW_NON_HOME_CONFIG=1`, so tmpdir paths under `os.tmpdir()`
+// (outside `os.homedir()` on macOS / Linux) pass `validateConfigDir`.
+import { mkdtempSync, rmSync } from "node:fs";
+
+let testConfigDir: string;
+let testCredentialsFile: string;
 
 describe("CredentialStore", () => {
   let store: CredentialStore;
-  const originalEnv = process.env;
+  const originalPax8ConfigDir = process.env.PAX8_CONFIG_DIR;
+  const originalPax8ClientId = process.env.PAX8_CLIENT_ID;
+  const originalPax8ClientSecret = process.env.PAX8_CLIENT_SECRET;
   const originalPlatform = process.platform;
 
   beforeEach(() => {
+    // Put the test config dir under `os.homedir()` rather than
+    // `os.tmpdir()`. Two reasons:
+    //   1. `validateConfigDir` allows paths under `$HOME` without the
+    //      `PAX8_ALLOW_NON_HOME_CONFIG` opt-in (matches production).
+    //   2. The Windows-platform tests below exercise
+    //      `checkPermissionsWindows`, which short-circuits to "outside
+    //      user home" before running `icacls` if the credentials path
+    //      isn't a prefix-match of `os.homedir()`. On the GH Actions
+    //      Windows runner `os.tmpdir()` can resolve outside the user
+    //      profile (or differ via 8.3 short-form normalization), so a
+    //      tmpdir-based path made the Windows ACL tests assert against
+    //      the wrong branch.
+    //
+    // The `.pax8-credstore-test-` prefix makes the directory hidden on
+    // POSIX and visually distinct on Windows; afterEach cleans up.
+    testConfigDir = mkdtempSync(path.join(os.homedir(), ".pax8-credstore-test-"));
+    testCredentialsFile = path.join(testConfigDir, "credentials.json");
+    // Mutate process.env in place. Wholesale replacement (`process.env =
+    // {...}`) doesn't propagate to the C++ side of node — the production
+    // code's `getConfigDir()` would still see the vitest globalSetup's
+    // value. Per-property assignment is reliable.
+    process.env.PAX8_CONFIG_DIR = testConfigDir;
+    delete process.env.PAX8_CLIENT_ID;
+    delete process.env.PAX8_CLIENT_SECRET;
     store = new CredentialStore();
-    process.env = { ...originalEnv };
     vi.mocked(fs.readFile).mockReset();
     vi.mocked(fs.writeFile).mockReset();
     vi.mocked(fs.mkdir).mockReset();
@@ -68,18 +104,46 @@ describe("CredentialStore", () => {
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    if (originalPax8ConfigDir === undefined) delete process.env.PAX8_CONFIG_DIR;
+    else process.env.PAX8_CONFIG_DIR = originalPax8ConfigDir;
+    if (originalPax8ClientId === undefined) delete process.env.PAX8_CLIENT_ID;
+    else process.env.PAX8_CLIENT_ID = originalPax8ClientId;
+    if (originalPax8ClientSecret === undefined) delete process.env.PAX8_CLIENT_SECRET;
+    else process.env.PAX8_CLIENT_SECRET = originalPax8ClientSecret;
     Object.defineProperty(process, "platform", { value: originalPlatform });
     vi.restoreAllMocks();
+    try {
+      rmSync(testConfigDir, { recursive: true, force: true });
+    } catch {
+      // Best-effort cleanup; tmpdir gets reaped by the OS.
+    }
   });
 
   describe("static properties", () => {
     it("exposes credentialsFilePath", () => {
-      expect(CredentialStore.credentialsFilePath).toBe(CREDENTIALS_FILE);
+      expect(CredentialStore.credentialsFilePath).toBe(testCredentialsFile);
     });
 
     it("exposes configDirPath", () => {
-      expect(CredentialStore.configDirPath).toBe(CONFIG_DIR);
+      expect(CredentialStore.configDirPath).toBe(testConfigDir);
+    });
+
+    // #504: the previous module-level capture meant changing
+    // PAX8_CONFIG_DIR at runtime had no effect — credentials still
+    // landed in the real `~/.pax8`. Pin the contract: each call to the
+    // path getters re-reads the env so an updated PAX8_CONFIG_DIR is
+    // honored from the next call onward.
+    it("honors PAX8_CONFIG_DIR changes at runtime (#504)", () => {
+      const altDir = mkdtempSync(path.join(os.homedir(), ".pax8-credstore-alt-"));
+      try {
+        process.env.PAX8_CONFIG_DIR = altDir;
+        expect(CredentialStore.configDirPath).toBe(altDir);
+        expect(CredentialStore.credentialsFilePath).toBe(
+          path.join(altDir, "credentials.json"),
+        );
+      } finally {
+        rmSync(altDir, { recursive: true, force: true });
+      }
     });
   });
 
@@ -97,20 +161,28 @@ describe("CredentialStore", () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
 
+      // Mode gate: the new pre-read stat in getFromFile() refuses to load
+      // when group/other bits are set. Return a secure mode here so the
+      // happy-path test still exercises the readFile branch.
+      vi.mocked(fs.stat).mockResolvedValueOnce({
+        mode: 0o100600,
+      } as import("node:fs").Stats);
       vi.mocked(fs.readFile).mockResolvedValueOnce(
         JSON.stringify({ clientId: "file-id", clientSecret: "file-secret" })
       );
 
       const creds = await store.getCredentials();
       expect(creds).toEqual({ clientId: "file-id", clientSecret: "file-secret" });
-      expect(fs.readFile).toHaveBeenCalledWith(CREDENTIALS_FILE, "utf-8");
+      expect(fs.readFile).toHaveBeenCalledWith(testCredentialsFile, "utf-8");
     });
 
     it("returns null when no credentials available", async () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
 
-      vi.mocked(fs.readFile).mockRejectedValueOnce(
+      // No file: the mode-check stat returns ENOENT, which getFromFile
+      // treats as "no creds" and returns null.
+      vi.mocked(fs.stat).mockRejectedValueOnce(
         Object.assign(new Error("ENOENT"), { code: "ENOENT" })
       );
 
@@ -122,7 +194,7 @@ describe("CredentialStore", () => {
       process.env.PAX8_CLIENT_ID = "partial-id";
       delete process.env.PAX8_CLIENT_SECRET;
 
-      vi.mocked(fs.readFile).mockRejectedValueOnce(
+      vi.mocked(fs.stat).mockRejectedValueOnce(
         Object.assign(new Error("ENOENT"), { code: "ENOENT" })
       );
 
@@ -134,6 +206,9 @@ describe("CredentialStore", () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
 
+      vi.mocked(fs.stat).mockResolvedValueOnce({
+        mode: 0o100600,
+      } as import("node:fs").Stats);
       vi.mocked(fs.readFile).mockResolvedValueOnce("not json");
 
       const creds = await store.getCredentials();
@@ -144,6 +219,9 @@ describe("CredentialStore", () => {
       delete process.env.PAX8_CLIENT_ID;
       delete process.env.PAX8_CLIENT_SECRET;
 
+      vi.mocked(fs.stat).mockResolvedValueOnce({
+        mode: 0o100600,
+      } as import("node:fs").Stats);
       vi.mocked(fs.readFile).mockResolvedValueOnce(
         JSON.stringify({ clientId: "only-id" })
       );
@@ -151,6 +229,52 @@ describe("CredentialStore", () => {
       const creds = await store.getCredentials();
       expect(creds).toBeNull();
     });
+
+    // L-1: refuse to load a world-/group-readable credentials file. The
+    // pre-read stat in getFromFile() must throw a clear, fix-it-style error
+    // when group/other bits are set on POSIX. On Windows the production
+    // code skips the check (no POSIX mode bits), so this test skips there.
+    it.skipIf(process.platform === "win32")(
+      "refuses to load when credentials file is world/group readable on Unix (L-1)",
+      async () => {
+        delete process.env.PAX8_CLIENT_ID;
+        delete process.env.PAX8_CLIENT_SECRET;
+
+        vi.mocked(fs.stat).mockResolvedValueOnce({
+          mode: 0o100644,
+        } as import("node:fs").Stats);
+
+        await expect(store.getCredentials()).rejects.toThrow(
+          /Refusing to load credentials.*chmod 600/,
+        );
+        // readFile must NOT be reached when the mode gate trips — otherwise
+        // the credentials are sourced from an insecure file even though we
+        // "refused" them.
+        expect(fs.readFile).not.toHaveBeenCalled();
+      },
+    );
+
+    // Owner-only non-600 mode (e.g., 0o700) is still secure under our
+    // group/other gate — the gate is `mode & 0o077 !== 0`, which is false
+    // when only owner bits are set. Pin this so a future tightening of
+    // the gate to "exactly 600" is a deliberate decision, not a drive-by.
+    it.skipIf(process.platform === "win32")(
+      "still loads when owner-only non-600 mode is set (e.g. 0o700) on Unix",
+      async () => {
+        delete process.env.PAX8_CLIENT_ID;
+        delete process.env.PAX8_CLIENT_SECRET;
+
+        vi.mocked(fs.stat).mockResolvedValueOnce({
+          mode: 0o100700,
+        } as import("node:fs").Stats);
+        vi.mocked(fs.readFile).mockResolvedValueOnce(
+          JSON.stringify({ clientId: "ok-id", clientSecret: "ok-secret" }),
+        );
+
+        const creds = await store.getCredentials();
+        expect(creds).toEqual({ clientId: "ok-id", clientSecret: "ok-secret" });
+      },
+    );
   });
 
   describe("hasCredentials", () => {
@@ -168,7 +292,7 @@ describe("CredentialStore", () => {
       vi.mocked(fs.access).mockResolvedValueOnce(undefined);
 
       expect(await store.hasCredentials()).toBe(true);
-      expect(fs.access).toHaveBeenCalledWith(CREDENTIALS_FILE, expect.any(Number));
+      expect(fs.access).toHaveBeenCalledWith(testCredentialsFile, expect.any(Number));
       // hasCredentials must NOT read or parse the file body.
       expect(fs.readFile).not.toHaveBeenCalled();
     });
@@ -218,8 +342,8 @@ describe("CredentialStore", () => {
 
       await store.saveCredentials("my-id", "my-secret");
 
-      expect(fs.mkdir).toHaveBeenCalledWith(CONFIG_DIR, { recursive: true });
-      expect(fs.chmod).toHaveBeenCalledWith(CONFIG_DIR, 0o700);
+      expect(fs.mkdir).toHaveBeenCalledWith(testConfigDir, { recursive: true });
+      expect(fs.chmod).toHaveBeenCalledWith(testConfigDir, 0o700);
 
       expect(openSync).toHaveBeenCalledTimes(1);
       const [calledPath, flags, mode] = openSync.mock.calls[0] as [
@@ -227,7 +351,7 @@ describe("CredentialStore", () => {
         number,
         number,
       ];
-      expect(calledPath).toBe(CREDENTIALS_FILE);
+      expect(calledPath).toBe(testCredentialsFile);
       expect(mode).toBe(0o600);
       const C = fsSync.constants;
       expect(flags & C.O_WRONLY).toBe(C.O_WRONLY);
@@ -278,7 +402,7 @@ describe("CredentialStore", () => {
 
       await store.saveCredentials("my-id", "my-secret");
 
-      expect(fs.mkdir).toHaveBeenCalledWith(CONFIG_DIR, { recursive: true });
+      expect(fs.mkdir).toHaveBeenCalledWith(testConfigDir, { recursive: true });
       // chmod must NOT be used on Windows — the production code
       // routes the dir/file lockdown through icacls instead.
       expect(fs.chmod).not.toHaveBeenCalled();
@@ -292,13 +416,13 @@ describe("CredentialStore", () => {
       expect(execFileMock).toHaveBeenNthCalledWith(
         1,
         "icacls",
-        [CONFIG_DIR, "/inheritance:r", "/grant:r", `${username}:(OI)(CI)(F)`],
+        [testConfigDir, "/inheritance:r", "/grant:r", `${username}:(OI)(CI)(F)`],
         expect.any(Function),
       );
       expect(execFileMock).toHaveBeenNthCalledWith(
         2,
         "icacls",
-        [CREDENTIALS_FILE, "/inheritance:r", "/grant:r", `${username}:(F)`],
+        [testCredentialsFile, "/inheritance:r", "/grant:r", `${username}:(F)`],
         expect.any(Function),
       );
 
@@ -309,7 +433,7 @@ describe("CredentialStore", () => {
       // requests it, but the OS no-ops the bit.)
       expect(openSync).toHaveBeenCalledTimes(1);
       const [calledPath, , mode] = openSync.mock.calls[0] as [string, number, number];
-      expect(calledPath).toBe(CREDENTIALS_FILE);
+      expect(calledPath).toBe(testCredentialsFile);
       expect(mode).toBe(0o600);
 
       expect(writeSync).toHaveBeenCalledTimes(1);
@@ -355,7 +479,7 @@ describe("CredentialStore", () => {
       vi.mocked(fs.unlink).mockResolvedValueOnce(undefined);
 
       await store.clearCredentials();
-      expect(fs.unlink).toHaveBeenCalledWith(CREDENTIALS_FILE);
+      expect(fs.unlink).toHaveBeenCalledWith(testCredentialsFile);
     });
 
     it("does not throw when file does not exist", async () => {
@@ -442,7 +566,7 @@ describe("CredentialStore", () => {
       async () => {
         vi.mocked(fs.access).mockResolvedValueOnce(undefined);
         const username = os.userInfo().username;
-        const stdout = `${CREDENTIALS_FILE} ${username}:(F)\n\nSuccessfully processed 1 files; Failed processing 0 files\n`;
+        const stdout = `${testCredentialsFile} ${username}:(F)\n\nSuccessfully processed 1 files; Failed processing 0 files\n`;
         const execFileMock = vi.mocked(
           childProcess.execFile,
         ) as unknown as ReturnType<typeof vi.fn>;
@@ -459,7 +583,7 @@ describe("CredentialStore", () => {
         expect(result.detail).toContain("ACLs");
         expect(execFileMock).toHaveBeenCalledWith(
           "icacls",
-          [CREDENTIALS_FILE],
+          [testCredentialsFile],
           expect.any(Function),
         );
       },
@@ -474,7 +598,7 @@ describe("CredentialStore", () => {
         // BUILTIN\Users + Authenticated Users entries from the parent
         // directory.
         const stdout =
-          `${CREDENTIALS_FILE} BUILTIN\\Users:(I)(RX)\n` +
+          `${testCredentialsFile} BUILTIN\\Users:(I)(RX)\n` +
           `                    NT AUTHORITY\\Authenticated Users:(I)(M)\n` +
           `                    ${username}:(F)\n` +
           `\nSuccessfully processed 1 files; Failed processing 0 files\n`;
@@ -508,7 +632,7 @@ describe("CredentialStore", () => {
         vi.mocked(fs.access).mockResolvedValueOnce(undefined);
         const username = os.userInfo().username;
         const stdout =
-          `${CREDENTIALS_FILE} Everyone:(F)\n` +
+          `${testCredentialsFile} Everyone:(F)\n` +
           `                    ${username}:(F)\n` +
           `\nSuccessfully processed 1 files; Failed processing 0 files\n`;
         const execFileMock = vi.mocked(

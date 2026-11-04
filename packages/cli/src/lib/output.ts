@@ -22,7 +22,7 @@ export interface Column {
  * command. The CLI command is shown in cyan; the description in dim text.
  */
 export interface EmptyStateSuggestion {
-  /** Shell-runnable command, e.g. `pax8 companies create --name "Acme"`. */
+  /** Shell-runnable command, e.g. `pax8 clients create --name "Acme"`. */
   command: string;
   /** Short hint describing what the command does. */
   description: string;
@@ -92,6 +92,52 @@ export function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "");
 }
 
+// C0 controls (`\x00`-`\x08`, `\x0b`-`\x1f`, `\x7f`) excluding `\t` (`\x09`)
+// and `\n`/`\r` (`\x0a`/`\x0d`) — those are normal text and the table writer
+// handles them safely. `\x1b` is the ESC byte; we strip it here to neutralize
+// CSI (`ESC [ … cmd`) and OSC (`ESC ] … BEL`) sequences in display values.
+// eslint-disable-next-line no-control-regex
+const C0_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+// CSI sequences: ESC [ <params> <intermediates> <final>.
+// eslint-disable-next-line no-control-regex
+const CSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+// OSC sequences: ESC ] <body> (BEL | ESC \). The body can be arbitrary text
+// including the "set window title" payload we want to neutralize.
+// eslint-disable-next-line no-control-regex
+const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+// Any remaining lone ESC bytes (e.g. malformed sequences).
+// eslint-disable-next-line no-control-regex
+const LONE_ESC_RE = /\x1b/g;
+
+/**
+ * Strip dangerous terminal control sequences and C0 controls from a
+ * user-or-API-supplied display string. Use this on every value that flows
+ * from the wire (a product name, company name, invoice note, etc.) into a
+ * human-rendered table cell or CSV cell, where the terminal would otherwise
+ * execute the embedded control bytes — e.g. an attacker who can set a
+ * tenant-side display name to `Acme\x1b]0;owned\x07` rewriting the
+ * partner's terminal window title, or `Acme\x1b[2J\x1b[H` clearing the
+ * screen and overwriting a previously-printed confirmation prompt.
+ *
+ * Scope: terminal-render paths only. JSON output is unaffected because
+ * `JSON.stringify` escapes control bytes as `\u00XX` in the emitted JSON
+ * text; downstream consumers see the escapes literally and aren't
+ * vulnerable to the terminal interpretation. If a future code path
+ * writes raw JSON values to stdout, it must run them through this
+ * helper too.
+ */
+export function stripDangerousControls(str: string): string {
+  if (typeof str !== "string" || str.length === 0) return str;
+  // Order matters: OSC and CSI swallow their delimiters and parameters;
+  // C0 then cleans up any stray bytes the structured strippers missed.
+  // Finally LONE_ESC_RE catches any half-formed sequence (e.g. ESC at EOL).
+  return str
+    .replace(OSC_RE, "")
+    .replace(CSI_RE, "")
+    .replace(C0_RE, "")
+    .replace(LONE_ESC_RE, "");
+}
+
 /**
  * Get the effective terminal width, accounting for the 2-char indent we add.
  * Returns Infinity when not running in a TTY (no wrapping needed).
@@ -139,7 +185,14 @@ function formatTable(data: readonly Record<string, unknown>[], columns: Column[]
       columns.map((col) => {
         const raw = row[col.key];
         const value = raw === undefined || raw === null ? "" : raw;
-        return col.format ? col.format(value, row) : String(value);
+        const rendered = col.format ? col.format(value, row) : String(value);
+        // Strip terminal control bytes from API-supplied display values
+        // before handing them to cli-table3. A wire-side attacker can't
+        // rewrite the user's terminal title or scroll back over a prior
+        // confirmation prompt by stuffing escape sequences into a product
+        // or company name. See stripDangerousControls's docstring for the
+        // threat model.
+        return stripDangerousControls(rendered);
       })
     );
   }
@@ -166,7 +219,11 @@ function formatCSV(data: readonly Record<string, unknown>[], columns: Column[]):
       .map((col) => {
         const raw = row[col.key];
         const value = raw === undefined || raw === null ? "" : String(raw);
-        return escapeCSV(value);
+        // Strip control bytes before CSV escaping — a CSV consumed by `cat`,
+        // a terminal-rendered spreadsheet preview, or any pipeline that
+        // displays a row would otherwise execute the embedded escape
+        // sequences.
+        return escapeCSV(stripDangerousControls(value));
       })
       .join(",");
     process.stdout.write(line + "\n");
@@ -240,6 +297,180 @@ function renderEmptyState(state: EmptyState): void {
   }
 
   process.stderr.write("\n");
+}
+
+/**
+ * Normalized pagination envelope rendered into `--json` output and into
+ * the human-facing table footer (#478 / #483).
+ *
+ * `number` is 1-based so it matches the `--page` flag a user would type
+ * next. The Pax8 wire returns 0-based `number`; the envelope flips it.
+ */
+export interface PageEnvelope {
+  number: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+/**
+ * Translate the wire `page` object (0-based `number`) into the 1-based
+ * envelope used by both the JSON output and the table footer.
+ */
+export function buildPageEnvelope(wirePage: {
+  number: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}): PageEnvelope {
+  return {
+    number: wirePage.number + 1,
+    size: wirePage.size,
+    totalElements: wirePage.totalElements,
+    totalPages: wirePage.totalPages,
+  };
+}
+
+/**
+ * Synthesize a single-page envelope for endpoints that return a flat
+ * array without server-side pagination (e.g. `webhooks.list`,
+ * `webhooks.getLogs`). Lets every list command emit a consistent
+ * `{ <resource>, page }` JSON shape regardless of wire pagination.
+ */
+export function singlePageEnvelope(rowCount: number): PageEnvelope {
+  return {
+    number: 1,
+    size: rowCount,
+    totalElements: rowCount,
+    totalPages: rowCount === 0 ? 0 : 1,
+  };
+}
+
+/**
+ * `true` when the supplied envelope has at least one more page of results.
+ * Single-page result sets (`totalPages === 1` or zero) return `false`.
+ */
+export function hasNextPage(page: PageEnvelope): boolean {
+  return page.totalPages > 0 && page.number < page.totalPages;
+}
+
+/**
+ * Render the standard pagination footer to stderr after a table render.
+ *
+ * Format:
+ *   `Page <n> of <total> — <N> <resource>s — next: <nextPageCommand>`
+ *
+ * The `next:` segment is suppressed on the last page. Called from the
+ * `format === "table"` branch only; JSON output gets the page object via
+ * the envelope helpers instead. Skipped silently when the result set is
+ * empty so the empty-state message stands alone (#483).
+ */
+export function renderPaginationFooter(
+  page: PageEnvelope,
+  options: {
+    /** Singular noun ("order", "subscription", "invoice"). Pluralized via simple `+ s`. */
+    resourceSingular: string;
+    /** Override plural form when the simple `+ s` doesn't work (e.g. "companies"). */
+    resourcePlural?: string;
+    /** Caller-built `pax8 <cmd> --page <N+1> ...` string, including any active filter flags. */
+    nextPageCommand?: string;
+    /** Skip the footer when the data array is empty. Default: true. */
+    skipWhenEmpty?: boolean;
+    rowCount: number;
+  },
+): void {
+  const skipWhenEmpty = options.skipWhenEmpty ?? true;
+  if (skipWhenEmpty && options.rowCount === 0) return;
+  const plural = options.resourcePlural ?? `${options.resourceSingular}s`;
+  const resourceLabel =
+    page.totalElements === 1 ? options.resourceSingular : plural;
+  const parts = [
+    `Page ${page.number} of ${page.totalPages || 1}`,
+    `${page.totalElements} ${resourceLabel}`,
+  ];
+  if (hasNextPage(page) && options.nextPageCommand) {
+    parts.push(`next: ${options.nextPageCommand}`);
+  }
+  process.stderr.write(chalk.dim(`\n  ${parts.join(" — ")}\n\n`));
+}
+
+/**
+ * #456: render the REPL navigation hint after a list command when
+ * running inside the REPL (`PAX8_REPL=1`). No-op outside the REPL —
+ * normal shell sessions shouldn't see the `n`/`p`/`back` affordance.
+ *
+ * Caller has already written the pagination footer + any
+ * command-specific hints; this adds a single-line hint advertising
+ * the saved-context shortcuts.
+ */
+export function renderReplNavHint(page: PageEnvelope): void {
+  if (process.env.PAX8_REPL !== "1") return;
+  const hints: string[] = [];
+  if (page.number < page.totalPages) hints.push(`${chalk.cyan("n")}=next`);
+  if (page.number > 1) hints.push(`${chalk.cyan("p")}=prev`);
+  hints.push(`${chalk.cyan("back")}=re-run`);
+  process.stderr.write(chalk.dim(`  REPL: ${hints.join(" · ")}\n`));
+}
+
+/**
+ * Build the standard "fetch next page" nextActions entry, or `null` when
+ * the supplied envelope is already on the last page. Callers compose
+ * additional `nextActions` entries (e.g. "drill into the first row") on
+ * top of this base.
+ *
+ * Emits BOTH a `command` display string and a structured `args` argv
+ * array — same shape as the `orderCommand` / `orderArgs` pair resolved
+ * in #462/#509. Agent runtimes must spawn `args.slice(1)` (first element
+ * is always `"pax8"`); the `command` string interpolates user-supplied
+ * flag values for human display only and is unsafe to hand to a shell.
+ * See AGENTS.md "Output flags" and `packages/claude-skill/skill.md` for
+ * the contract. Closes #562.
+ */
+export function buildNextPageAction(
+  page: PageEnvelope,
+  nextPageArgs: readonly string[],
+  resourceSingular: string,
+): { command: string; args: string[]; description: string; isWrite: boolean } | null {
+  if (!hasNextPage(page)) return null;
+  const plural = `${resourceSingular}s`;
+  return {
+    command: displayCommandFromArgs(nextPageArgs),
+    args: [...nextPageArgs],
+    description: `Fetch the next page of ${plural} (page ${page.number + 1} of ${page.totalPages})`,
+    // Pagination is always a read. Stamped explicitly rather than left
+    // absent so every emitted action carries the field (#708) — an agent
+    // checking `isWrite` should never find it undefined and have to guess.
+    isWrite: false,
+  };
+}
+
+/**
+ * Render an argv array as a human-readable command string. Quotes any
+ * argv element that contains whitespace or shell-meaningful characters
+ * so the rendered form is unambiguous to a reader. The output is for
+ * DISPLAY ONLY — agents must consume the `args` array directly and never
+ * `tokenize()` this string (the round-trip is lossy on edge cases like
+ * a single double-quote inside a name).
+ *
+ * Quotes only when needed so common cases stay readable: `pax8 orders
+ * list --page 2 --size 25` instead of `"pax8" "orders" "list" ...`.
+ *
+ * Exported for callsites that also need the display form for the
+ * pagination footer or other human-facing surfaces — same source of
+ * truth as the `command` field on `buildNextPageAction`'s result.
+ */
+export function displayCommandFromArgs(args: readonly string[]): string {
+  return args.map(displayQuoteArg).join(" ");
+}
+
+function displayQuoteArg(arg: string): string {
+  if (arg === "") return '""';
+  // Conservative whitelist — alnum + a handful of flag-friendly punctuation
+  // that never needs quoting. Anything else gets double-quoted with `"`
+  // escaped, matching the convention the README and human-facing footers
+  // already use elsewhere in the CLI.
+  if (/^[A-Za-z0-9_./:=,@+-]+$/.test(arg)) return arg;
+  return `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 /**

@@ -24,11 +24,11 @@ const client = new Pax8Client({
   clientSecret: process.env.PAX8_CLIENT_SECRET!,
 });
 
-const subscriptions = await client.subscriptions.listAll({ status: "Active" });
-const companies = await client.companies.listAll();
-const companyNameById = new Map(companies.map((c) => [c.id, c.name]));
+const subsResult = await client.subscriptions.list({ status: "Active", size: 1000 });
+const companiesResult = await client.companies.list({ size: 1000 });
+const companyNameById = new Map(companiesResult.content.map((c) => [c.id, c.name]));
 
-const report = getUpcomingRenewals(subscriptions, companyNameById, {
+const report = getUpcomingRenewals(subsResult.content, companyNameById, {
   withinDays: 30,
 });
 
@@ -38,13 +38,15 @@ for (const item of report.items.slice(0, 5)) {
 }
 ```
 
+The sub-clients return a paginated envelope (`{ content, page }`); pass `size: 1000` (or walk pages explicitly) when you need every row in one shot. `Pax8Client` and `MockPax8Client` share the same surface: `subscriptions`, `companies`, `contacts`, `orders`, `invoices`, `products`, `usage`, `quotes`, and `webhooks` each expose `list` / `get` and the relevant CRUD subset.
+
 Demo mode (no credentials):
 
 ```ts
 import { MockPax8Client, getUpcomingRenewals } from "@pax8/core";
 
 const client = new MockPax8Client();
-const subscriptions = await client.subscriptions.listAll();
+const subsResult = await client.subscriptions.list({ status: "Active", size: 1000 });
 // ...same shape as above
 ```
 
@@ -63,7 +65,7 @@ The durable asset — questions this package answers without you having to assem
 
 ## Versioning
 
-**Experimental.** This package is currently `0.x` and the public surface may change between minor versions. Pin a specific version (`"@pax8/core": "0.1.0"`, not `"^0.1.0"`) until the package reaches `1.0`. Breaking changes will be called out in release notes.
+**Experimental.** This package is currently `0.x` and the public surface may change between minor versions. Pin a specific version (`"@pax8/core": "0.2.1"`, not `"^0.2.0"`) until the package reaches `1.0`. Breaking changes will be called out in release notes.
 
 The CLI in this repo is the reference consumer — if you're unsure how to assemble a workflow, look at how [`packages/cli`](https://github.com/pax8labs/pax8-cli/tree/main/packages/cli/src/commands) uses these services.
 

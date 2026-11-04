@@ -8,11 +8,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   ApiError,
+  ConfigValidationError,
+  CredentialStore,
   ERROR_API_TIMEOUT,
   ERROR_API_VALIDATION,
   ERROR_AUTH_EXPIRED,
   ERROR_COMPANY_NOT_FOUND,
   ERROR_INTERNAL,
+  ERROR_INVALID_INPUT,
   ERROR_NOT_AUTHORIZED,
   ERROR_PRODUCT_NOT_FOUND,
   ERROR_RATE_LIMITED,
@@ -25,7 +28,9 @@ import {
   type Pax8ErrorCode,
 } from "@pax8/core";
 import { replCmd } from "./confirm.js";
-import { redactEnvelope } from "./redactor.js";
+import { redactEnvelope, redactString } from "./redactor.js";
+import { consumeActiveCommand, resolveTelemetryAccount } from "./telemetry-context.js";
+import { getApiValidationUpgradeHint } from "./update-check.js";
 
 declare const __CLI_VERSION__: string;
 
@@ -187,14 +192,14 @@ function getCliVersion(): string {
 }
 
 /**
- * Best-effort extraction of the command name (e.g. "companies list"), the
+ * Best-effort extraction of the command name (e.g. "clients list"), the
  * flag *names* (e.g. ["--json", "--page"]), and the positional argument
  * *values* from `process.argv`.
  *
  * The returned `command` field renders positional arguments as
  * `<REDACTED:ARG>` placeholders rather than their literal values, so that
  * what we persist to disk preserves the structure of the invocation
- * (`companies show <REDACTED:ARG>`) without leaking the user-supplied
+ * (`clients show <REDACTED:ARG>`) without leaking the user-supplied
  * customer / company / product name. See #170 — the public README's
  * Telemetry section commits to never sending names, but this field used to
  * pass them through.
@@ -209,7 +214,7 @@ function getCliVersion(): string {
  * the command path. Any non-flag token after that boundary is a positional
  * arg. Flags are collected from anywhere in argv, not only before the
  * first positional, fixing a pre-existing bug where
- * `pax8 companies show "Acme" --json` lost the `--json` flag.
+ * `pax8 clients show "Acme" --json` lost the `--json` flag.
  */
 function extractCommandAndFlags(): {
   command: string;
@@ -235,9 +240,9 @@ function extractCommandAndFlags(): {
     ) {
       // Still consuming the leading subcommand path. Cap at 2 levels — the
       // CLI's deepest command tree today is `<group> <action>` (e.g.
-      // `companies show`, `recommendations act`). Leaving this generous (the
+      // `clients show`, `recommendations act`). Leaving this generous (the
       // pre-#170 code allowed up to 3) would mistake a positional like
-      // `pax8 companies show definitely-does-not-exist` for a subcommand
+      // `pax8 clients show definitely-does-not-exist` for a subcommand
       // and skip redacting it. If a future subcommand goes 3 deep, raise
       // this cap intentionally.
       cmdParts.push(a);
@@ -313,23 +318,61 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
     const env: ErrorEnvelope = { message: prefix + error.message };
     if (error.code) env.code = error.code;
     if (error.causes && error.causes.length > 0) env.causes = error.causes;
-    if (error.recoverySteps && error.recoverySteps.length > 0) {
-      env.recoverySteps = error.recoverySteps;
+    const baseSteps = error.recoverySteps ?? [];
+    // #183: drift-aware messaging. CliErrors raised with
+    // `code: ERROR_API_VALIDATION` (e.g. orders/create's invalid-response
+    // guards) get the same upgrade nudge the ZodError path gets when a
+    // newer pax8-cli is cached locally. Prepend so it's the first
+    // recovery step — the action most likely to fix the failure.
+    let steps = baseSteps;
+    if (error.code === ERROR_API_VALIDATION) {
+      const upgradeHint = getApiValidationUpgradeHint();
+      if (upgradeHint) {
+        steps = [upgradeHint, ...baseSteps];
+      }
+    }
+    if (steps.length > 0) {
+      env.recoverySteps = steps;
     }
     if (error.docsUrl) env.docsUrl = error.docsUrl;
     return env;
   }
 
+  // A config file that fails validation is the user's own file, not an API
+  // payload. Checked before the ZodError branch below, whose message and
+  // recovery steps ("the API returned an unexpected response", "try a
+  // different query") are all wrong for it (#729).
+  if (error instanceof ConfigValidationError) {
+    return {
+      code: ERROR_INVALID_INPUT,
+      message: prefix + `Your config file is not valid: ${error.filePath}`,
+      causes: error.issues,
+      recoverySteps: [
+        "Fix the file by hand, or recreate it with: pax8 config init",
+        "Inspect the current values with: pax8 config show",
+      ],
+    };
+  }
+
   if (error instanceof ZodError) {
+    // #183: drift-aware messaging. A Zod validation failure usually means
+    // the API shape moved out from under the CLI version the user is
+    // running. If our cached update-check (populated on previous welcome
+    // runs / command invocations) knows a newer version exists, surface
+    // it as the FIRST recovery step — that's the action most likely to
+    // fix the failure. Sync read; never adds a network round-trip to the
+    // error path.
+    const upgradeHint = getApiValidationUpgradeHint();
+    const recoverySteps = upgradeHint
+      ? [upgradeHint, "Try a different query, or run pax8 doctor to check your setup."]
+      : ["Try a different query, or run pax8 doctor to check your setup."];
     return {
       code: ERROR_API_VALIDATION,
       message:
         prefix +
         "The Pax8 API returned an unexpected response.",
       causes: [formatZodError(error)],
-      recoverySteps: [
-        "Try a different query, or run pax8 doctor to check your setup.",
-      ],
+      recoverySteps,
     };
   }
 
@@ -353,6 +396,22 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
     return env;
   }
 
+  // Commander parse errors (unknown command, missing argument, etc.)
+  // reach this code path under #598's exitOverride. They look like plain
+  // `Error` instances but carry a `code` like `commander.unknownCommand`.
+  // Without this branch the envelope would label them `ERROR_INTERNAL`,
+  // contradicting the telemetry path (which correctly maps them to
+  // `ERROR_INVALID_INPUT`) and signaling "the CLI broke" to agents that
+  // would otherwise correct the typo. The help-redirect recovery step
+  // points at the only action that always applies.
+  if (isCommanderParseError(error)) {
+    return {
+      code: ERROR_INVALID_INPUT,
+      message: prefix + (error as Error).message,
+      recoverySteps: ["Run `pax8 --help` to see available commands and flags."],
+    };
+  }
+
   if (error instanceof Error) {
     return {
       code: ERROR_INTERNAL,
@@ -366,11 +425,173 @@ function buildErrorEnvelope(error: unknown, context?: string): ErrorEnvelope {
   };
 }
 
+/**
+ * Returns the `code` string from a Commander `CommanderError`, or null
+ * for anything else. Centralized so the telemetry path, the envelope
+ * builder, and the help-exit detection all read the same field the same
+ * way — and so the type narrowing happens in one place.
+ */
+function commanderErrorCode(err: unknown): string | null {
+  if (typeof err !== "object" || err === null) return null;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code !== "string") return null;
+  return code.startsWith("commander.") ? code : null;
+}
+
+/**
+ * True for Commander parse failures (unknown command, missing argument,
+ * invalid option-argument, etc.) — but NOT for the help/version success
+ * exits, which are intentionally separate (see `isCommanderSuccessExit`).
+ */
+function isCommanderParseError(err: unknown): boolean {
+  const code = commanderErrorCode(err);
+  if (code === null) return false;
+  if (
+    code === "commander.helpDisplayed" ||
+    code === "commander.help" ||
+    code === "commander.version"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Map an arbitrary thrown value to a canonical `Pax8ErrorCode` for the
+ * failure-event payload. Mirrors `buildErrorEnvelope` so the telemetry
+ * `error_code` and the agent-facing envelope `code` agree (#598
+ * follow-up — they previously disagreed for Commander parse errors,
+ * with telemetry correct but the envelope labeling typos as
+ * `ERROR_INTERNAL`).
+ */
+function deriveErrorCodeForTelemetry(err: unknown): Pax8ErrorCode {
+  if (err instanceof CliError && err.code) return err.code;
+  if (isCommanderParseError(err)) return ERROR_INVALID_INPUT;
+  return ERROR_INTERNAL;
+}
+
+/**
+ * Emit the `command_executed { success: false }` event before the CLI
+ * exits. Reads the active command stashed in telemetry-context by the
+ * program-level `preAction` hook.
+ *
+ * For action-throw failures, `preAction` ran first and already called
+ * `telemetry.loadEnabled()`, so `isEnabled()` is hot.
+ *
+ * For Commander parse errors (#598 — unknown command, missing argument,
+ * etc.), `preAction` never fires because Commander throws during parse,
+ * before any action dispatches. The active-command sentinel is null and
+ * the telemetry SDK has never loaded its enabled state. We detect that
+ * case and pay one extra `loadEnabled()` async tick — the cost is
+ * irrelevant on an already-failed parse, and without it the failure
+ * event would silently never reach the JSONL backup or PostHog.
+ *
+ * Buffers only — the existing `flushTelemetryBeforeExit` call later in
+ * `handleCommandError` drains this event before `process.exit`.
+ * Telemetry must never crash the CLI, so anything that throws here is
+ * swallowed.
+ */
+async function emitFailureEvent(error: unknown): Promise<void> {
+  try {
+    const telemetry = getTelemetry();
+    const active = consumeActiveCommand();
+    // No active sentinel = parse-time failure; preAction didn't run, so the
+    // enabled state was never loaded AND the partner-account group was never
+    // resolved. Do both now (bounded async). For a normal command failure
+    // (`active` set), preAction already ran resolveTelemetryAccount(), so the
+    // group is already on the telemetry singleton — don't re-read here.
+    if (!active) {
+      try {
+        await telemetry.loadEnabled();
+      } catch {
+        // Best-effort. If config is unreadable, isEnabled() stays false
+        // and we'll silently no-op below, which is the same outcome as
+        // the pre-#598 behavior.
+      }
+      await resolveTelemetryAccount();
+    }
+    if (!telemetry.isEnabled()) return;
+    // #621: emit credential-store state on failure events too so we can
+    // measure auth-login failure rates and the broken `credentialed:
+    // false, demo_mode: false` cohort. Same primitive as the success
+    // path; bounded fs.access + env-var read. The parse-error branch
+    // above already pays one async tick for loadEnabled(); this is the
+    // same shape of bounded I/O. Wrapped in try so a config-dir issue
+    // can't break the failure-event emit.
+    let credentialed = false;
+    try {
+      credentialed = await new CredentialStore().hasCredentials();
+    } catch {
+      // Telemetry must never crash the CLI.
+    }
+    // Note: the partner-account group is NOT set here — it's resolved once in
+    // the preAction hook (or, for parse-time failures, in the `!active` branch
+    // above) so the group rides on the telemetry singleton for every emit
+    // path. See resolveTelemetryAccount().
+    telemetry.track({
+      event: "command_executed",
+      command: active?.command ?? "unknown",
+      subcommand: active?.subcommand ?? "unknown",
+      flags: active?.flags ?? [],
+      duration_ms: active ? Date.now() - active.startTime : 0,
+      success: false,
+      error_code: deriveErrorCodeForTelemetry(error),
+      cli_version: typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0",
+      node_version: process.version,
+      os: process.platform,
+      demo_mode: false,
+      credentialed,
+    });
+  } catch {
+    // Telemetry must never crash the CLI.
+  }
+}
+
+/**
+ * Commander throws structured errors for `--help` and `--version` after
+ * writing the requested content to stdout. Those are NOT failures — the
+ * user got what they asked for. Map them to a clean exit 0 with no
+ * stderr envelope, no telemetry, no report-bug pointer.
+ *
+ * Other CommanderError codes (`commander.unknownCommand`,
+ * `commander.missingArgument`, etc.) flow through the normal handler so
+ * #598's telemetry path fires.
+ */
+function isCommanderSuccessExit(err: unknown): boolean {
+  const code = commanderErrorCode(err);
+  return (
+    code === "commander.helpDisplayed" ||
+    code === "commander.help" ||
+    code === "commander.version"
+  );
+}
+
 export async function handleCommandError(
   error: unknown,
   spinner?: Ora,
   context?: string,
 ): Promise<never> {
+  // Commander's --help / --version land here under #598's exitOverride.
+  // They already wrote the requested content to stdout; this path must
+  // not render an error envelope, emit a failure telemetry event, or
+  // exit non-zero. Flush any buffered telemetry from earlier in the
+  // process (e.g. a preAction hook that already loaded the SDK) and
+  // exit cleanly.
+  if (isCommanderSuccessExit(error)) {
+    if (spinner) {
+      try {
+        spinner.stop();
+      } catch {
+        // Spinner may already be stopped
+      }
+    }
+    consumeActiveCommand(); // clear sentinel so no postAction-stale carryover
+    await flushTelemetryBeforeExit();
+    process.exit(0);
+    // Honor never-return contract when process.exit is mocked
+    throw new Error("process.exit intercepted");
+  }
+
   // Stop spinner if active
   if (spinner) {
     try {
@@ -379,6 +600,14 @@ export async function handleCommandError(
       // Spinner may already be stopped
     }
   }
+
+  // Buffer the failure event before any envelope-write or exit-flush.
+  // The flush at the end of this function drains it. Note `emitFailureEvent`
+  // is now async (#598) because the parse-error branch needs to call
+  // `telemetry.loadEnabled()` — preAction never ran for those failures, so
+  // the SDK's enabled state was never hydrated. The added tick is bounded
+  // to the no-active-command path; action-throw failures are unchanged.
+  await emitFailureEvent(error);
 
   // Persist the structured envelope so `pax8 report-bug` has something to
   // report. Write happens *before* any exit logic. This is decoupled from the
@@ -389,9 +618,31 @@ export async function handleCommandError(
   const envelope = buildErrorEnvelope(error, context);
   writeLastErrorEnvelope(envelope);
 
+  // Redact every user-visible string before any stderr write. The on-disk
+  // envelope is already redacted by writeLastErrorEnvelope; this closes the
+  // parallel gap where `--json` stderr and the human-readable branches were
+  // emitting raw UUIDs, emails, home-dir paths, and the upstream API's echo
+  // of user input (`extractErrorDetail(error.responseBody)`) verbatim — the
+  // README/SECURITY.md commitments imply these are sanitized but they were
+  // not.
+  //
+  // We deliberately do NOT pass `argTokens` here, unlike the on-disk
+  // envelope. The on-disk file is what `pax8 report-bug` uploads, and the
+  // contract there is "the reviewer sees structure, not values" — full
+  // positional-arg scrub. The live stderr is what the user who just typed
+  // the command sees in their own terminal; redacting their own typed
+  // flag value back at them (e.g. `Invalid value: <REDACTED:ARG>` for a
+  // typo like `--billing-term Quarterly`) destroys the error's
+  // actionability without any privacy benefit — they already know what
+  // they typed. The generic rules (UUID, email, home path, JWT, Bearer,
+  // opaque token) still apply, which is where the actual leak risk lives.
+  const safe = (s: string | undefined): string =>
+    s === undefined ? "" : redactString(s);
+
   // Machine-readable JSON envelope when --json is set
   if (isJsonOutputRequested()) {
-    process.stderr.write(JSON.stringify(envelope, null, 2) + "\n");
+    const redactedEnvelope = redactEnvelope(envelope);
+    process.stderr.write(JSON.stringify(redactedEnvelope, null, 2) + "\n");
     // Flush telemetry before exit (#145) so failure events actually reach
     // PostHog. Bounded by a 2s timeout in flushAndShutdown.
     await flushTelemetryBeforeExit();
@@ -405,26 +656,43 @@ export async function handleCommandError(
 
   if (error instanceof CliError || error instanceof Pax8SecurityError) {
     process.stderr.write(
-      chalk.red.bold(`\n  ✗ ${prefix}  ${error.message}\n`)
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe(error.message)}\n`)
     );
 
     if (error.causes && error.causes.length > 0) {
       process.stderr.write(chalk.dim("\n  Causes:\n"));
       for (const cause of error.causes) {
-        process.stderr.write(chalk.dim(`    • ${cause}\n`));
+        process.stderr.write(chalk.dim(`    • ${safe(cause)}\n`));
       }
     }
 
-    if (error.recoverySteps && error.recoverySteps.length > 0) {
+    // #183: same drift-aware recovery prepend as the envelope path —
+    // CliErrors with `code: ERROR_API_VALIDATION` get the upgrade hint
+    // rendered first when our cache knows a newer pax8-cli is available.
+    const baseSteps = error.recoverySteps ?? [];
+    let humanSteps = baseSteps;
+    if (
+      error instanceof CliError &&
+      error.code === ERROR_API_VALIDATION
+    ) {
+      const upgradeHint = getApiValidationUpgradeHint();
+      if (upgradeHint) {
+        humanSteps = [upgradeHint, ...baseSteps];
+      }
+    }
+    if (humanSteps.length > 0) {
       process.stderr.write(chalk.yellow("\n  Recovery steps:\n"));
-      for (const step of error.recoverySteps) {
-        process.stderr.write(chalk.yellow(`    → ${step}\n`));
+      for (const step of humanSteps) {
+        process.stderr.write(chalk.yellow(`    → ${safe(step)}\n`));
       }
     }
 
     if (error.docsUrl) {
+      // docsUrl is a closed-set of pax8-controlled URLs; redacting is
+      // defense-in-depth in case a future code path puts a user-derived
+      // value here.
       process.stderr.write(
-        chalk.dim(`\n  Docs: ${error.docsUrl}\n`)
+        chalk.dim(`\n  Docs: ${safe(error.docsUrl)}\n`)
       );
     }
 
@@ -437,18 +705,45 @@ export async function handleCommandError(
     }
 
     process.stderr.write("\n");
+  } else if (error instanceof ConfigValidationError) {
+    // Local file, not a response. No upgrade hint, no "try a different
+    // query" — neither applies to a malformed config.yaml (#729).
+    process.stderr.write(
+      chalk.red.bold(`\n  ✗ ${prefix}`) +
+        chalk.red(`  Your config file is not valid.\n`) +
+        chalk.dim(`    ${safe(error.filePath)}\n\n`),
+    );
+    for (const issue of error.issues) {
+      process.stderr.write(chalk.dim(`    • ${safe(issue)}\n`));
+    }
+    process.stderr.write(
+      chalk.yellow(`\n    → Fix the file by hand, or recreate it: ${replCmd("pax8 config init")}\n`) +
+        chalk.yellow(`    → Inspect the current values: ${replCmd("pax8 config show")}\n\n`),
+    );
   } else if (error instanceof ZodError) {
-    // Zod validation errors mean the API returned an unexpected shape
+    // Zod validation errors mean the API returned an unexpected shape.
+    // formatZodError can echo back response field values, so redact too.
     process.stderr.write(
       chalk.red.bold(`\n  ✗ ${prefix}`) +
       chalk.red(`  The Pax8 API returned an unexpected response.\n`) +
-      chalk.dim(`    ${formatZodError(error)}\n\n`) +
-      chalk.yellow(`    → This usually means no data was found, or the API format has changed.\n`) +
-      chalk.yellow(`    → Try a different query, or run ${chalk.cyan(replCmd("pax8 doctor"))} to check your setup.\n\n`)
+      chalk.dim(`    ${safe(formatZodError(error))}\n\n`) +
+      chalk.yellow(`    → This usually means no data was found, or the API format has changed.\n`)
+    );
+    // #183: drift-aware messaging. Surface the upgrade hint BEFORE the
+    // generic "try a different query" step — if a newer CLI is available,
+    // the partner's first move should be `pax8 upgrade`.
+    const upgradeHint = getApiValidationUpgradeHint();
+    if (upgradeHint) {
+      process.stderr.write(
+        chalk.yellow(`    → ${safe(upgradeHint)}\n`),
+      );
+    }
+    process.stderr.write(
+      chalk.yellow(`    → Try a different query, or run ${chalk.cyan(replCmd("pax8 doctor"))} to check your setup.\n\n`),
     );
   } else if (error instanceof ApiError) {
     process.stderr.write(
-      chalk.red.bold(`\n  ✗ ${prefix}  ${error.message}\n\n`)
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe(error.message)}\n\n`)
     );
     if (isApiTimeoutError(error)) {
       // #199: surface the same recovery steps the JSON envelope carries.
@@ -457,7 +752,7 @@ export async function handleCommandError(
       // (which renders through the branch above with their richer hint).
       for (const step of timeoutRecoverySteps()) {
         process.stderr.write(
-          chalk.yellow(`    → ${step}\n`)
+          chalk.yellow(`    → ${safe(step)}\n`)
         );
       }
       process.stderr.write("\n");
@@ -468,16 +763,28 @@ export async function handleCommandError(
     } else if (error.statusCode === 404) {
       const detail = extractErrorDetail(error.responseBody);
       if (detail) {
-        process.stderr.write(chalk.yellow(`    → ${detail}\n\n`));
+        process.stderr.write(chalk.yellow(`    → ${safe(detail)}\n\n`));
       } else {
         process.stderr.write(
           chalk.yellow(`    → The resource was not found. Check the ID or name and try again.\n\n`)
         );
       }
     }
+  } else if (isCommanderParseError(error)) {
+    // Mirror the `recoverySteps` the envelope carries (#598 review
+    // follow-up) so the human path doesn't drop the hint that --json
+    // consumers already see. Without this, a partner typing `pax8 bogus`
+    // saw only the bare message in their terminal while agents got the
+    // full structured envelope.
+    process.stderr.write(
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe((error as Error).message)}\n`),
+    );
+    process.stderr.write(
+      chalk.yellow(`    → Run ${chalk.cyan(replCmd("pax8 --help"))} to see available commands and flags.\n\n`),
+    );
   } else if (error instanceof Error) {
     process.stderr.write(
-      chalk.red.bold(`\n  ✗ ${prefix}  ${error.message}\n\n`)
+      chalk.red.bold(`\n  ✗ ${prefix}  ${safe(error.message)}\n\n`)
     );
   } else {
     process.stderr.write(

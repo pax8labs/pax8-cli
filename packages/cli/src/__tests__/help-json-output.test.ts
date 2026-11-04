@@ -8,8 +8,7 @@
  * pinned in --help so they don't have to run the command to discover the shape.
  *
  * No code logic changes — pure docs/help-text. We assert the section header
- * appears AND that specific load-bearing field names are mentioned, including
- * deprecation notes on dual-emitted aliases (mrrAtRisk, createdDate).
+ * appears AND that specific load-bearing field names are mentioned.
  */
 
 import { describe, it, expect } from "vitest";
@@ -40,12 +39,7 @@ describe("JSON output shape documented in --help (#396)", () => {
       expect(stdout).toContain("monthlyCost");
       expect(stdout).toContain("annualCost");
       expect(stdout).toContain("AmountCurrency");
-      // mrrRenewing's `mrrAtRisk` alias remains in place (preserved per #298).
-      expect(stdout).toContain("mrrAtRisk");
-      expect(stdout).toContain("DEPRECATED");
-      // #385 dual-emit
       expect(stdout).toContain("createdAt");
-      expect(stdout).toContain("createdDate");
     });
   });
 
@@ -81,7 +75,7 @@ describe("JSON output shape documented in --help (#396)", () => {
   });
 
   describe("pax8 subscriptions renewals --help", () => {
-    it("documents both canonical and deprecated renewal field names", async () => {
+    it("documents canonical renewal field names", async () => {
       const { stdout } = await runCliExpectSuccess([
         "subscriptions",
         "renewals",
@@ -91,10 +85,6 @@ describe("JSON output shape documented in --help (#396)", () => {
       // Canonical fields (#298)
       expect(stdout).toContain("mrrRenewing");
       expect(stdout).toContain("arrRenewing");
-      // Deprecated aliases must be present with deprecation note
-      expect(stdout).toContain("mrrAtRisk");
-      expect(stdout).toContain("arrAtRisk");
-      expect(stdout).toContain("DEPRECATED");
     });
   });
 
@@ -121,7 +111,6 @@ describe("JSON output shape documented in --help (#396)", () => {
       ["pax8 recommendations upsell", ["recommendations", "upsell", "--help"]],
       ["pax8 subscriptions renewals", ["subscriptions", "renewals", "--help"]],
       ["pax8 clients more", ["clients", "more", "--help"]],
-      ["pax8 companies more (alias)", ["companies", "more", "--help"]],
     ];
 
     for (const [label, argv] of COMMANDS) {

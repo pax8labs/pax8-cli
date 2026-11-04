@@ -19,7 +19,7 @@ describeIntegration("companies (v1)", () => {
   it(
     "companies list --json hits /v1/companies and returns an array",
     async () => {
-      const result = await runCliVerbose(["companies", "list", "--json"]);
+      const result = await runCliVerbose(["clients", "list", "--json"]);
 
       expectExitZero(result);
       expectWireUrl(result, {

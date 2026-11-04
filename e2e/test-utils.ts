@@ -42,10 +42,36 @@ export interface CliResult {
   timedOut?: boolean;
 }
 
+/**
+ * H-5: destructive commands refuse to proceed without
+ * `PAX8_CONFIRM_DESTRUCTIVE=<keyword>` in env on a non-TTY stdin
+ * (subprocess tests are non-TTY by definition). E2E tests of
+ * destructive *command logic* (e.g. `pax8 quotes delete` returns the
+ * right JSON shape) would all break on the gate that's not what
+ * they're verifying. This map auto-injects the right keyword for
+ * known destructive command paths so each test stays focused on its
+ * own subject. The gate itself is verified by
+ * `packages/cli/src/__tests__/destructive-gate.test.ts`.
+ *
+ * When a test explicitly sets `PAX8_CONFIRM_DESTRUCTIVE`, that wins.
+ */
+const DESTRUCTIVE_KEYWORDS: Record<string, string> = {
+  "subscriptions cancel": "cancel",
+  "contacts delete": "delete",
+  "quotes delete": "delete",
+};
+
+function autoConfirmDestructive(args: string[], env?: Record<string, string>): string | undefined {
+  if (env?.PAX8_CONFIRM_DESTRUCTIVE !== undefined) return undefined;
+  const positional = args.filter((a) => !a.startsWith("-")).slice(0, 2).join(" ");
+  return DESTRUCTIVE_KEYWORDS[positional];
+}
+
 export async function runCli(
   args: string[],
   env?: Record<string, string>
 ): Promise<CliResult> {
+  const autoKeyword = autoConfirmDestructive(args, env);
   try {
     const result = await exec("node", [CLI_PATH, ...args], {
       env: {
@@ -53,6 +79,7 @@ export async function runCli(
         PAX8_DEMO: "1",
         NO_COLOR: "1",
         PAX8_CONFIG_DIR: makeIsolatedConfigDir(),
+        ...(autoKeyword !== undefined ? { PAX8_CONFIRM_DESTRUCTIVE: autoKeyword } : {}),
         ...env,
       },
       timeout: TIMEOUT_MS,

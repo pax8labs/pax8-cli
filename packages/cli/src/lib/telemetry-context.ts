@@ -1,7 +1,60 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { TelemetryEvent } from "@pax8/core";
+import { CredentialStore, getTelemetry, type TelemetryEvent } from "@pax8/core";
+import { debugLog } from "./debug.js";
+
+/**
+ * Resolve the partner-account group key for the current process and set it on
+ * the telemetry singleton, so **every** emit path attaches the same `account`
+ * group: the success `postAction` hook, the failure handler
+ * (`emitFailureEvent`), and — critically — the SIGINT handler in `signals.ts`,
+ * which emits a `command_executed` event directly and previously shipped it
+ * with a null group.
+ *
+ * This is the single startup seam for account attribution. `posthog-node` is
+ * stateless — there is no persistent session `group()` call as in the browser
+ * `posthog-js` SDK — so `Telemetry.flush()` must stamp `groups` onto each
+ * captured event. Setting the key once here, from the `preAction` hook before
+ * any event is captured, is what makes that stamping reliable regardless of
+ * which code path ends up emitting. Scattering per-emit-site `setAccount`
+ * calls (the prior approach) let paths be missed.
+ *
+ * Best-effort and never throws: a credential-read failure just leaves the
+ * account unset, so events fall back to the anonymous per-install
+ * `distinct_id` only. Only a salted hash of the `clientId` is ever retained —
+ * see `Telemetry.setAccount()` / `accountGroupKey()`. Uncredentialed and demo
+ * runs resolve to `null` (no group).
+ */
+export async function resolveTelemetryAccount(): Promise<void> {
+  let clientId: string | null;
+  try {
+    clientId = (await new CredentialStore().getCredentials())?.clientId ?? null;
+  } catch (err) {
+    // Unreadable / absent credentials → anonymous. Not an error worth
+    // surfacing: demo and uncredentialed runs take this path routinely.
+    // Behind PAX8_DEBUG (stderr, redacted) so a systemic credential-store
+    // problem is still diagnosable rather than silently anonymous.
+    debugLog("telemetry account: credential read failed", err);
+    clientId = null;
+  }
+
+  try {
+    // Optional call, deliberately. A `@pax8/cli` build can end up resolving an
+    // older `@pax8/core` than it was compiled against — that is exactly what
+    // shipped in 0.2.0, where the published core predated `setAccount()` and
+    // every command died with "getTelemetry(...).setAccount is not a function"
+    // (#697). The previous shape called `setAccount` again from its own catch,
+    // so the fallback threw too and the failure was fatal rather than silent.
+    getTelemetry().setAccount?.(clientId);
+  } catch (err) {
+    // Attribution is best-effort and must never take down a command — same
+    // contract as the `loadEnabled()` init in `index.ts`. Still logged behind
+    // PAX8_DEBUG: a version skew that silently drops account attribution
+    // should be findable without a debugger.
+    debugLog("telemetry account: setAccount failed", err);
+  }
+}
 
 /**
  * Request-scoped telemetry fields contributed by command handlers.
@@ -45,6 +98,13 @@ export type TelemetryExtraFields = Partial<
     | "recs_ordered"
     | "recs_skipped"
     | "recs_mrr_captured"
+    | "upgrade_action"
+    | "upgrade_method"
+    | "upgrade_from"
+    | "upgrade_to"
+    | "skill_action"
+    | "skill_scope"
+    | "skill_previous_state"
   >
 >;
 
@@ -79,4 +139,43 @@ export function consumeTelemetryFields(): Record<string, unknown> {
 /** Test hook — reset state without consuming. */
 export function _resetTelemetryFields(): void {
   pending = {};
+}
+
+/**
+ * Metadata about the command currently being executed. Stashed by the
+ * program-level `preAction` hook so the failure path (`handleCommandError`)
+ * can emit a `command_executed { success: false }` event without needing
+ * the Commander `actionCommand` it doesn't have direct access to. Cleared
+ * by either the `postAction` hook (success path) or `handleCommandError`
+ * (failure path) so it never leaks across commands in a long-lived REPL
+ * parent process.
+ */
+export interface ActiveCommandContext {
+  command: string;
+  subcommand: string;
+  flags: string[];
+  startTime: number;
+}
+
+let active: ActiveCommandContext | null = null;
+
+export function setActiveCommand(ctx: ActiveCommandContext): void {
+  active = ctx;
+}
+
+/**
+ * Read + clear the active command context. Returns `null` if no command
+ * is currently active (e.g. a Commander parse error before any action
+ * dispatched). Caller is responsible for clearing — this consume pattern
+ * matches `consumeTelemetryFields`.
+ */
+export function consumeActiveCommand(): ActiveCommandContext | null {
+  const out = active;
+  active = null;
+  return out;
+}
+
+/** Test hook — reset without consuming. */
+export function _resetActiveCommand(): void {
+  active = null;
 }

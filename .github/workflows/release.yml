@@ -15,13 +15,33 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      # SHA-pinned per security review (H-4): this workflow has
+      # `contents: write` + `id-token: write` and runs `npm publish` via
+      # the changesets action, so it's the highest-leverage supply-chain
+      # surface in the repo. A mutable tag reference (`@v6`) here would
+      # let a compromise of any upstream action ship a poisoned package.
+      # Dependabot honors SHA pins with a trailing `# <tag>` comment and
+      # opens PRs to bump them — see .github/dependabot.yml.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v5
+      # Pin pnpm to the version declared in root `packageManager` so the
+      # runtime doesn't drift off the pnpm/action-setup default. The
+      # previous release runs surfaced a `pnpm v10 installation layout /
+      # pnpm v11 expects bins in PNPM_HOME/bin` warning — the runner had
+      # an older pnpm on the image and the action's default target had
+      # moved past it, leaving the publish step running an untested
+      # pnpm/npm combination. Explicit pin keeps the tarball packing +
+      # publish path matched to `pnpm@9.15.4`, which is what maintainers
+      # exercise locally. (One deliberate divergence from local setups: the
+      # "Upgrade npm" step below swaps in npm 11 for the registry PUT, which
+      # laptops don't run — CI needs it for OIDC; laptops use `--otp`.)
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 9.15.4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
           cache: "pnpm"
@@ -33,30 +53,137 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # Publish gate (see #370): we intentionally do NOT pass a `publish:`
-      # command here, so this action only opens/updates the "chore: release"
-      # PR and never invokes `npm publish`. Versions have been auto-bumped
-      # past anything we've shipped (CHANGELOG headings for 0.2.0/0.3.0 exist
-      # but the registry has nothing), and we want a deliberate human signal
-      # before the first real publish.
+      # npm OIDC trusted publishing requires npm >= 11.5.1. Node 22 bundles
+      # npm 10.x, which never attempts the OIDC token exchange — the publish
+      # PUT goes out carrying only setup-node's literal placeholder token,
+      # and the registry answers with its existence-masking E404. This was
+      # the actual cause of every CI publish failure since 0.1.5. Evidence
+      # in #685's run log: changesets/action prints "using npm trusted
+      # publishing" (its own OIDC detection), then npm 10's PUT 404s with no
+      # token-exchange round-trip despite loglevel=http. Upgrading npm in
+      # place keeps the build/test runtime on Node 22.
       #
-      # When the team is ready to ship the first release, restore the
-      # `publish: pnpm changeset publish` input below and merge — the next
-      # push to main will publish whatever the open "chore: release" PR has
-      # already version-bumped to.
-      - name: Create release PR (publish gated — see #370)
-        uses: changesets/action@v1
+      # Exact-pinned (not `^`) to match this workflow's H-4 supply-chain
+      # posture — a floating range would install whatever npm publishes,
+      # unreviewed, into the job that holds `id-token: write`. Dependabot
+      # does NOT manage versions inside `run:` scripts; bump manually and
+      # note npm 11's engine floor (^20.17.0 || >=22.9.0).
+      #
+      # Caveat for future debugging: npm 11's oidc() is never-throw — if the
+      # exchange is skipped (id-token permission lost, or the trusted-
+      # publisher registration no longer matches after e.g. a workflow file
+      # rename), it logs only at silly/verbose (invisible at loglevel=http),
+      # silently falls back to the placeholder token, and reproduces the
+      # same masked E404. If that error returns, check the auth layer first
+      # and re-run with NPM_CONFIG_LOGLEVEL=verbose.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@11.18.0 && npm --version
+
+      # Publish gate opened 2026-06-04 (closes #370). Pushing to main now
+      # invokes `pnpm changeset publish`, which publishes whichever package
+      # versions in main exceed what's on the registry. The first publish
+      # ships 0.1.0 for `@pax8/cli` and `@pax8/core`. Subsequent pushes do
+      # nothing until a "chore: release" PR (opened by the action below
+      # when a changeset is present) bumps versions and is merged.
+      #
+      # 0.1.5 publish attempt (2026-07-06/07) failed here with a hard-to-
+      # diagnose `E404 Not Found - PUT https://registry.npmjs.org/@pax8%2fcore`,
+      # and 0.1.6/0.2.0 failed the same way; all three were shipped from a
+      # maintainer laptop via `pnpm publish --otp`. Root cause (found
+      # 2026-07-24 via the debug logging below): the bundled npm 10.x
+      # predates trusted-publishing support, so the OIDC exchange never ran —
+      # see the "Upgrade npm" step above. (The earlier theory that sigstore
+      # success proved the token exchange worked was wrong: provenance
+      # signing consumes the Actions OIDC token directly and is independent
+      # of the registry token exchange.) Side effect of the manual publishes:
+      # the changesets action only tags/creates GitHub Releases when its own
+      # publish step succeeds, so 0.1.5/0.1.6/0.2.0 got neither. The tags
+      # were backfilled manually on 2026-07-24; the GitHub Releases for
+      # those three versions are still missing.
+      - name: Publish (gate opened in #370)
+        id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
-          # publish: pnpm changeset publish  # gated — enable when ready to ship
+          publish: pnpm changeset publish
           version: pnpm changeset version
           commit: "chore: release"
           title: "chore: release"
         # npm OIDC trusted publishing: when this workflow has `id-token: write`
-        # and the @pax8 scope has the publishing repo+workflow registered as a
-        # trusted publisher at https://www.npmjs.com/settings/pax8/packages,
-        # `npm publish` exchanges the OIDC token for an ephemeral publish token
-        # automatically — no NPM_TOKEN secret required.
+        # and each `@pax8` package has the publishing repo+workflow registered
+        # as a trusted publisher (Settings → Trusted publishing on each
+        # package's npm page), `npm publish` exchanges the OIDC token for
+        # an ephemeral publish token automatically — no NPM_TOKEN secret
+        # required. Both packages must have trusted publisher configured
+        # before this workflow can publish; the 0.1.0 bootstrap was done
+        # manually with `pnpm publish --otp` since trusted publishers
+        # require the target package to already exist on the registry.
         # https://docs.npmjs.com/trusted-publishers
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
+          # Surface the OIDC token-exchange HTTP round-trip in the log so
+          # future publish failures don't require inspecting a redacted
+          # local debug file. `http` shows request/response codes with the
+          # bearer token redacted; use `verbose` if you need parameter-
+          # level detail (much noisier).
+          NPM_CONFIG_LOGLEVEL: "http"
+
+      # Post-publish canary (#697). Installs what was just published into a
+      # clean directory outside the workspace and runs the README demo
+      # commands against it.
+      #
+      # This runs AFTER publish, not before, and that ordering is forced: the
+      # packaged CLI resolves `@pax8/core` from the registry at the version
+      # `pnpm publish` baked in when it rewrote `workspace:*`, so the check is
+      # unrunnable until that core version actually exists on npm. Gating the
+      # publish on it would deadlock — core can't be validated before it's
+      # published, and it can't be published before it's validated.
+      #
+      # So this is detection, not prevention: it converts "broken release
+      # discovered by a user days later" (what happened with 0.2.0, where
+      # every command died on `getTelemetry(...).setAccount is not a function`
+      # because the published core predated the method) into a red release
+      # run within a minute of publish. If it fails, deprecate immediately:
+      #   npm deprecate @pax8/cli@<version> "Broken; use <next> instead"
+      #
+      # Pinned to the exact version just published rather than `latest` —
+      # npm's `latest` dist-tag can lag the publish by a few seconds, and a
+      # canary that silently tests the PREVIOUS release is worse than none.
+      - name: Smoke-test the published artifact
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          PUBLISHED: ${{ steps.changesets.outputs.publishedPackages }}
+        run: |
+          set -euo pipefail
+
+          # Validate the shape before trusting it. `published == 'true'` with a
+          # payload we can't parse means changesets/action changed its output
+          # contract — fail loudly rather than skip the one canary that exists
+          # to catch a broken release.
+          if ! printf '%s' "$PUBLISHED" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+            echo "::error::publishedPackages is not a non-empty JSON array — changesets/action output contract may have changed. Got: $PUBLISHED"
+            exit 1
+          fi
+
+          version="$(printf '%s' "$PUBLISHED" | jq -r '.[] | select(.name == "@pax8/cli") | .version')"
+          if [ -z "$version" ]; then
+            # Legitimate only when the release genuinely contained no CLI. The
+            # array parsed and was non-empty, so we know which packages shipped.
+            echo "Core-only release ($(printf '%s' "$PUBLISHED" | jq -r '[.[].name] | join(", ")')) — no @pax8/cli to smoke."
+            exit 0
+          fi
+          echo "Smoke-testing @pax8/cli@$version"
+
+          # The registry is read-through-cached; a just-published version can
+          # 404 for a few seconds on the read path even though the PUT
+          # succeeded. Retry the metadata lookup before declaring failure so a
+          # propagation blip doesn't page anyone.
+          for attempt in 1 2 3 4 5 6; do
+            if npm view "@pax8/cli@$version" version >/dev/null 2>&1; then
+              break
+            fi
+            echo "Not visible yet (attempt $attempt) — waiting 10s"
+            sleep 10
+          done
+
+          PAX8_SMOKE_TARGET=registry PAX8_SMOKE_VERSION="$version" pnpm test:smoke

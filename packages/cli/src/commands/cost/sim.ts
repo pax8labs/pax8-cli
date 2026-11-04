@@ -13,15 +13,16 @@ import {
   BillingTermSchema,
   ERROR_INVALID_INPUT,
   simulateCostChange,
-  ALL_SUBS_PAGE_SIZE,
   type BillingTerm,
   type SimulationInput,
   type SimulationResult,
 } from "@pax8/core";
 import type { Subscription } from "@pax8/core";
+import { collectAllSubscriptions } from "../../lib/subs-stream.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { resolveProduct } from "../../lib/resolve-product.js";
 import { validateEnum } from "../../lib/validate.js";
+import { buildAction } from "../../lib/actions.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 
 const BILLING_TERM_VALUES = BillingTermSchema.options as readonly BillingTerm[];
@@ -106,8 +107,10 @@ JSON output (--json):
     },
     "notes": string[],                    // human-readable caveats (e.g. SKU swap, term change)
     "nextActions": [{                     // ready-to-run follow-up commands
-      "command": string,                  // e.g. "pax8 orders create --company ..."
-      "description": string
+      "command": string,                  // DISPLAY ONLY — never pass to a shell
+      "args": string[],                   // argv to spawn; args[0] === "pax8"
+      "description": string,
+      "isWrite": boolean                  // true ⇒ needs explicit approval first
     }]
   }`,
   )
@@ -150,11 +153,14 @@ JSON output (--json):
       //   (b) pull the current quantity/price/billingTerm for the "current" leg
       let companySubs: Subscription[] = [];
       try {
-        const subsResult = await ctx.api.subscriptions.list({
-          companyId: company.id,
-          size: ALL_SUBS_PAGE_SIZE,
-        });
-        companySubs = subsResult.content;
+        // #613 Phase 2: walk every page so the simulation compares
+        // against the full current portfolio for this company. Single-page
+        // truncation could miss the matching current sub if the company
+        // had >1000 subs (rare, but the fix is identical to the other
+        // aggregator conversions in this PR).
+        companySubs = await collectAllSubscriptions(
+          ctx.api.subscriptions.streamAll({ companyId: company.id }),
+        );
       } catch {
         // Best-effort: if the subscriptions list fails, we can still
         // simulate against an empty current state (i.e. add-new).
@@ -164,6 +170,11 @@ JSON output (--json):
       // "Try next" block below can offer a pickable drill-in to it.
       let currentInput: SimulationInput["current"] | undefined;
       let affectedSubscriptionId: string | undefined;
+      // Currency for output rendering — inherited from the matched current
+      // subscription when one exists (#472). Cost-sim is a single-record
+      // simulation so the currency is unambiguous; defaults to USD when no
+      // current sub is present (add-new path).
+      let displayCurrency: string = "USD";
       if (allOpts.from) {
         // Explicit --from: resolve it as a separate product.
         const fromProduct = await resolveProduct(ctx, allOpts.from);
@@ -204,6 +215,7 @@ JSON output (--json):
           billingTerm: billingTerm ?? "Monthly",
           price: price ?? 0,
         };
+        if (existing?.currencyCode) displayCurrency = existing.currencyCode;
       } else {
         // No --from: try to auto-detect a matching subscription on the proposed product.
         const existing = pickCurrentSubscription(companySubs, proposedProduct.id);
@@ -216,6 +228,7 @@ JSON output (--json):
             billingTerm: existing.billingTerm,
             price: existing.price,
           };
+          if (existing.currencyCode) displayCurrency = existing.currencyCode;
         }
         // If no existing match, currentInput stays undefined → add-new simulation.
       }
@@ -269,11 +282,26 @@ JSON output (--json):
       if (ctx.outputFormat === "quiet") return;
 
       if (ctx.outputFormat === "json") {
+        // #708: build from argv so the company/product names land in their
+        // own slots. This action is an `orders create` — a write — and the
+        // emitted `isWrite: true` is what tells an agent to stop and ask
+        // rather than spawn it off the back of a read-only simulation.
         const nextActions = [
-          {
-            command: `pax8 orders create --company "${company.name}" --product "${proposedProduct.name}" --quantity ${proposedQuantity} --billing-term ${result.proposed.billingTerm}`,
-            description: `Place this change as an order for ${company.name}`,
-          },
+          buildAction(
+            [
+              "orders",
+              "create",
+              "--company",
+              company.name,
+              "--product",
+              proposedProduct.name,
+              "--quantity",
+              String(proposedQuantity),
+              "--billing-term",
+              String(result.proposed.billingTerm),
+            ],
+            `Place this change as an order for ${company.name}`,
+          ),
         ];
         process.stdout.write(
           JSON.stringify(
@@ -351,8 +379,8 @@ JSON output (--json):
         leg: { productName: string; quantity: number; monthly: number; annual: number; billingTerm: string },
       ): string => {
         const left = `${label.padEnd(labelWidth)}${leg.productName} × ${leg.quantity}`;
-        const monthlyStr = `${formatCurrency(leg.monthly)}/mo`;
-        const annualStr = `${formatCurrency(leg.annual)}/yr`;
+        const monthlyStr = `${formatCurrency(leg.monthly, displayCurrency)}/mo`;
+        const annualStr = `${formatCurrency(leg.annual, displayCurrency)}/yr`;
         return `  ${left.padEnd(56)}  ${chalk.cyan(monthlyStr.padEnd(14))} ${chalk.cyan(annualStr)}`;
       };
 
@@ -361,10 +389,11 @@ JSON output (--json):
       }
       process.stdout.write(renderLeg("Proposed:", result.proposed) + "\n");
 
-      // Delta line
-      const dMonthly = `${deltaSign(result.delta.monthly)}${formatCurrency(result.delta.monthly)}/mo`;
-      const dAnnual = `${deltaSign(result.delta.annual)}${formatCurrency(result.delta.annual)}/yr`;
-      const dPerSeat = `${deltaSign(result.delta.perSeat)}${formatCurrency(result.delta.perSeat)}/seat/mo`;
+      // Delta line — render with the existing subscription's currency so a
+      // EUR sub's "Delta:" line shows €, not $ (#472).
+      const dMonthly = `${deltaSign(result.delta.monthly)}${formatCurrency(result.delta.monthly, displayCurrency)}/mo`;
+      const dAnnual = `${deltaSign(result.delta.annual)}${formatCurrency(result.delta.annual, displayCurrency)}/yr`;
+      const dPerSeat = `${deltaSign(result.delta.perSeat)}${formatCurrency(result.delta.perSeat, displayCurrency)}/seat/mo`;
       const deltaColor = result.delta.monthly >= 0 ? chalk.green : chalk.yellow;
       process.stdout.write(
         `  ${"Delta:".padEnd(labelWidth)}` +
@@ -418,8 +447,7 @@ JSON output (--json):
         command: ["clients", "more", company.name],
       });
       process.stderr.write("\n");
-      process.stderr.write(chalk.dim("  Try next:\n"));
-      await promptNextSteps(steps, { renderList: true });
+      await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
     } catch (error) {
       spinner.stop();
       handleCommandError(error, undefined, "Cost simulation failed");

@@ -41,11 +41,27 @@ const samplePricingResponse = {
   ],
 };
 
-const sampleProvisioningDetail = {
-  productId: PRODUCT_ID,
-  vendorPrerequisites: "Must have tenant",
-  fields: [
-    { name: "domain", label: "Domain", type: "string", required: true },
+// Spec-shaped envelope per `findProvisionDetailsByProductId` in
+// partner-endpoints.json: `{ content: ProvisioningDetail[] }` where each
+// detail carries `{ key, label?, description?, valueType?, possibleValues?,
+// values? }`. The pre-fix shape (`{ productId, vendorPrerequisites, fields }`)
+// was hallucinated; see Candidate H in docs/triage/v0.1.0-candidates.md.
+const sampleProvisioningResponse = {
+  content: [
+    {
+      key: "domain",
+      label: "Tenant Domain",
+      description: "Customer's verified Microsoft tenant domain.",
+      valueType: "Input",
+      possibleValues: null,
+    },
+    {
+      key: "plan",
+      label: "Plan",
+      description: "Select the partner plan tier.",
+      valueType: "Single-Value",
+      possibleValues: ["basic", "standard"],
+    },
   ],
 };
 
@@ -93,13 +109,86 @@ describe("ProductsApi", () => {
     expect(result[0].rates[0].partnerBuyRate).toBe(22.0);
   });
 
-  it("getProvisioningDetails returns provisioning info", async () => {
-    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleProvisioningDetail);
+  it("getProvisioningDetails returns spec-shaped provisioning fields", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(sampleProvisioningResponse);
 
     const result = await api.getProvisioningDetails(PRODUCT_ID);
 
-    expect(client.get).toHaveBeenCalledWith(`/products/${PRODUCT_ID}/provisioning-details`);
-    expect(result.productId).toBe(PRODUCT_ID);
+    // Path regression: spec is `/provision-details` (singular). The pre-fix
+    // path was `/provisioning-details` (plural-with-hyphen) and 404'd against
+    // the real API — see Candidate H.
+    expect(client.get).toHaveBeenCalledWith(`/products/${PRODUCT_ID}/provision-details`);
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
+    expect(result[0].key).toBe("domain");
+    expect(result[0].valueType).toBe("Input");
+    expect(result[0].possibleValues).toBeNull();
+    expect(result[1].key).toBe("plan");
+    expect(result[1].valueType).toBe("Single-Value");
+    expect(result[1].possibleValues).toEqual(["basic", "standard"]);
+  });
+
+  it("getProvisioningDetails calls the spec'd path /provision-details", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue({ content: [] });
+
+    await api.getProvisioningDetails(PRODUCT_ID);
+
+    const calls = (client.get as ReturnType<typeof vi.fn>).mock.calls;
+    const path = calls[0][0] as string;
+    expect(path).toBe(`/products/${PRODUCT_ID}/provision-details`);
+    expect(path).not.toContain("provisioning-details");
+  });
+
+  // #393: branch-coverage push for the products API client. Pre-fix the
+  // module reported 0% branch coverage — `search()`'s longest-token reduce,
+  // the `apiKeyword || undefined` ternary, and `list()`'s no-params path
+  // were never exercised.
+
+  it("list() with no params still issues a GET (covers undefined-params branch)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    const result = await api.list();
+    expect(client.get).toHaveBeenCalledWith("/products", undefined);
+    expect(result.content).toHaveLength(1);
+  });
+
+  it("search() with a multi-token query picks the LONGEST token for the upstream `search` param", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    // "Microsoft 365 Business Premium" — "Microsoft" (9) tied with "Business"
+    // (8); the reduce picks whichever scans first when length is ≥ best, so
+    // here it lands on "Premium" (7). The contract: SOME token gets used.
+    await api.search("Microsoft 365 Business");
+    const call = (client.get as ReturnType<typeof vi.fn>).mock.calls[0];
+    const params = call[1] as { search?: string };
+    expect(params.search).toBeDefined();
+    expect(["Microsoft", "365", "Business"]).toContain(params.search);
+  });
+
+  it("search() with a single-token query passes it as `search`", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    await api.search("backup");
+    const params = (client.get as ReturnType<typeof vi.fn>).mock.calls[0][1] as {
+      search?: string;
+    };
+    expect(params.search).toBe("backup");
+  });
+
+  it("search() with an empty / whitespace-only query passes `undefined` (covers the `|| undefined` branch)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    await api.search("   ");
+    const params = (client.get as ReturnType<typeof vi.fn>).mock.calls[0][1] as {
+      search?: string;
+    };
+    expect(params.search).toBeUndefined();
+  });
+
+  it("search() forwards extra params (vendor, page, size)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+    await api.search("Microsoft", { vendorName: "Microsoft", page: 2, size: 10 });
+    const params = (client.get as ReturnType<typeof vi.fn>).mock.calls[0][1] as Record<string, unknown>;
+    expect(params.vendorName).toBe("Microsoft");
+    expect(params.page).toBe(2);
+    expect(params.size).toBe(10);
+    expect(params.search).toBe("Microsoft");
   });
 
   it("getDependencies returns dependency array", async () => {

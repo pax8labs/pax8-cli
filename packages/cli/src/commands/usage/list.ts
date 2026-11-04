@@ -5,12 +5,13 @@ import { Command } from "commander";
 import chalk from "chalk";
 import type { UsageSummary } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, singlePageEnvelope } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
+import { clampListSize, LIST_SIZE_CAP, warnSizeClamped } from "../../lib/validate.js";
 
 export const usageListCommand = new Command("list")
   .description("List usage summaries")
@@ -18,7 +19,7 @@ export const usageListCommand = new Command("list")
   .option("--company <id|name>", "List usage across every subscription owned by a company")
   .option("--month <YYYY-MM>", "Filter by usage month (e.g. 2026-04)")
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "50")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "50")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
@@ -34,7 +35,15 @@ Notes:
   subscription (\`/v1/subscriptions/{id}/usage-summaries\`). \`--company\`
   is a convenience: the CLI resolves the company to its subscriptions and
   iterates. Pass \`--subscription <id>\` to skip the lookup when you already
-  know the ID.`
+  know the ID.
+
+  Pagination: the per-subscription endpoint accepts \`page\` / \`size\`. Use
+  \`--page\` and \`--size\` (default 50, max ${LIST_SIZE_CAP} per page; values above the
+  cap are clamped with a stderr warning, #518). When fanning out via
+  \`--company\` or no filter, each subscription is fetched with the same
+  page / size — results from all subscriptions are concatenated, so
+  consumers should treat the combined output as a single result set and
+  re-query with a larger \`--size\` if any one subscription truncates.`
   )
   .action(async (options, command) => {
     const globalOpts = command.optsWithGlobals();
@@ -44,7 +53,12 @@ Notes:
     try {
       spinner.start();
       const apiPage = Math.max(parseInt(options.page, 10) - 1, 0);
-      const apiSize = parseInt(options.size, 10);
+      // #518: clamp `--size` at LIST_SIZE_CAP (1000).
+      const sizeResult = clampListSize(parseInt(options.size, 10), 50);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: globalOpts.quiet });
+      }
+      const apiSize = sizeResult.size;
 
       // Resolve the set of subscription IDs to query. Three modes:
       //   --subscription <id>   → query exactly that subscription
@@ -88,6 +102,20 @@ Notes:
         for (const item of summaries) {
           process.stdout.write(item.id + "\n");
         }
+        return;
+      }
+
+      // #483: wrap JSON as { usage, page }. The endpoint is per-subscription
+      // (we fan out), so server pagination is per-call; we surface a
+      // single-page envelope summarizing the aggregated result instead.
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            { usage: summaries, page: singlePageEnvelope(summaries.length) },
+            null,
+            2,
+          ) + "\n",
+        );
         return;
       }
 

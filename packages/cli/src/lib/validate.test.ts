@@ -5,9 +5,12 @@ import { describe, it, expect } from "vitest";
 import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { CliError } from "./errors.js";
 import {
+  clampListSize,
+  LIST_SIZE_CAP,
+  resolveWithSuggestions,
   validateEnum,
   validateEnumList,
-  resolveWithSuggestions,
+  warnSizeClamped,
 } from "./validate.js";
 
 describe("validateEnum", () => {
@@ -214,5 +217,103 @@ describe("resolveWithSuggestions", () => {
       expect(cli.code).toBe(ERROR_INVALID_INPUT);
       expect(cli.message).toContain("not found");
     }
+  });
+});
+
+describe("clampListSize", () => {
+  // The cap mirrors `ALL_SUBS_PAGE_SIZE` (1000) — keep this assertion
+  // alongside the helper so a drift between the two is caught immediately.
+  it("exposes a 1000-row cap", () => {
+    expect(LIST_SIZE_CAP).toBe(1000);
+  });
+
+  it("passes a sub-cap request through unchanged", () => {
+    const r = clampListSize(25, 25);
+    expect(r.size).toBe(25);
+    expect(r.clamped).toBe(false);
+    expect(r.requested).toBe(25);
+  });
+
+  it("passes the exact cap through without flagging clamped", () => {
+    const r = clampListSize(1000, 25);
+    expect(r.size).toBe(1000);
+    expect(r.clamped).toBe(false);
+  });
+
+  it("clamps an over-cap request and reports the original value", () => {
+    const r = clampListSize(50000, 25);
+    expect(r.size).toBe(LIST_SIZE_CAP);
+    expect(r.clamped).toBe(true);
+    expect(r.requested).toBe(50000);
+  });
+
+  it("falls back to the default for undefined / NaN / non-positive input", () => {
+    expect(clampListSize(undefined, 25)).toEqual({ size: 25, clamped: false, requested: 25 });
+    expect(clampListSize(Number.NaN, 50)).toEqual({ size: 50, clamped: false, requested: 50 });
+    expect(clampListSize(0, 50)).toEqual({ size: 50, clamped: false, requested: 50 });
+    expect(clampListSize(-1, 50)).toEqual({ size: 50, clamped: false, requested: 50 });
+  });
+
+  it("never returns a default that itself exceeds the cap", () => {
+    // Defensive: if a caller ever wires up a default larger than the cap,
+    // we still hand back a safe size rather than echoing the bad default.
+    const r = clampListSize(undefined, 5000);
+    expect(r.size).toBe(LIST_SIZE_CAP);
+  });
+});
+
+describe("warnSizeClamped", () => {
+  it("writes the canonical warning to stderr with both the requested and clamped values", () => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    // @ts-expect-error — narrow override for the test
+    process.stderr.write = (chunk: string) => {
+      writes.push(String(chunk));
+      return true;
+    };
+    try {
+      warnSizeClamped(50000);
+    } finally {
+      process.stderr.write = orig;
+    }
+    const joined = writes.join("");
+    expect(joined).toContain("--size 50000 clamped to 1000");
+    expect(joined).toContain("--page");
+  });
+
+  it("respects the quiet option", () => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    // @ts-expect-error — narrow override for the test
+    process.stderr.write = (chunk: string) => {
+      writes.push(String(chunk));
+      return true;
+    };
+    try {
+      warnSizeClamped(50000, LIST_SIZE_CAP, { quiet: true });
+    } finally {
+      process.stderr.write = orig;
+    }
+    expect(writes.join("")).toBe("");
+  });
+
+  it("respects PAX8_QUIET=1", () => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    const prevEnv = process.env.PAX8_QUIET;
+    process.env.PAX8_QUIET = "1";
+    // @ts-expect-error — narrow override for the test
+    process.stderr.write = (chunk: string) => {
+      writes.push(String(chunk));
+      return true;
+    };
+    try {
+      warnSizeClamped(50000);
+    } finally {
+      process.stderr.write = orig;
+      if (prevEnv === undefined) delete process.env.PAX8_QUIET;
+      else process.env.PAX8_QUIET = prevEnv;
+    }
+    expect(writes.join("")).toBe("");
   });
 });

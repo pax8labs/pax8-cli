@@ -116,8 +116,7 @@ Examples:
           label: `${chalk.cyan(replCmd(`pax8 quotes send ${quote.id}`))}  ${chalk.dim("send the quote to the customer")}`,
           command: ["quotes", "send", quote.id],
         });
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
         process.stderr.write(
           chalk.dim(
             `  Add another line item — run ${chalk.cyan(replCmd("pax8 quotes line-items add --help"))} for syntax.\n\n`,

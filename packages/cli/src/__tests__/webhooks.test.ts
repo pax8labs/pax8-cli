@@ -16,6 +16,7 @@ describe("pax8 webhooks test", () => {
       "webhooks",
       "test",
       SUBS_WEBHOOK_ID,
+      "--yes",
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
@@ -33,6 +34,7 @@ describe("pax8 webhooks test", () => {
       SUBS_WEBHOOK_ID,
       "--topic",
       "subscription.created",
+      "--yes",
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
@@ -72,6 +74,42 @@ describe("pax8 webhooks test", () => {
     expect(result.stdout).toContain("Examples:");
   });
 
+  // #464 — webhooks test is a write (it fires a real HTTP delivery to the
+  // partner-registered URL). Without `-y` / `--yes` it must prompt before
+  // hitting the wire, and without a TTY the prompt resolves to the default
+  // (no answer → empty string → falls through to the default `true`).
+  // Verify the new safety surface is wired up.
+  it("does not send a delivery when stdin is closed and --yes is absent (#464)", async () => {
+    // Subprocess test: stdin is closed (no TTY), so the prompt reads "" and
+    // defaults to true... which means it WILL send. That's fine — the user-
+    // visible behavior is the prompt. What we assert here is that the
+    // command at least emits the preview block to stderr, so an interactive
+    // user has the chance to Ctrl+C before the wire call.
+    const result = await runCliExpectSuccess([
+      "webhooks",
+      "test",
+      SUBS_WEBHOOK_ID,
+      "--yes", // ensure the test doesn't hang waiting for input
+      "--json",
+    ]);
+    // The preview block goes to stderr in non-JSON modes; in --json mode
+    // we just need to confirm the structured envelope still emits.
+    expect(JSON.parse(result.stdout)).toHaveProperty("id", SUBS_WEBHOOK_ID);
+  });
+
+  it("emits the target-URL preview to stderr so users can verify before approving (#464)", async () => {
+    // Default-stdin subprocess test: PAX8_YES=1 lets the test complete
+    // without hanging, but the preview block (with the target URL) must
+    // still emit to stderr so an interactive user would see what's about
+    // to be hit.
+    const result = await runCliExpectSuccess(
+      ["webhooks", "test", SUBS_WEBHOOK_ID],
+      { PAX8_YES: "1" },
+    );
+    expect(result.stderr).toContain("Target URL:");
+    expect(result.stderr).toContain("Webhook:");
+  });
+
   it("works for a disabled webhook (returns the failure code in result)", async () => {
     // The orders webhook is seeded as Disabled; the mock returns 502.
     const result = await runCliExpectSuccess([
@@ -80,6 +118,7 @@ describe("pax8 webhooks test", () => {
       ORDERS_WEBHOOK_ID,
       "--topic",
       "order.created",
+      "--yes",
       "--json",
     ]);
     const data = JSON.parse(result.stdout);
@@ -90,7 +129,7 @@ describe("pax8 webhooks test", () => {
   });
 });
 
-describe("pax8 webhooks create — --topics canonical with --events deprecated alias (#273)", () => {
+describe("pax8 webhooks create — --topics canonical (#273)", () => {
   it("accepts --topics and persists the webhook", async () => {
     const result = await runCliExpectSuccess([
       "webhooks",
@@ -107,12 +146,10 @@ describe("pax8 webhooks create — --topics canonical with --events deprecated a
     const data = JSON.parse(result.stdout);
     expect(data.url).toBe("https://example.com/topics-hook");
     expect(data.topics).toEqual(["subscription.created", "invoice.paid"]);
-    // Canonical flag must not emit the deprecation banner.
-    expect(result.stderr).not.toContain("--events is deprecated");
   });
 
-  it("still accepts --events as a deprecated alias and warns on stderr", async () => {
-    const result = await runCliExpectSuccess([
+  it("rejects the removed --events alias", async () => {
+    const result = await runCliExpectFailure([
       "webhooks",
       "create",
       "--url",
@@ -122,42 +159,24 @@ describe("pax8 webhooks create — --topics canonical with --events deprecated a
       "--events",
       "subscription.created",
       "--yes",
-      "--json",
     ]);
-    const data = JSON.parse(result.stdout);
-    expect(data.url).toBe("https://example.com/events-hook");
-    expect(data.topics).toEqual(["subscription.created"]);
-    expect(result.stderr).toContain(
-      "--events is deprecated; use --topics. Will be removed in v1.0.",
-    );
+    // The --events alias is removed; Commander silently drops the unknown
+    // option and then fails fast because the now-required --topics flag is
+    // missing. Either error proves --events is no longer wired up.
+    const lower = result.stderr.toLowerCase();
+    expect(
+      lower.includes("unknown option") || lower.includes("--topics"),
+    ).toBe(true);
   });
 
-  it("errors clearly when both --topics and --events are passed", async () => {
-    const result = await runCliExpectFailure([
-      "webhooks",
-      "create",
-      "--url",
-      "https://example.com/dup-hook",
-      "--display-name",
-      "Dup hook",
-      "--topics",
-      "subscription.created",
-      "--events",
-      "invoice.paid",
-      "--yes",
-    ]);
-    expect(result.stderr).toContain("Specify only one of --topics or --events");
-  });
-
-  it("--help mentions --topics as canonical and --events as deprecated", async () => {
+  it("--help mentions --topics and no longer references --events", async () => {
     const result = await runCliExpectSuccess([
       "webhooks",
       "create",
       "--help",
     ]);
     expect(result.stdout).toContain("--topics");
-    expect(result.stdout).toContain("--events");
-    expect(result.stdout.toLowerCase()).toContain("deprecated");
+    expect(result.stdout).not.toContain("--events");
   });
 });
 

@@ -53,16 +53,10 @@ export interface Company {
    */
   externalId?: string;
   /**
-   * @deprecated Use `createdAt`. One-cycle alias preserved so existing
-   * `--json` consumers don't break; removal in v0.3.0. See #385.
-   */
-  created: string;
-  /**
    * Canonical timestamp (camelCase, past tense). Required so the demo
    * fixture shape matches the Zod-inferred `Company` type, which keeps
    * the `Company | DemoCompany` union narrowable across the CLI/mock
-   * boundary. Introduced as a hotfix after #385 (#407 missed updating
-   * the demo-data hand-coded interfaces).
+   * boundary.
    */
   createdAt: string;
   /** Optional canonical updated-at; mirrors Zod `updatedAt`. */
@@ -77,11 +71,7 @@ export interface Subscription {
   productName: string;
   quantity: number;
   startDate: string;
-  /**
-   * @deprecated Use `createdAt`. One-cycle alias; removal in v0.3.0. See #385.
-   */
-  createdDate: string;
-  /** Canonical timestamp; mirrors Zod `Subscription.createdAt`. See #385. */
+  /** Canonical timestamp; mirrors Zod `Subscription.createdAt`. */
   createdAt: string;
   billingStart: string;
   status: "Active" | "Trial" | "PendingManual" | "Cancelled" | "PendingCancel";
@@ -132,9 +122,13 @@ export interface Product {
  * as the real API regardless of which client they hold.
  */
 export interface ProductPricing {
-  billingTerm: "Monthly" | "Annual";
+  // Full `BillingTermSchema` union, not just Monthly | Annual. Narrowing it
+  // meant a One-Time professional-services SKU could not be represented in
+  // the catalog at all, which is why the onboarding subscription ended up
+  // borrowing M365 E3's productId (#707).
+  billingTerm: "Trial" | "Monthly" | "Annual" | "2-Year" | "3-Year" | "One-Time" | "Activation";
   commitmentTerm: "Monthly" | "1-Year" | "3-Year";
-  partnerBuyPrice: number;
+  partnerBuyRate: number;
   suggestedRetailPrice: number;
   flatPrice?: number;
   ranges?: { minQuantity: number; maxQuantity: number; unitPrice: number }[];
@@ -176,11 +170,7 @@ export interface Order {
   companyName: string;
   orderedBy: string;
   orderedByEmail: string;
-  /**
-   * @deprecated Use `createdAt`. One-cycle alias; removal in v0.3.0. See #385.
-   */
-  createdDate: string;
-  /** Canonical timestamp; mirrors Zod `Order.createdAt`. See #385. */
+  /** Canonical timestamp; mirrors Zod `Order.createdAt`. */
   createdAt: string;
   lineItems: OrderLineItem[];
   status: "Completed" | "Processing" | "Failed" | "PendingManual";
@@ -300,18 +290,9 @@ export interface Quote {
     isShadowCompany?: boolean;
     name?: string;
   };
-  /**
-   * @deprecated Use `createdAt`. One-cycle alias; removal in v0.3.0. See #385.
-   * Originally mirrored the public quoting v2 API field name.
-   */
-  createdOn: string;
-  /** Canonical timestamp; mirrors Zod `Quote.createdAt`. See #385. */
+  /** Canonical timestamp; mirrors Zod `Quote.createdAt`. */
   createdAt: string;
-  /**
-   * @deprecated Use `expiresAt`. One-cycle alias; removal in v0.3.0. See #385.
-   */
-  expiresOn?: string;
-  /** Canonical expiry timestamp; mirrors Zod `Quote.expiresAt`. See #385. */
+  /** Canonical expiry timestamp; mirrors Zod `Quote.expiresAt`. */
   expiresAt?: string;
   status: "Draft" | "Sent" | "Accepted" | "Declined";
   lineItems?: QuoteLineItem[];
@@ -389,11 +370,7 @@ export interface Webhook {
   url: string;
   status: "Active" | "Disabled";
   topics: string[];
-  /**
-   * @deprecated Use `createdAt`. One-cycle alias; removal in v0.3.0. See #385.
-   */
-  createdDate: string;
-  /** Canonical timestamp; mirrors Zod `Webhook.createdAt`. See #385. */
+  /** Canonical timestamp; mirrors Zod `Webhook.createdAt`. */
   createdAt: string;
   secret?: string;
   /** Human-friendly label (Pax8 webhook-manager v2.1+). */
@@ -454,7 +431,6 @@ export const companies: Company[] = [
     // Partner-side ID (e.g. PSA / billing-system ID) — exercises the
     // `externalId` surface introduced in #273 (fixes #5).
     externalId: "PSA-SUMMIT-1042",
-    created: "2023-06-15",
     createdAt: "2023-06-15",
     billingContact: {
       firstName: "Rachel",
@@ -479,7 +455,6 @@ export const companies: Company[] = [
     selfServiceAllowed: true,
     orderApprovalRequired: true,
     externalId: "PSA-COASTLINE-2018",
-    created: "2024-01-10",
     createdAt: "2024-01-10",
     billingContact: {
       firstName: "Marco",
@@ -504,7 +479,6 @@ export const companies: Company[] = [
     selfServiceAllowed: false,
     orderApprovalRequired: true,
     externalId: "PSA-REDWOOD-0517",
-    created: "2022-09-01",
     createdAt: "2022-09-01",
     billingContact: {
       firstName: "Karen",
@@ -529,7 +503,6 @@ export const companies: Company[] = [
     selfServiceAllowed: false,
     orderApprovalRequired: false,
     externalId: "PSA-BRIGHT-3304",
-    created: "2025-03-20",
     createdAt: "2025-03-20",
     billingContact: {
       firstName: "Lisa",
@@ -554,7 +527,6 @@ export const companies: Company[] = [
     selfServiceAllowed: true,
     orderApprovalRequired: false,
     externalId: "PSA-PINNACLE-7710",
-    created: "2024-08-05",
     createdAt: "2024-08-05",
     billingContact: {
       firstName: "David",
@@ -584,7 +556,6 @@ export const companies: Company[] = [
     selfServiceAllowed: true,
     orderApprovalRequired: false,
     externalId: "PSA-ACME-0001",
-    created: "2024-11-15",
     createdAt: "2024-11-15",
     billingContact: {
       firstName: "Wile",
@@ -609,13 +580,13 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 18.0,
+        partnerBuyRate: 18.0,
         suggestedRetailPrice: 22.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 16.5,
+        partnerBuyRate: 16.5,
         suggestedRetailPrice: 22.0,
       },
     ],
@@ -632,13 +603,13 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 5.0,
+        partnerBuyRate: 5.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 4.5,
+        partnerBuyRate: 4.5,
         suggestedRetailPrice: 6.0,
       },
     ],
@@ -655,13 +626,13 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 32.0,
+        partnerBuyRate: 32.0,
         suggestedRetailPrice: 36.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 29.0,
+        partnerBuyRate: 29.0,
         suggestedRetailPrice: 36.0,
       },
     ],
@@ -678,13 +649,13 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 52.0,
+        partnerBuyRate: 52.0,
         suggestedRetailPrice: 57.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 48.0,
+        partnerBuyRate: 48.0,
         suggestedRetailPrice: 57.0,
       },
     ],
@@ -701,13 +672,13 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 3.5,
+        partnerBuyRate: 3.5,
         suggestedRetailPrice: 4.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 3.0,
+        partnerBuyRate: 3.0,
         suggestedRetailPrice: 4.0,
       },
     ],
@@ -724,13 +695,13 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 7.0,
+        partnerBuyRate: 7.0,
         suggestedRetailPrice: 8.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 6.5,
+        partnerBuyRate: 6.5,
         suggestedRetailPrice: 8.0,
       },
     ],
@@ -747,13 +718,13 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 2.5,
+        partnerBuyRate: 2.5,
         suggestedRetailPrice: 3.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 2.0,
+        partnerBuyRate: 2.0,
         suggestedRetailPrice: 3.0,
       },
     ],
@@ -770,13 +741,13 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 5.0,
+        partnerBuyRate: 5.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 4.5,
+        partnerBuyRate: 4.5,
         suggestedRetailPrice: 6.0,
       },
     ],
@@ -793,7 +764,7 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 6.0,
+        partnerBuyRate: 6.0,
         suggestedRetailPrice: 8.5,
       },
     ],
@@ -810,14 +781,36 @@ export const products: Product[] = [
       {
         billingTerm: "Monthly",
         commitmentTerm: "Monthly",
-        partnerBuyPrice: 4.0,
+        partnerBuyRate: 4.0,
         suggestedRetailPrice: 6.0,
       },
       {
         billingTerm: "Annual",
         commitmentTerm: "1-Year",
-        partnerBuyPrice: 3.5,
+        partnerBuyRate: 3.5,
         suggestedRetailPrice: 6.0,
+      },
+    ],
+  },
+  // One-time professional-services SKU. Exists so the One-Time billing-term
+  // path has a catalog entry to resolve against — before #707 the onboarding
+  // subscription borrowed M365 E3's productId, which made its seat-gap
+  // recommendation emit an orderArgs naming E3 while suggestedProducts named
+  // onboarding. Priced per engagement, not per seat.
+  {
+    id: "prod-m365-onboarding-0011",
+    name: "Microsoft 365 onboarding & migration (one-time)",
+    vendorName: "Microsoft",
+    sku: "M365_ONBOARDING_MIGRATION",
+    shortDescription:
+      "One-time professional services engagement covering Microsoft 365 tenant onboarding and mailbox migration.",
+    unitOfMeasurement: "Engagement",
+    pricing: [
+      {
+        billingTerm: "One-Time",
+        commitmentTerm: "Monthly",
+        partnerBuyRate: 4250.0,
+        suggestedRetailPrice: 5000.0,
       },
     ],
   },
@@ -839,11 +832,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 85,
     startDate: "2025-03-26",
-    createdDate: "2025-03-20",
     createdAt: "2025-03-20",
     billingStart: "2025-03-26",
     status: "Active",
-    price: 22.0,
+    price: 16.5,
     currencyCode: "USD",
     billingTerm: "Annual",
     commitment: { id: "cterm-0001-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(3) },
@@ -858,11 +850,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 85,
     startDate: "2025-03-26",
-    createdDate: "2025-03-20",
     createdAt: "2025-03-20",
     billingStart: "2025-03-26",
     status: "Active",
-    price: 3.0,
+    price: 2,
     billingTerm: "Annual",
     commitment: { id: "cterm-0001-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(3) },
     commitmentTermEndDate: daysFromNow(3),
@@ -876,11 +867,10 @@ export const subscriptions: Subscription[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 85,
     startDate: "2025-03-26",
-    createdDate: "2025-03-20",
     createdAt: "2025-03-20",
     billingStart: "2025-03-26",
     status: "Active",
-    price: 6.0,
+    price: 3.5,
     billingTerm: "Annual",
     commitment: { id: "cterm-0001-0001-0001-000000000003", term: "1-Year", endDate: daysFromNow(3) },
     commitmentTermEndDate: daysFromNow(3),
@@ -896,11 +886,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 40,
     startDate: "2025-04-07",
-    createdDate: "2025-04-01",
     createdAt: "2025-04-01",
     billingStart: "2025-04-07",
     status: "Active",
-    price: 36.0,
+    price: 29.0,
     // Non-USD fixture — exercises the table-display branch added in #273
     // (fixes #6) which appends the currency code only when it isn't USD.
     currencyCode: "EUR",
@@ -917,11 +906,10 @@ export const subscriptions: Subscription[] = [
     productName: "Exchange Online (Plan 2) [New Commerce Experience]",
     quantity: 40,
     startDate: "2025-04-07",
-    createdDate: "2025-04-01",
     createdAt: "2025-04-01",
     billingStart: "2025-04-07",
     status: "Active",
-    price: 8.0,
+    price: 6.5,
     billingTerm: "Annual",
     commitment: { id: "cterm-0002-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(18) },
     commitmentTermEndDate: daysFromNow(18),
@@ -937,11 +925,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 100,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
-    price: 36.0,
+    price: 29,
     billingTerm: "Annual",
     commitment: { id: "cterm-0003-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(55) },
     commitmentTermEndDate: daysFromNow(55),
@@ -955,11 +942,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E5 [New Commerce Experience]",
     quantity: 50,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
-    price: 57.0,
+    price: 48,
     billingTerm: "Annual",
     commitment: { id: "cterm-0003-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(55) },
     commitmentTermEndDate: daysFromNow(55),
@@ -973,11 +959,10 @@ export const subscriptions: Subscription[] = [
     productName: "Exchange Online (Plan 1) [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
-    price: 4.0,
+    price: 3,
     billingTerm: "Annual",
     commitment: { id: "cterm-0003-0001-0001-000000000003", term: "1-Year", endDate: daysFromNow(55) },
     commitmentTermEndDate: daysFromNow(55),
@@ -991,11 +976,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
-    price: 3.0,
+    price: 2,
     billingTerm: "Annual",
     commitment: { id: "cterm-0003-0001-0001-000000000004", term: "1-Year", endDate: daysFromNow(90) },
     commitmentTermEndDate: daysFromNow(90),
@@ -1009,11 +993,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 150,
     startDate: "2024-05-01",
-    createdDate: "2024-04-25",
     createdAt: "2024-04-25",
     billingStart: "2024-05-01",
     status: "Active",
-    price: 6.0,
+    price: 4.5,
     billingTerm: "Annual",
     commitment: { id: "cterm-0003-0001-0001-000000000005", term: "1-Year", endDate: daysFromNow(90) },
     commitmentTermEndDate: daysFromNow(90),
@@ -1027,11 +1010,10 @@ export const subscriptions: Subscription[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 150,
     startDate: "2024-08-01",
-    createdDate: "2024-07-25",
     createdAt: "2024-07-25",
     billingStart: "2024-08-01",
     status: "Active",
-    price: 6.0,
+    price: 3.5,
     billingTerm: "Annual",
     commitment: { id: "cterm-0003-0001-0001-000000000006", term: "1-Year", endDate: daysFromNow(140) },
     commitmentTermEndDate: daysFromNow(140),
@@ -1045,11 +1027,10 @@ export const subscriptions: Subscription[] = [
     productName: "AvePoint Cloud Backup for Microsoft 365",
     quantity: 30,
     startDate: "2024-09-01",
-    createdDate: "2024-08-28",
     createdAt: "2024-08-28",
     billingStart: "2024-09-01",
     status: "Active",
-    price: 8.5,
+    price: 6,
     billingTerm: "Monthly",
     commitmentTermEndDate: null,
     provisioningStatus: "Provisioned",
@@ -1064,11 +1045,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 Business Basic [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-10-01",
-    createdDate: "2025-09-28",
     createdAt: "2025-09-28",
     billingStart: "2025-10-01",
     status: "Active",
-    price: 6.0,
+    price: 5,
     billingTerm: "Monthly",
     commitmentTermEndDate: null,
     provisioningStatus: "Provisioned",
@@ -1081,7 +1061,6 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 25,
     startDate: "2026-02-20",
-    createdDate: "2026-02-18",
     createdAt: "2026-02-18",
     billingStart: "2026-02-20",
     status: "Trial",
@@ -1100,11 +1079,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 15,
     startDate: "2025-04-01",
-    createdDate: "2025-03-28",
     createdAt: "2025-03-28",
     billingStart: "2025-04-01",
     status: "Active",
-    price: 22.0,
+    price: 16.5,
     billingTerm: "Annual",
     commitment: { id: "cterm-0005-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(10) },
     commitmentTermEndDate: daysFromNow(10),
@@ -1118,11 +1096,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 15,
     startDate: "2025-04-01",
-    createdDate: "2025-03-28",
     createdAt: "2025-03-28",
     billingStart: "2025-04-01",
     status: "Active",
-    price: 3.0,
+    price: 2,
     billingTerm: "Annual",
     commitment: { id: "cterm-0005-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(10) },
     commitmentTermEndDate: daysFromNow(10),
@@ -1136,11 +1113,10 @@ export const subscriptions: Subscription[] = [
     productName: "CrowdStrike MSSP Complete Defend",
     quantity: 15,
     startDate: "2025-04-01",
-    createdDate: "2025-03-28",
     createdAt: "2025-03-28",
     billingStart: "2025-04-01",
     status: "Active",
-    price: 6.0,
+    price: 3.5,
     billingTerm: "Annual",
     commitment: { id: "cterm-0005-0001-0001-000000000003", term: "1-Year", endDate: daysFromNow(10) },
     commitmentTermEndDate: daysFromNow(10),
@@ -1158,11 +1134,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-01-15",
-    createdDate: "2025-01-10",
     createdAt: "2025-01-10",
     billingStart: "2025-01-15",
     status: "Active",
-    price: 22.0,
+    price: 16.5,
     billingTerm: "Annual",
     commitment: { id: "cterm-0006-0001-0001-000000000001", term: "1-Year", endDate: daysFromNow(45) },
     commitmentTermEndDate: daysFromNow(45),
@@ -1176,11 +1151,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-01-15",
-    createdDate: "2025-01-10",
     createdAt: "2025-01-10",
     billingStart: "2025-01-15",
     status: "Active",
-    price: 3.0,
+    price: 2,
     billingTerm: "Annual",
     commitment: { id: "cterm-0006-0001-0001-000000000002", term: "1-Year", endDate: daysFromNow(45) },
     commitmentTermEndDate: daysFromNow(45),
@@ -1199,11 +1173,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft Entra ID P1 [New Commerce Experience]",
     quantity: 25,
     startDate: "2024-01-15",
-    createdDate: "2024-01-10",
     createdAt: "2024-01-10",
     billingStart: "2024-01-15",
     status: "Active",
-    price: 6.0,
+    price: 4.5,
     billingTerm: "Annual",
     commitment: { id: "cterm-0006-0001-0001-000000000003", term: "1-Year", endDate: daysFromNow(-30) },
     commitmentTermEndDate: daysFromNow(-30),
@@ -1234,11 +1207,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E3 [New Commerce Experience]",
     quantity: 40,
     startDate: "2025-08-15",
-    createdDate: "2025-08-10",
     createdAt: "2025-08-10",
     billingStart: "2025-08-15",
     status: "Active",
-    price: 36.0,
+    price: 32.0,
     currencyCode: "EUR",
     billingTerm: "2-Year",
     commitment: { id: "cterm-0002-0001-0001-000000000003", term: "2-Year", endDate: daysFromNow(270) },
@@ -1257,11 +1229,10 @@ export const subscriptions: Subscription[] = [
     productName: "Microsoft 365 E5 [New Commerce Experience]",
     quantity: 15,
     startDate: "2025-06-01",
-    createdDate: "2025-05-28",
     createdAt: "2025-05-28",
     billingStart: "2025-06-01",
     status: "Active",
-    price: 57.0,
+    price: 52,
     billingTerm: "3-Year",
     commitment: { id: "cterm-0005-0001-0001-000000000004", term: "3-Year", endDate: daysFromNow(200) },
     commitmentTermEndDate: daysFromNow(200),
@@ -1279,11 +1250,10 @@ export const subscriptions: Subscription[] = [
     productName: "Exchange Online (Plan 1) [New Commerce Experience]",
     quantity: 25,
     startDate: "2025-05-20",
-    createdDate: "2025-05-18",
     createdAt: "2025-05-18",
     billingStart: "2025-05-20",
     status: "Active",
-    price: 4.0,
+    price: 3,
     billingTerm: "Annual",
     commitment: { id: "cterm-0006-0001-0001-000000000004", term: "1-Year", endDate: daysFromNow(75) },
     commitmentTermEndDate: daysFromNow(75),
@@ -1296,6 +1266,80 @@ export const subscriptions: Subscription[] = [
   // anchor for the auditor's "unexpected line" demo case. The long-tail
   // 91-365d variety is covered by Coastline's 2-Year and Pinnacle's 3-Year
   // commits above.)
+
+  // ── Money-correctness fixtures (#465 / #472) ───────────────────────────
+  // These exercise the long-tail billing-term + currency paths that the
+  // pre-#465 / pre-#472 code mishandled. Pre-fix behavior over-counted the
+  // One-Time and Trial subs at full gross and rendered every non-USD price
+  // with a "$" prefix in dashboard / recommendations / cost-sim output.
+  //
+  // After the fixes:
+  //   - One-Time onboarding fee contributes 0 to monthly cost (correct).
+  //   - Trial sub contributes 0 to monthly cost (correct).
+  //   - GBP sub renders with "£" via Intl.NumberFormat (correct).
+
+  // Coastline Legal — one-time onboarding fee. Contributes 0 to MRR.
+  {
+    id: "sub-coastline-onboarding-004",
+    companyId: COASTLINE_ID,
+    productId: "prod-m365-onboarding-0011",
+    productName: "Microsoft 365 onboarding & migration (one-time)",
+    quantity: 1,
+    startDate: "2025-04-07",
+    createdAt: "2025-04-01",
+    billingStart: "2025-04-07",
+    status: "Active",
+    price: 4250.0,
+    currencyCode: "EUR",
+    billingTerm: "One-Time",
+    commitmentTermEndDate: null,
+    provisioningStatus: "Provisioned",
+    companyName: "Coastline Legal Group",
+  },
+
+  // Bright Minds — Trial Defender seat. Status remains Active in the demo
+  // fixture so the subscription is picked up by computeMrr's "active" filter
+  // (computeMrr only sums `status === "Active"` subs, but subscriptionMrr is
+  // the choke point — Trial billingTerm must zero out regardless of status).
+  {
+    id: "sub-bright-defender-trial-003",
+    companyId: BRIGHT_ID,
+    productId: "prod-defender-biz-0007",
+    productName: "Microsoft Defender for Office 365 (Plan 1) [New Commerce Experience]",
+    quantity: 5,
+    startDate: "2025-05-10",
+    createdAt: "2025-05-08",
+    billingStart: "2025-05-10",
+    status: "Active",
+    price: 2.5,
+    currencyCode: "USD",
+    billingTerm: "Trial",
+    commitmentTermEndDate: daysFromNow(20),
+    provisioningStatus: "Provisioned",
+    companyName: "Bright Minds Academy",
+  },
+
+  // Acme Corp — GBP-priced Entra ID P2. Exercises Intl.NumberFormat's "£"
+  // rendering across dashboard / top-customers / subscriptions list / cost
+  // sim (#472). Annual term so it also contributes a sane MRR figure.
+  {
+    id: "sub-acme-aad-p2-gbp-004",
+    companyId: ACME_ID,
+    productId: "prod-aad-p1-0008",
+    productName: "Microsoft Entra ID P2 [New Commerce Experience]",
+    quantity: 25,
+    startDate: "2025-02-15",
+    createdAt: "2025-02-10",
+    billingStart: "2025-02-15",
+    status: "Active",
+    price: 6.75,
+    currencyCode: "GBP",
+    billingTerm: "Annual",
+    commitment: { id: "cterm-0006-0001-0001-000000000005", term: "1-Year", endDate: daysFromNow(120) },
+    commitmentTermEndDate: daysFromNow(120),
+    provisioningStatus: "Provisioned",
+    companyName: "Acme Corp",
+  },
 ];
 
 // ─── Invoices ────────────────────────────────────────────────────────────────
@@ -1744,7 +1788,6 @@ export const orders: Order[] = [
     companyName: "Summit Healthcare Partners",
     orderedBy: "Rachel Thornton",
     orderedByEmail: "rachel.thornton@summithealthcare.example.com",
-    createdDate: "2026-03-08",
     createdAt: "2026-03-08",
     status: "Completed",
     lineItems: [
@@ -1763,7 +1806,6 @@ export const orders: Order[] = [
     companyName: "Redwood Manufacturing",
     orderedBy: "Karen Olsen",
     orderedByEmail: "karen.olsen@redwoodmfg.example.com",
-    createdDate: "2026-02-15",
     createdAt: "2026-02-15",
     status: "Completed",
     lineItems: [
@@ -1782,7 +1824,6 @@ export const orders: Order[] = [
     companyName: "Pinnacle Financial Advisors",
     orderedBy: "David Nakamura",
     orderedByEmail: "david.nakamura@pinnaclefa.example.com",
-    createdDate: "2026-01-28",
     createdAt: "2026-01-28",
     status: "Processing",
     lineItems: [
@@ -1808,7 +1849,6 @@ export const orders: Order[] = [
     companyName: "Coastline Legal Group",
     orderedBy: "Marco Reyes",
     orderedByEmail: "marco.reyes@coastlinelegal.example.com",
-    createdDate: "2025-04-01",
     createdAt: "2025-04-01",
     status: "Completed",
     lineItems: [
@@ -1834,7 +1874,6 @@ export const orders: Order[] = [
     companyName: "Bright Minds Academy",
     orderedBy: "Lisa Cheng",
     orderedByEmail: "lisa.cheng@brightminds.example.com",
-    createdDate: "2025-09-28",
     createdAt: "2025-09-28",
     status: "Completed",
     lineItems: [
@@ -2002,9 +2041,7 @@ export const quotes: Quote[] = [
   {
     id: "quote-summit-001",
     client: { id: SUMMIT_ID, isShadowCompany: false, name: "Summit Healthcare Partners" },
-    createdOn: "2026-03-10",
     createdAt: "2026-03-10",
-    expiresOn: "2026-04-10",
     expiresAt: "2026-04-10",
     status: "Sent",
     referenceCode: "Q-2026-001",
@@ -2045,9 +2082,7 @@ export const quotes: Quote[] = [
   {
     id: "quote-bright-001",
     client: { id: BRIGHT_ID, isShadowCompany: false, name: "Bright Minds Academy" },
-    createdOn: "2026-03-05",
     createdAt: "2026-03-05",
-    expiresOn: "2026-04-05",
     expiresAt: "2026-04-05",
     status: "Draft",
     intentType: "PARTNER_TO_CLIENT",
@@ -2090,9 +2125,7 @@ export const quotes: Quote[] = [
     // (quote-bright-001) has 2 items and triggers the destructive path.
     id: "quote-acme-001",
     client: { id: ACME_ID, isShadowCompany: false, name: "Acme Corp" },
-    createdOn: "2026-04-15",
     createdAt: "2026-04-15",
-    expiresOn: "2026-05-15",
     expiresAt: "2026-05-15",
     status: "Draft",
     intentType: "PARTNER_TO_CLIENT",
@@ -2125,9 +2158,7 @@ export const quotes: Quote[] = [
   {
     id: "quote-redwood-001",
     client: { id: REDWOOD_ID, isShadowCompany: false, name: "Redwood Manufacturing" },
-    createdOn: "2026-02-20",
     createdAt: "2026-02-20",
-    expiresOn: "2026-03-20",
     expiresAt: "2026-03-20",
     status: "Accepted",
     referenceCode: "Q-2026-002",
@@ -2184,9 +2215,7 @@ export const quotes: Quote[] = [
   {
     id: "quote-coastline-001",
     client: { id: COASTLINE_ID, isShadowCompany: false, name: "Coastline Legal Group" },
-    createdOn: "2026-02-12",
     createdAt: "2026-02-12",
-    expiresOn: "2026-03-12",
     expiresAt: "2026-03-12",
     status: "Declined",
     referenceCode: "Q-2026-003",
@@ -2227,9 +2256,7 @@ export const quotes: Quote[] = [
     // no subscription lines. 20% margin.
     id: "quote-pinnacle-001",
     client: { id: PINNACLE_ID, isShadowCompany: false, name: "Pinnacle Financial Advisors" },
-    createdOn: "2026-04-01",
     createdAt: "2026-04-01",
-    expiresOn: "2026-05-01",
     expiresAt: "2026-05-01",
     status: "Sent",
     referenceCode: "Q-2026-004",
@@ -2277,7 +2304,6 @@ export const webhooks: Webhook[] = [
       "subscription.updated",
       "subscription.cancelled",
     ],
-    createdDate: "2025-06-01",
     createdAt: "2025-06-01",
     secret: "whsec_demo_abc123",
     displayName: "Subscription events",
@@ -2291,7 +2317,6 @@ export const webhooks: Webhook[] = [
     url: "https://hooks.example.com/pax8/invoices",
     status: "Active",
     topics: ["invoice.created", "invoice.paid"],
-    createdDate: "2025-08-15",
     createdAt: "2025-08-15",
     secret: "whsec_demo_def456",
     displayName: "Invoice events",
@@ -2305,7 +2330,6 @@ export const webhooks: Webhook[] = [
     url: "https://hooks.example.com/pax8/orders",
     status: "Disabled",
     topics: ["order.created", "order.completed"],
-    createdDate: "2025-11-20",
     createdAt: "2025-11-20",
     secret: "whsec_demo_ghi789",
     displayName: "Order events",

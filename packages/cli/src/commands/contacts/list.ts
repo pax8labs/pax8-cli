@@ -5,18 +5,25 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { ERROR_INVALID_INPUT } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  displayCommandFromArgs,
+} from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { resolveCompany } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { clampListSize, LIST_SIZE_CAP, warnSizeClamped } from "../../lib/validate.js";
 
 export const contactsListCommand = new Command("list")
   .description("List contacts for a company")
   .option("--company <id|name>", "Company ID or name (required)")
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "50")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "50")
   .option("--ids-only", "Output only resource IDs, one per line")
   .addHelpText(
     "after",
@@ -26,7 +33,7 @@ Examples:
   pax8 contacts list --company a1b2c3d4-e5f6-7890-abcd-ef1234567890
   pax8 contacts list --company "Summit Healthcare Partners" --json
   pax8 contacts list --company "Summit Healthcare Partners" --csv
-  pax8 contacts list --company "Summit Healthcare Partners" --ids-only | xargs -I{} pax8 contacts show {}`
+  pax8 contacts list --company "Summit Healthcare Partners" --ids-only | xargs -I{} pax8 contacts show {} --company "Summit Healthcare Partners"`
   )
   .action(async (options, command) => {
     const allOpts = command.optsWithGlobals();
@@ -50,9 +57,14 @@ Examples:
       spinner.start();
       const company = await resolveCompany(ctx, allOpts.company);
       const apiPage = Math.max(parseInt(allOpts.page, 10) - 1, 0);
+      // #518: clamp `--size` at LIST_SIZE_CAP (1000).
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 50);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
       const result = await ctx.api.contacts.list(company.id, {
         page: apiPage,
-        size: parseInt(allOpts.size, 10),
+        size: sizeResult.size,
       });
       spinner.stop();
 
@@ -60,6 +72,24 @@ Examples:
         for (const item of result.content) {
           process.stdout.write(item.id + "\n");
         }
+        return;
+      }
+
+      // #483: page envelope for JSON consumers + standardized footer.
+      // #562: argv form; --company value lands in its own argv slot.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      const nextPageArgs: string[] = [
+        "pax8", "contacts", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        "--company", String(allOpts.company),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
+
+      if (ctx.outputFormat === "json") {
+        process.stdout.write(
+          JSON.stringify({ contacts: result.content, page: pageEnvelope }, null, 2) + "\n",
+        );
         return;
       }
 
@@ -107,9 +137,11 @@ Examples:
       });
 
       if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.content.length} contacts at ${company.name}\n`)
-        );
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "contact",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
         const first = result.content[0];
         // Pickable next steps. `contacts create` needs email + first/last
         // name from the user, so it can't be drilled into by number;
@@ -126,8 +158,7 @@ Examples:
             command: ["clients", "more", company.name],
           },
         ];
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
         process.stderr.write(
           chalk.dim(
             `  Add another contact — run ${chalk.cyan(replCmd("pax8 contacts create --help"))} for syntax.\n\n`,

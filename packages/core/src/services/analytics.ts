@@ -1,7 +1,14 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Subscription, Invoice } from "../api/types.js";
+import type { Subscription, Invoice, BillingTerm } from "../api/types.js";
+
+/**
+ * Track which unknown `billingTerm` values we've already warned about so we
+ * only emit a single stderr line per process per unknown value, regardless of
+ * how many subscriptions carry it. Reset only by process restart.
+ */
+const unknownBillingTermsWarned = new Set<string>();
 
 /** The subset of Subscription fields used by analytics. */
 type AnalyticsSubscriptionInput = Partial<Subscription> & {
@@ -27,45 +34,86 @@ export interface GrowthReport {
 }
 
 /**
- * Calculate the Monthly Recurring Revenue for a single subscription.
+ * Per-term monthly divisor. Keys are the canonical `BillingTermSchema` enum
+ * values plus the defensive `"1-Year"` alias (Pax8 uses `"1-Year"` on
+ * `commitment.term` and on some product-pricing rows; if it ever leaks into a
+ * subscription's `billingTerm` we want to treat it as an annual commit, not
+ * as an unknown-term gross figure).
+ *
+ * A value of `0` means the term contributes **zero** to monthly cost — used
+ * for `One-Time`, `Trial`, and `Activation` line items, which are not
+ * recurring revenue and were previously over-counted at full gross.
+ *
+ * Append-only. Adding a new `BillingTermSchema` value? Add it here too — the
+ * TypeScript `Record<BillingTerm | "1-Year", ...>` constraint will block the
+ * compile until you do.
+ */
+const BILLING_TERM_MONTHLY_DIVISOR: Record<BillingTerm | "1-Year", number> = {
+  Monthly: 1,
+  Annual: 12,
+  "1-Year": 12,
+  "2-Year": 24,
+  "3-Year": 36,
+  "One-Time": 0,
+  Trial: 0,
+  Activation: 0,
+};
+
+/**
+ * Canonical lookup table keyed by lowercased term — call sites historically
+ * pass lowercased / loosely-typed strings (e.g. `"annual"`, `"2-year"`), so
+ * normalization happens here once.
+ */
+const BILLING_TERM_MONTHLY_DIVISOR_LOWER: Record<string, number> = Object.fromEntries(
+  Object.entries(BILLING_TERM_MONTHLY_DIVISOR).map(([k, v]) => [k.toLowerCase(), v]),
+);
+
+/**
+ * Calculate the Monthly Recurring Revenue contribution of a single
+ * subscription.
  *
  * Pax8's `Subscription.billingTerm` is a closed enum (`BillingTermSchema`):
  * `Monthly`, `Annual`, `2-Year`, `3-Year`, `One-Time`, `Trial`, `Activation`.
- * Each multi-period term is divided down to its monthly equivalent. The match
- * is case-insensitive against the canonical enum value so callers may pass
+ * Each multi-period term is divided down to its monthly equivalent. Match is
+ * case-insensitive against the canonical enum value so callers may pass
  * lowercased / loosely-typed strings (the call sites in `computeMrr`,
- * `cost-simulator`, etc. do this).
+ * `cost-simulator`, etc. do this). The `"1-Year"` alias is accepted for
+ * defensive parity with `commitment.term`.
  *
- * `One-Time`, `Trial`, `Activation`, and unknown / falsy values fall through
- * to `price × quantity` — preserving the pre-fix default. Reworking those
- * semantics is a separate question (they aren't really "recurring") and is
- * intentionally out of scope here.
+ * **One-Time, Trial, and Activation contribute 0** to monthly cost — they're
+ * not recurring. Previous behavior (#465) returned `price × quantity` for
+ * these, which inflated every dashboard, recommendation, and report that
+ * aggregated MRR. Reports that need the gross figure should sum `price ×
+ * quantity` directly rather than going through this function.
  *
- * This is the single source of truth for MRR calculation across the codebase.
+ * Unknown or falsy terms return 0 and emit a single-shot `stderr` warning
+ * per unknown value per process. Silently returning gross was the original
+ * bug — a future, unrecognized enum value would otherwise count at 12× /
+ * 24× / 36× its true monthly rate.
+ *
+ * This is the single source of truth for MRR calculation across the
+ * codebase.
  */
 export function subscriptionMrr(price: number, quantity: number, billingTerm: string): number {
   const gross = price * quantity;
   const normalizedTerm = (billingTerm ?? "").toLowerCase();
 
-  switch (normalizedTerm) {
-    case "monthly":
-      return gross;
-    case "annual":
-      return gross / 12;
-    case "2-year":
-      return gross / 24;
-    case "3-year":
-      return gross / 36;
-    case "one-time":
-    case "trial":
-    case "activation":
-      return gross;
-    default:
-      // Unknown / falsy billingTerm: preserve historical behavior (treat as
-      // monthly) so callers passing `undefined`, `""`, or future enum values
-      // we don't yet recognize don't suddenly start under-reporting MRR.
-      return gross;
+  const divisor = BILLING_TERM_MONTHLY_DIVISOR_LOWER[normalizedTerm];
+  if (divisor === undefined) {
+    // Unknown / falsy billingTerm: zero contribution + one-shot warning so
+    // partners aren't surprised by silent miscounting if Pax8 ever ships a
+    // new enum value before we update this table.
+    const key = normalizedTerm || "(empty)";
+    if (!unknownBillingTermsWarned.has(key)) {
+      unknownBillingTermsWarned.add(key);
+      process.stderr.write(
+        `[pax8] warn: unknown billingTerm "${billingTerm}"; contributing 0 to monthly cost.\n`,
+      );
+    }
+    return 0;
   }
+  if (divisor === 0) return 0;
+  return gross / divisor;
 }
 
 export function computeMrr(subscriptions: AnalyticsSubscriptionInput[]): MrrReport {

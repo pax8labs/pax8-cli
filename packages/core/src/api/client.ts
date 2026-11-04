@@ -1,6 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { createHash } from "node:crypto";
 import { type ZodType } from "zod";
 import { ApiError, RateLimitError } from "./errors.js";
 import { PageSchema } from "./types.js";
@@ -8,8 +9,25 @@ import { FileCache } from "../services/cache.js";
 import { validateBaseUrl } from "../security/validate-env.js";
 import { redactDebugBody } from "../security/redact-debug.js";
 
+/**
+ * Minimal interface the client needs from a token manager. Carries an
+ * optional `clearCache()` hook so a 401 response can invalidate any stale
+ * server-side token without coupling `Pax8Client` to the full
+ * `TokenManager` shape (keeps embedders that bring their own token source
+ * free to ignore the cache plumbing).
+ */
+export interface TokenManagerLike {
+  getToken(): Promise<string>;
+  /**
+   * Optional. When defined, called once on a 401 response before the
+   * request is retried — gives the token manager a chance to drop a
+   * server-side-revoked token from memory + disk (#233).
+   */
+  clearCache?(): void;
+}
+
 export interface Pax8ClientOptions {
-  tokenManager: { getToken(): Promise<string> };
+  tokenManager: TokenManagerLike;
   baseUrl?: string;
   timeout?: number;
   debug?: boolean;
@@ -85,6 +103,18 @@ const MAX_TIMEOUT_MS = 300_000;
 const MAX_RETRIES = 3;
 
 /**
+ * L-7 defense-in-depth: cap upstream response body size before `response.json()`
+ * buffers the entire payload. 10 MB is well above any legitimate Pax8 response
+ * (the heaviest known endpoint, paginated orders at `size=200`, returns roughly
+ * 100 KB per page). A misbehaving or compromised upstream returning a multi-GB
+ * body would otherwise exhaust Node's heap. We check `Content-Length` before
+ * `.json()` — for chunked responses (no `Content-Length`) the existing
+ * AbortController timeout (`PAX8_TIMEOUT_MS`, default 30s) bounds the worst
+ * case: a slow-loris-style stream can't outlast the timeout.
+ */
+const MAX_RESPONSE_BYTES = 10_000_000;
+
+/**
  * Substitute the trailing version segment of a base URL.
  *
  * The Pax8 partner API splits its surface across version prefixes — most
@@ -106,6 +136,9 @@ const MAX_RETRIES = 3;
  */
 export function applyApiVersion(baseUrl: string, apiVersion?: string): string {
   if (!apiVersion) return baseUrl;
+  // Anchored to end-of-string and uses a simple `\d+` run optionally followed
+  // by `.\d+`; no nested quantifiers that could backtrack catastrophically.
+  // eslint-disable-next-line security/detect-unsafe-regex
   const versionTail = /\/v\d+(?:\.\d+)?$/;
   if (versionTail.test(baseUrl)) {
     return baseUrl.replace(versionTail, `/${apiVersion}`);
@@ -211,8 +244,87 @@ export function isApiTimeoutError(error: unknown): boolean {
   return /timed out/i.test(error.message);
 }
 
+/**
+ * Inputs to {@link buildCacheKey}. All fields except `path` are optional; the
+ * helper degrades gracefully when a caller can't supply (for example) the
+ * tenant identity. The fields that ARE supplied are folded into the resulting
+ * key so changing any of them produces a distinct cache entry.
+ */
+export interface BuildCacheKeyInput {
+  path: string;
+  params?: Record<string, string | number | undefined>;
+  apiVersion?: string;
+  api?: string;
+  /** Resolved project-wide base URL the request will be issued against. */
+  baseUrl?: string;
+  /** Per-API base URL overrides registered on the client. */
+  apiBaseOverrides?: Record<string, string>;
+  /** Tenant identity, typically `process.env.PAX8_CLIENT_ID`. */
+  clientId?: string;
+  /** Raw `PAX8_API_BASE` env var, kept in the key so prod/staging/sandbox don't bleed. */
+  apiBaseEnv?: string;
+}
+
+/**
+ * Build a stable cache key for a request. Exported so the partitioning rule is
+ * unit-testable independent of the surrounding request plumbing.
+ *
+ * #455: cache entries must be partitioned by tenant identity (`PAX8_CLIENT_ID`)
+ * and base URL (`PAX8_API_BASE`) so a user who switches credentials or flips
+ * between prod/staging/sandbox is never served the previous identity or
+ * environment's cached responses. Default TTL is non-trivial (24h) and the
+ * cache lives on disk, so without these key components a credential rotation
+ * silently serves stale tenant-A data into a tenant-B session.
+ *
+ * Tenant/baseUrl bytes are SHA-256-hashed and truncated so the resulting
+ * filename stays short and never echoes raw credentials on disk. Filenames
+ * already go through `FileCache`'s safe-character filter, but hashing keeps
+ * the key length predictable regardless of how long a partner's clientId or
+ * custom base URL is.
+ */
+export function buildCacheKey(input: BuildCacheKeyInput): string {
+  const { path, params, apiVersion, api, baseUrl, apiBaseOverrides, clientId, apiBaseEnv } = input;
+
+  const normalized = path.replace(/^\/+/, "");
+  const paramStr = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`)
+        .join("&")
+    : "";
+
+  // Per-API base and per-call apiVersion both shift the resolved wire URL,
+  // so cache entries must be partitioned by both — otherwise a `/v1/foo`
+  // response could be served to a `/v2/foo` or `/api/v2/foo` caller (#321).
+  const apiPrefix = api ? `${api}:` : "";
+  const versionPrefix = apiVersion ? `${apiVersion}:` : "";
+
+  // Tenant/base-URL identity bytes. Hash so the on-disk filename stays short
+  // and doesn't carry raw credentials. The per-API override map is included
+  // because a downstream embedder that points the webhooks API at a different
+  // host should not share cache entries with one that doesn't.
+  const overrideStr = apiBaseOverrides
+    ? Object.entries(apiBaseOverrides)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`)
+        .join("&")
+    : "";
+  const identity = [
+    clientId ?? "",
+    apiBaseEnv ?? "",
+    baseUrl ?? "",
+    overrideStr,
+  ].join("|");
+  const tenantPrefix = identity === "|||"
+    ? ""
+    : `t${createHash("sha256").update(identity).digest("hex").slice(0, 16)}:`;
+
+  return `${tenantPrefix}${apiPrefix}${versionPrefix}${normalized}${paramStr ? "_" + paramStr : ""}`;
+}
+
 export class Pax8Client {
-  private readonly tokenManager: { getToken(): Promise<string> };
+  private readonly tokenManager: TokenManagerLike;
   private readonly baseUrl: string;
   private readonly apiBaseOverrides: Record<string, string> | undefined;
   private readonly timeout: number;
@@ -278,20 +390,16 @@ export class Pax8Client {
     apiVersion?: string,
     api?: string,
   ): string {
-    const normalized = path.replace(/^\/+/, "");
-    const paramStr = params
-      ? Object.entries(params)
-          .filter(([, v]) => v !== undefined)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([k, v]) => `${k}=${v}`)
-          .join("&")
-      : "";
-    // Per-API base and per-call apiVersion both shift the resolved wire URL,
-    // so cache entries must be partitioned by both — otherwise a `/v1/foo`
-    // response could be served to a `/v2/foo` or `/api/v2/foo` caller (#321).
-    const apiPrefix = api ? `${api}:` : "";
-    const versionPrefix = apiVersion ? `${apiVersion}:` : "";
-    return `${apiPrefix}${versionPrefix}${normalized}${paramStr ? "_" + paramStr : ""}`;
+    return buildCacheKey({
+      path,
+      params,
+      apiVersion,
+      api,
+      baseUrl: this.baseUrl,
+      apiBaseOverrides: this.apiBaseOverrides,
+      clientId: process.env.PAX8_CLIENT_ID,
+      apiBaseEnv: process.env.PAX8_API_BASE,
+    });
   }
 
   async post<T>(path: string, body: unknown, opts?: RequestOpts): Promise<T> {
@@ -369,8 +477,30 @@ export class Pax8Client {
       init.body = JSON.stringify(body);
     }
 
+    // #463 — only retry on transient failures (5xx, timeout, network error) for
+    // HTTP methods that are idempotent by REST convention. Otherwise a POST
+    // /orders that succeeded server-side but dropped its response on the way
+    // back gets retried and creates a duplicate order. 429 is always retried
+    // regardless of method — rate-limit responses by definition mean the
+    // request was REJECTED before processing, so a retry is safe.
+    //
+    // DELETE is included as idempotent per REST convention: a second DELETE
+    // on a missing resource returns 404 with no side-effect. PUT is included
+    // because the spec says PUT is idempotent (same body → same final state).
+    // PATCH and POST are NOT — they can have side-effects on retry.
+    const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "DELETE", "PUT"]);
+    const canRetryTransient = IDEMPOTENT_METHODS.has(method.toUpperCase());
+
     let lastError: Error | undefined;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    // #233: track whether we've already retried after a 401-driven cache
+    // invalidation. The on-disk token cache (TokenManager) lets a stale
+    // token live up to 24 h; a server-side revocation would otherwise hang
+    // the CLI for the rest of that lifetime. On the first 401 we clear the
+    // cached token and retry the request once with a freshly-minted token.
+    // Single retry only — a real 401 (revoked creds, wrong scopes) must
+    // still surface to the caller, not loop forever.
+    let retriedAfterAuthClear = false;
 
     try {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -405,9 +535,58 @@ export class Pax8Client {
             continue;
           }
 
+          // #233 — single-shot retry on 401. The on-disk token cache (see
+          // TokenManager) lets a stale token live up to 24 h; without this
+          // guard a server-side revocation would hang the CLI for the rest
+          // of that lifetime. We clear the cache (memory + disk) and
+          // re-fetch a fresh token, then retry the request *once* with the
+          // new Authorization header. A second 401 is treated as a real
+          // auth failure (revoked creds, wrong scopes) and surfaces to the
+          // caller via the standard !response.ok branch below.
+          //
+          // Safe for non-idempotent methods (POST /orders, etc.) because a
+          // 401 means the server *rejected* the request before processing —
+          // same logic as 429. Retry can't produce a duplicate side effect.
+          // The `attempt < MAX_RETRIES` guard prevents a final-slot 401
+          // from setting `retriedAfterAuthClear = true` and `continue`-ing
+          // the loop without ever actually running the retried request:
+          // the next iteration condition fails and we fall through to the
+          // generic `throw lastError ?? new Error("Unexpected error")` at
+          // the bottom, surfacing a code-less Error that violates the
+          // "errors carry codes" contract (CLAUDE.md). Reachable when
+          // earlier attempts were burned by 429s (e.g. 0/1/2 = 429,
+          // attempt 3 = 401). Without the guard the user sees a bare
+          // Error("Unexpected error") instead of a structured
+          // ApiError(401). With the guard, a terminal 401 falls through
+          // to the `!response.ok` branch below and surfaces correctly.
+          if (
+            response.status === 401 &&
+            !retriedAfterAuthClear &&
+            attempt < MAX_RETRIES
+          ) {
+            clearTimeout(timeoutId);
+            retriedAfterAuthClear = true;
+            // Drain the response body so the underlying socket can be reused.
+            // Ignore parse errors — we don't surface the error body on this
+            // path (the retry might succeed; if it doesn't, the second 401
+            // is handled by the generic !response.ok branch below).
+            await safeJson(response);
+            this.tokenManager.clearCache?.();
+            const freshToken = await this.tokenManager.getToken();
+            headers.Authorization = `Bearer ${freshToken}`;
+            // The retry consumes one of the MAX_RETRIES transient slots.
+            // With MAX_RETRIES=3 that leaves plenty of headroom for a
+            // genuine network blip on the retried request.
+            continue;
+          }
+
           if (response.status >= 500) {
             clearTimeout(timeoutId);
-            if (attempt === MAX_RETRIES) {
+            // #463 — non-idempotent methods (POST, PATCH) MUST NOT retry on
+            // 5xx: the server may have processed the request before the error
+            // was returned. Surface the error immediately so the caller
+            // decides whether to retry with a fresh idempotency strategy.
+            if (!canRetryTransient || attempt === MAX_RETRIES) {
               const errorBody = await safeJson(response);
               throw new ApiError(
                 `Server error: ${response.status} ${response.statusText}`,
@@ -447,6 +626,30 @@ export class Pax8Client {
             return undefined as T;
           }
 
+          // L-7: cap upstream response body size before parsing. A misbehaving
+          // or compromised upstream returning a multi-GB JSON body would
+          // otherwise buffer the entire payload through Node's fetch and
+          // exhaust memory. We check `Content-Length` (when present) against
+          // a 10 MB ceiling — well above any legitimate Pax8 response
+          // (the largest known endpoint, paginated orders, returns ~100 KB
+          // per page). For chunked responses (no `Content-Length` header)
+          // we rely on the existing AbortController timeout (`this.timeout`,
+          // default 30s) to bound the worst case: a slow-loris-style stream
+          // can't outlast the timeout.
+          const contentLength = response.headers.get("content-length");
+          if (contentLength !== null) {
+            const len = Number(contentLength);
+            if (Number.isFinite(len) && len > MAX_RESPONSE_BYTES) {
+              clearTimeout(timeoutId);
+              throw new ApiError(
+                `Response body too large: ${len} bytes (limit ${MAX_RESPONSE_BYTES})`,
+                response.status,
+                path,
+                method,
+              );
+            }
+          }
+
           const data = await response.json();
           return data as T;
         } catch (error) {
@@ -455,7 +658,12 @@ export class Pax8Client {
             throw error;
           }
           if (error instanceof DOMException && error.name === "AbortError") {
-            if (attempt === MAX_RETRIES) {
+            // #463 — timeout on a non-idempotent write is the worst possible
+            // case: the server may have completed the write before the
+            // client gave up reading the response. Never retry; surface
+            // the timeout so the caller can verify state (e.g., `pax8 orders
+            // show <id>` or list by company) before deciding what to do.
+            if (!canRetryTransient || attempt === MAX_RETRIES) {
               throw new ApiError(`Request timed out after ${this.timeout}ms`, 0, path, method);
             }
             lastError = error as Error;
@@ -464,7 +672,11 @@ export class Pax8Client {
             continue;
           }
           lastError = error as Error;
-          if (attempt === MAX_RETRIES) {
+          // #463 — same logic for generic network errors: retrying a POST
+          // whose response was dropped between the server and the client is
+          // the canonical duplicate-charge bug. Surface the network error
+          // for non-idempotent methods.
+          if (!canRetryTransient || attempt === MAX_RETRIES) {
             throw new ApiError(
               `Network error: ${(error as Error).message}`,
               0,

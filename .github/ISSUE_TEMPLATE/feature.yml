@@ -1,0 +1,60 @@
+name: Feature request
+description: A new command, flag, output mode, or behavior you wish `pax8` had.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Feature requests grounded in a concrete workflow problem ship faster than abstract "wouldn't it be nice if…" ones.
+
+        Before writing, **scan [open issues](https://github.com/pax8labs/pax8-cli/issues?q=is%3Aissue+label%3Aenhancement)** — your idea may already be tracked.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What workflow problem does this solve?
+      description: |
+        What are you trying to do with the CLI right now that's harder than it should be?
+      placeholder: |
+        "I want to find all subscriptions renewing in the next 90 days *grouped by vendor*, but `pax8 subscriptions renewals` only lists them flat."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed surface
+      description: |
+        What would the command/flag/output look like? Don't worry about getting the exact syntax right — the shape is what matters.
+
+        Patterns we already use: [docs/UX_GUIDE.md §2 flag vocabulary](https://github.com/pax8labs/pax8-cli/blob/main/docs/UX_GUIDE.md).
+      placeholder: |
+        ```
+        pax8 subscriptions renewals --within 90d --by vendor --json
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds exist today? Why aren't they enough?
+
+  - type: dropdown
+    id: who-uses
+    attributes:
+      label: Who's the primary user?
+      options:
+        - Human at a terminal
+        - AI agent (Claude Code, Cursor, Copilot, etc.) consuming `--json` output
+        - Both
+        - Other (specify)
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Anything else?
+      description: Mockups, expected output shape, related Pax8 API endpoints, etc.

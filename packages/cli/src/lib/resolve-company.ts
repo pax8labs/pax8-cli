@@ -23,9 +23,22 @@ export async function resolveCompany(ctx: CommandContext, input: string): Promis
     return ctx.api.companies.get(lastListMatch.id);
   }
 
-  // 2. UUID — fetch directly
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(input);
-  if (isUuid) {
+  // 2. ID-shaped input — fetch directly.
+  //
+  // Match either a bare RFC-4122 UUID (production Pax8: `a1b2c3d4-e5f6-…`)
+  // or the demo fixture's prefixed form (`co-9e3779b1-9e37-79b1-…`).
+  // The optional `[a-z]{2,5}-` head admits the demo's `co-` (and the
+  // analogous `prod-`, `sub-` etc. if ever fed here) without matching
+  // longer English-word prefixes, and the start-of-input anchor stops a
+  // UUID-shape embedded mid-name from being treated as an ID.
+  //
+  // #519: the previous regex was `^[0-9a-f]{8}-[0-9a-f]{4}-` — the
+  // `^`-anchor immediately rejected anything starting with `co-`, lookups
+  // fell through to name-search, and the `size: 200` truncation of the
+  // companies list left any company past the first page of the large
+  // fixture unresolvable by its canonical ID.
+  const isLikelyId = /^(?:[a-z]{2,5}-)?[0-9a-f]{8}-[0-9a-f]{4}-/i.test(input);
+  if (isLikelyId) {
     return ctx.api.companies.get(input);
   }
 
@@ -41,10 +54,20 @@ export async function resolveCompany(ctx: CommandContext, input: string): Promis
   const fuzzy = result.content.filter((c) => c.name.toLowerCase().includes(lower));
   if (fuzzy.length === 1) return fuzzy[0];
   if (fuzzy.length > 1) {
+    // #520: when the user typed an ambiguous query, surfacing a truncated list
+    // gives the wrong impression that those are the only candidates. List all
+    // matches when ≤10; for larger result sets show the first 10 plus an
+    // explicit "and N more" tail so the user knows the list isn't exhaustive.
+    const MAX_INLINE = 10;
+    const names = fuzzy.map((c) => c.name);
+    const matchesLine =
+      names.length <= MAX_INLINE
+        ? `Matches: ${names.join(", ")}`
+        : `Matches: ${names.slice(0, MAX_INLINE).join(", ")} … and ${names.length - MAX_INLINE} more (run ${replCmd(`pax8 clients list | grep "${input}"`)} to see all)`;
     throw new CliError(
       `Multiple companies match "${input}"`,
-      [`Matches: ${fuzzy.map((c) => c.name).join(", ")}`],
-      [`Use an exact name or ID. Run ${replCmd("pax8 companies list")} to see all companies.`],
+      [matchesLine],
+      [`Use an exact name or ID. Run ${replCmd("pax8 clients list")} to see all companies.`],
       undefined,
       ERROR_COMPANY_NOT_FOUND,
     );
@@ -53,7 +76,7 @@ export async function resolveCompany(ctx: CommandContext, input: string): Promis
   throw new CliError(
     `Company not found: "${input}"`,
     ["No active company matched the supplied name or ID."],
-    [`Run ${replCmd("pax8 companies list")} to see available companies.`],
+    [`Run ${replCmd("pax8 clients list")} to see available clients.`],
     undefined,
     ERROR_COMPANY_NOT_FOUND,
   );

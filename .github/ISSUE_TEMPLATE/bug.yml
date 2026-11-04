@@ -1,0 +1,94 @@
+name: Bug report
+description: Something `pax8` does that it shouldn't, or doesn't do that it should.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A few minutes filling this in saves an hour of back-and-forth.
+
+        **Security vulnerability?** Stop here and use the private disclosure flow in [SECURITY.md](https://github.com/pax8labs/pax8-cli/blob/main/SECURITY.md) instead — public issues are the wrong place.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: One or two sentences. What did you run, and what went wrong?
+      placeholder: "Ran `pax8 invoices audit --month 2026-03`, got a TypeError instead of a discrepancy report."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: |
+        Exact commands you ran. If possible, **reproduce in demo mode** (`PAX8_DEMO=1`) so we can confirm without your credentials.
+      placeholder: |
+        1. `PAX8_DEMO=1 pax8 invoices audit --month 2026-03`
+        2. Observe the error
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "`pax8 --version` output"
+      placeholder: "0.1.4"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: "`node --version` output"
+      placeholder: "v22.x.y"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - WSL
+        - Other (specify in additional context)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: demo-or-real
+    attributes:
+      label: Does this reproduce in `PAX8_DEMO=1`?
+      description: If yes, we can debug without your credentials and the issue is much higher-priority for us.
+      options:
+        - "Yes — reproduces in demo mode"
+        - "No — only against the real Pax8 API"
+        - "Haven't checked"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-output
+    attributes:
+      label: Error output
+      description: |
+        Paste relevant stderr / stdout. If the CLI generated an error envelope (`pax8 report-bug` will have captured it), include the redacted JSON. **Redact any partner names, customer IDs, or credentials before pasting.**
+      render: text
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Anything else?
+      description: Context, hypotheses, related issues, screenshots, etc.

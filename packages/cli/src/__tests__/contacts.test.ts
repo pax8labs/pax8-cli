@@ -18,10 +18,13 @@ describe("pax8 contacts", () => {
         SUMMIT_ID,
         "--json",
       ]);
+      // #483: JSON envelope is { contacts, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data).toHaveProperty("contacts");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.contacts)).toBe(true);
+      expect(data.contacts.length).toBeGreaterThan(0);
+      for (const c of data.contacts) {
         expect(c.companyId).toBe(SUMMIT_ID);
       }
     });

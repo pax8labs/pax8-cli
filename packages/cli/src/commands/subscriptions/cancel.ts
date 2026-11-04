@@ -9,7 +9,7 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { CliError, handleCommandError } from "../../lib/errors.js";
 import { confirmDestructive } from "../../lib/confirm.js";
-import { formatCurrency, formatQuantity, calculateMrr } from "../../lib/formatters.js";
+import { formatCurrency, formatCurrencyNullable, formatQuantity, calculateMrr } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
@@ -170,8 +170,8 @@ Behavior on committed subscriptions:
         // can differ); "Cancelling now will not stop billing" (Pax8 has no
         // early-termination fee per the Direct User Agreement — the
         // consequence is "fees paid are nonrefundable", i.e. billing
-        // continues, not a separate penalty). See the canonical Rovo
-        // research grounding for #294.
+        // continues, not a separate penalty). See the canonical Pax8 docs /
+        // TOS research grounding for #294.
         //
         // Both branches print BEFORE the confirmation prompt so the partner
         // sees the full picture (committed vs uncommitted) before they
@@ -198,7 +198,9 @@ Behavior on committed subscriptions:
             `  ${chalk.bold("Days remaining")}     ${activeCommitment.daysRemaining}\n`,
           );
           process.stdout.write(
-            `  ${chalk.bold("Estimated cost through term end")}   ${formatCurrency(estimatedCost)}\n`,
+            `  ${chalk.bold("Estimated cost through term end")}   ${
+              sub.price == null ? formatCurrencyNullable(null) : formatCurrency(estimatedCost)
+            }\n`,
           );
           process.stdout.write(
             chalk.dim(
@@ -257,7 +259,14 @@ Behavior on committed subscriptions:
             `  ${chalk.bold("Cancel Date")}  ${effectiveCancelDate}${usedSafePath ? chalk.dim(" (commitment term end)") : ""}\n`,
           );
         }
-        process.stdout.write(`  ${chalk.bold("Est. Pax8 Cost Impact")}   ${chalk.red("-" + formatCurrency(mrr))}/mo\n`);
+        // #657: guard against a null upstream `price` — the multiplication
+        // above still returns a numeric `mrr`, but rendering it as `-$0.00`
+        // is worse than surfacing that we don't know.
+        process.stdout.write(
+          `  ${chalk.bold("Est. Pax8 Cost Impact")}   ${
+            sub.price == null ? formatCurrencyNullable(null) : chalk.red("-" + formatCurrency(mrr)) + "/mo"
+          }\n`,
+        );
         process.stdout.write("\n");
       }
 
@@ -322,8 +331,7 @@ Behavior on committed subscriptions:
           command: ["clients", "more", String(coName)],
         },
       ];
-      process.stderr.write(chalk.dim("\n  Try next:\n"));
-      await promptNextSteps(steps, { renderList: true });
+      await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
       process.stderr.write(
         chalk.dim(
           `  Order a replacement — run ${chalk.cyan(replCmd("pax8 orders create --help"))} for syntax.\n\n`,
@@ -334,8 +342,8 @@ Behavior on committed subscriptions:
       // 7-day window, Adobe renewal-only window, Azure Savings Plan
       // finality, vendor-coordinated cancellations like Sophos / INKY)
       // with an actionable message that points partners at the portal.
-      // Per Rovo research, the cancel API returns 204/404 with no
-      // structured body — pattern-matching the error string is fragile,
+      // Per Pax8 docs / TOS research, the cancel API returns 204/404 with
+      // no structured body — pattern-matching the error string is fragile,
       // so the wrapper is generic.
       if (error instanceof ApiError && error.statusCode !== 404) {
         const display = productName

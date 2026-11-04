@@ -18,16 +18,16 @@ describe("E2E: Error handling", () => {
   it("pax8 --help shows help text with command groups", async () => {
     const result = await runCliExpectSuccess(["--help"]);
     expect(result.stdout).toContain("pax8");
-    expect(result.stdout).toContain("companies");
+    expect(result.stdout).toContain("clients");
     expect(result.stdout).toContain("subscriptions");
     expect(result.stdout).toContain("products");
     expect(result.stdout).toContain("invoices");
     expect(result.stdout).toContain("auth");
   });
 
-  it("pax8 companies --help shows companies subcommands", async () => {
-    const result = await runCliExpectSuccess(["companies", "--help"]);
+  it("pax8 clients --help shows companies subcommands", async () => {
+    const result = await runCliExpectSuccess(["clients", "--help"]);
     expect(result.stdout).toContain("list");
-    expect(result.stdout).toContain("companies");
+    expect(result.stdout).toContain("clients");
   });
 });

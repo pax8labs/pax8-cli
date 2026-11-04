@@ -10,8 +10,8 @@ import { runCli } from "./test-utils.js";
  * call. The shorthand must accept every line-item flag that
  * `pax8 quotes line-items add` accepts — otherwise partners using the
  * shorthand can silently produce line items missing `--billing-term`,
- * `--price`, `--effective-date`, etc. (the kind of subtle wrongness Fred
- * Lintz flagged on the domain review).
+ * `--price`, `--effective-date`, etc. (the kind of subtle wrongness flagged
+ * on the domain review).
  *
  * "Parity" here means: every long flag declared on `quotes line-items add`
  * also appears on `quotes create`. `create` is allowed to declare *extra*
@@ -111,8 +111,8 @@ describe("pax8 quotes create / quotes line-items add flag parity (#426)", () => 
 
   it("`quotes create` and `quotes line-items add` agree on the well-known line-item flags", async () => {
     // Belt-and-braces assertion: pin the concrete flag names so future
-    // refactors don't accidentally remove one. This is the contract Fred
-    // Lintz's domain-review comment called out.
+    // refactors don't accidentally remove one. This is the contract the
+    // domain-review comment called out.
     const createHelp = await runCli(["quotes", "create", "--help"]);
     expect(createHelp.exitCode).toBe(0);
     const createFlags = extractLongFlags(createHelp.stdout);

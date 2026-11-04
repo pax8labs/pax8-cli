@@ -3,41 +3,111 @@
 
 import { AuthError } from "../api/errors.js";
 import { getDefaultBaseUrl } from "../api/client.js";
+import {
+  TokenCacheStore,
+  computeCacheIdentity,
+  type TokenCacheFile,
+} from "./token-cache-store.js";
+
+function getTokenBaseUrl(): string {
+  return getDefaultBaseUrl().replace(/\/+$/, "");
+}
 
 function getTokenUrl(): string {
-  return getDefaultBaseUrl().replace(/\/+$/, "") + "/token";
+  return getTokenBaseUrl() + "/token";
 }
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const REFRESH_BUFFER_MS = 1 * 60 * 60 * 1000; // 1 hour buffer — refresh at 23h
-const REFRESH_AT_MS = TOKEN_TTL_MS - REFRESH_BUFFER_MS;
+
+/**
+ * Fallback TTL applied when the `/token` response is missing `expires_in`.
+ * Pax8's production endpoint returns `expires_in: 86400` (24h); this floor
+ * is what the previous (in-memory-only) cache assumed.
+ */
+const DEFAULT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Refresh-skew buffer used by the cache freshness check. We refresh the
+ * token early so that a request issued *just* before the wire-side expiry
+ * doesn't race the server's clock — the network round trip plus the API
+ * call could easily land after `expiresAt` if we cut it to zero.
+ *
+ * Old (#233) constant: a flat 1h buffer, regardless of TTL. That inverted
+ * behavior for any TTL under 1h — every call would refresh-on-every-call,
+ * defeating the cache entirely. The new policy: 60 s OR 10 % of the TTL,
+ * whichever is *smaller*. For Pax8's 24 h tokens this is 60 s. For a
+ * hypothetical 5-minute test token it becomes 30 s (10 %), still leaving
+ * 4.5 minutes of usable cache.
+ */
+function refreshBufferForTtl(ttlMs: number): number {
+  // Floor at 1s — a misconfigured auth server returning a 1-9 second
+  // expires_in would otherwise collapse the buffer to 0ms and let
+  // requests race the server clock into avoidable 401 flakes. The
+  // 401-retry path recovers from that, but a 1s buffer is essentially
+  // free defense-in-depth that keeps the proactive-refresh path warm.
+  return Math.max(1000, Math.min(60_000, Math.floor(ttlMs * 0.1)));
+}
 
 interface TokenManagerOptions {
   clientId: string;
   clientSecret: string;
+  /**
+   * Optional injectable on-disk cache store. Defaults to a fresh
+   * `TokenCacheStore`. Exposed for tests that want to assert on
+   * `save` / `load` / `clear` call shape without touching the
+   * real filesystem.
+   */
+  cacheStore?: TokenCacheStore;
 }
 
 interface CachedToken {
   accessToken: string;
-  obtainedAt: number;
+  /** Absolute expiry in ms since epoch; matches the on-disk shape. */
+  expiresAt: number;
+  /** Original lifetime in ms (i.e. `expires_in * 1000`). Drives the refresh buffer. */
+  ttlMs: number;
 }
 
 export class TokenManager {
   private readonly clientId: string;
   private readonly clientSecret: string;
+  private readonly cacheStore: TokenCacheStore;
   private cachedToken: CachedToken | null = null;
   private pendingRequest: Promise<string> | null = null;
+  /**
+   * If true, the next `getToken()` call skips the in-memory + on-disk caches
+   * and fetches a fresh token. Set by `clearCache()` (e.g. on a 401 from a
+   * downstream API call). Re-armed automatically after a successful refetch.
+   */
+  private forceRefetch = false;
 
   constructor(options: TokenManagerOptions) {
     this.clientId = options.clientId;
     this.clientSecret = options.clientSecret;
+    this.cacheStore = options.cacheStore ?? new TokenCacheStore();
   }
 
   async getToken(): Promise<string> {
-    if (this.cachedToken && !this.isExpired()) {
+    // 1. In-memory fast path.
+    if (!this.forceRefetch && this.cachedToken && !this.isExpired(this.cachedToken)) {
       return this.cachedToken.accessToken;
     }
 
-    // Deduplicate concurrent requests
+    // 2. On-disk cache. Hydrate the in-memory cache from a fresh-enough
+    //    entry so subsequent calls within this process hit path (1).
+    if (!this.forceRefetch) {
+      const fromDisk = this.loadFromDisk();
+      if (fromDisk) {
+        this.cachedToken = {
+          accessToken: fromDisk.accessToken,
+          expiresAt: fromDisk.expiresAt,
+          ttlMs: fromDisk.ttlMs,
+        };
+        return fromDisk.accessToken;
+      }
+    }
+
+    // 3. Network. Deduplicate concurrent requests so parallel callers
+    //    (subscriptions+invoices+orders fired in parallel by `pax8 today`)
+    //    share a single token exchange.
     if (this.pendingRequest) {
       return this.pendingRequest;
     }
@@ -52,18 +122,72 @@ export class TokenManager {
   }
 
   isAuthenticated(): boolean {
-    return this.cachedToken !== null && !this.isExpired();
+    return this.cachedToken !== null && !this.isExpired(this.cachedToken);
   }
 
+  /**
+   * Clear the in-memory cached token. Backwards-compatible alias for the
+   * pre-#233 surface; does NOT touch the on-disk cache. Use `clearCache()`
+   * for the full wipe (in-memory + disk).
+   */
   clearToken(): void {
     this.cachedToken = null;
     this.pendingRequest = null;
   }
 
-  private isExpired(): boolean {
-    if (!this.cachedToken) return true;
-    const elapsed = Date.now() - this.cachedToken.obtainedAt;
-    return elapsed >= REFRESH_AT_MS;
+  /**
+   * Full cache wipe: drop the in-memory entry AND delete the on-disk file.
+   * Called from `Pax8Client` on a 401 response so a server-side token
+   * revocation doesn't hang the CLI for the rest of the TTL, and from
+   * `CredentialStore.clearCredentials` so `pax8 auth logout` doesn't leave
+   * a stale token paired with the wiped credentials.
+   *
+   * The next `getToken()` call after this is guaranteed to re-fetch from
+   * the network — the on-disk file is gone AND `forceRefetch` is set, so
+   * even a concurrent invocation that writes a new cache mid-call won't
+   * shortcut us back to a stale token.
+   */
+  clearCache(): void {
+    this.cachedToken = null;
+    this.pendingRequest = null;
+    this.forceRefetch = true;
+    try {
+      this.cacheStore.clear();
+    } catch {
+      // Best-effort: a permission error on disk shouldn't fail the calling
+      // command. The in-memory clear already happened.
+    }
+  }
+
+  private isExpired(entry: CachedToken): boolean {
+    const remaining = entry.expiresAt - Date.now();
+    if (remaining <= 0) return true;
+    // The buffer is keyed to the token's *original* lifetime (`ttlMs`), not
+    // its remaining time, so the cache stays usable for most of the token's
+    // life and only flips to "refresh me" near the end. For a 24 h Pax8
+    // token: `min(60s, 10% of 24h)` = 60 s. For a hypothetical 5-minute
+    // test token: `min(60s, 30s)` = 30 s.
+    const buffer = refreshBufferForTtl(entry.ttlMs);
+    return remaining <= buffer;
+  }
+
+  private loadFromDisk(): TokenCacheFile | null {
+    const apiBaseUrl = getTokenBaseUrl();
+    const entry = this.cacheStore.load({ clientId: this.clientId, apiBaseUrl });
+    if (!entry) return null;
+    // Apply the same freshness check we use for in-memory entries. A cache
+    // file that's older than the skew buffer is treated as a miss; the
+    // caller will refetch and overwrite.
+    if (
+      this.isExpired({
+        accessToken: entry.accessToken,
+        expiresAt: entry.expiresAt,
+        ttlMs: entry.ttlMs,
+      })
+    ) {
+      return null;
+    }
+    return entry;
   }
 
   private async fetchToken(): Promise<string> {
@@ -120,10 +244,37 @@ export class TokenManager {
       throw new AuthError("Invalid response from Pax8 auth server: missing access_token");
     }
 
-    this.cachedToken = {
+    // Honor `expires_in` from the response (seconds, per OAuth2). Production
+    // returns 86400 (24h). A missing / non-numeric / non-positive value
+    // falls back to the 24h default so we never end up with a token cached
+    // at a negative or zero TTL. A value > 24h is clamped — defense-in-
+    // depth against a misbehaving or compromised auth endpoint persisting
+    // an unexpectedly long-lived token to disk, where it would survive
+    // 24h+ across CLI invocations.
+    const MAX_TTL_SEC = 24 * 60 * 60; // 86400
+    const expiresInSec =
+      typeof body.expires_in === "number" && Number.isFinite(body.expires_in) && body.expires_in > 0
+        ? Math.min(body.expires_in, MAX_TTL_SEC)
+        : DEFAULT_TOKEN_TTL_MS / 1000;
+    const ttlMs = expiresInSec * 1000;
+    const expiresAt = Date.now() + ttlMs;
+
+    this.cachedToken = { accessToken, expiresAt, ttlMs };
+    this.forceRefetch = false;
+
+    // Persist asynchronously. We don't await because the in-memory token is
+    // already returnable; the write is purely a hint for the next process.
+    const identity = computeCacheIdentity({
+      clientId: this.clientId,
+      apiBaseUrl: getTokenBaseUrl(),
+    });
+    void this.cacheStore.save({
       accessToken,
-      obtainedAt: Date.now(),
-    };
+      expiresAt,
+      ttlMs,
+      clientIdHash: identity.clientIdHash,
+      apiBaseHash: identity.apiBaseHash,
+    });
 
     return accessToken;
   }

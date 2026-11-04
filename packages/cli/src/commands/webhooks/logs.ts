@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction, type EmittedAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import { ERROR_INVALID_INPUT, ERROR_NOT_FOUND } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
-import { output } from "../../lib/output.js";
+import { output, singlePageEnvelope } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
@@ -102,29 +103,40 @@ async function runLogsList(
     }
 
     if (ctx.outputFormat === "json") {
+      // #483: wrap as { logs, page } — the wire isn't paginated here, so a
+      // single-page envelope makes the agent-facing contract consistent.
+      const page = singlePageEnvelope(allLogs.length);
       if (options.withActions) {
-        const nextActions: { command: string; description: string }[] = [];
+        const nextActions: EmittedAction[] = [];
         const failures = allLogs.filter(
           (l) => l.responseCode === 0 || l.responseCode >= 400,
         );
         if (failures.length > 0) {
           const firstFailure = failures[0];
-          nextActions.push({
-            command: `pax8 webhooks logs retry ${firstFailure.id}`,
-            description: `Retry the most recent failed delivery (${failures.length} failure${failures.length === 1 ? "" : "s"} in window)`,
-          });
+          // `logs retry` re-delivers a real event to a partner endpoint —
+          // downstream consumers may not be idempotent.
+          nextActions.push(
+            buildAction(
+              ["webhooks", "logs", "retry", firstFailure.id],
+              `Retry the most recent failed delivery (${failures.length} failure${failures.length === 1 ? "" : "s"} in window)`,
+            ),
+          );
         }
         if (failures.length > 0 && id) {
-          nextActions.push({
-            command: `pax8 webhooks test ${id}`,
-            description: `Re-test the endpoint — ${failures.length} recent failure${failures.length === 1 ? "" : "s"}`,
-          });
+          nextActions.push(
+            buildAction(
+              ["webhooks", "test", id],
+              `Re-test the endpoint — ${failures.length} recent failure${failures.length === 1 ? "" : "s"}`,
+            ),
+          );
         }
         process.stdout.write(
-          JSON.stringify({ logs: allLogs, nextActions }, null, 2) + "\n",
+          JSON.stringify({ logs: allLogs, page, nextActions }, null, 2) + "\n",
         );
       } else {
-        process.stdout.write(JSON.stringify(allLogs, null, 2) + "\n");
+        process.stdout.write(
+          JSON.stringify({ logs: allLogs, page }, null, 2) + "\n",
+        );
       }
       return;
     }

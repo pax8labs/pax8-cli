@@ -260,7 +260,12 @@ JSON output (--json):
         }
         steps.push({
           key: String(n++),
-          label: `${chalk.cyan(replCmd(`pax8 clients more "${quote.companyId}"`))}  ${chalk.dim("view client")}`,
+          // #481: prefer the human-readable client name when the wire
+          // gave us one (QuoteSchema flattens `client.name` → `clientName`).
+          // Falls back to the UUID for shadow companies / older quote
+          // payloads where the name isn't populated. Matches the
+          // `orders/show.ts` pattern.
+          label: `${chalk.cyan(replCmd(`pax8 clients more "${quote.clientName ?? quote.companyId}"`))}  ${chalk.dim("view client")}`,
           command: ["clients", "more", quote.companyId],
         });
         // Delete stays accessible from non-Accepted states; once accepted it
@@ -272,8 +277,7 @@ JSON output (--json):
             command: ["quotes", "delete", quote.id],
           });
         }
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
         process.stderr.write(
           chalk.dim(
             `  You can also change the expiration or replace line items — run ${chalk.cyan(replCmd("pax8 quotes update --help"))} for syntax.\n\n`,

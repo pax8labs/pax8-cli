@@ -116,8 +116,6 @@ Examples:
       process.stdout.write(chalk.bold(`  Order ${order.id}\n\n`));
       process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${companyDisplay}\n`);
       if (order.status) process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(order.status)}\n`);
-      // #385: read the canonical `createdAt`. `order.createdDate` still works
-      // (alias is dual-emitted) but new code references the canonical name.
       process.stdout.write(`  ${chalk.dim("Date:".padEnd(18))}${formatDate(order.createdAt)}\n`);
       process.stdout.write(`  ${chalk.dim("Ordered By:".padEnd(18))}${order.orderedBy ?? chalk.dim("—")}${order.orderedByEmail ? ` (${order.orderedByEmail})` : ""}\n`);
       process.stdout.write("\n");
@@ -150,8 +148,7 @@ Examples:
             command: ["orders", "list", "--company", String(order.companyName ?? companyId)],
           },
         ];
-        process.stderr.write(chalk.dim("  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to show order");

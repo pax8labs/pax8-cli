@@ -5,17 +5,27 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
-import { ALL_SUBS_PAGE_SIZE, auditInvoices, ERROR_INVALID_INPUT, ERROR_INTERNAL, type Pax8ErrorCode } from "@pax8/core";
+import {
+  auditInvoices,
+  ERROR_INVALID_INPUT,
+  ERROR_INTERNAL,
+  getConfigDir,
+  safeWriteFileSync,
+  validateConfigDir,
+  type Pax8ErrorCode,
+  type AuditDiscrepancy,
+} from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
+import { collectAllSubscriptions } from "../../lib/subs-stream.js";
 import { handleCommandError, CliError } from "../../lib/errors.js";
 import { formatCurrency, formatQuantity } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { confirm, replCmd } from "../../lib/confirm.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import { hashArgs, isValidKey, withIdempotency } from "../../lib/idempotency.js";
+import { validateMonth } from "../../lib/validate.js";
 
 /**
  * NOTE: The Pax8 v1 API does not expose a public dispute / write-off / credit
@@ -35,7 +45,20 @@ import { hashArgs, isValidKey, withIdempotency } from "../../lib/idempotency.js"
 const DISPUTES_DIR_ENV = "PAX8_DISPUTES_DIR";
 
 function disputesDir(): string {
-  return process.env[DISPUTES_DIR_ENV] ?? path.join(homedir(), ".pax8", "disputes");
+  // #458: route through getConfigDir() so PAX8_CONFIG_DIR is honored.
+  // PAX8_DISPUTES_DIR retains precedence as the explicit per-feature
+  // escape hatch used in tests.
+  //
+  // #M-5: PAX8_DISPUTES_DIR also goes through validateConfigDir() so a
+  // sandboxed/CI environment that controls this var can't redirect dispute
+  // drafts to an arbitrary location. The same PAX8_ALLOW_NON_HOME_CONFIG=1
+  // escape hatch applies — vitest.config.ts already sets it for the test
+  // workers, so existing tests continue to use tmpdir-based isolation.
+  const override = process.env[DISPUTES_DIR_ENV];
+  if (override && override.length > 0) {
+    return validateConfigDir(override);
+  }
+  return path.join(getConfigDir(), "disputes");
 }
 
 /**
@@ -70,19 +93,86 @@ interface DisputeDraft {
   portalTemplate: string;
 }
 
+/**
+ * Partner-facing copy for the generated portal ticket, keyed by which
+ * direction the money runs.
+ *
+ * `partnerIsOwed` covers `overcharge` / `unexpected`: Pax8 billed more than
+ * the subscriptions justify, so a credit is the remedy.
+ *
+ * `partnerOwes` covers `undercharge` / `missing`: Pax8 billed less, so the
+ * partner owes money and a credit memo is the wrong ask entirely. This is the
+ * case that was previously served the overcharge remedy (#728).
+ *
+ * The `partnerOwes` copy asks Pax8 to name the remedy rather than asserting
+ * one, so it claims no billing process. If a Pax8 billing doc later supplies
+ * prescriptive language, replace the two strings in this object: nothing else
+ * changes, and no test asserts their literal text (#728).
+ *
+ * Centralised so the wording lives in exactly one place: tests reference
+ * these constants rather than hardcoding sentences, so correcting the copy
+ * is a one-object edit that cannot silently diverge from what the tests pin.
+ */
+/**
+ * Which way the money runs for a discrepancy.
+ *
+ * Keyed on `type`, not on the sign of `dollarImpact`. The sign is the right
+ * answer for every row the auditor currently produces, but it is a proxy: a
+ * zero-impact row (a zero-priced SKU — a free add-on or a $0 trial — that is
+ * mis-invoiced) is not `> 0`, so an `overcharge` of zero dollars would be
+ * classified as partner-owes and framed as an under-billing report. `type` is
+ * the auditor's own classification and cannot disagree with itself.
+ */
+export function partnerIsOwedFor(type: AuditDiscrepancy["type"]): boolean {
+  return type === "overcharge" || type === "unexpected";
+}
+
+export const DISPUTE_COPY = {
+  partnerIsOwed: {
+    // CLI-facing labels. Not sent to Pax8 — the portal ticket is the
+    // partner-facing artifact; these only name the thing in the terminal.
+    label: "Dispute Draft",
+    noun: "dispute draft",
+    opening: `I'd like to dispute a billing discrepancy detected by automated reconciliation.`,
+    remedy: `Please review and adjust the invoice or issue a credit memo.`,
+  },
+  partnerOwes: {
+    // You do not "dispute" your own un-billed usage, so the heading, prompt
+    // and success line all read wrong for this direction (#728). These are
+    // local UI strings rather than billing process, so they are not gated on
+    // the same sign-off as `opening` / `remedy` below.
+    label: "Under-billing Report",
+    noun: "under-billing report",
+    // Deliberately non-prescriptive: it names no remedy mechanism (no credit,
+    // no corrected invoice, no rebill) and asks Pax8 to name one instead.
+    // Asserting a mechanism here would be inventing billing process in a
+    // partner-facing artifact, which is what #728 exists to prevent.
+    opening: `I'm reporting a billing discrepancy found by automated reconciliation — this period appears under-billed against our active subscriptions.`,
+    remedy: `Please confirm whether this is expected, and if not, advise how the difference will be billed.`,
+  },
+} as const;
+
 function buildPortalTemplate(d: Omit<DisputeDraft, "id" | "portalTemplate" | "status" | "createdAt">): string {
   const sign = d.delta > 0 ? "+" : "";
-  const impactLabel =
-    d.dollarImpact > 0
-      ? `${formatCurrency(d.dollarImpact)} overcharge`
-      : `${formatCurrency(Math.abs(d.dollarImpact))} undercharge`;
+  // Derive the direction ONCE and drive both the impact label and the
+  // remedy sentence from it. Previously the label branched on dollarImpact
+  // while the remedy was hardcoded to the overcharge case, so an undercharge
+  // ticket read "$2,400.00 undercharge ... issue a credit memo" — asking
+  // billing support for a credit on money the partner actually owes.
+  const partnerIsOwed = partnerIsOwedFor(d.type);
+  const impactLabel = partnerIsOwed
+    ? `${formatCurrency(d.dollarImpact)} overcharge`
+    : `${formatCurrency(Math.abs(d.dollarImpact))} undercharge`;
+  const copy = partnerIsOwed ? DISPUTE_COPY.partnerIsOwed : DISPUTE_COPY.partnerOwes;
+  const openingLine = copy.opening;
+  const remedyLine = copy.remedy;
   const period = d.month ? d.month : "current period";
   const lines = [
     `Subject: Billing discrepancy — ${d.companyName} — ${d.productName} (${period})`,
     "",
     `Hi Pax8 billing team,`,
     "",
-    `I'd like to dispute a billing discrepancy detected by automated reconciliation.`,
+    openingLine,
     "",
     `  Company:           ${d.companyName} (${d.companyId})`,
     `  Product:           ${d.productName}`,
@@ -100,7 +190,7 @@ function buildPortalTemplate(d: Omit<DisputeDraft, "id" | "portalTemplate" | "st
     lines.push(`  ${d.reason}`);
     lines.push("");
   }
-  lines.push(`Please review and adjust the invoice or issue a credit memo.`);
+  lines.push(remedyLine);
   lines.push("");
   lines.push(`— Filed via pax8-cli`);
   return lines.join("\n");
@@ -111,7 +201,10 @@ async function writeDraft(draft: DisputeDraft): Promise<string> {
   await fs.mkdir(dir, { recursive: true });
   const fp = path.join(dir, `${draft.id}.json`);
   const tmp = fp + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(draft, null, 2), { encoding: "utf-8", mode: 0o600 });
+  // #458: write via safeWriteFileSync so the tmp file is created with
+  // mode 0o600 atomically (no chmod race) and a symlink at the tmp path
+  // can't redirect the write.
+  safeWriteFileSync(tmp, JSON.stringify(draft, null, 2));
   await fs.rename(tmp, fp);
   return fp;
 }
@@ -133,9 +226,15 @@ async function findDiscrepancy(
 ): Promise<DiscrepancyShape> {
   // Audit the relevant slice
   const companyId = opts.company ? await resolveCompanyId(ctx, opts.company) : undefined;
-  const [invoicesResult, subsResult] = await Promise.all([
+  // #613 Phase 2: `findDiscrepancy` re-runs the audit logic to look up
+  // a specific discrepancy by id. It must see the same subscription set
+  // `invoices audit` does, otherwise a dispute against a discrepancy
+  // produced by audit might fail to find it here. Paginate so a partner
+  // with >1000 subs at a single company (rare but possible) doesn't have
+  // the dispute path silently disagree with the audit path.
+  const [invoicesResult, normalizedSubsRaw] = await Promise.all([
     ctx.api.invoices.list({ month: opts.month, companyId, size: 200 }),
-    ctx.api.subscriptions.list({ companyId, size: ALL_SUBS_PAGE_SIZE }),
+    collectAllSubscriptions(ctx.api.subscriptions.streamAll({ companyId })),
   ]);
   const allItems = (
     await Promise.all(
@@ -145,7 +244,7 @@ async function findDiscrepancy(
     )
   ).flatMap((r) => r.content);
 
-  const normalizedSubs = subsResult.content.map((s) => {
+  const normalizedSubs = normalizedSubsRaw.map((s) => {
     const { id: _id, ...rest } = s;
     return { ...rest, subscriptionId: undefined, unitPrice: s.price };
   });
@@ -167,11 +266,26 @@ async function findDiscrepancy(
       (d) => discrepancyId({ companyId: d.companyId, productName: d.productName, type: d.type, month: opts.month }) === opts.discrepancy,
     );
     if (!target) {
+      // #730: name the active mode. Discrepancy IDs are derived from the data
+      // that produced them, so an ID minted under demo mode can never match in
+      // live and vice versa — but the old message described that as staleness
+      // and sent the user to re-run an audit that would keep minting IDs from
+      // the same source they already had. Re-running is the right fix for a
+      // genuinely stale ID and useless for a mode mismatch; the message could
+      // not distinguish them because it never said which mode it had searched.
+      const mode = ctx.isDemo ? "demo" : "live";
+      const otherMode = ctx.isDemo ? "live" : "demo";
       throw new CliError(
-        `No discrepancy matches ID "${opts.discrepancy}"`,
-        ["The discrepancy ID couldn't be located in the current audit."],
+        `No discrepancy matches ID "${opts.discrepancy}" in ${mode} data`,
         [
-          `Re-run ${replCmd("pax8 invoices audit --json")} to get fresh discrepancy IDs.`,
+          `The audit of ${mode} data produced no discrepancy with that ID.`,
+          `Discrepancy IDs are derived from the data that produced them, so an ID from ${otherMode} mode will never match here.`,
+        ],
+        [
+          `Re-run ${replCmd("pax8 invoices audit --json")} to get fresh ${mode} discrepancy IDs.`,
+          ctx.isDemo
+            ? `If that ID came from live data, turn demo mode off first: ${replCmd("pax8 demo off")}.`
+            : `If that ID came from demo mode, re-run the audit with ${replCmd("PAX8_DEMO=1 pax8 invoices audit --json")}.`,
           `Or pass --company and --product instead.`,
         ],
         undefined,
@@ -240,7 +354,9 @@ export const invoicesDisputeCommand = new Command("dispute")
     `
 Closed loop with 'pax8 invoices audit':
   audit identifies the discrepancy → dispute records the draft and renders a
-  portal-ready support template. Drafts are stored under ~/.pax8/disputes/.
+  portal-ready support template. Drafts are stored under the CLI config
+  directory (see PAX8_CONFIG_DIR; defaults to ~/.pax8/disputes/), or
+  PAX8_DISPUTES_DIR if set explicitly.
 
 Examples:
   pax8 invoices audit                                              # find discrepancies first
@@ -256,6 +372,24 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
   )
   .action(async (_options, command: Command) => {
     const allOpts = command.optsWithGlobals();
+
+    // #M-1: `allOpts.month` is interpolated into `nextActions[].command`
+    // strings on stdout that agents may extract and exec. Validate shape
+    // (YYYY-MM only) at the parse boundary before any side effects so a
+    // value like `2026-01; rm -rf ~` can't slip through that channel.
+    //
+    // #M-5: eagerly probe disputesDir() so PAX8_DISPUTES_DIR is run
+    // through validateConfigDir() at parse time. The actual write
+    // (writeDraft) is deep in the action flow behind a confirm prompt and
+    // an audit network call; surfacing the security error at the top
+    // means the user / agent sees it immediately rather than after a
+    // multi-second roundtrip.
+    try {
+      validateMonth(allOpts.month);
+      disputesDir();
+    } catch (error) {
+      await handleCommandError(error, createSpinner(""));
+    }
 
     // ── Idempotency handling ────────────────────────────────────────────────
     const idempotencyKey: string | undefined = allOpts.idempotencyKey;
@@ -340,13 +474,25 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
 
       // ── Preview ──────────────────────────────────────────────────────────
       const sign = target.delta > 0 ? "+" : "";
-      const impactLabel =
-        target.dollarImpact > 0
-          ? `${formatCurrency(target.dollarImpact)} overcharge`
-          : `${formatCurrency(Math.abs(target.dollarImpact))} undercharge`;
+      // Same direction test that drives the portal template, so the terminal
+      // framing can never disagree with the ticket it is previewing.
+      //
+      // The impact label has to come from it too. It previously branched on
+      // `target.dollarImpact > 0` while the framing came from `type`, so the
+      // two disagreed at exactly the case `partnerIsOwedFor` exists to handle:
+      // a zero-impact `overcharge` (a zero-priced SKU — free add-on or $0
+      // trial — that is mis-invoiced) rendered as "$0.00 undercharge" under a
+      // "Dispute Draft" heading, while the template it was previewing said
+      // "$0.00 overcharge". The comment above claimed they could not disagree;
+      // that was true of the template and not of this block.
+      const partnerIsOwed = partnerIsOwedFor(target.type);
+      const uiCopy = partnerIsOwed ? DISPUTE_COPY.partnerIsOwed : DISPUTE_COPY.partnerOwes;
+      const impactLabel = `${formatCurrency(Math.abs(target.dollarImpact))} ${
+        partnerIsOwed ? "overcharge" : "undercharge"
+      }`;
 
       if (ctx.outputFormat !== "json" && ctx.outputFormat !== "quiet") {
-        process.stderr.write(chalk.bold("\n  📝 Dispute Draft:\n\n"));
+        process.stderr.write(chalk.bold(`\n  📝 ${uiCopy.label}:\n\n`));
         process.stderr.write(`  ${chalk.dim("Company:".padEnd(18))}${target.companyName}\n`);
         process.stderr.write(`  ${chalk.dim("Product:".padEnd(18))}${target.productName}\n`);
         if (month) process.stderr.write(`  ${chalk.dim("Period:".padEnd(18))}${month}\n`);
@@ -361,7 +507,36 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
         process.stderr.write(`  ${chalk.dim("Discrepancy ID:".padEnd(18))}${discId}\n\n`);
       }
 
-      const ok = await confirm("File this dispute draft?", { default: true });
+      // Filing a dispute is a write, so it must not proceed unconfirmed when
+      // there is no human to confirm. Without this guard the outcome depended
+      // on the exact shape of stdin rather than on approval:
+      //
+      //   < /dev/null       readline hits EOF, the question callback never
+      //                     fires, the promise never settles, node exits 0 —
+      //                     nothing written, but by accident, not by gate.
+      //   printf '\n' |     an empty line answers the prompt, and
+      //                     confirm(..., { default: true }) maps "" to yes,
+      //                     so the draft is FILED with no approval.
+      //
+      // `echo | pax8 invoices dispute --discrepancy X` therefore filed a
+      // dispute, as would any agent harness that hands a command an empty
+      // stdin line. Fail closed instead, matching the non-TTY write guards
+      // already in upgrade.ts, auth/login.ts and recommendations/act.ts.
+      const autoYes = !!allOpts.yes || process.env.PAX8_YES === "1";
+      if (!autoYes && !process.stdin.isTTY) {
+        throw new CliError(
+          "Cannot file a dispute without confirmation — stdin is not a TTY",
+          ["`pax8 invoices dispute` needs a terminal to confirm the filing"],
+          [
+            `Pass ${replCmd("--yes")} to file without prompting`,
+            `Or review the discrepancy first: ${replCmd("pax8 invoices audit --json")}`,
+          ],
+          undefined,
+          ERROR_INVALID_INPUT,
+        );
+      }
+
+      const ok = await confirm(`File this ${uiCopy.noun}?`, { default: true });
       if (!ok) {
         if (ctx.outputFormat !== "json" && ctx.outputFormat !== "quiet") {
           process.stderr.write(chalk.yellow("  Cancelled.\n\n"));
@@ -379,7 +554,7 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
         ...draftBase,
       };
 
-      const writeSpinner = createSpinner("Filing dispute...").start();
+      const writeSpinner = createSpinner(`Filing ${uiCopy.noun}...`).start();
       const done = markWriteInFlight("invoices", undefined, idempotencyKey);
       let filePath: string;
       try {
@@ -387,7 +562,7 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
       } finally {
         done();
       }
-      writeSpinner.succeed("Dispute draft filed");
+      writeSpinner.succeed(`${uiCopy.label} filed`);
 
       // ── Output ───────────────────────────────────────────────────────────
       if (ctx.outputFormat === "json") {
@@ -397,7 +572,7 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
           nextActions: [
             {
               command: `cat "${filePath}"`,
-              description: "View the full dispute draft (incl. portal template)",
+              description: `View the full ${uiCopy.noun} (incl. portal template)`,
             },
             {
               command: `pax8 invoices audit --month ${month ?? new Date().toISOString().slice(0, 7)} --json`,
@@ -423,8 +598,17 @@ return the cached draft (host-local; see #474 for v0.2 wire-level plan).`,
       }
       process.stdout.write("\n");
       process.stderr.write(chalk.dim("  Next steps:\n"));
-      process.stderr.write(`    ${chalk.cyan(`Paste the template above into the Pax8 portal billing support form.`)}\n`);
-      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 invoices audit`))} ${chalk.dim("re-audit later to confirm resolution")}\n\n`);
+      // #733: cyan is the runnable-command colour everywhere else in the CLI,
+      // so prose rendered in it reads as something to paste. This line is an
+      // instruction, not a command — render it as prose.
+      process.stderr.write(`    ${chalk.dim("Paste the template above into the Pax8 portal billing support form.")}\n`);
+      // #733: this used a SINGLE space between the command and its
+      // description, unlike every other next-step line in the CLI, which uses
+      // two. With a description that also opened on a verb it rendered as
+      // `pax8 invoices audit re-audit later to confirm resolution` — a command
+      // that does not exist, and no way for a reader or an agent to see where
+      // the runnable part ended.
+      process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 invoices audit`))}  ${chalk.dim("to confirm resolution later")}\n\n`);
 
           return true;
         },

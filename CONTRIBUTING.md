@@ -2,6 +2,10 @@
 
 Thanks for your interest in contributing! Outside contributions are welcome — issues, discussion, bug fixes, and features are all fair game. There is no CLA. We use a [Developer Certificate of Origin](https://developercertificate.org) sign-off instead (`git commit -s`); see below.
 
+## AI-Assisted and Automated Contributions
+
+AI-assisted contributions are welcome on the same terms as any other: a human submitter must understand the change, be able to vouch for it under the DCO sign-off, and engage with review. Unsolicited fully-automated PRs — including bot-generated implementations of open issues — will be closed without review. Issues labeled `needs-design` are not ready for implementation by anyone, human or bot; the useful contribution there is input on the open design questions, not code.
+
 ## Development Setup
 
 ```bash
@@ -27,6 +31,27 @@ PAX8_DEMO=1 pnpm dev -- subscriptions renewals --within 14d
 $env:PAX8_DEMO="1"; pnpm dev -- clients list
 $env:PAX8_DEMO="1"; pnpm dev -- subscriptions renewals --within 14d
 ```
+
+#### Large-portfolio fixture for scale testing
+
+Demo mode defaults to a small hand-curated fixture (~12 companies). For UX
+bugs that only manifest at portfolio scale — invisible pagination, 200-cap
+name enrichment, currency rendering, BillingTerm normalization, shell-meta
+in customer names — set `PAX8_DEMO_SCALE=large` alongside `PAX8_DEMO=1`:
+
+```bash
+PAX8_DEMO=1 PAX8_DEMO_SCALE=large pnpm dev -- orders list
+PAX8_DEMO=1 PAX8_DEMO_SCALE=large pnpm dev -- dashboard --json
+```
+
+You get 1,000 companies, 5,000 subscriptions, 45,000 orders dating back to
+2013, mixed currencies (USD/EUR/GBP/CAD), every `BillingTerm` value, and a
+handful of deliberately-hostile customer names. The fixture is generated
+deterministically from a fixed seed, so two runs produce identical data.
+
+Don't replace the small fixture with the large one — both serve different
+purposes. The small fixture is the screenshot target and golden-path test
+data; the large fixture is the scale-matrix regression gate (#484).
 
 ## Project Structure
 
@@ -164,11 +189,11 @@ On merge to `main`, the release workflow opens (or updates) a `chore: release` P
 
 ### Maintainer note: npm trusted publishing
 
-The release workflow publishes via [npm OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) — no `NPM_TOKEN` secret. For this to work, the `@pax8` scope must have the `pax8labs/pax8-cli` repository and the `Release` workflow registered as a trusted publisher at <https://www.npmjs.com/settings/pax8/packages> for every package the workflow publishes (`@pax8/cli`, `@pax8/core`). The workflow already declares `permissions.id-token: write` and `setup-node`'s `registry-url`; once the npm side is configured, `npm publish` exchanges the OIDC token for an ephemeral publish token automatically.
+The release workflow publishes via [npm OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) — no `NPM_TOKEN` secret. For this to work, the `@pax8` scope must have the `pax8labs/pax8-cli` repository and the `Release` workflow registered as a trusted publisher at <https://www.npmjs.com/settings/pax8/packages> for every package the workflow publishes (`@pax8/cli`, `@pax8/core`). The workflow already declares `permissions.id-token: write` and `setup-node`'s `registry-url`; once the npm side is configured, `npm publish` exchanges the OIDC token for an ephemeral publish token automatically. One more hard prerequisite: the npm CLI doing the publish must be **>= 11.5.1** — older npm (including the 10.x bundled with Node 22) has no trusted-publishing code at all and silently falls back to whatever token is configured, which surfaces as a masked `E404` on the PUT. The release workflow upgrades npm explicitly for this reason; keep that step if you copy this setup to another repo.
 
 ## Security Reports
 
-Do **not** open a GitHub Issue for security vulnerabilities. Report them via the process in [SECURITY.md](SECURITY.md) (email to `security@pax8.com`).
+Do **not** open a GitHub Issue for security vulnerabilities. Report them via the process in [SECURITY.md](SECURITY.md) (Pax8's Vulnerability Disclosure Program webform).
 
 ### Static analysis (CodeQL)
 

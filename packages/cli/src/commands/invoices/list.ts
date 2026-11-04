@@ -2,14 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
 import { buildContext } from "../../lib/context.js";
-import { output, type Column } from "../../lib/output.js";
+import {
+  output,
+  type Column,
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+  displayCommandFromArgs,
+  renderReplNavHint,
+} from "../../lib/output.js";
+import { saveLastListContext } from "../../lib/last-list.js";
+import { wireListDrillIn } from "../../lib/list-drill-in.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatDate, formatStatus } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
-import { validateEnum } from "../../lib/validate.js";
+import { clampListSize, LIST_SIZE_CAP, validateEnum, warnSizeClamped } from "../../lib/validate.js";
 
 // Help text mirrors the public OpenAPI enum for `GET /invoices`'s
 // `status` query parameter (#250). The wire emits a narrower 4-value
@@ -73,7 +84,7 @@ export const invoicesListCommand = new Command("list")
     "Sort by field (invoice-date, due-date, status, partner-name, total, balance, carried-balance)"
   )
   .option("--page <number>", "Page number", "1")
-  .option("--size <number>", "Page size", "25")
+  .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "25")
   .option("--ids-only", "Output only resource IDs, one per line")
   .option("--with-actions", "Wrap JSON output as { invoices, nextActions } instead of a flat array")
   .addHelpText(
@@ -118,6 +129,13 @@ Examples:
       // case) onto the spec-canonical query-parameter names.
       const sortRaw = allOpts.sort ? String(allOpts.sort).toLowerCase() : undefined;
       const sort = sortRaw ? INVOICE_SORT_ALIASES[sortRaw] : undefined;
+      // #518: clamp `--size` at LIST_SIZE_CAP (1000) to keep `jq`
+      // pipelines and agent contexts from getting blown out by an
+      // unbounded request.
+      const sizeResult = clampListSize(parseInt(allOpts.size, 10), 25);
+      if (sizeResult.clamped) {
+        warnSizeClamped(sizeResult.requested, LIST_SIZE_CAP, { quiet: allOpts.quiet });
+      }
       const result = await ctx.api.invoices.list({
         month: allOpts.month,
         companyId,
@@ -126,7 +144,7 @@ Examples:
         invoiceDateRangeEnd: allOpts.to,
         sort,
         page: apiPage,
-        size: parseInt(allOpts.size, 10),
+        size: sizeResult.size,
       });
       spinner.stop();
 
@@ -137,7 +155,9 @@ Examples:
         return;
       }
 
+      // #418: leading `_num` column makes rows pickable by number in the REPL.
       const columns: Column[] = [
+        { key: "_num", header: "#" },
         {
           key: "id",
           header: "ID",
@@ -171,31 +191,61 @@ Examples:
         },
       ];
 
-      if (ctx.outputFormat === "json" && options.withActions) {
-        const nextActions: { command: string; description: string }[] = [];
+      // #483: build the page envelope once for both JSON and footer.
+      const pageEnvelope = buildPageEnvelope(result.page);
+      // #418: row numbers continue across pages.
+      const startNum = result.page.number * result.page.size;
+      const numbered = result.content.map((row, i) => ({
+        ...row,
+        _num: String(startNum + i + 1),
+      }));
+      // #562: argv form for the next-page invocation. Each filter value
+      // lands in its own argv slot.
+      const nextPageArgs: string[] = [
+        "pax8", "invoices", "list",
+        "--page", String(pageEnvelope.number + 1),
+        "--size", String(pageEnvelope.size),
+        ...(allOpts.company ? ["--company", String(allOpts.company)] : []),
+        ...(allOpts.status ? ["--status", String(allOpts.status)] : []),
+        ...(allOpts.month ? ["--month", String(allOpts.month)] : []),
+        ...(allOpts.from ? ["--from", String(allOpts.from)] : []),
+        ...(allOpts.to ? ["--to", String(allOpts.to)] : []),
+      ];
+      const nextPageCommand = displayCommandFromArgs(nextPageArgs);
+
+      if (ctx.outputFormat === "json") {
         const invoices = result.content;
-        const unpaid = invoices.filter(
-          (inv) =>
-            String((inv as Record<string, unknown>).status ?? "").toLowerCase() === "unpaid"
-        );
-        if (unpaid.length > 0) {
-          nextActions.push({
-            command: `pax8 invoices show ${unpaid[0].id}`,
-            description: `Review the first unpaid invoice (${unpaid.length} unpaid total)`,
-          });
-        } else if (invoices.length > 0) {
-          nextActions.push({
-            command: `pax8 invoices show ${invoices[0].id}`,
-            description: "Drill into the most recent invoice",
-          });
+        if (options.withActions) {
+          // #562: nextActions entries carry both `command` (display) and
+          // `args` (argv). Agents spawn args.slice(1).
+          const nextActions: { command: string; args: string[]; description: string }[] = [];
+          const pageAction = buildNextPageAction(
+            pageEnvelope,
+            [...nextPageArgs, "--json"],
+            "invoice",
+          );
+          if (pageAction) nextActions.push(pageAction);
+          const unpaid = invoices.filter(
+            (inv) =>
+              String((inv as Record<string, unknown>).status ?? "").toLowerCase() === "unpaid"
+          );
+          if (unpaid.length > 0) {
+            const showArgs = ["pax8", "invoices", "show", String(unpaid[0].id)];
+            nextActions.push(buildAction(showArgs, `Review the first unpaid invoice (${unpaid.length} unpaid total)`));
+          } else if (invoices.length > 0) {
+            const showArgs = ["pax8", "invoices", "show", String(invoices[0].id)];
+            nextActions.push(buildAction(showArgs, "Drill into the most recent invoice"));
+          }
+          const auditArgs = ["pax8", "invoices", "audit", "--json"];
+          nextActions.push(buildAction(auditArgs, "Audit invoices against active subscriptions for billing discrepancies"));
+          process.stdout.write(
+            JSON.stringify({ invoices, page: pageEnvelope, nextActions }, null, 2) + "\n"
+          );
+        } else {
+          process.stdout.write(
+            JSON.stringify({ invoices, page: pageEnvelope }, null, 2) + "\n"
+          );
         }
-        nextActions.push({
-          command: "pax8 invoices audit --json",
-          description: "Audit invoices against active subscriptions for billing discrepancies",
-        });
-        process.stdout.write(
-          JSON.stringify({ invoices: result.content, nextActions }, null, 2) + "\n"
-        );
         return;
       }
 
@@ -210,7 +260,7 @@ Examples:
         emptyReasons.push("This is a fresh tenant with no historical billing yet.");
       }
 
-      output(result.content, {
+      output(numbered, {
         format: ctx.outputFormat,
         columns,
         emptyState: {
@@ -234,10 +284,34 @@ Examples:
         },
       });
 
-      if (ctx.outputFormat === "table" && result.content.length > 0) {
-        process.stderr.write(
-          chalk.dim(`\n  ${result.page.totalElements} invoices\n\n`)
-        );
+      if (ctx.outputFormat === "table") {
+        renderPaginationFooter(pageEnvelope, {
+          resourceSingular: "invoice",
+          nextPageCommand,
+          rowCount: result.content.length,
+        });
+        renderReplNavHint(pageEnvelope);
+        const userArgv = process.argv.slice(2);
+        const first = userArgv[0];
+        if (userArgv.length > 0 && first !== "back" && first !== "n" && first !== "p") {
+          await saveLastListContext({
+            command: userArgv,
+            page: {
+              number: pageEnvelope.number,
+              totalPages: pageEnvelope.totalPages,
+            },
+          });
+        }
+        // #418: pickable drill-in.
+        await wireListDrillIn({
+          rows: result.content,
+          resource: "invoices",
+          startNum,
+          getLabel: (row) =>
+            String(
+              (row as { companyName?: string }).companyName ?? "Invoice",
+            ),
+        });
       }
     } catch (error) {
       await handleCommandError(error, spinner, "Failed to list invoices");

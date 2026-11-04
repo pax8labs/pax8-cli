@@ -69,6 +69,9 @@ export {
   ERROR_NOT_FOUND,
   ERROR_INTERNAL,
   ERROR_QUOTE_LINE_ITEM_NOT_FOUND,
+  ERROR_CANCELLED,
+  ERROR_TERM_NOT_FOUND,
+  ERROR_RECOMMENDATION_NOT_FOUND,
 } from "./errors/codes.js";
 export type { Pax8ErrorCode } from "./errors/codes.js";
 
@@ -93,7 +96,8 @@ export {
   ProductPricingRateSchema,
   ProductPricingResponseSchema,
   ProvisioningDetailSchema,
-  ProvisioningFieldSchema,
+  ProvisioningDetailResponseSchema,
+  ProvisioningDetailValueTypeSchema,
   ProductDependencySchema,
   OrderSchema,
   OrderLineItemSchema,
@@ -154,7 +158,8 @@ export type {
   ProductPricingPlan,
   ProductPricingRate,
   ProvisioningDetail,
-  ProvisioningField,
+  ProvisioningDetailResponse,
+  ProvisioningDetailValueType,
   ProductDependency,
   Order,
   OrderLineItem,
@@ -204,6 +209,8 @@ export type {
 export { TokenManager } from "./auth/token-manager.js";
 export { CredentialStore } from "./auth/credential-store.js";
 export type { Credentials, PermissionCheckResult } from "./auth/credential-store.js";
+export { TokenCacheStore } from "./auth/token-cache-store.js";
+export type { TokenCacheFile, TokenCacheLookupKey } from "./auth/token-cache-store.js";
 
 // ─── Services: computed business logic over the API ─────────────────────────
 
@@ -278,6 +285,7 @@ export {
   ensureConfigDir,
 } from "./config/loader.js";
 export { ConfigSchema } from "./config/schema.js";
+export { ConfigValidationError, describeConfigIssues } from "./config/config-error.js";
 export type { Config } from "./config/schema.js";
 
 // ─── Security: env var validation + safe file writes ────────────────────────
@@ -296,6 +304,7 @@ export {
   Telemetry,
   getTelemetry,
   TELEMETRY_NOTICE,
+  accountGroupKey,
 } from "./telemetry/telemetry.js";
 export type { TelemetryEvent } from "./telemetry/telemetry.js";
 

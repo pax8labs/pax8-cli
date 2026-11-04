@@ -44,9 +44,10 @@ export interface FullUpdateQuotePayload {
  * body `PUT /v2/quotes/{id}` requires. Shared by `update` and `setStatus`
  * so both write paths land identical bytes on the wire.
  *
- * `expiresOn` is technically optional on the read shape (a draft quote may
- * not have one yet) but required on the PUT — callers must supply it via
- * `overrides` when the current quote lacks it; otherwise the API will 4xx.
+ * `expiresAt` is optional on the read shape (a draft quote may not have one
+ * yet) but the v2 wire body for PUT requires `expiresOn` — callers must
+ * supply it via `overrides` when the current quote lacks it; otherwise the
+ * API will 4xx.
  * `status` on the read shape is a permissive string (mixed-case legacy demo
  * values are tolerated); we lowercase it before serializing to match the
  * v2 enum.
@@ -60,11 +61,12 @@ export function buildFullUpdatePayload(
     ?? (current.status.toLowerCase() as QuoteStatusTransition);
   // `published` is optional on the read shape; default to `false` for drafts.
   const published = overrides.published ?? current.published ?? false;
-  // `expiresOn` is optional on the read shape; fall through to the override
-  // (caller may have just supplied it via `--expiration-date`). If neither
-  // exists, send empty string — the real API will reject this with a clear
-  // body-validation error rather than us forging a date.
-  const expiresOn = overrides.expiresOn ?? current.expiresOn ?? "";
+  // `expiresOn` is the v2 wire-side body field; on the read shape the
+  // canonical name is `expiresAt`. Fall through to the override (caller may
+  // have just supplied it via `--expiration-date`). If neither exists, send
+  // empty string — the real API will reject this with a clear body-validation
+  // error rather than us forging a date.
+  const expiresOn = overrides.expiresOn ?? current.expiresAt ?? "";
   return {
     expiresOn,
     introMessage: overrides.introMessage ?? current.introMessage,

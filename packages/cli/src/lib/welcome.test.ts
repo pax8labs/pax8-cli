@@ -58,8 +58,19 @@ describe("showWelcomeScreen", () => {
     expect(captured).toContain("auth login");
     expect(captured).toContain("Stuck?");
     expect(captured).toContain("doctor");
-    expect(captured).toContain("Sample data, no auth required");
+    expect(captured).toContain("Sample data, one-shot");
     expect(captured).toContain("Connect your Pax8 partner account");
+
+    // Regression guard: the persistent-demo option must be visibly
+    // annotated as persistent + name the disable command. Without this,
+    // first-run users pinned demo mode via `init --demo`, ran `auth login`,
+    // and couldn't figure out why every command still returned sample data.
+    expect(captured).toContain("Pin demo mode (persistent");
+    expect(captured).toContain("demo off");
+
+    // The safer one-shot entry-point (env-var, no persistence) is also
+    // surfaced as a first-class option alongside `init --demo`.
+    expect(captured).toContain("PAX8_DEMO=1 pax8 dashboard");
 
     // The authenticated-only command headings/items must NOT appear.
     // Note: "recommendations" appears in the value-prop blurb ("upsell
@@ -93,8 +104,9 @@ describe("showWelcomeScreen", () => {
     // The unauthenticated-only sections must NOT appear.
     expect(captured).not.toContain("Try it:");
     expect(captured).not.toContain("Stuck?");
-    expect(captured).not.toContain("Sample data, no auth required");
+    expect(captured).not.toContain("Sample data, one-shot");
     expect(captured).not.toContain("Connect your Pax8 partner account");
+    expect(captured).not.toContain("Pin demo mode");
 
     expect(captured).toContain("Pax8 CLI turns the marketplace API");
   });

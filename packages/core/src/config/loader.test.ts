@@ -30,7 +30,10 @@ describe("config/loader", () => {
     expect(config.defaults.output_format).toBe("table");
     expect(config.defaults.page_size).toBe(50);
     expect(config.defaults.confirm_destructive).toBe(true);
-    expect(config.cache.enabled).toBe(true);
+    // #557 flipped `cache.enabled` to opt-in (default false). The previous
+    // default-true value got partners on every command path before they'd
+    // explicitly chosen to cache; opt-in is the durable posture.
+    expect(config.cache.enabled).toBe(false);
     expect(config.cache.ttl_hours).toBe(24);
     expect(config.telemetry.enabled).toBe(false);
   });
@@ -53,7 +56,8 @@ defaults:
     expect(config.defaults.page_size).toBe(25);
     // Defaults should be applied for missing fields
     expect(config.defaults.confirm_destructive).toBe(true);
-    expect(config.cache.enabled).toBe(true);
+    // #557: opt-in caching — cache.enabled defaults to false.
+    expect(config.cache.enabled).toBe(false);
   });
 
   it("should save and reload config", async () => {

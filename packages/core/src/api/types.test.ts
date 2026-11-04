@@ -11,14 +11,12 @@
  * These are fields that either:
  *
  *  - Leak Pax8's internal cost basis / margin / billing-engine internals
- *    (Tier 1 — Revenue/Competitive — per the Marketplace & Platform Data
- *    Risk Tiering standard at
- *    https://pax8.atlassian.net/wiki/spaces/PS1/pages/2748907531/Marketplace+Platform+Data+Risk+Tiering),
- *    OR
- *  - Were explicitly called out by reviewers as "must never see the light
- *    of day" (Josh Hollander's inline comment on the CLI domain review:
- *    "let's also make sure `originalSubscriptionId` never sees the light
- *    of day. I don't want to double down on that massive mistake.").
+ *    (classified as competitive / revenue-sensitive under Pax8's marketplace
+ *    data-risk tiering), OR
+ *  - Were explicitly called out during the CLI domain review as fields that
+ *    must not appear on the CLI surface — historically these have been
+ *    upstream-schema artifacts that the API exposes for internal reasons but
+ *    that partners would interpret incorrectly if surfaced.
  *
  * The list below is **policy as code** — if a future PR adds one of these
  * field names to any exported Zod schema in this file (top-level OR
@@ -31,10 +29,6 @@
  *   1. Justify it in writing (which tier, which reviewer, which incident)
  *   2. Append to FORBIDDEN_FIELDS below with an inline comment
  *   3. The check is automatic from there.
- *
- * See also: docs/pm-review-response-2026-05.md §1 (field-tier audit) and
- * Pax8 CLI Domain Review at
- * https://pax8.atlassian.net/wiki/spaces/Foundation/pages/3069607971/Pax8+CLI+Domain+Review+Approval+Process+and+Key+Questions+for+Each+Section
  */
 
 import { describe, it, expect } from "vitest";
@@ -96,20 +90,18 @@ describe("CompanySchema", () => {
     updatedDate: "2024-06-15T12:00:00Z",
   };
 
-  it("validates a correct payload and dual-emits canonical timestamp aliases (#385)", () => {
+  it("accepts the legacy `created` / `updatedDate` wire shape and projects to canonical (#385)", () => {
     const parsed = CompanySchema.parse(valid);
-    // Both the legacy wire-shape names AND the canonical past-tense camelCase
-    // names must appear on the parsed object so existing `--json` consumers
-    // keep working through the v0.2.x → v0.3.0 deprecation window.
-    expect(parsed.created).toBe(valid.created);
+    // The schema accepts the legacy Pax8-API field names on the wire and
+    // projects them onto the canonical camelCase / past-tense names. Only
+    // the canonical names survive on the parsed object.
     expect(parsed.createdAt).toBe(valid.created);
-    expect(parsed.updatedDate).toBe(valid.updatedDate);
     expect(parsed.updatedAt).toBe(valid.updatedDate);
+    expect(parsed).not.toHaveProperty("created");
+    expect(parsed).not.toHaveProperty("updatedDate");
   });
 
   it("accepts the canonical `createdAt` / `updatedAt` wire shape (#385)", () => {
-    // Forward-compat: when a future server starts emitting only the new
-    // names, both shapes still parse and both still appear on the output.
     const canonical = {
       ...valid,
       created: undefined,
@@ -119,9 +111,9 @@ describe("CompanySchema", () => {
     };
     const parsed = CompanySchema.parse(canonical);
     expect(parsed.createdAt).toBe("2024-01-01T00:00:00Z");
-    expect(parsed.created).toBe("2024-01-01T00:00:00Z");
     expect(parsed.updatedAt).toBe("2024-06-15T12:00:00Z");
-    expect(parsed.updatedDate).toBe("2024-06-15T12:00:00Z");
+    expect(parsed).not.toHaveProperty("created");
+    expect(parsed).not.toHaveProperty("updatedDate");
   });
 
   it("validates minimal payload (only required fields)", () => {
@@ -428,22 +420,50 @@ describe("ProductPricingResponseSchema", () => {
 
 // ─── Provisioning Detail ─────────────────────────────────────────────────────
 
-describe("ProvisioningDetailSchema", () => {
-  const valid = {
-    productId: uuid,
-    vendorPrerequisites: "Must have Azure AD tenant",
-    fields: [
-      { name: "domain", label: "Domain Name", type: "string", required: true },
-      { name: "plan", label: "Plan", type: "select", required: false, options: ["basic", "standard"] },
-    ],
-  };
-
-  it("validates a correct payload", () => {
-    expect(ProvisioningDetailSchema.parse(valid)).toEqual(valid);
+describe("ProvisioningDetailSchema (spec-shaped, see Candidate H)", () => {
+  it("validates a full Input-type field with null possibleValues", () => {
+    const detail = {
+      key: "domain",
+      label: "Tenant Domain",
+      description: "Customer's verified Microsoft tenant domain.",
+      valueType: "Input" as const,
+      possibleValues: null,
+    };
+    expect(ProvisioningDetailSchema.parse(detail)).toEqual(detail);
   });
 
-  it("validates minimal payload", () => {
-    expect(ProvisioningDetailSchema.parse({ productId: uuid })).toEqual({ productId: uuid });
+  it("validates a Single-Value field with allowed possibleValues", () => {
+    const detail = {
+      key: "plan",
+      label: "Plan",
+      valueType: "Single-Value" as const,
+      possibleValues: ["basic", "standard"],
+    };
+    expect(ProvisioningDetailSchema.parse(detail)).toEqual(detail);
+  });
+
+  it("validates a Multi-Value field", () => {
+    const detail = {
+      key: "regions",
+      valueType: "Multi-Value" as const,
+      possibleValues: ["us-east", "us-west", "eu-central"],
+    };
+    expect(ProvisioningDetailSchema.parse(detail)).toEqual(detail);
+  });
+
+  it("accepts writeOnly values array (orders / sub-update echo path)", () => {
+    const echoed = { key: "domain", values: ["contoso.onmicrosoft.com"] };
+    expect(ProvisioningDetailSchema.parse(echoed)).toEqual(echoed);
+  });
+
+  it("rejects a valueType outside the spec enum", () => {
+    expect(() =>
+      ProvisioningDetailSchema.parse({ key: "x", valueType: "Freeform" })
+    ).toThrow();
+  });
+
+  it("validates an empty object — all fields are optional in the spec", () => {
+    expect(ProvisioningDetailSchema.parse({})).toEqual({});
   });
 });
 
@@ -464,10 +484,10 @@ describe("OrderSchema", () => {
     ],
   };
 
-  it("validates a correct payload and dual-emits canonical createdAt (#385)", () => {
+  it("accepts the legacy `createdDate` wire shape and projects to canonical (#385)", () => {
     const parsed = OrderSchema.parse(valid);
-    expect(parsed.createdDate).toBe(valid.createdDate);
     expect(parsed.createdAt).toBe(valid.createdDate);
+    expect(parsed).not.toHaveProperty("createdDate");
   });
 
   it("accepts the canonical `createdAt` wire shape (#385)", () => {
@@ -479,14 +499,13 @@ describe("OrderSchema", () => {
     };
     const parsed = OrderSchema.parse(canonical);
     expect(parsed.createdAt).toBe("2024-03-15T10:00:00Z");
-    expect(parsed.createdDate).toBe("2024-03-15T10:00:00Z");
+    expect(parsed).not.toHaveProperty("createdDate");
   });
 
   it("validates without lineItems", () => {
     // Strip lineItems via destructure; the unused name is the rest-sibling idiom.
     const { lineItems, ...rest } = valid;
     const parsed = OrderSchema.parse(rest);
-    expect(parsed.createdDate).toBe(rest.createdDate);
     expect(parsed.createdAt).toBe(rest.createdDate);
   });
 
@@ -775,17 +794,17 @@ describe("SubscriptionSchema", () => {
     productName: "Microsoft 365 Business Premium [New Commerce Experience]",
   };
 
-  it("validates a correct payload and dual-emits canonical createdAt (#385)", () => {
+  it("accepts the legacy `createdDate` wire shape and projects to canonical (#385)", () => {
     const parsed = SubscriptionSchema.parse(valid);
-    expect(parsed.createdDate).toBe(valid.createdDate);
     expect(parsed.createdAt).toBe(valid.createdDate);
+    expect(parsed).not.toHaveProperty("createdDate");
   });
 
   it("accepts the canonical `createdAt` wire shape (#385)", () => {
     const canonical = { ...valid, createdDate: undefined, createdAt: "2023-12-15T00:00:00Z" };
     const parsed = SubscriptionSchema.parse(canonical);
     expect(parsed.createdAt).toBe("2023-12-15T00:00:00Z");
-    expect(parsed.createdDate).toBe("2023-12-15T00:00:00Z");
+    expect(parsed).not.toHaveProperty("createdDate");
   });
 
   it("validates minimal payload", () => {
@@ -798,8 +817,12 @@ describe("SubscriptionSchema", () => {
       createdDate: "2024-01-01",
       status: "Active",
     };
-    // #385 — canonical createdAt is dual-emitted alongside createdDate.
-    expect(SubscriptionSchema.parse(minimal)).toEqual({ ...minimal, createdAt: "2024-01-01" });
+    // The schema accepts legacy `createdDate` on the wire and projects it
+    // onto canonical `createdAt`; `createdDate` is dropped from the parsed
+    // shape.
+    const { createdDate: _legacy, ...rest } = minimal;
+    void _legacy;
+    expect(SubscriptionSchema.parse(minimal)).toEqual({ ...rest, createdAt: "2024-01-01" });
   });
 
   it("rejects invalid status", () => {
@@ -1054,12 +1077,12 @@ describe("QuoteSchema", () => {
     ],
   };
 
-  it("validates a correct payload and dual-emits canonical timestamp aliases (#385)", () => {
+  it("accepts the legacy `createdOn` / `expiresOn` wire shape and projects to canonical (#385)", () => {
     const parsed = QuoteSchema.parse(valid);
-    expect(parsed.createdOn).toBe(valid.createdOn);
     expect(parsed.createdAt).toBe(valid.createdOn);
-    expect(parsed.expiresOn).toBe(valid.expiresOn);
     expect(parsed.expiresAt).toBe(valid.expiresOn);
+    expect(parsed).not.toHaveProperty("createdOn");
+    expect(parsed).not.toHaveProperty("expiresOn");
   });
 
   it("accepts the canonical `createdAt` / `expiresAt` wire shape (#385)", () => {
@@ -1072,16 +1095,15 @@ describe("QuoteSchema", () => {
     };
     const parsed = QuoteSchema.parse(canonical);
     expect(parsed.createdAt).toBe("2024-03-01");
-    expect(parsed.createdOn).toBe("2024-03-01");
     expect(parsed.expiresAt).toBe("2024-04-01");
-    expect(parsed.expiresOn).toBe("2024-04-01");
+    expect(parsed).not.toHaveProperty("createdOn");
+    expect(parsed).not.toHaveProperty("expiresOn");
   });
 
   it("validates without lineItems", () => {
     // Strip lineItems via destructure; rest-sibling idiom.
     const { lineItems, ...rest } = valid;
     const parsed = QuoteSchema.parse(rest);
-    expect(parsed.createdOn).toBe(rest.createdOn);
     expect(parsed.createdAt).toBe(rest.createdOn);
   });
 
@@ -1194,10 +1216,10 @@ describe("WebhookSchema", () => {
     secret: "whsec_abc123",
   };
 
-  it("validates a correct payload and dual-emits canonical createdAt (#385)", () => {
+  it("accepts the legacy `createdDate` wire shape and projects to canonical (#385)", () => {
     const parsed = WebhookSchema.parse(valid);
-    expect(parsed.createdDate).toBe(valid.createdDate);
     expect(parsed.createdAt).toBe(valid.createdDate);
+    expect(parsed).not.toHaveProperty("createdDate");
   });
 
   it("accepts the canonical `createdAt` wire shape (#385) and leaves updatedAt as-is (already canonical)", () => {
@@ -1211,8 +1233,8 @@ describe("WebhookSchema", () => {
     };
     const parsed = WebhookSchema.parse(canonical);
     expect(parsed.createdAt).toBe("2024-03-01");
-    expect(parsed.createdDate).toBe("2024-03-01");
     expect(parsed.updatedAt).toBe("2024-04-01");
+    expect(parsed).not.toHaveProperty("createdDate");
   });
 
   it("rejects invalid url", () => {
@@ -1348,10 +1370,14 @@ describe("PaginatedResponseSchema", () => {
         },
       ],
     };
-    // #385 — canonical createdAt is dual-emitted alongside createdDate.
+    // #385 — legacy `createdDate` wire shape is projected to canonical
+    // `createdAt` and the legacy alias is dropped.
     expect(schema.parse(data)).toEqual({
       ...data,
-      content: data.content.map((s) => ({ ...s, createdAt: "2024-01-01" })),
+      content: data.content.map((s) => {
+        const { createdDate: _legacy, ...rest } = s;
+        return { ...rest, createdAt: "2024-01-01" };
+      }),
     });
   });
 
@@ -1427,16 +1453,16 @@ describe("PaginatedResponseSchema", () => {
 
 const FORBIDDEN_FIELDS = [
   // "Let's also make sure `originalSubscriptionId` never sees the light of
-  // day" — Josh Hollander, inline review comment. Surfaced from a prior
-  // platform incident; partners must never see it.
+  // day" — inline review comment. Surfaced from a prior platform incident;
+  // partners must never see it.
   "originalSubscriptionId",
   // Internal subscription hierarchy reference. Reveals how Pax8 structures
   // subscription relationships internally; out of scope for partner-facing
   // surfaces. Hidden per the field-tier audit.
   "parentSubscriptionId",
   // Cross-vendor subscription mapping. Available on Microsoft via UPS-1751
-  // but the CLI deliberately omits it; Josh Hollander approved the choice
-  // on the domain review page.
+  // but the CLI deliberately omits it; the domain-review reviewer approved
+  // the choice.
   "vendorSubscriptionId",
   // Pax8's cost basis from the vendor. Tier 1 (Revenue/Competitive) —
   // direct margin disclosure.
@@ -1445,9 +1471,9 @@ const FORBIDDEN_FIELDS = [
   // partnerCost. The partner sees their own buy rate (price /
   // partnerBuyRate); they must never see what Pax8 pays the vendor.
   "wholesaleBuyRate",
-  // Invoice-level cost basis. Surfaced by Rovo as one of the fields the
-  // partner-safe invoice summary endpoint deliberately omits to avoid
-  // wholesale cost leakage (per Finance Services PRD).
+  // Invoice-level cost basis. One of the fields the partner-safe invoice
+  // summary endpoint deliberately omits to avoid wholesale cost leakage
+  // (per Finance Services PRD).
   "costTotal",
   // Internal billing-engine fee surface. Same Finance Services exclusion
   // rationale as costTotal.

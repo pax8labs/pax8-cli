@@ -4,43 +4,43 @@
 import { describe, it, expect } from "vitest";
 import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
 
-describe("pax8 companies", () => {
-  describe("companies list", () => {
+describe("pax8 clients", () => {
+  describe("clients list", () => {
     it("returns company data in JSON format", async () => {
-      const result = await runCliExpectSuccess(["companies", "list", "--json"]);
+      const result = await runCliExpectSuccess(["clients", "list", "--json"]);
+      // #483: JSON envelope is { companies, page } (was a flat array pre-rollout).
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("id");
-      expect(data[0]).toHaveProperty("name");
-      expect(data[0]).toHaveProperty("status");
+      expect(data).toHaveProperty("companies");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.companies.length).toBeGreaterThan(0);
+      expect(data.companies[0]).toHaveProperty("id");
+      expect(data.companies[0]).toHaveProperty("name");
+      expect(data.companies[0]).toHaveProperty("status");
+      expect(data.page.number).toBe(1);
+      expect(typeof data.page.totalElements).toBe("number");
     });
 
-    it("emits BOTH `created` and canonical `createdAt` on every row (#385 deprecation window)", async () => {
-      // #385: timestamp field standardization. `createdAt` is the canonical
-      // past-tense camelCase name; bare `created` is preserved as a deprecated
-      // alias for one minor version cycle so existing `--json` consumers
-      // don't break. Removal scheduled for v0.3.0.
-      const result = await runCliExpectSuccess(["companies", "list", "--json"]);
+    it("emits canonical `createdAt` (#385); legacy `created` is dropped", async () => {
+      const result = await runCliExpectSuccess(["clients", "list", "--json"]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const row of data) {
-        expect(row).toHaveProperty("created");
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const row of data.companies) {
         expect(row).toHaveProperty("createdAt");
-        expect(row.createdAt).toBe(row.created);
+        expect(row).not.toHaveProperty("created");
       }
     });
 
     it("outputs table format by default (non-TTY falls back to JSON)", async () => {
-      const result = await runCliExpectSuccess(["companies", "list"]);
+      const result = await runCliExpectSuccess(["clients", "list"]);
       // Non-TTY defaults to JSON
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data[0].name).toBe("Summit Healthcare Partners");
+      expect(Array.isArray(data.companies)).toBe(true);
+      expect(data.companies[0].name).toBe("Summit Healthcare Partners");
     });
 
     it("outputs CSV format", async () => {
-      const result = await runCliExpectSuccess(["companies", "list", "--csv"]);
+      const result = await runCliExpectSuccess(["clients", "list", "--csv"]);
       const lines = result.stdout.trim().split("\n");
       // First line is header
       expect(lines[0]).toContain("Company");
@@ -53,7 +53,7 @@ describe("pax8 companies", () => {
 
     it("supports pagination options", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--page",
         "0",
@@ -62,12 +62,13 @@ describe("pax8 companies", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBe(2);
+      expect(data.companies.length).toBe(2);
+      expect(data.page.size).toBe(2);
     });
 
     it("shows footer with company count on stderr", async () => {
-      const result = await runCliExpectSuccess(["companies", "list"]);
-      expect(result.stderr).toContain("companies");
+      const result = await runCliExpectSuccess(["clients", "list"]);
+      expect(result.stderr).toContain("clients");
     });
 
     // #388: geography filters are server-side per OpenAPI. Demo Summit
@@ -75,67 +76,67 @@ describe("pax8 companies", () => {
     // (`--state` → `stateOrProvince`, `--zip` → `postalCode`) end-to-end.
     it("filters by --city (#388)", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--city",
         "Denver",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const c of data.companies) {
         expect(c.address?.city).toBe("Denver");
       }
     });
 
     it("--state maps to stateOrProvince on the wire (#388)", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--state",
         "CO",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const c of data.companies) {
         expect(c.address?.stateOrProvince).toBe("CO");
       }
     });
 
     it("--country filters server-side (#388)", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--country",
         "US",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const c of data.companies) {
         expect(c.address?.country).toBe("US");
       }
     });
 
     it("--zip maps to postalCode on the wire (#388)", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--zip",
         "80246",
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const c of data) {
+      expect(data.companies.length).toBeGreaterThan(0);
+      for (const c of data.companies) {
         expect(c.address?.postalCode).toBe("80246");
       }
     });
 
     it("--sort city orders results by city ascending (#388)", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--sort",
         "city",
@@ -144,14 +145,16 @@ describe("pax8 companies", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      const cities = data.map((c: { address?: { city?: string } }) => c.address?.city ?? "");
+      const cities = data.companies.map(
+        (c: { address?: { city?: string } }) => c.address?.city ?? "",
+      );
       const sorted = [...cities].sort((a, b) => a.localeCompare(b));
       expect(cities).toEqual(sorted);
     });
 
-    it("--with-actions wraps in { companies, nextActions }", async () => {
+    it("--with-actions adds nextActions to { companies, page } envelope", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "list",
         "--json",
         "--with-actions",
@@ -174,7 +177,7 @@ describe("pax8 companies", () => {
     // partner doesn't debug an "empty result" mystery.
     it("rejects unknown --status with the allowed enum list (#408)", async () => {
       const result = await runCliExpectFailure([
-        "companies",
+        "clients",
         "list",
         "--status",
         "BogusStatus",
@@ -187,10 +190,10 @@ describe("pax8 companies", () => {
     });
   });
 
-  describe("companies show", () => {
+  describe("clients show", () => {
     it("returns company details in JSON format", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "show",
         "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "--json",
@@ -203,7 +206,7 @@ describe("pax8 companies", () => {
 
     it("shows company detail view", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "show",
         "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       ]);
@@ -217,7 +220,7 @@ describe("pax8 companies", () => {
       // Summit Healthcare carries `externalId: "PSA-SUMMIT-1042"` in the
       // demo fixture — exercises the field surfaced in #273 (fixes #5).
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "show",
         "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "--json",
@@ -229,7 +232,7 @@ describe("pax8 companies", () => {
 
     it("includes subscriptions with --subscriptions flag", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "show",
         "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "--subscriptions",
@@ -244,7 +247,7 @@ describe("pax8 companies", () => {
 
     it("returns JSON with subscriptions included", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "show",
         "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "--subscriptions",
@@ -256,13 +259,13 @@ describe("pax8 companies", () => {
     });
   });
 
-  describe("companies show — address wire field names", () => {
+  describe("clients show — address wire field names", () => {
     it("surfaces stateOrProvince and postalCode (not state/zip) in --json", async () => {
       // Read-side fix from #328: pre-rename, Zod silently dropped the API's
       // `stateOrProvince` / `postalCode` because the schema parsed `state` /
       // `zip`. This test pins the new behavior against the renamed demo data.
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "show",
         "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "--json",
@@ -276,12 +279,12 @@ describe("pax8 companies", () => {
     });
   });
 
-  describe("companies create — required booleans + address mapping", () => {
+  describe("clients create — required booleans + address mapping", () => {
     it("fails with ERROR_INVALID_INPUT when no address flags are supplied", async () => {
       // #329 fail-fast: spec marks `address` as required on POST /companies.
       // The handler refuses to construct a degenerate empty `{}` on the wire.
       const result = await runCliExpectFailure([
-        "companies",
+        "clients",
         "create",
         "--name",
         "Addressless Co",
@@ -304,7 +307,7 @@ describe("pax8 companies", () => {
       // echoes the body's booleans back so we can assert them on the
       // returned company.
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "create",
         "--name",
         "Defaults Co",
@@ -339,7 +342,7 @@ describe("pax8 companies", () => {
 
     it("--bill-on-behalf-of true / --order-approval-required true override defaults", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "create",
         "--name",
         "Override Co",
@@ -368,7 +371,7 @@ describe("pax8 companies", () => {
     });
 
     it("shows the new boolean flags in --help", async () => {
-      const result = await runCliExpectSuccess(["companies", "create", "--help"]);
+      const result = await runCliExpectSuccess(["clients", "create", "--help"]);
       expect(result.stdout).toContain("--bill-on-behalf-of");
       expect(result.stdout).toContain("--self-service-allowed");
       expect(result.stdout).toContain("--order-approval-required");
@@ -376,14 +379,14 @@ describe("pax8 companies", () => {
     });
   });
 
-  describe("companies create — atomic contact creation (#330)", () => {
+  describe("clients create — atomic contact creation (#330)", () => {
     it("atomic-path happy: posts contacts[0] with primary:true on all three types", async () => {
-      // Per Pax8 API Reference + PAM-997: passing a properly-typed primary
+      // Per the Pax8 API Reference: passing a properly-typed primary
       // contact in the `contacts: [...]` array on POST /companies flips the
       // new company from Inactive to Active at creation. The CLI implicitly
       // constructs the three-types-primary contact from the four flags.
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "create",
         "--name",
         "Atomic Co",
@@ -431,7 +434,7 @@ describe("pax8 companies", () => {
       // carry a `contacts` array (the body sent the field as `undefined`,
       // which Zod-serializes as omitted, not as an empty array).
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "create",
         "--name",
         "CompanyOnly Co",
@@ -455,7 +458,7 @@ describe("pax8 companies", () => {
 
     it("--company-only prints the verbatim warning to stderr", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "create",
         "--name",
         "Warned Co",
@@ -483,7 +486,7 @@ describe("pax8 companies", () => {
 
     it("fails with ERROR_INVALID_INPUT when contact flags are missing on the default path", async () => {
       const result = await runCliExpectFailure([
-        "companies",
+        "clients",
         "create",
         "--name",
         "MissingFlags Co",
@@ -508,19 +511,19 @@ describe("pax8 companies", () => {
     });
 
     it("shows the new --first-name / --last-name / --email / --company-only flags in --help", async () => {
-      const result = await runCliExpectSuccess(["companies", "create", "--help"]);
+      const result = await runCliExpectSuccess(["clients", "create", "--help"]);
       expect(result.stdout).toContain("--first-name");
       expect(result.stdout).toContain("--last-name");
       expect(result.stdout).toContain("--email");
       expect(result.stdout).toContain("--company-only");
       // Help text should reference the spec source so partners can verify
-      expect(result.stdout).toContain("PAM-997");
+      expect(result.stdout).toContain("Pax8 API Reference");
     });
   });
 
-  describe("companies --help", () => {
+  describe("clients --help", () => {
     it("shows companies subcommands", async () => {
-      const result = await runCliExpectSuccess(["companies", "--help"]);
+      const result = await runCliExpectSuccess(["clients", "--help"]);
       expect(result.stdout).toContain("list");
       expect(result.stdout).toContain("show");
       expect(result.stdout).toContain("create");
@@ -528,7 +531,7 @@ describe("pax8 companies", () => {
     });
 
     it("shows list help with examples", async () => {
-      const result = await runCliExpectSuccess(["companies", "list", "--help"]);
+      const result = await runCliExpectSuccess(["clients", "list", "--help"]);
       expect(result.stdout).toContain("Examples:");
       expect(result.stdout).toContain("--page");
       expect(result.stdout).toContain("--size");
@@ -538,7 +541,7 @@ describe("pax8 companies", () => {
     // via `--help`. Pin every new flag plus the `--sort` enum values so a
     // regression that quietly drops a flag fails here.
     it("list --help advertises every #388 filter and sort flag", async () => {
-      const result = await runCliExpectSuccess(["companies", "list", "--help"]);
+      const result = await runCliExpectSuccess(["clients", "list", "--help"]);
       const flat = result.stdout.replace(/\s+/g, " ");
       // Geography
       expect(flat).toContain("--city");
@@ -559,7 +562,7 @@ describe("pax8 companies", () => {
     // #250: `--status` help text must mirror the documented enum exactly —
     // neither inventing values nor omitting documented ones.
     it("list --status help advertises exactly the documented enum (#250)", async () => {
-      const result = await runCliExpectSuccess(["companies", "list", "--help"]);
+      const result = await runCliExpectSuccess(["clients", "list", "--help"]);
       // Spec: components.schemas.Company.status + GET /companies?status=
       // accepts: Active, Inactive, Deleted.
       expect(result.stdout).toContain("Active");
@@ -572,14 +575,14 @@ describe("pax8 companies", () => {
     });
 
     it("shows show help with examples", async () => {
-      const result = await runCliExpectSuccess(["companies", "show", "--help"]);
+      const result = await runCliExpectSuccess(["clients", "show", "--help"]);
       expect(result.stdout).toContain("Examples:");
       expect(result.stdout).toContain("--subscriptions");
     });
 
     it("shows create help with required options", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "create",
         "--help",
       ]);
@@ -589,7 +592,7 @@ describe("pax8 companies", () => {
 
     it("shows update help with examples", async () => {
       const result = await runCliExpectSuccess([
-        "companies",
+        "clients",
         "update",
         "--help",
       ]);
@@ -598,28 +601,12 @@ describe("pax8 companies", () => {
       expect(result.stdout).toContain("Examples:");
     });
 
-    // #432: Franco Aurieme's domain-review finding. The atomic-create path
-    // implicitly assigns the supplied contact as primary Admin/Billing/
-    // Technical to satisfy activation. Partners need to discover that they
-    // can re-split those roles afterward — pin the Note block in --help so
-    // a future help-text refactor can't quietly drop it.
+    // #432: domain-review finding. The atomic-create path implicitly
+    // assigns the supplied contact as primary Admin/Billing/Technical to
+    // satisfy activation. Partners need to discover that they can re-split
+    // those roles afterward — pin the Note block in --help so a future
+    // help-text refactor can't quietly drop it.
     it("create --help documents the multi-role primary assignment (#432)", async () => {
-      const result = await runCliExpectSuccess([
-        "companies",
-        "create",
-        "--help",
-      ]);
-      expect(result.stdout).toMatch(/primary Admin, Billing, and Technical/i);
-      expect(result.stdout).toContain("pax8 contacts update");
-      expect(result.stdout).toContain("pax8 contacts create --type");
-    });
-
-    // #432: same assertion through the `clients` invocation path. The alias
-    // is wired via Commander's `.alias()` so both surfaces share one command
-    // graph (see clients-companies-parity.test.ts), but pin the user-facing
-    // contract here too so a regression that breaks alias inheritance fails
-    // loudly on the canonical surface.
-    it("`clients create --help` inherits the multi-role Note via the alias (#432)", async () => {
       const result = await runCliExpectSuccess([
         "clients",
         "create",
@@ -629,5 +616,6 @@ describe("pax8 companies", () => {
       expect(result.stdout).toContain("pax8 contacts update");
       expect(result.stdout).toContain("pax8 contacts create --type");
     });
+
   });
 });

@@ -48,7 +48,7 @@ describe("README snippet smoke", () => {
 
   // Parse fenced ```bash blocks; collect lines starting with `pax8 ` or
   // `PAX8_DEMO=1 pax8 ` (after trim). Strip inline `# comments` first
-  // since a snippet like `pax8 companies more "Acme Corp"   # caption` would
+  // since a snippet like `pax8 clients more "Acme Corp"   # caption` would
   // otherwise tokenize the comment text as args.
   const codeBlocks: string[] = [];
   const fenceRe = /```bash\n([\s\S]*?)```/g;
@@ -68,6 +68,11 @@ describe("README snippet smoke", () => {
 
   // Skip predicates for snippets we can't safely run in a subprocess test.
   function isInteractiveWrite(line: string): boolean {
+    // `skill install` writes into ~/.claude and refuses to run unattended
+    // without --yes (#720). `--print` only writes to stdout, so it runs.
+    if (/\bskill install\b/.test(line)) {
+      return !/--yes|-y\b|--print/.test(line);
+    }
     if (
       /\b(orders create|recommendations act|invoices dispute|companies (create|update)|subscriptions (update|cancel)|contacts (create|update|delete)|quotes (create|update|delete)|webhooks (create|delete|test))\b/.test(
         line
@@ -155,7 +160,7 @@ describe("README snippet smoke", () => {
 
 describe("error-path UX", () => {
   it("error renderer points at `pax8 report-bug` (#161 hint)", async () => {
-    const r = await runCli(["companies", "show", "ZZZNotARealCompanyForUxSmoke"]);
+    const r = await runCli(["clients", "show", "ZZZNotARealCompanyForUxSmoke"]);
     expect(r.exitCode).toBe(1);
     expect(
       stripAnsi(combined(r)),

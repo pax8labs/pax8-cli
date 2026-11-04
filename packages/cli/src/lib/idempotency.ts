@@ -4,9 +4,10 @@
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { homedir } from "node:os";
 import { createHash } from "node:crypto";
+import { getConfigDir, safeWriteFileSync, validateConfigDir } from "@pax8/core";
 import { CliError } from "./errors.js";
+import { debugLog } from "./debug.js";
 
 /**
  * Idempotency cache for write commands.
@@ -35,8 +36,21 @@ export interface IdempotencyEntry {
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 function dirPath(): string {
-  return process.env.PAX8_IDEMPOTENCY_DIR
-    ?? path.join(homedir(), ".pax8", "idempotency");
+  // #458: route through getConfigDir() so PAX8_CONFIG_DIR is honored.
+  // PAX8_IDEMPOTENCY_DIR retains precedence as the explicit per-feature
+  // escape hatch used in tests.
+  //
+  // #M-5: PAX8_IDEMPOTENCY_DIR also goes through validateConfigDir() so a
+  // sandboxed/CI environment that controls this var can't redirect the
+  // cache to an arbitrary location (e.g. `/etc/...`). The same
+  // PAX8_ALLOW_NON_HOME_CONFIG=1 escape hatch applies — vitest.config.ts
+  // already sets it for the test workers, so existing tests continue to
+  // use tmpdir-based isolation unchanged.
+  const override = process.env.PAX8_IDEMPOTENCY_DIR;
+  if (override && override.length > 0) {
+    return validateConfigDir(override);
+  }
+  return path.join(getConfigDir(), "idempotency");
 }
 
 function entryFilePath(command: string, key: string): string {
@@ -146,7 +160,10 @@ export async function saveEntry(entry: IdempotencyEntry): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   const fp = entryFilePath(entry.command, entry.key);
   const tmp = fp + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(entry), { encoding: "utf-8", mode: 0o600 });
+  // #458: write via safeWriteFileSync so the tmp file is created with
+  // mode 0o600 atomically (no chmod race) and an attacker-placed symlink
+  // at the tmp path can't redirect the write.
+  safeWriteFileSync(tmp, JSON.stringify(entry));
   await fs.rename(tmp, fp);
 }
 
@@ -204,6 +221,16 @@ export async function withIdempotency<T>(
     return action();
   }
 
+  // #M-5: eagerly validate the cache dir env-var so a hostile
+  // PAX8_IDEMPOTENCY_DIR (e.g. /etc/...) is rejected by the home-dir
+  // guard with a propagating CliError. The downstream loadEntry/saveEntry
+  // calls are deliberately fail-open for transient cache problems
+  // (read-only fs, full disk) — which would otherwise swallow the
+  // security error and silently fall back to running the action. By
+  // probing dirPath() here, validateConfigDir() runs in a context that
+  // can throw cleanly through to handleCommandError.
+  dirPath();
+
   // Cache hit branch. `loadEntry` itself is wrapped so that a transient
   // read failure leaves us in fail-open mode (we run the action). The
   // replay path below is intentionally *not* inside that try/catch — once
@@ -213,9 +240,7 @@ export async function withIdempotency<T>(
   try {
     cached = await loadEntry(commandName, idempotencyKey);
   } catch (err) {
-    if (process.env.PAX8_DEBUG) {
-      process.stderr.write(`[debug] idempotency cache read failed: ${err}\n`);
-    }
+    debugLog("idempotency cache read failed", err);
   }
   if (cached) {
     if (cached.argsHash !== argsHash) {
@@ -268,9 +293,7 @@ export async function withIdempotency<T>(
           createdAt: new Date().toISOString(),
         });
       } catch (err) {
-        if (process.env.PAX8_DEBUG) {
-          process.stderr.write(`[debug] idempotency cache write failed: ${err}\n`);
-        }
+        debugLog("idempotency cache write failed", err);
       }
     }
     return value;

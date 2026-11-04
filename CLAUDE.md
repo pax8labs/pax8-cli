@@ -8,29 +8,34 @@ When the user asks ANYTHING about Pax8 data (companies, subscriptions, Pax8 cost
 
 | User asks about | Run this |
 |---|---|
-| overview / status / how am I doing | `pax8 dashboard --json 2>/dev/null` |
+| daily action list / morning brief / what should I do today | `pax8 today --json 2>/dev/null` — composite of urgent renewals (≤7d) + invoice audit findings + high-priority growth recs + expiring trials + upcoming renewals (8-30d). Returns `{ asOf, items[], summary, nextActions[] }`. Each `items[].action` carries `command` (display string) AND `args` (argv array — spawn `args.slice(1)`, never tokenize `command`). Lead with `summary.totalItems` and the section counts; route the user to the highest-priority `items[]` entry first. **Read stdout for the JSON envelope only.** stderr may carry per-feed warnings on partial fetch failures (e.g. `⚠ Could not load invoices — audit findings suppressed`); the JSON on stdout stays valid even when one feed degrades. Discard stderr with `2>/dev/null` when piping. |
+| overview / status / how am I doing | `pax8 today --json 2>/dev/null` for the do-list (what needs doing); `pax8 dashboard --json 2>/dev/null` for the full snapshot (top customers, monthly cost, portfolio composition). Use `today` for "what's happening / what needs doing" and `dashboard` for "give me the numbers." |
 | clients / companies / customers | `pax8 clients list --json 2>/dev/null` |
 | subscriptions | `pax8 subscriptions list --json --size 1000 2>/dev/null` (add `--status Active` or `--company <name>` as needed) |
 | renewals | `pax8 subscriptions renewals --json --within 30d 2>/dev/null` |
 | Pax8 cost / monthly spend / annualized spend | `pax8 dashboard --json 2>/dev/null` (top-line `monthlyCost.amount` / `annualCost.amount`) or `pax8 clients more "<name>" --json` for per-client breakdown. `pax8 report subscriptions --by vendor --json` for grouped Pax8 cost. |
-| growth / portfolio trend | `pax8 dashboard --json 2>/dev/null` (see `topCustomers`, `highPriorityRecs`, `potentialPax8MonthlyUplift`) or `pax8 subscriptions list --json --size 1000` for raw data |
-| recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` |
+| growth / portfolio trend | `pax8 dashboard --json 2>/dev/null` (see `topCustomers`, `highPriorityRecs`, `potentialMonthlyUplift`) or `pax8 subscriptions list --json --size 1000` for raw data |
+| recommendations / upsell | `pax8 recommendations list --json 2>/dev/null` — returns `{ recommendations, totalAvailable }` (wrapped envelope, #521). Default cap is `--top 10`, sorted by `estimatedMrrUplift` DESC with `priority` as tiebreaker (nulls last). Compare `recommendations.length` to `totalAvailable` to know whether the cap fired; pass `--top 0` for the unbounded set. |
 | invoices / billing | `pax8 invoices list --json 2>/dev/null` |
 | invoice audit | `pax8 invoices audit --json 2>/dev/null` |
 | invoice line items | `pax8 invoices items --invoice-id <invoice-id> --json 2>/dev/null` |
 | products / catalog | `pax8 products search "query" --json 2>/dev/null` |
 | cost sim / what if / pricing change / SKU swap | `pax8 cost sim --company <name> --product <name> --quantity <n> --json 2>/dev/null` |
 | place an order | `pax8 orders create --company <id> --product <id> --quantity <n>` (confirm first) |
-| act on a recommendation | Extract `orderCommand` from `pax8 recommendations list --json` and run it (confirm first), or use `pax8 recommendations act` for the interactive flow |
+| act on a recommendation | Prefer `pax8 recommendations act` for the interactive flow. To act programmatically: read `orderArgs` (an argv array — first element is `"pax8"`) from `pax8 recommendations list --json` and pass `orderArgs.slice(1)` to a subprocess / Bash tool. **Do not pass `orderCommand` to a shell.** It's a display string with raw `companyName` interpolation; #462. Confirm before any write. |
 | invoice dispute | `pax8 invoices dispute --discrepancy <id>` (id from `invoices audit`) |
 | webhook delivery history | `pax8 webhooks logs <id> --json 2>/dev/null` |
 | diagnostics / health | `pax8 doctor --json 2>/dev/null` |
 
 Pax8 cost math (only if you must roll it yourself): monthly term = `price × quantity`; annual term = `price × quantity ÷ 12`; 2-Year = `price × quantity ÷ 24`; 3-Year = `price × quantity ÷ 36`. Group by `companyId`, resolve names from `clients list`. Prefer `dashboard` or `report subscriptions` — they already do this and emit wrapped `monthlyCost` / `annualCost` objects (`{ amount, currency }`) at portfolio, per-customer, and per-group levels. Note: these figures are the partner's COST paid to Pax8, not partner-side resale revenue.
 
+> **List-command JSON envelope (#483).** Every `--json` list command emits a wrapped envelope: `{ <resource>: [...], page: { number, size, totalElements, totalPages } }` (and `nextActions: [...]` when invoked with `--with-actions`). The resource key matches the resource name — `companies` for `clients list`, `subscriptions`, `invoices`, `items` for `invoices items`, `quotes`, `contacts`, `webhooks`, `logs` for `webhooks logs`, `topics`, `products`, `usage`, `renewals` for `subscriptions renewals`, `orders`, `recommendations`. `page.number` is 1-based (matches `--page`). Compare `<resource>.length` to `page.totalElements` to detect pagination — use `--page N --size M` to walk through results. Endpoints without server-side pagination (webhooks list/logs/topics, usage list, products search, subscriptions renewals) return the same `{ <resource>, page }` shape with a single fully-populated page — there is no marker distinguishing them. `singlePageEnvelope` is the name of the internal helper, **not a key you will find in the output.**
+
+> **nextActions argv contract (#562).** Each `nextActions[]` entry carries both `command` (display string) and `args` (argv array — first element is always `"pax8"`). **Spawn `args.slice(1)` directly via the Bash tool's argv form; never tokenize `command` and never pipe it to a shell.** Same shape and reasoning as the `orderArgs` / `orderCommand` pair for `recommendations list` (#462). The argv form contains user-supplied flag values (e.g. partner-typed `--product` or `--company`) in single argv slots so shell metacharacters can never break out.
+
 Rules: no clarifying questions. Parallel calls when possible. Lead with the key number. Short tables, hide UUIDs. Only confirm writes — never reads.
 
-> `pax8 clients *` is the canonical command surface (per #317). `pax8 companies *` is retained as an indefinite deprecated alias — both invocations share the same command graph. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
+> `pax8 clients *` is the canonical (and only) command surface (per #317, #476). The previous `pax8 companies *` alias was removed pre-launch. JSON output fields (`companyId`, `companyName`, etc.) and the `--company` flag on other commands stay aligned with the wire.
 
 The full read-vs-write safety contract for agent-driven sessions lives in `packages/claude-skill/skill.md`. Honor it whether the skill is loaded or not: every command listed under "Write commands" requires explicit user approval before execution.
 
@@ -44,9 +49,9 @@ For project background, install instructions, the human demo flow, and how this 
 
 ## Autonomous Build Mode
 
-This mode applies **only** when you're explicitly following `docs/BUILD.md` (or a similar mode-specific prompt). Default behavior is conservative — confirm before destructive or shared-state actions and surface uncertainty.
+This mode applies **only** when you're explicitly following `docs/history/BUILD.md` (or a similar mode-specific prompt). Default behavior is conservative — confirm before destructive or shared-state actions and surface uncertainty.
 
-When following `docs/BUILD.md`, operate fully autonomously with ZERO human interaction:
+When following `docs/history/BUILD.md`, operate fully autonomously with ZERO human interaction:
 
 - NEVER ask questions, for permission, or for confirmation.
 - NEVER stop to explain what you're about to do. Just do it.
@@ -99,17 +104,19 @@ Adding a new command? Lives at `packages/cli/src/commands/<resource>/<action>.ts
 - `PAX8_CLIENT_ID`, `PAX8_CLIENT_SECRET` — credentials (file fallback: `~/.pax8/credentials.json`)
 - `PAX8_API_BASE` — override API + token base URL (e.g. staging); honored by both `@pax8/core` and the OAuth client
 - `PAX8_TIMEOUT_MS` — per-request HTTP timeout in milliseconds (default `30000`, max `300000`); extend for slow endpoints like `/orders` on large portfolios (#199)
-- `PAX8_DEMO=1` — run against `MockPax8Client` with synthetic data
+- `PAX8_DEMO=1` — run against `MockPax8Client` with synthetic data. Defaults to the hand-curated small fixture (~12 companies, dozens of subs/orders) suitable for screenshots and golden-path tests.
+- `PAX8_DEMO_SCALE=large` — when combined with `PAX8_DEMO=1`, swaps in the generated large-portfolio fixture (#484): 1,000 companies, 5,000 subscriptions, 45,000 orders dating back to 2013, mixed currencies (USD/EUR/GBP/CAD), every `BillingTerm` value, plus shell-meta-hostile customer names for `orderCommand` regression-testing. Pay ~400ms at process start; intended for scale-matrix testing, not daily use.
 - `PAX8_YES=1` — auto-confirm write prompts
 - `PAX8_QUIET=1` — disable spinners
 - `PAX8_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1` — opt out of telemetry (already opt-in by default)
+- `PAX8_NO_UPDATE_CHECK=1` — suppress the "newer pax8-cli available" nudge for CI / scripted use (#183). The check also skips automatically under `PAX8_DEMO=1`, `PAX8_QUIET=1`, `--json`, `--quiet`, `NO_UPDATE_NOTIFIER`, `DO_NOT_TRACK=1`, CI, and any non-TTY stderr. Scope: this gates the **periodic banner only**. The drift-aware upgrade hint surfaced inside an `ERROR_API_VALIDATION` recovery envelope is contextual error help, not a nag, and fires regardless of this flag — delete `<configDir>/update-check.json` if you want strict silence across both surfaces.
 
 ## References
 
 - `README.md` — what the project is, install/quick-start, MCP comparison
 - `docs/UX_GUIDE.md` — command patterns, output contracts, agent-facing rules (canonical for conventions)
 - `docs/PRD.md` — product requirements and API gap analysis
-- `docs/BUILD.md` — autonomous build-mode execution plan
+- `docs/history/BUILD.md` — autonomous build-mode execution plan
 - `packages/core/README.md` — `@pax8/core` as a standalone embeddable library
 - `packages/claude-skill/skill.md` — agent-facing skill manifest + read/write safety contract
 - `CONTRIBUTING.md` — DCO sign-off, Conventional Commits, PR workflow

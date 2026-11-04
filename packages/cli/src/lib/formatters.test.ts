@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatTimeAgo,
   formatCurrency,
+  formatCurrencyNullable,
   formatQuantity,
   formatStatus,
   formatCompanyName,
@@ -74,6 +75,90 @@ describe("formatCurrency", () => {
 
   it("rounds to two decimals", () => {
     expect(formatCurrency(10.999)).toBe("$11.00");
+  });
+
+  // Currency-code coverage (#472). Use string-contains assertions so a
+  // future ICU/CLDR symbol tweak (e.g. NBSP vs U+202F) doesn't flake the
+  // suite; the load-bearing contract is "render the right unit, not '$'".
+  it("renders EUR with the euro sign, not '$'", () => {
+    const result = formatCurrency(1234.56, "EUR");
+    expect(result).toContain("€");
+    expect(result).toContain("1,234.56");
+    expect(result).not.toContain("$");
+  });
+
+  it("renders GBP with the pound sign, not '$'", () => {
+    const result = formatCurrency(1234.56, "GBP");
+    expect(result).toContain("£");
+    expect(result).toContain("1,234.56");
+    expect(result).not.toContain("$");
+  });
+
+  it("disambiguates CAD with the 'CA$' prefix", () => {
+    const result = formatCurrency(1234.56, "CAD");
+    expect(result).toContain("CA$");
+    expect(result).toContain("1,234.56");
+  });
+
+  it("renders USD with the dollar sign", () => {
+    expect(formatCurrency(1234.56, "USD")).toBe("$1,234.56");
+  });
+
+  it("falls back to USD when currencyCode is empty", () => {
+    expect(formatCurrency(1234.56, "")).toBe("$1,234.56");
+  });
+
+  it("falls back to USD when currencyCode is omitted", () => {
+    expect(formatCurrency(1234.56)).toBe("$1,234.56");
+  });
+
+  it("handles unknown ISO codes by suffixing the code", () => {
+    // "XYZ" is not a real ISO-4217 code; Intl.NumberFormat throws on it.
+    // The fallback path keeps the amount visible with the code attached.
+    const result = formatCurrency(1234.56, "XYZ");
+    expect(result).toContain("1,234.56");
+    expect(result).toContain("XYZ");
+  });
+
+  it("renders negative EUR with a leading minus", () => {
+    const result = formatCurrency(-42.5, "EUR");
+    expect(result).toContain("€");
+    expect(result).toContain("42.50");
+    // Could be "-€42.50" or "(€42.50)" depending on ICU defaults; both
+    // contain '-' or '(' — just assert the magnitude renders correctly.
+  });
+});
+
+// #657 / UXR F9: `?? 0` fallbacks used to misrender missing prices as
+// `$0.00`, indistinguishable from a genuine zero. `formatCurrencyNullable`
+// draws that distinction — null/undefined/NaN render as a dim em-dash;
+// real zeros still render as `$0.00`.
+describe("formatCurrencyNullable", () => {
+  it("returns a dim em-dash for null", () => {
+    // chalk wraps the em-dash in ANSI dim codes; a substring match keeps
+    // the assertion robust to the exact escape sequence.
+    expect(formatCurrencyNullable(null)).toContain("—");
+  });
+
+  it("returns a dim em-dash for undefined", () => {
+    expect(formatCurrencyNullable(undefined)).toContain("—");
+  });
+
+  it("returns a dim em-dash for NaN", () => {
+    expect(formatCurrencyNullable(NaN)).toContain("—");
+  });
+
+  it("still renders a real zero as $0.00", () => {
+    expect(formatCurrencyNullable(0)).toBe("$0.00");
+  });
+
+  it("formats a real amount the same as formatCurrency", () => {
+    expect(formatCurrencyNullable(1234.56)).toBe(formatCurrency(1234.56));
+  });
+
+  it("honors the currencyCode parameter", () => {
+    const result = formatCurrencyNullable(42.5, "EUR");
+    expect(result).toContain("42.50");
   });
 });
 

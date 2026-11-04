@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { CommandContext } from "./context.js";
+import { debugLog } from "./debug.js";
 
 /**
  * Result of looking up the commitment-term attached to a partner's
@@ -62,9 +63,7 @@ export async function resolveCommitmentTermId(
       term: match.commitment.term,
     };
   } catch (err) {
-    if (process.env.PAX8_DEBUG) {
-      process.stderr.write(`[debug] resolveCommitmentTermId failed: ${err}\n`);
-    }
+    debugLog("resolveCommitmentTermId failed", err);
     return null;
   }
 }

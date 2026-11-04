@@ -8,18 +8,20 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in pax8-cli, please report it responsibly.
+If you discover a security vulnerability in pax8-cli, please report it responsibly through Pax8's Vulnerability Disclosure Program:
+
+**<https://www.pax8.com/en-us/about/vulnerability-disclosure-program/>**
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email **security@pax8.com** with:
+When submitting, please include:
 
 - A description of the vulnerability
 - Steps to reproduce
 - Potential impact
 - Suggested fix (if any)
 
-You should receive a response within 48 hours. We will work with you to understand the issue and coordinate a fix before any public disclosure.
+We will work with you to understand the issue and coordinate a fix before any public disclosure.
 
 ## Scope
 

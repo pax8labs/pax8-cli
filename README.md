@@ -4,16 +4,14 @@ An open-source CLI for managing Pax8 cloud marketplace operations. Built for MSP
 
 ## Status
 
-This is an early-stage open-source experiment. We're using engagement signals (installs, issues, command usage) to learn which capabilities are worth investing in further. Feedback, issues, and PRs are welcome.
-
-> **Pre-release.** `@pax8/cli` is not yet published to npm — `npm install -g @pax8/cli` will work once v0.1.0 ships. Until then, install from source: see [Quick Start → Running from source](#running-from-source).
+Published on npm as `@pax8/cli`. We're using engagement signals (installs, issues, command usage) to learn which capabilities are worth investing in further. Feedback, issues, and PRs are welcome.
 
 ## Highlights
 
 - **Answers the API doesn't** — renewals, invoice audit, upsell recommendations, Pax8 cost analytics computed locally from raw Pax8 data
 - **Closes the loop** — `pax8 recommendations act` walks portfolio gaps and places the orders, so insight and action live in the same tool
 - **Works for humans and agents identically** — every command emits structured JSON, so a Claude Code skill, a shell pipeline, or a person at a terminal all use the same surface
-- **Demo mode** — `PAX8_DEMO=1` runs every command against an in-memory fixture, no credentials required
+- **Demo mode** — `pax8 init --demo` points every command at an in-memory fixture, no credentials required
 
 ## Why This Exists
 
@@ -32,60 +30,76 @@ Every command supports `--json`, so humans and AI agents use the same tool.
 
 Pax8 publishes a hosted MCP server at `mcp.pax8.com` for AI assistants — see the [Pax8 MCP docs](https://devx.pax8.com/docs/mcp-server). Use this CLI when you want a richer command surface (recommendations, invoice audit, Pax8 cost analytics, demo mode) or when you're scripting against a stable, versioned interface. Use the Pax8 MCP when you want zero-install access via Claude, Cursor, Copilot, or VS Code and you don't need the CLI-specific capabilities.
 
+## Prerequisites: Node.js
+
+Run `node --version` in your terminal.
+
+- If it prints **v20** or newer, you're set — skip to [Quick Start](#quick-start).
+- If it prints an older version, or you see `command not found`, install Node.js. Use the GUI installer by default; the package-manager one-liners below are just shortcuts if you already use one.
+  - **For any OS:** download the Node.js LTS installer from [nodejs.org](https://nodejs.org) and run it.
+  - **Windows, if you already use winget** (built into Windows 10/11): `winget install OpenJS.NodeJS.LTS`.
+  - **Windows, if you already use Chocolatey:** `choco install nodejs-lts`.
+  - **macOS or Linux, if you already use Homebrew:** `brew install node` (installs current Node).
+
+Once installed — whichever path you took — close this terminal, open a new one, and run `node --version` again. All of these paths leave your existing shell with a stale `PATH`; a fresh shell is what picks up the new `node` binary.
+
 ## Quick Start
 
-Tested on macOS, Linux, and Windows under PowerShell. Requires Node.js 20+ and [pnpm](https://pnpm.io/installation) 9+.
+Don't have Node 20+? See [Prerequisites](#prerequisites-nodejs) first.
 
-### Running from source
-
-Until `@pax8/cli` is published to npm, install from source — copy-pasteable, under 5 minutes on a fresh checkout:
+### Try with demo data (no credentials)
 
 ```bash
-git clone https://github.com/pax8labs/pax8-cli
-cd pax8-cli
-pnpm install
-pnpm build
-
-# Try it without credentials (demo data, no API calls)
-PAX8_DEMO=1 node packages/cli/dist/index.js dashboard
-
-# Or expose `pax8` globally from your checkout so every example in this
-# README works as-is (the REPL and cache-warmer also need `pax8` on PATH)
-cd packages/cli && npm link
-PAX8_DEMO=1 pax8 dashboard
+PAX8_DEMO=1 npx -y -p @pax8/cli pax8 dashboard
 ```
 
-For watch mode, tests, and the rest of the contributor workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### From npm (coming soon)
-
-Once v0.1.0 ships, the documented path will be:
+### Use with live Pax8 API
 
 ```bash
-# Install (not yet published — tracked in repo Status section above)
+npx -y -p @pax8/cli pax8 auth login
+npx -y -p @pax8/cli pax8 dashboard
+```
+
+### Install permanently (optional)
+
+```bash
 npm install -g @pax8/cli
-
-# Authenticate
-pax8 auth login
-
-# See how your business is doing
 pax8 dashboard
+```
 
-# Or try with demo data (no credentials needed)
-PAX8_DEMO=1 pax8 dashboard
+> **Permission denied?** If `npm install -g` fails with `EACCES` (permission denied), do not use `sudo`. Either use `npx` instead, or install Node via a version manager (nvm or fnm) so the global prefix lives in your home directory. See [Troubleshooting](#troubleshooting) for details.
+
+Once installed, keep it current with the built-in updater — it detects how you installed (npm/pnpm/yarn/Homebrew) and runs the matching upgrade command:
+
+```bash
+pax8 upgrade          # check for a newer version and install it (with confirmation)
+pax8 upgrade --check  # just report current vs latest, don't install
 ```
 
 ## Demo Flow (90 seconds)
 
+Switch to demo data once, then run whatever you like:
+
 ```bash
+pax8 init --demo                         # Persistent — every later command uses the fixture
 pax8 dashboard                           # Pax8 monthly cost, renewals, growth opportunities
 pax8 recommendations list                # Cross-sell and seat gap opportunities
-pax8 recommendations act                 # Multi-select picker → batch order
+pax8 recommendations act                 # Walk through and place orders (y/s/q)
 pax8 clients list                        # Browse customers (type # to drill in)
-pax8 clients more "Acme Corp"            # Full customer summary
+pax8 clients show "Acme"                 # Full customer summary
+```
+
+Every command prints a `✨ Demo mode` banner while it's on. Turn it off with `pax8 demo off`, and check at any time with `pax8 demo status`.
+
+To run a single command against the fixture without changing anything persistent, prefix it instead — **the prefix applies to that one command only**:
+
+```bash
+PAX8_DEMO=1 pax8 dashboard
 ```
 
 ## Commands
+
+`pax8 --help` is the canonical inventory; every command and subcommand documents its flags via `pax8 <command> --help`. The sections below cover the most-used surface; the [More commands](#more-commands) section near the end lists the rest.
 
 ### Dashboard
 
@@ -108,7 +122,7 @@ pax8 clients create --name "Acme" --city Denver --state CO --zip 80202 --phone "
 
 > **Note:** The single contact you supply on `clients create` is set as primary on all three types (Admin, Billing, Technical). Split roles afterward via `pax8 contacts update` or additional `pax8 contacts create --type` calls.
 
-> `pax8 companies *` works as an indefinite deprecated alias of `pax8 clients *` — both invocations route through the same command graph, so partner scripts written against the old name keep working. The data surface (`companyId`, `companyName`, `--company` flag, etc.) stays aligned with the wire until Pax8's API renames the field.
+> `pax8 clients *` is the canonical (and only) command surface. The earlier `pax8 companies *` alias was removed pre-launch (#476); update any scripts that called the old verb. The data surface (`companyId`, `companyName`, `--company` flag, etc.) stays aligned with the wire until Pax8's API renames the field.
 
 ### Subscriptions
 
@@ -119,18 +133,18 @@ pax8 subscriptions list --status Active                # Filter by status
 pax8 subscriptions show <id> --history                 # Details + change history
 pax8 subscriptions renewals                            # Upcoming renewals (30d default)
 pax8 subscriptions renewals --within 7d                # Urgent renewals
-pax8 subscriptions renewals --company "Acme Corp"      # Renewals for one customer
+pax8 subscriptions renewals --company "Acme Corp"      # Renewals for one company
 ```
 
 ### Recommendations
 
 ```bash
 pax8 recommendations list                              # All growth opportunities
-pax8 recommendations list --company "Acme Corp"        # For one customer
+pax8 recommendations list --company "Acme Corp"        # For one company
 pax8 recommendations list --product "AvePoint"         # Filter by product
 pax8 recommendations list --priority high              # High priority only
-pax8 recommendations act                               # Multi-select picker → batch order
-pax8 recommendations act --company "Acme Corp"         # Act on one customer
+pax8 recommendations act                               # Walk through and order
+pax8 recommendations act --company "Acme Corp"         # Act on one company
 pax8 recommendations act --product "backup"            # Add backup everywhere
 pax8 recommendations act --yes                         # Non-interactive: place all matches
 ```
@@ -161,7 +175,7 @@ Model the financial impact of a SKU swap, quantity change, or new-product add be
 pax8 invoices list                                     # All invoices
 pax8 invoices list --company "Acme Corp" --status Unpaid
 pax8 invoices audit                                    # Flag billing discrepancies
-pax8 invoices audit --company "Acme Corp"              # Audit one customer
+pax8 invoices audit --company "Acme Corp"              # Audit one company
 ```
 
 ### Products
@@ -171,11 +185,44 @@ pax8 products search "Microsoft 365"                   # Search catalog
 pax8 products show <id>                                # Product details + pricing
 ```
 
+### Reports
+
+Pax8-cost reporting surface — what's renewing, where your spend is concentrated, and grouped subscription rollups.
+
+```bash
+pax8 report renewals --within 90                       # Subscriptions ending in the next 90 days
+pax8 report concentration --by client --top 5          # Top customers by Pax8 cost
+pax8 report concentration --by vendor --json           # Concentration by vendor
+pax8 report subscriptions --by billing-term            # Active subs grouped by billing term
+pax8 report subscriptions --by vendor --json           # Pax8 cost rollup by vendor
+```
+
+All values are Pax8 cost (what Pax8 charges you), emitted as `{ amount, currency }` envelopes. For partner-side resale revenue, combine with sell-through pricing from your PSA.
+
 ### Diagnostics
 
 ```bash
-pax8 doctor                    # Node, auth, API endpoints (5/5), cache, telemetry
+pax8 doctor                    # Node, auth, API endpoints, cache, telemetry
 pax8 auth status               # Check credentials
+pax8 version                   # CLI version
+```
+
+### More commands
+
+The full surface also includes these less-prominent command groups — see `pax8 <group> --help` for flags and examples:
+
+```bash
+pax8 contacts list|show|create|update|delete           # Per-company contacts (Admin/Billing/Technical)
+pax8 quotes list|show|create|update|send|delete        # Sales quotes (v2 API)
+pax8 webhooks list|create|update|delete|enable|disable # Subscription endpoints
+pax8 webhooks logs|test|topics                         # Delivery history, fire test deliveries, list topics
+pax8 usage list|show                                   # Metered usage (Azure consumption, etc.)
+pax8 config init|show|set|path                         # Config file management
+pax8 skill install                                     # Install the Claude Code skill (see Claude AI Integration)
+pax8 init                                              # First-run setup wizard
+pax8 completions bash                                  # Shell completions (bash/zsh/fish/powershell)
+pax8 report-bug                                        # File a sanitized GitHub issue from the last failure (see Reporting bugs)
+pax8 telemetry enable|disable|status                   # Opt-in usage telemetry (see Telemetry)
 ```
 
 ## Output Formats
@@ -202,18 +249,48 @@ pax8 dashboard --json 2>/dev/null > today.json
 
 ## REPL Mode
 
-Run `pax8` with no arguments to enter the interactive REPL:
+Run the CLI with no arguments to enter the interactive REPL — works with any of the three invocation paths from [Quick Start](#2-run-it):
+
+```bash
+pax8                                    # if linked via npm link
+node packages/cli/dist/index.js         # from a built checkout
+pnpm dev                                # dev mode (tsx)
+```
+
+You'll see the Pax8 ASCII banner with a tagline, your CLI version, and a "Common commands" cheat sheet — then a `pax8>` prompt:
 
 ```
 $ pax8
+
+  ────────────────────────────────────────────────
+
+      ██████╗  █████╗ ██╗  ██╗ █████╗
+      ██╔══██╗██╔══██╗╚██╗██╔╝██╔══██╗
+      ██████╔╝███████║ ╚███╔╝ ╚█████╔╝
+      ██╔═══╝ ██╔══██║ ██╔██╗ ██╔══██╗
+      ██║     ██║  ██║██╔╝ ██╗╚█████╔╝
+      ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝ ╚════╝
+
+      C O M M A N D   L I N E
+
+  Common commands:
+    dashboard               Portfolio at a glance
+    subscriptions renewals  What's renewing in 30 days
+    recommendations         Upsell opportunities
+    invoices audit          Reconcile invoices vs subscriptions
+
+  Type a command, or help / exit
+
 pax8> dashboard
 pax8> clients list
 pax8> 3                          # Drill into client #3
-pax8> recommendations act        # Multi-select picker → batch order
+pax8> back                       # Re-run the last list command
+pax8> n                          # Next page; p for previous
+pax8> recommendations act        # Walk through recs
 pax8> exit
 ```
 
-No `pax8` prefix needed. Numbered shortcuts work after list commands.
+No `pax8` prefix needed inside the REPL. Numbered shortcuts work after any list command (pick the row by position). The cheat-sheet adapts to your auth state: if you're not yet authenticated, you'll see `init --demo` / `auth login` / `doctor` instead of the common-commands list.
 
 ## Authentication
 
@@ -232,6 +309,8 @@ export PAX8_CLIENT_SECRET=your-client-secret
 
 Generate API credentials in the [Pax8 Integrations Hub](https://app.pax8.com). For detailed setup instructions, see the [Credential Setup Guide](docs/credential-setup.md). A copy-pasteable starter is in [`.env.example`](.env.example).
 
+Pass `--browser` to `pax8 auth login` to open the [credentials page](https://app.pax8.com/integrations/credentials) in your default browser before the prompt — you still paste the Client ID and Secret into the terminal (the flag doesn't eliminate the secret, just the click-through to find the page). Falls back to printing the URL on headless / SSH boxes.
+
 ### Pointing at a non-prod environment
 
 By default, the CLI talks to `https://api.pax8.com/v1`. Partners testing against a sandbox or staging environment can override the base URL without code changes:
@@ -246,14 +325,27 @@ pax8 doctor   # confirms the active API base in its output
 
 ## Demo Mode
 
-Try everything without API credentials:
+Run against a built-in fixture with no API credentials. Enable it once:
+
+```bash
+pax8 init --demo
+pax8 dashboard              # and every command after it, until you turn it off
+```
+
+```bash
+pax8 demo status            # Is it on, and where did that come from?
+pax8 demo off               # Back to the live API
+```
+
+`pax8 init --demo off` does the same as `pax8 demo off`.
+
+For a single command — CI, a one-off check, or anything that shouldn't change persistent state — use the environment variable instead:
 
 ```bash
 PAX8_DEMO=1 pax8 dashboard
-PAX8_DEMO=1 pax8 recommendations act
 ```
 
-Or enable persistently: `pax8 init --demo`
+**That prefix covers exactly one command.** The next command without it talks to the live API, and the only signal is the absence of the `✨ Demo mode` banner. If you are running a sequence, or driving the CLI from a script or an agent, prefer `pax8 init --demo` so the mode can't lapse between calls.
 
 ## Claude AI Integration
 
@@ -267,7 +359,24 @@ Available tools: clients, subscriptions, renewals, invoices, invoice audits, rec
 
 ### Setup (Claude Code)
 
-The skill wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible). See `packages/claude-skill/skill.md`.
+The skill ships inside the `@pax8/cli` package, but nothing installs it for you — Claude Code loads skills from `~/.claude/skills/`, which an npm install has no business writing to. One command puts it there:
+
+```bash
+pax8 skill install              # ~/.claude/skills/pax8/SKILL.md — all projects
+pax8 skill install --project    # ./.claude/skills/pax8/SKILL.md — this repo only
+pax8 skill install --print      # read it first; installs nothing
+```
+
+Then start a new Claude Code session — skills are loaded at session start.
+
+The skill wraps CLI commands with behavioral rules (act first, no clarifying questions, parallel fetches when possible) **and with the read/write safety contract**: which commands are reads, which mutate real state, and what has to be confirmed before an order is placed. Without it, an agent is improvising around a CLI that can spend money. The canonical copy is [`packages/claude-skill/skill.md`](packages/claude-skill/skill.md).
+
+Upgrading the CLI does not update an installed copy. `pax8 doctor` compares the two and tells you when yours has fallen behind:
+
+```bash
+pax8 doctor                     # ✗ Claude skill (global copy … is stale …)
+pax8 skill install --force      # refresh a copy you have edited yourself
+```
 
 ### Example
 
@@ -289,8 +398,46 @@ All business logic lives in [`@pax8/core`](packages/core) with zero CLI dependen
 ## Performance
 
 - **API caching** — repeat calls return in ~80ms (1-hour TTL)
-- **Parallel fetching** — dashboard loads companies, subscriptions, and products simultaneously
+- **Parallel fetching** — dashboard loads clients, subscriptions, and products simultaneously
 - **Product name enrichment** — resolves UUIDs to human-readable names automatically
+
+## Troubleshooting
+
+### `command not found: pax8` or `npx: command not found`
+
+**Cause:** Node.js is not installed on your system.
+
+**Solution:** Install [Node.js 20+](https://nodejs.org/) from nodejs.org.
+
+### `command not found: pax8` after installing Node.js
+
+**Cause:** Your terminal session started before Node.js was installed, so its `PATH` doesn't yet include npm's binary directory.
+
+**Solution:** Close the terminal and open a new one, then re-run the command. Most shells only read `PATH` at startup, so a freshly opened terminal will pick up the new installation. To reload in place without opening a new window, run `exec $SHELL`.
+
+**Still not found in a new shell?** Run `node --version`. If it prints `v20.x` or newer but `pax8` or `npx` still aren't found, this is a real `PATH` problem rather than a stale shell — your Node install put its binaries somewhere that isn't on `PATH` (common with version managers that need extra shell config). If `node --version` also fails, the install didn't complete; reinstall from [nodejs.org](https://nodejs.org/).
+
+### `npm ERR! code EACCES` during `npm install -g`
+
+**Cause:** npm doesn't have permission to write to the global installation directory (usually because it's owned by root).
+
+**Solution:** Do not use `sudo`. Instead:
+
+- Use `npx` to run without a global install: `npx -y -p @pax8/cli pax8 <command>`
+- Or install Node via a version manager:
+  - [nvm](https://github.com/nvm-sh/nvm) (Node Version Manager for macOS/Linux)
+  - [fnm](https://github.com/Schniz/fnm) (Fast Node Manager, works on Windows/macOS/Linux)
+- Or set an npm prefix in your home directory: `npm config set prefix ~/.npm && export PATH=~/.npm/bin:$PATH`
+
+### Issues getting started?
+
+Run the diagnostic command to check your setup:
+
+```bash
+pax8 doctor
+```
+
+This verifies Node.js version, authentication, API connectivity, cache, and telemetry. If all checks pass, try running a command like `pax8 dashboard` to confirm end-to-end functionality.
 
 ## Development
 
@@ -338,18 +485,22 @@ The CLI also honors two ambient environment variables (no opt-in required) and s
 | `node_version` | always | `process.version` |
 | `os` | always | `process.platform` |
 | `demo_mode` | always | Whether `PAX8_DEMO=1` was set |
+| `credentialed` | always | Boolean — whether any credential source was configured at emit time (never the credentials themselves) |
 | `recs_presented`, `recs_ordered`, `recs_skipped`, `recs_mrr_captured` | `recommendations act` | Aggregate counts only |
 | `order_success`, `order_total_dollars`, `order_mrr_impact`, `order_seats` | `orders create` | Aggregate transaction outcome only |
+| `skill_action`, `skill_scope`, `skill_previous_state` | `skill install` | Fixed enums — the outcome, whether the target was global or project, and whether the copy on disk was absent / current / stale. Never the path |
 
-The anonymous `distinct_id` is `sha256(hostname + ":" + username)` truncated to 16 hex chars — computed locally, never reversible to its inputs.
+**Identity — `distinct_id` and the account group.** The anonymous `distinct_id` is a random UUID (`crypto.randomUUID()`) generated once and persisted at `<config-dir>/telemetry-id`. It is not derived from your hostname, username, or any machine attribute, so it can't be regenerated from an AD/LDAP record. Because it is per-install, the same person on two machines (or in ephemeral CI, where `~/.pax8` doesn't persist) counts as multiple `distinct_id`s.
+
+To make **unique accounts** countable despite that, credentialed runs also attach a PostHog *group* — `account = sha256("pax8-cli:account:v1" + clientId)`, a salted one-way hash of your Pax8 API client ID. It is identical across every machine and CI job for a given partner, so PostHog can report account-level unique counts and retention without touching the anonymous per-install `distinct_id`. The salt is a public domain-separation constant (the CLI is open source), so the group key is a **pseudonym, not an anonymization guarantee**: an operator holding both PostHog access and the list of partner client IDs could recompute it. Uncredentialed and demo runs attach no group.
 
 **Never sent:**
 
-- API client_id, client_secret, OAuth tokens
+- Raw API client_id, client_secret, OAuth tokens (only a salted one-way hash of the client_id, as the account group above)
 - Customer / company / subscription / order IDs
 - Customer or company names
 - Command argument values (only flag *names* — `--company`, never `--company "Acme Corp"`)
-- Partner identifiers, account names, billing data
+- Account names, billing data
 - Stack traces, file paths, environment variables
 - Any PII
 
@@ -435,11 +586,11 @@ for (const r of report.items.slice(0, 5)) {
 }
 ```
 
-The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface. `computeMrr` / `computeGrowth` are retained in `@pax8/core` for embeddable reuse (v0.2 reporting work will rebuild a CLI-side reporting surface on top of them with Pax8-cost framing); only the previous `pax8 report mrr` / `pax8 report growth` CLI commands were removed.
+The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrowth(...)`, and `getRecommendations(...)` — see [`packages/core/README.md`](packages/core/README.md) for the full surface. `computeMrr` / `computeGrowth` are retained in `@pax8/core` for embeddable reuse; the CLI-side reporting surface is now `pax8 report renewals|concentration|subscriptions` (Pax8-cost framed, emits `AmountCurrency` envelopes). The previous `pax8 report mrr` / `pax8 report growth` CLI commands were removed because they framed Pax8-cost data as partner-side MRR.
 
 ## Known Limitations
 
-These are tracked, prioritized for v0.1.x, and not blockers for v0.1.0. Each links to a GitHub issue with repro and fix shape.
+These are tracked and prioritized within the `0.x` line. Each links to a GitHub issue with repro and fix shape.
 
 **Real-API surfaces (depend on Pax8 backend):**
 - `pax8 orders list` against busy tenants can hit the 30s default timeout. Extend it by setting `PAX8_TIMEOUT_MS=<ms>` (default 30000, max 300000). Workaround for very large portfolios: `--size 25` or smaller.
@@ -533,7 +684,7 @@ taxonomy. Two things diverge from Pax8's canonical models — partners parsing
 | `type: "cross_sell"` + zero-sub company | OE `opportunityType: "Net-new"` | Both carried on the record |
 
 Both the CLI's product taxonomy and the `seat_gap` heuristic will sunset when
-Pax8's first-party Opportunity Explorer API ships (ARC-785, `GET /opportunities`).
+Pax8's first-party Opportunity Explorer API ships (`GET /opportunities`).
 The local taxonomy is replaced at that point — tracked under
 [#375](https://github.com/pax8labs/pax8-cli/issues/375). The module docstring
 at `packages/core/src/services/recommendations.ts` carries the same disclosure
@@ -542,10 +693,14 @@ who only see `--json` output.
 
 ## Documentation
 
-- [Credential Setup Guide](docs/credential-setup.md)
-- [Product Requirements](docs/PRD.md)
-- [Build Prompt](docs/BUILD.md)
-- [Pax8 API Reference](https://devx.pax8.com/)
+- [Credential Setup Guide](docs/credential-setup.md) — get API credentials and configure the CLI
+- [Contributing](CONTRIBUTING.md) — dev setup, demo fixtures, tests, releases, DCO sign-off
+- [Support](SUPPORT.md) — troubleshooting, bug reports, security disclosure path
+- [Agents](AGENTS.md) — entry point for Cursor, aider, OpenCode, and other AI runtimes
+- [Product Requirements](docs/PRD.md) — internal product context
+- [UX Guide](docs/UX_GUIDE.md) — command patterns and agent-facing contract (contributor reference)
+- [`@pax8/core` library](packages/core/README.md) — using the business logic without the CLI
+- [Pax8 API Reference](https://devx.pax8.com/) — upstream API docs
 
 ## Contributing
 

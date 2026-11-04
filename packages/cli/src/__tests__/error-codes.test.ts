@@ -12,7 +12,7 @@ import { runCliExpectFailure } from "./test-utils.js";
 describe("error codes (JSON envelope)", () => {
   it("emits a parseable JSON object with a registry code on company-not-found", async () => {
     const result = await runCliExpectFailure([
-      "companies",
+      "clients",
       "show",
       "definitely-does-not-exist-at-all",
       "--json",

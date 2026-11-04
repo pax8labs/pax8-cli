@@ -2,14 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
-import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation } from "@pax8/core";
-import { buildContext, warnIfTruncated, type CommandContext } from "../../lib/context.js";
+import {
+  getConfigDir,
+  getRecommendations,
+  safeWriteFileSync,
+  type Recommendation,
+} from "@pax8/core";
+import { buildContext, type CommandContext } from "../../lib/context.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { formatCurrency, formatCompanyName, formatQuantity, calculateMrr } from "../../lib/formatters.js";
-import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import {
+  enrichProductNames,
+  enrichCompanyNames,
+  fetchAllCompanies,
+} from "../../lib/enrich-subscriptions.js";
 import { filterRecommendations } from "./filter.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
@@ -46,12 +57,55 @@ const columns: Column[] = [
   },
   { key: "type", header: "Type", format: (v) => String(v) === "seat_gap" ? "Seat Gap" : "Cross-sell" },
   { key: "title", header: "Recommendation" },
+  // #655 / UXR F5: at-a-glance "why" between the recommendation title and
+  // the uplift. Engine populates it; we just render.
+  { key: "rationaleSnippet", header: "Rationale", format: (v) => chalk.dim(String(v)) },
   {
     key: "estimatedMrrUplift",
     header: "Pax8 Cost+",
     format: (v) => (v != null ? formatCurrency(v as number) : chalk.dim("—")),
   },
 ];
+
+// `--top` is intentionally a string-typed option (Commander parses to string
+// by default) so we can preserve "0 = unlimited" semantics without a NaN /
+// undefined ambiguity. A non-positive non-zero value falls back to the
+// default 10 — partners typo'ing `--top -5` shouldn't get an empty list.
+function parseTopFlag(raw: unknown): number {
+  if (raw === undefined || raw === null) return 10;
+  const n = parseInt(String(raw), 10);
+  if (Number.isNaN(n)) return 10;
+  if (n < 0) return 10;
+  return n; // 0 = unlimited; positive = cap
+}
+
+const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+// Locked sort (#521): estimatedMrrUplift DESC first, priority as
+// tiebreaker (high > medium > low), nulls last. The reasoning is that
+// priority tags are heuristic ("missing security = high") while uplift is
+// concrete dollars — a $5k/mo medium opportunity outranks a $500/mo high
+// one for a partner trying to grow MRR. Pure function; no in-place mutation
+// of the input so callers can still hold the original reference if they
+// need to.
+function sortRecommendations<T extends { estimatedMrrUplift?: number | null; priority?: string }>(
+  recs: T[],
+): T[] {
+  return [...recs].sort((a, b) => {
+    const aUplift = a.estimatedMrrUplift;
+    const bUplift = b.estimatedMrrUplift;
+    const aNull = aUplift == null;
+    const bNull = bUplift == null;
+    // Nulls last
+    if (aNull && !bNull) return 1;
+    if (!aNull && bNull) return -1;
+    if (!aNull && !bNull && aUplift !== bUplift) return (bUplift as number) - (aUplift as number);
+    // Tiebreaker: priority rank ascending (high=0 sorts first)
+    const aRank = PRIORITY_RANK[a.priority ?? "low"] ?? 3;
+    const bRank = PRIORITY_RANK[b.priority ?? "low"] ?? 3;
+    return aRank - bRank;
+  });
+}
 
 async function promptLine(question: string): Promise<string> {
   const { createInterface } = await import("readline");
@@ -64,6 +118,67 @@ async function promptLine(question: string): Promise<string> {
   });
 }
 
+/**
+ * Persist the numbered recommendation list so `recommendations why <n>`,
+ * `recommendations email <n>`, and the REPL's bare-number drill-in can
+ * resolve an index back to a recommendation.
+ *
+ * Called from BOTH the JSON and table paths. It previously lived only in
+ * the table branch, which is unreachable whenever stdout is not a TTY —
+ * `getOutputFormat()` returns "json" for piped output (`lib/context.ts`).
+ * Every agent, and every piped shell invocation, therefore left the cache
+ * unwritten, and each subsequent `why <n>` / `email <n>` failed with "No
+ * cached recommendations found". Not flaky: broken by construction for
+ * every non-interactive caller (#715).
+ *
+ * Best effort by design — a drill-in convenience must never fail the
+ * command that produced the data.
+ */
+async function savePendingActions(recs: Recommendation[]): Promise<void> {
+  try {
+    const { mkdirSync } = await import("fs");
+    const { join } = await import("path");
+    // #458/#469: route through getConfigDir() (so PAX8_CONFIG_DIR is
+    // honored) and safeWriteFileSync (mode 0o600, O_NOFOLLOW) — partner
+    // data shouldn't land in ~/.pax8 with the default umask.
+    const dir = getConfigDir();
+    mkdirSync(dir, { recursive: true });
+    safeWriteFileSync(
+      join(dir, "pending-actions.json"),
+      JSON.stringify(
+        recs.map((r, i) => ({
+          key: String(i + 1),
+          // #509: persist `orderArgs` (argv array) alongside the
+          // display-only `orderCommand`. The REPL drill-in and
+          // `recommendations act` both prefer `orderArgs` — it carries
+          // names with shell metacharacters ("O'Brien & Sons") safely as
+          // single argv elements with no tokenizer round-trip.
+          rec: {
+            companyId: r.companyId,
+            companyName: r.companyName,
+            title: r.title,
+            orderArgs: r.orderArgs,
+            orderCommand: r.orderCommand,
+            suggestedProducts: r.suggestedProducts,
+            targetSeats: r.targetSeats,
+            // #655 / UXR F5: persist rationale so `recommendations why <n>`
+            // can drill in without re-running the engine.
+            type: r.type,
+            priority: r.priority,
+            opportunityType: r.opportunityType,
+            reason: r.reason,
+            rationaleSnippet: r.rationaleSnippet,
+            estimatedMrrUplift: r.estimatedMrrUplift,
+            productAvailable: r.productAvailable,
+          },
+        })),
+      ),
+    );
+  } catch {
+    /* best effort */
+  }
+}
+
 export const recommendationsListCommand = new Command("list")
   .description("Analyze customer portfolios and recommend products")
   .option("--company <id|name>", "Filter to a specific company")
@@ -71,7 +186,8 @@ export const recommendationsListCommand = new Command("list")
   .option("--type <type>", "Filter by type (seat_gap or cross_sell)")
   .option("--product <name>", "Filter by product name (e.g. 'AvePoint', 'Entra')")
   .option("--include-all", "Show all recommendations including ones without orderable products")
-  .option("--with-actions", "Wrap JSON output as { recommendations, nextActions, unmatchedProducts } instead of a flat array")
+  .option("--with-actions", "Extend the JSON envelope with nextActions + unmatchedProducts (recommendations + totalAvailable are always present)")
+  .option("--top <number>", "Cap the number of recommendations returned/displayed (default 10; 0 = unlimited)", "10")
   .option("--limit <number>", "Max rows to show in table (default 10)")
   .addHelpText(
     "after",
@@ -96,15 +212,16 @@ Recommendation types:
   category for active-sub customers, and Net-new for zero-sub customers
   (carried on 'opportunityType'). The legacy 'type' field collapses both
   motions onto 'cross_sell' for v0.x; the full taxonomy migration is
-  deferred to v0.2 (#375) and ARC-785.
+  deferred to v0.2 (#375).
 
   seat_gap: a CLI-invented heuristic that flags cross-product seat
   mismatches (e.g. 100 email seats but only 30 backup seats). Identifies
   coverage gaps across a customer's stack — NOT the same as Pax8's
   canonical Seat Utilization metric, which measures single-product
-  assigned-vs-purchased seats. Closest OE surrogate is Upsell (carried
-  on 'opportunityType'); seat_gap will likely be retired or remapped
-  when OE's first-party API ships.
+  assigned-vs-purchased seats. Closest canonical Opportunity Explorer
+  surrogate is Upsell (carried on 'opportunityType'); seat_gap will
+  likely be retired or remapped when Pax8's first-party Opportunity
+  Explorer API ships.
 
 Estimate semantics:
   estimatedMrrUplift is an upper-bound estimate of the additional Pax8
@@ -117,8 +234,17 @@ Estimate semantics:
   the CLI's user-visible label uses Pax8-cost framing.
 
 JSON output (--json):
-  Default: a flat array of Recommendation objects. With --with-actions,
-  wrapped as { recommendations, nextActions, unmatchedProducts }.
+  Always wrapped as { recommendations: Recommendation[], totalAvailable: number }.
+  With --with-actions, the envelope is extended with nextActions and
+  unmatchedProducts: { recommendations, totalAvailable, nextActions,
+  unmatchedProducts }. totalAvailable is the count of recommendations the
+  engine produced before --top capping, so agents can decide whether to
+  re-query with --top 0 (unlimited) when triaging at portfolio scale.
+
+  Sort order: estimatedMrrUplift DESC (concrete dollars first), then
+  priority (high > medium > low) as tiebreaker. Recommendations with a
+  null estimatedMrrUplift sort last. Cap defaults to --top 10; pass
+  --top 0 to disable.
 
   Recommendation = {
     "companyId": string,
@@ -148,7 +274,7 @@ JSON output (--json):
   that are NOT Pax8's canonical STAX taxonomy or Seat Utilization
   metric. See "Metric definitions" in README.md and the module
   docstring at packages/core/src/services/recommendations.ts. Will
-  sunset when OE's first-party /opportunities API ships (ARC-785, #375).
+  sunset when Pax8's first-party Opportunity Explorer API ships (#375).
 
 Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
@@ -183,22 +309,30 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
     const spinner = createSpinner("Analyzing customer portfolios...").start();
 
     try {
-      // Fetch subscriptions, companies, and enrich product names — all in parallel where possible
-      const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
-        ctx.api.companies.list({ size: 200 }),
+      // #483: page through ALL companies (not the first 200) so the
+      // recommendations engine reasons over the full customer set on
+      // portfolios bigger than the legacy 200-customer cap.
+      // #613 Phase 2: same for subscriptions — pre-#628 the call was
+      // `subscriptions.list({size: ALL_SUBS_PAGE_SIZE, status: "Active"})`
+      // which truncated to the first 1000 active subs for partners with
+      // bigger portfolios, hiding cross-sell / coverage-gap opportunities
+      // that lived past page 1.
+      const [subs, allCompanies] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ status: "Active" }),
+          spinner,
+          "recommendations",
+        ),
+        fetchAllCompanies(ctx),
       ]);
 
-      warnIfTruncated(subsResult, ALL_SUBS_PAGE_SIZE);
-
-      // Build company name lookup
+      // Build company name lookup from the full set.
       const companyNames = new Map<string, string>();
-      for (const c of companiesResult.content) {
+      for (const c of allCompanies) {
         companyNames.set(c.id, c.name);
       }
 
       // Enrich subscriptions with product names (individual lookups, cached)
-      const subs = subsResult.content;
       await enrichProductNames(ctx, subs);
 
       // Also enrich company names on subscriptions
@@ -206,33 +340,81 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       spinner.stop();
 
-      // Fetch products for order command matching
-      const productsResult = await ctx.api.products.list({ size: 200 });
+      // #483: bump the product-catalog page size to 1000 (the documented
+      // max). A deeper catalog still requires future pagination here, but
+      // 1000 covers every observed catalog and removes the silent 200-cap
+      // miss for SKU matching that #483 flagged.
+      const productsResult = await ctx.api.products.list({ size: 1000 });
       const report = getRecommendations(
         subs,
         productsResult.content,
-        companiesResult.content,
+        allCompanies,
       );
 
       let recs = report.recommendations;
 
       recs = filterRecommendations(recs, options);
 
+      // Sort by estimatedMrrUplift DESC (concrete dollars beat heuristic
+      // priority tags); tiebreak by priority (high > medium > low). Recs
+      // with a null uplift sort LAST so the top of the list is always the
+      // partner's highest-dollar opportunities (#521).
+      recs = sortRecommendations(recs);
+
+      // Cap the count. `--top 0` opts out (unlimited); any positive int
+      // caps; default is 10. We capture `totalAvailable` BEFORE capping so
+      // the envelope can honestly report "you're seeing N of M" — capping
+      // by default but silently hiding 298 of 308 recs is exactly the
+      // anti-pattern #483 is fixing elsewhere (#521).
+      const totalAvailable = recs.length;
+      const topCap = parseTopFlag(options.top);
+      const capped = topCap === 0 ? recs : recs.slice(0, topCap);
+
       if (ctx.outputFormat === "json") {
+        // Same cache the table path writes. Agents and piped shells land
+        // here (getOutputFormat returns "json" for non-TTY stdout), and
+        // they need `why <n>` / `email <n>` to resolve too (#715).
+        await savePendingActions(capped);
         if (options.withActions) {
-          const nextActions = recs
-            .filter((r) => r.orderCommand)
+          // Built from `orderArgs`, not `orderCommand`. The latter is a
+          // display string interpolating a partner-controlled companyName
+          // (#462) — emitting it as the only executable form left agents
+          // with nothing safe to spawn. Filtering on orderArgs also drops
+          // recommendations whose product could not be resolved, so a
+          // suggestion is never emitted without a runnable argv (#708).
+          const nextActions = capped
+            .filter((r) => r.orderArgs && r.orderArgs.length > 0)
             .slice(0, 5)
-            .map((r) => ({
-              command: r.orderCommand!,
-              description: `${r.title} for ${r.companyName}`,
-            }));
-          process.stdout.write(JSON.stringify({ recommendations: recs, nextActions, unmatchedProducts: report.unmatchedProducts }, null, 2) + "\n");
+            .map((r) => buildAction(r.orderArgs!, `${r.title} for ${r.companyName}`));
+          process.stdout.write(
+            JSON.stringify(
+              {
+                recommendations: capped,
+                totalAvailable,
+                nextActions,
+                unmatchedProducts: report.unmatchedProducts,
+              },
+              null,
+              2,
+            ) + "\n",
+          );
         } else {
-          process.stdout.write(JSON.stringify(recs, null, 2) + "\n");
+          // #521: JSON shape change (pre-publish, no deprecation needed).
+          // Previously a flat Recommendation[]; now always wrapped as
+          // { recommendations, totalAvailable } so the cap is visible to
+          // agents instead of silently hidden. --with-actions still adds
+          // nextActions / unmatchedProducts on top of the same envelope.
+          process.stdout.write(
+            JSON.stringify({ recommendations: capped, totalAvailable }, null, 2) + "\n",
+          );
         }
         return;
       }
+
+      // From this point we operate on the capped set for human render too,
+      // so the count of items the user sees in the table matches the
+      // count the agent saw in the JSON envelope.
+      recs = capped;
 
       // In table mode, hide unavailable recs unless --include-all
       // Count hidden items BEFORE filtering so we can show "N hidden" message
@@ -290,6 +472,19 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         process.stderr.write(chalk.dim(`\n  Showing top ${limit} of ${recs.length} recommendations`) + chalk.dim(` · use --limit ${recs.length} to see all\n`));
       }
 
+      // #521: when the engine produced more recs than the --top cap let
+      // through, surface that count so the partner knows there's more to
+      // see. `totalAvailable` is pre-cap; `recs` is post-cap-and-visibility-
+      // filter. We only print this hint when the cap (not the catalog-
+      // availability filter) is what's hiding rows.
+      if (topCap > 0 && totalAvailable > capped.length) {
+        process.stderr.write(
+          chalk.dim(
+            `\n  Showing top ${capped.length} of ${totalAvailable} recommendations. Use --top 50 or --top 0 to see more.\n`,
+          ),
+        );
+      }
+
       const visibleCompanyCount = new Set(recs.map((r) => r.companyId)).size;
       process.stderr.write(
         chalk.dim(
@@ -334,31 +529,34 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
       }
 
       if (hiddenCount > 0) {
-        process.stderr.write(chalk.dim(`  ${hiddenCount} more recommendation${hiddenCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet\n`));
+        process.stderr.write(
+          chalk.dim(`  ${hiddenCount} more recommendation${hiddenCount > 1 ? "s" : ""} hidden — no orderable products in catalog yet · run with `) +
+          chalk.cyan("--include-all") +
+          chalk.dim(" to see them\n")
+        );
       }
 
       // Suggest recommendations act
       process.stderr.write(chalk.dim(`  Walk through all: `) + chalk.cyan(replCmd("pax8 recommendations act")) + "\n");
 
-      // Save pending actions for REPL mode
-      try {
-        const { writeFileSync, mkdirSync } = await import("fs");
-        const { homedir } = await import("os");
-        const { join } = await import("path");
-        const dir = join(homedir(), ".pax8");
-        mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, "pending-actions.json"), JSON.stringify(
-          displayRecs.map((r, i) => ({
-            key: String(i + 1),
-            rec: { companyId: r.companyId, companyName: r.companyName, title: r.title, orderCommand: r.orderCommand, suggestedProducts: r.suggestedProducts, targetSeats: r.targetSeats },
-          }))
-        ));
-      } catch { /* best effort */ }
+      await savePendingActions(displayRecs);
+
 
       // Interactive prompt — use shared promptNextSteps
       const steps: NextStep[] = displayRecs.map((r, i) => {
+        // #509: prefer `orderArgs.slice(1)` (drops the "pax8" argv0) over
+        // re-tokenizing the display string. The argv form survives names
+        // with shell metacharacters intact; the string form's tokenizer
+        // remains as a belt-and-suspenders fallback for older
+        // Recommendation rows from a pre-#498 build of `@pax8/core`.
+        if (r.orderArgs && r.orderArgs[0] === "pax8") {
+          return {
+            key: String(i + 1),
+            label: `${r.suggestedProducts?.[0] ?? "product"} for ${r.companyName}`,
+            command: r.orderArgs.slice(1),
+          };
+        }
         if (r.orderCommand) {
-          // Tokenize orderCommand, strip leading "pax8" if present
           const tokens = (r.orderCommand.match(/"[^"]*"|\S+/g) ?? []).map(
             (t) => t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t
           );

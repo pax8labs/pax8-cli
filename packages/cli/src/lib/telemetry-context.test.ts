@@ -1,11 +1,18 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as os from "node:os";
+import * as path from "node:path";
+import { getTelemetry, resetTelemetry, accountGroupKey } from "@pax8/core";
 import {
   setTelemetryFields,
   consumeTelemetryFields,
   _resetTelemetryFields,
+  setActiveCommand,
+  consumeActiveCommand,
+  _resetActiveCommand,
+  resolveTelemetryAccount,
 } from "./telemetry-context.js";
 
 describe("telemetry-context", () => {
@@ -52,5 +59,179 @@ describe("telemetry-context", () => {
     const second = consumeTelemetryFields();
     expect(first).toEqual({ recs_presented: 1 });
     expect(second).toEqual({ order_seats: 2 });
+  });
+
+  describe("active command context (failure-event attribution)", () => {
+    beforeEach(() => {
+      _resetActiveCommand();
+    });
+
+    it("consume returns null when no command is active", () => {
+      expect(consumeActiveCommand()).toBeNull();
+    });
+
+    it("set and consume return the stashed context", () => {
+      setActiveCommand({
+        command: "invoices",
+        subcommand: "invoices.audit",
+        flags: ["--month", "--json"],
+        startTime: 1000,
+      });
+      expect(consumeActiveCommand()).toEqual({
+        command: "invoices",
+        subcommand: "invoices.audit",
+        flags: ["--month", "--json"],
+        startTime: 1000,
+      });
+    });
+
+    it("consume clears state — a second consume returns null", () => {
+      setActiveCommand({
+        command: "dashboard",
+        subcommand: "dashboard",
+        flags: [],
+        startTime: 0,
+      });
+      expect(consumeActiveCommand()).not.toBeNull();
+      expect(consumeActiveCommand()).toBeNull();
+    });
+
+    it("set replaces any earlier active command (no accumulation)", () => {
+      setActiveCommand({ command: "a", subcommand: "a", flags: [], startTime: 0 });
+      setActiveCommand({ command: "b", subcommand: "b", flags: [], startTime: 0 });
+      expect(consumeActiveCommand()?.command).toBe("b");
+    });
+  });
+
+  describe("resolveTelemetryAccount (account-group startup seam)", () => {
+    const OLD_ID = process.env.PAX8_CLIENT_ID;
+    const OLD_SECRET = process.env.PAX8_CLIENT_SECRET;
+
+    const restoreEnv = (key: string, val: string | undefined): void => {
+      if (val === undefined) delete process.env[key];
+      else process.env[key] = val;
+    };
+
+    beforeEach(() => resetTelemetry());
+    afterEach(() => {
+      restoreEnv("PAX8_CLIENT_ID", OLD_ID);
+      restoreEnv("PAX8_CLIENT_SECRET", OLD_SECRET);
+      resetTelemetry();
+    });
+
+    function stubbedTelemetry() {
+      const t = getTelemetry();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyT = t as any;
+      anyT.enabled = true;
+      anyT.storageDir = path.join(
+        os.tmpdir(),
+        `pax8-ctx-acct-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const captures: Array<{ groups?: Record<string, string> }> = [];
+      const groupIdentifies: Array<{ groupType: string; groupKey: string }> = [];
+      anyT.posthog = {
+        capture: (p: { groups?: Record<string, string> }) => captures.push(p),
+        groupIdentify: (p: { groupType: string; groupKey: string }) => groupIdentifies.push(p),
+        flush: async () => {},
+        shutdown: async () => {},
+      };
+      return { t, captures, groupIdentifies };
+    }
+
+    const sigintEvent = {
+      event: "command_executed" as const,
+      command: "sigint",
+      flags: [] as string[],
+      duration_ms: 0,
+      success: false,
+      cancelled: true,
+      cli_version: "0.1.0",
+      node_version: process.version,
+      os: process.platform,
+      demo_mode: false,
+    };
+
+    it("sets the account group from env credentials so a later track() that never calls setAccount still carries it (SIGINT-path regression)", async () => {
+      process.env.PAX8_CLIENT_ID = "partner-under-test";
+      process.env.PAX8_CLIENT_SECRET = "secret";
+
+      // Startup seam runs first (as preAction would)…
+      await resolveTelemetryAccount();
+
+      // …then an emit path that does NOT call setAccount itself (mirrors the
+      // SIGINT handler in signals.ts, which previously shipped null groups).
+      const { t, captures, groupIdentifies } = stubbedTelemetry();
+      t.track(sigintEvent);
+      await t.flush();
+
+      const key = accountGroupKey("partner-under-test");
+      expect(groupIdentifies).toEqual([{ groupType: "account", groupKey: key }]);
+      expect(captures).toHaveLength(1);
+      expect(captures[0].groups).toEqual({ account: key });
+    });
+
+    // Regression guard for #697. The published @pax8/cli@0.2.0 resolved a
+    // @pax8/core whose Telemetry had no setAccount(), and resolveTelemetryAccount
+    // called setAccount from BOTH the try and the catch — so the fallback threw
+    // too and the preAction hook rejected, killing every command before its body
+    // ran. These two lock in "telemetry setup can never be fatal", which is the
+    // property that actually protects users, independent of any version pin.
+    // `setAccount` is a prototype method, so `delete instance.setAccount` is a
+    // no-op — it would leave the real method reachable and the test would pass
+    // against the very bug it is meant to catch. Shadow it with an own property
+    // instead, then remove the shadow to restore.
+    const withSetAccount = async (value: unknown, fn: () => Promise<void>) => {
+      const telemetry = getTelemetry() as unknown as Record<string, unknown>;
+      Object.defineProperty(telemetry, "setAccount", {
+        value,
+        configurable: true,
+        writable: true,
+      });
+      try {
+        await fn();
+      } finally {
+        delete telemetry.setAccount;
+      }
+    };
+
+    it("does not throw when the resolved core has no setAccount (version skew)", async () => {
+      process.env.PAX8_CLIENT_ID = "partner-under-test";
+      process.env.PAX8_CLIENT_SECRET = "secret";
+
+      // Simulate the older published core: the method simply isn't there.
+      await withSetAccount(undefined, async () => {
+        await expect(resolveTelemetryAccount()).resolves.toBeUndefined();
+      });
+    });
+
+    it("does not throw when setAccount itself throws", async () => {
+      delete process.env.PAX8_CLIENT_ID;
+      delete process.env.PAX8_CLIENT_SECRET;
+
+      await withSetAccount(
+        () => {
+          throw new Error("boom");
+        },
+        async () => {
+          await expect(resolveTelemetryAccount()).resolves.toBeUndefined();
+        },
+      );
+    });
+
+    it("resolves to no group when no credentials are configured", async () => {
+      delete process.env.PAX8_CLIENT_ID;
+      delete process.env.PAX8_CLIENT_SECRET;
+
+      await resolveTelemetryAccount();
+
+      const { t, captures, groupIdentifies } = stubbedTelemetry();
+      t.track(sigintEvent);
+      await t.flush();
+
+      expect(groupIdentifies).toEqual([]);
+      expect(captures).toHaveLength(1);
+      expect(captures[0].groups).toBeUndefined();
+    });
   });
 });

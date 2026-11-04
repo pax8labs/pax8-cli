@@ -12,12 +12,16 @@ describe("pax8 webhooks topics list", () => {
       "list",
       "--json",
     ]);
+    // #483: JSON envelope is { topics, page } (single-page envelope —
+    // the topic-definitions endpoint isn't paginated).
     const data = JSON.parse(result.stdout);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0]).toHaveProperty("topic");
-    expect(data[0]).toHaveProperty("description");
-    expect(data[0]).toHaveProperty("name");
+    expect(data).toHaveProperty("topics");
+    expect(data).toHaveProperty("page");
+    expect(Array.isArray(data.topics)).toBe(true);
+    expect(data.topics.length).toBeGreaterThan(0);
+    expect(data.topics[0]).toHaveProperty("topic");
+    expect(data.topics[0]).toHaveProperty("description");
+    expect(data.topics[0]).toHaveProperty("name");
   });
 
   it("returns topics sorted alphabetically by slug", async () => {
@@ -27,8 +31,8 @@ describe("pax8 webhooks topics list", () => {
       "list",
       "--json",
     ]);
-    const data = JSON.parse(result.stdout) as { topic: string }[];
-    const slugs = data.map((t) => t.topic);
+    const data = JSON.parse(result.stdout) as { topics: { topic: string }[] };
+    const slugs = data.topics.map((t) => t.topic);
     const sorted = [...slugs].sort((a, b) => a.localeCompare(b));
     expect(slugs).toEqual(sorted);
   });
@@ -40,8 +44,8 @@ describe("pax8 webhooks topics list", () => {
       "list",
       "--json",
     ]);
-    const data = JSON.parse(result.stdout) as { topic: string }[];
-    const slugs = data.map((t) => t.topic);
+    const data = JSON.parse(result.stdout) as { topics: { topic: string }[] };
+    const slugs = data.topics.map((t) => t.topic);
     expect(slugs).toContain("subscription.created");
     expect(slugs).toContain("invoice.paid");
     expect(slugs).toContain("order.created");

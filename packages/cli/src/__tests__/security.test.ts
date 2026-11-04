@@ -23,7 +23,7 @@ import { runCli, runCliExpectSuccess } from "./test-utils.js";
 
 describe("security: PAX8_API_BASE (#234)", () => {
   it("exits non-zero when PAX8_API_BASE is a plaintext non-loopback http URL", async () => {
-    const result = await runCli(["status"], {
+    const result = await runCli(["dashboard"], {
       PAX8_API_BASE: "http://attacker.example.com",
       // Cancel out the global vitest opt-in so the strict default kicks in.
       PAX8_ALLOW_INSECURE_BASE: "",
@@ -37,7 +37,7 @@ describe("security: PAX8_API_BASE (#234)", () => {
     // We don't actually expect status to succeed against localhost:8080
     // (nothing is listening), but the security guard must let it past.
     // In demo mode the CLI doesn't make a network call, so this passes.
-    const result = await runCliExpectSuccess(["status"], {
+    const result = await runCliExpectSuccess(["dashboard"], {
       PAX8_API_BASE: "http://localhost:8080",
     });
     // Smoke: the URL was accepted and the command ran.
@@ -45,7 +45,7 @@ describe("security: PAX8_API_BASE (#234)", () => {
   });
 
   it("accepts a malicious http URL when PAX8_ALLOW_INSECURE_BASE=1 (escape hatch)", async () => {
-    const result = await runCliExpectSuccess(["status"], {
+    const result = await runCliExpectSuccess(["dashboard"], {
       PAX8_API_BASE: "http://test-rig.internal",
       PAX8_ALLOW_INSECURE_BASE: "1",
     });

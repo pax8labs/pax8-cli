@@ -61,13 +61,13 @@ function daysUntil(dateStr: string | undefined): number | null {
 
 export const companiesMoreCommand = new Command("more")
   .description("Full client summary — subscriptions, vendors, seats, Pax8 monthly cost, and issues")
-  .argument("<name-or-number>", "Client name, ID, or # from companies list")
+  .argument("<name-or-number>", "Client name, ID, or # from clients list")
   .allowExcessArguments(true)
   .addHelpText(
     "after",
     `
 Examples:
-  pax8 clients more 1                                  Use # from companies list
+  pax8 clients more 1                                  Use # from clients list
   pax8 clients more "Summit Healthcare Partners"
   pax8 clients more "Summit Healthcare Partners" --json
 
@@ -353,8 +353,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
             command: ["orders", "list", "--company", company.name],
           },
         ];
-        process.stderr.write(chalk.dim("  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "  Try next:\n" });
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

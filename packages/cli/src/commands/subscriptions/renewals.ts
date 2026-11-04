@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from "commander";
+import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
-import { ALL_SUBS_PAGE_SIZE, getUpcomingRenewals } from "@pax8/core";
+import { getUpcomingRenewals } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
@@ -13,9 +15,15 @@ import {
   formatCurrency,
   formatCompanyName,
 } from "../../lib/formatters.js";
-import { enrichProductNames, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
+import {
+  enrichProductNames,
+  enrichCompanyNames,
+  buildCompanyNameMap,
+} from "../../lib/enrich-subscriptions.js";
+import { singlePageEnvelope } from "../../lib/output.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { replCmd } from "../../lib/confirm.js";
 
 function parseWithinDays(within: string): number {
   const match = within.match(/^(\d+)d$/);
@@ -64,11 +72,8 @@ What this measures:
   the probability of churn — this CLI metric is a temporal filter, not
   a predictive score.
 
-  In v0.x output the field is named \`mrrRenewing\` (and \`arrRenewing\`).
-  These names are preserved on the wire so existing partner-side
-  risk-framing scripts keep working. The previous \`mrrAtRisk\` /
-  \`arrAtRisk\` keys are emitted alongside as deprecated aliases and will
-  be removed in a future minor version.
+  Output fields are named \`mrrRenewing\` and \`arrRenewing\` (#298 — the
+  earlier \`mrrAtRisk\` / \`arrAtRisk\` keys were dropped pre-launch).
 
 Metric definitions:
   Pax8 monthly cost (a.k.a. mrrRenewing on the wire): The partner's
@@ -96,16 +101,9 @@ JSON output (--json):
     "billingTerm": string,
     "price": number,
     "mrrRenewing": number,                // canonical key (#298)
-    "mrrAtRisk": number,                  // DEPRECATED alias of mrrRenewing — removed in a future minor
     "arrRenewing": number,                // canonical key (#298)
-    "arrAtRisk": number,                  // DEPRECATED alias of arrRenewing — removed in a future minor
     "daysUntilRenewal": number
   }
-
-  The mrrAtRisk / arrAtRisk aliases are dual-emitted alongside the canonical
-  mrrRenewing / arrRenewing fields for one minor version cycle so existing
-  scripts don't break. Migrate to the renewing-named fields; the at-risk
-  names will be removed in a future minor version (see #299).
 
 Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue (what you charge your customers), combine with sell-through pricing from your PSA.`
   )
@@ -117,23 +115,27 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
     try {
       const withinDays = parseWithinDays(options.within);
 
-      // Fetch subscriptions and companies in parallel
+      // Fetch subscriptions first; #483: page the companies catalog
+      // uncapped via buildCompanyNameMap so portfolios with >200 customers
+      // still get full name enrichment in the renewals view.
       const companyId = options.company
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
-      const [result, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId }),
-        ctx.api.companies.list({ size: 200 }),
-      ]);
+      // #613 Phase 2: walk every page so renewals are computed over the
+      // full portfolio. Pre-#628 the call truncated at 1000 subs.
+      const allSubs = await collectSubsWithSpinner(
+        ctx.api.subscriptions.streamAll({ companyId }),
+        spinner,
+        "renewals",
+      );
 
-      // Enrich with product and company names
-      const companyNames = new Map<string, string>();
-      for (const c of companiesResult.content) {
-        companyNames.set(c.id, c.name);
-      }
-      enrichCompanyNames(companyNames, result.content);
-      await enrichProductNames(ctx, result.content as Record<string, unknown>[]);
-      const allSubs = result.content;
+      const companyNames = await buildCompanyNameMap(
+        ctx,
+        allSubs as { companyId?: string }[],
+        { quiet: Boolean(allOpts.quiet), resourceLabel: "renewal" },
+      );
+      enrichCompanyNames(companyNames, allSubs);
+      await enrichProductNames(ctx, allSubs as Record<string, unknown>[]);
 
       spinner.stop();
 
@@ -147,23 +149,29 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
             ...item,
             mrrRenewing: mrr,
             arrRenewing: arr,
-            // Deprecated aliases — emitted alongside the canonical names for
-            // one minor version cycle so existing scripts don't break. See #298.
-            mrrAtRisk: mrr,
-            arrAtRisk: arr,
             renewalDate: item.renewalDate.toISOString().split("T")[0],
           };
         });
+        // #483: emit `{ renewals, page }` (single-page envelope, no
+        // server-side pagination for renewals — the data is materialized
+        // client-side from the subscriptions list).
+        const page = singlePageEnvelope(renewalItems.length);
         if (options.withActions) {
           const nextActions = report.items
             .slice(0, 5)
-            .map((item) => ({
-              command: `pax8 subscriptions show ${item.subscriptionId}`,
-              description: `View renewal details for ${item.companyName} — ${item.productName} (${item.daysUntilRenewal}d)`,
-            }));
-          process.stdout.write(JSON.stringify({ renewals: renewalItems, nextActions }, null, 2) + "\n");
+            .map((item) =>
+              buildAction(
+                ["subscriptions", "show", item.subscriptionId],
+                `View renewal details for ${item.companyName} — ${item.productName} (${item.daysUntilRenewal}d)`,
+              ),
+            );
+          process.stdout.write(
+            JSON.stringify({ renewals: renewalItems, page, nextActions }, null, 2) + "\n",
+          );
         } else {
-          process.stdout.write(JSON.stringify(renewalItems, null, 2) + "\n");
+          process.stdout.write(
+            JSON.stringify({ renewals: renewalItems, page }, null, 2) + "\n",
+          );
         }
         return;
       }
@@ -243,17 +251,19 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         const steps: NextStep[] = [
           {
             key: "1",
-            label: `${chalk.cyan(`subscriptions show ${top.subscriptionId}`)}  ${chalk.dim("view details")}`,
+            // #482: wrap in replCmd(`pax8 ...`) so the rendered label matches
+            // every other "Try next" surface — same visual shape (`pax8`
+            // prefix in non-REPL contexts, none inside the REPL).
+            label: `${chalk.cyan(replCmd(`pax8 subscriptions show ${top.subscriptionId}`))}  ${chalk.dim("view details")}`,
             command: ["subscriptions", "show", top.subscriptionId],
           },
           {
             key: "2",
-            label: `${chalk.cyan(`clients more "${top.companyName}"`)}  ${chalk.dim("view client")}`,
+            label: `${chalk.cyan(replCmd(`pax8 clients more "${top.companyName}"`))}  ${chalk.dim("view client")}`,
             command: ["clients", "more", top.companyName],
           },
         ];
-        process.stderr.write(chalk.dim("\n  Try next:\n"));
-        await promptNextSteps(steps, { renderList: true });
+        await promptNextSteps(steps, { renderList: true, header: "\n  Try next:\n" });
         // Static advisory below the pickable list — the `--quantity <n>`
         // command can't be picked interactively (needs a value), but the
         // suggestion is still worth surfacing.

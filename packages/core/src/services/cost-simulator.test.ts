@@ -8,7 +8,7 @@ import type { ProductPricingPlan } from "../api/types.js";
 /** Build a one-rate pricing plan for a given billing term + price. */
 function plan(
   billingTerm: string,
-  suggestedRetailPrice: number,
+  unitPrice: number,
   productId: string = "prod-x",
   productName: string = "Test Product",
 ): ProductPricingPlan {
@@ -16,10 +16,14 @@ function plan(
     productId,
     productName,
     billingTerm,
+    // Both rates carry the same figure so these tests assert one thing at a
+    // time — tier selection, delta arithmetic, billing-term matching — and
+    // don't silently depend on which rate the simulator reads. The choice
+    // of basis is covered on its own in "prices from partnerBuyRate" below.
     rates: [
       {
-        partnerBuyRate: suggestedRetailPrice * 0.9,
-        suggestedRetailPrice,
+        partnerBuyRate: unitPrice,
+        suggestedRetailPrice: unitPrice,
       },
     ],
   };
@@ -35,7 +39,7 @@ function tieredPlan(
     productName: "Tiered Product",
     billingTerm,
     rates: tiers.map((t) => ({
-      partnerBuyRate: t.suggestedRetailPrice * 0.9,
+      partnerBuyRate: t.suggestedRetailPrice,
       suggestedRetailPrice: t.suggestedRetailPrice,
       startQuantityRange: t.startQuantityRange,
     })),
@@ -263,6 +267,60 @@ describe("simulateCostChange", () => {
 
       const result = simulateCostChange(input);
       expect(result.notes.some((n) => /switching/i.test(n))).toBe(false);
+    });
+  });
+
+  describe("Pricing basis (#711)", () => {
+    it("prices from partnerBuyRate, not suggestedRetailPrice", () => {
+      // `cost sim` reports the partner's Pax8 COST delta, and `current` is
+      // derived from the subscription's own price — the buy rate on the
+      // wire. Pricing `proposed` from retail put the two sides of the
+      // comparison on different bases and overstated every simulated
+      // increase. The demo fixture masked it: it was priced at retail, so
+      // both sides agreed until #711 corrected it.
+      const input: SimulationInput = {
+        proposed: {
+          productId: "prod-basis",
+          productName: "Basis Product",
+          quantity: 10,
+          billingTerm: "Monthly",
+        },
+        pricing: [
+          {
+            productId: "prod-basis",
+            productName: "Basis Product",
+            billingTerm: "Monthly",
+            rates: [{ partnerBuyRate: 18, suggestedRetailPrice: 22 }],
+          },
+        ],
+      };
+      const result = simulateCostChange(input);
+      expect(result.proposed.unitPrice).toBe(18);
+      expect(result.proposed.monthly).toBe(180);
+    });
+
+    it("falls back to suggestedRetailPrice when no buy rate is supplied", () => {
+      // Embedders on the pre-#711 shape pass rate rows without a buy rate.
+      // They keep working — the figure is then retail and overstates cost,
+      // which is strictly better than throwing on a missing field.
+      const input = {
+        proposed: {
+          productId: "prod-legacy",
+          productName: "Legacy Product",
+          quantity: 10,
+          billingTerm: "Monthly",
+        },
+        pricing: [
+          {
+            productId: "prod-legacy",
+            productName: "Legacy Product",
+            billingTerm: "Monthly",
+            rates: [{ suggestedRetailPrice: 22 }],
+          },
+        ],
+      } as unknown as SimulationInput;
+      const result = simulateCostChange(input);
+      expect(result.proposed.unitPrice).toBe(22);
     });
   });
 

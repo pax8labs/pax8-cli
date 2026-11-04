@@ -11,7 +11,11 @@ export default defineConfig({
     // Keeping them out of the default `pnpm test` is a hard contract: it
     // means forks, credential-less CI, and local dev never break because
     // of missing secrets.
-    exclude: ["**/node_modules/**", "e2e/integration/**"],
+    // `e2e/smoke/**` is excluded for the same reason (#697): it installs from
+    // the npm registry and shells out to `pnpm pack`, so it needs the network
+    // and tens of seconds. It has its own runner — `pnpm test:smoke` →
+    // `vitest.smoke.config.ts`.
+    exclude: ["**/node_modules/**", "e2e/integration/**", "e2e/smoke/**"],
     // #262: tests routinely point PAX8_CONFIG_DIR at `os.tmpdir()` (which
     // resolves outside `os.homedir()` on macOS / Linux) for isolation. The
     // new validateConfigDir() guard would reject those by default, so opt
@@ -32,9 +36,20 @@ export default defineConfig({
     // globalSetup order matters when scripts touch process.env: each runs
     // in declaration order in the parent process, before workers fork.
     globalSetup: [
+      // #475: snapshot `~/.pax8` first so the post-test comparison sees
+      // the pre-test baseline, before the isolation setup mutates env.
+      // Teardown runs in reverse declaration order, so the guard's
+      // comparison fires after the isolation setup's cleanup.
+      "./vitest.real-home-guard-setup.ts",
       "./vitest.test-isolation-setup.ts",
       "./vitest.coverage-setup.ts",
     ],
+    // #620 Variant B: per-test mkdtemp PAX8_CONFIG_DIR so concurrent
+    // tests can't collide on the orders-fixture file (or any other
+    // demo-mode persisted state under PAX8_CONFIG_DIR). Runs in each
+    // worker and registers global beforeEach/afterEach hooks; see the
+    // file header for the design rationale.
+    setupFiles: ["./vitest.per-test-config-dir-setup.ts"],
     coverage: {
       // Custom provider wraps the standard v8 provider and additionally
       // ingests subprocess coverage profiles. See vitest.coverage-provider.ts.

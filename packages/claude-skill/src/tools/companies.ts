@@ -18,7 +18,7 @@ export const pax8_companies_list = {
     },
   },
   execute: async (params: { page?: number; size?: number }) => {
-    const args = ["companies", "list", "--json"];
+    const args = ["clients", "list", "--json"];
     if (params.page !== undefined) args.push("--page", String(params.page));
     if (params.size !== undefined) args.push("--size", String(params.size));
     return execCli(args);
@@ -41,7 +41,7 @@ export const pax8_companies_show = {
     required: ["id"],
   },
   execute: async (params: { id: string; subscriptions?: boolean }) => {
-    const args = ["companies", "show", params.id, "--json"];
+    const args = ["clients", "show", params.id, "--json"];
     if (params.subscriptions) args.push("--subscriptions");
     return execCli(args);
   },

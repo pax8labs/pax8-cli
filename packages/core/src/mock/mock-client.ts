@@ -6,7 +6,12 @@
 
 import * as nodeFs from "node:fs";
 import * as nodePath from "node:path";
-import { homedir as nodeHomedir } from "node:os";
+import { getConfigDir } from "../config/loader.js";
+import { safeWriteFileSync } from "../security/safe-write.js";
+// Import entity arrays via the fixture selector (#484): defaults to the
+// hand-curated small fixture; switches to the generated large fixture
+// when `PAX8_DEMO_SCALE=large` is set. Types continue to come from
+// `./demo-data.js` because they're canonical and shared by both fixtures.
 import {
   companies,
   subscriptions,
@@ -21,21 +26,24 @@ import {
   webhooks,
   webhookLogs,
   webhookTopicDefinitions,
-  type Company,
-  type Subscription,
-  type Product,
-  type Invoice,
-  type InvoiceItem,
-  type Order,
-  type Contact,
-  type UsageSummary,
-  type UsageLine,
-  type Quote as DemoQuote,
-  type Webhook,
-  type WebhookLog,
-  type WebhookTopicDefinition,
+} from "./fixture.js";
+import type {
+  Company,
+  Subscription,
+  Product,
+  Invoice,
+  InvoiceItem,
+  Order,
+  Contact,
+  UsageSummary,
+  UsageLine,
+  Quote as DemoQuote,
+  Webhook,
+  WebhookLog,
+  WebhookTopicDefinition,
 } from "./demo-data.js";
 import { ApiError, NotFoundError } from "../api/errors.js";
+import { ALL_SUBS_PAGE_SIZE } from "../api/constants.js";
 import {
   QuoteSchema,
   type CreateOrderInput,
@@ -98,59 +106,6 @@ function paginate<T>(
 
 function notFound(resource: string, id: string): NotFoundError {
   return new NotFoundError(resource, id);
-}
-
-// ─── Timestamp canonicalization (#385) ────────────────────────────────────────
-//
-// Per #385, all read-side responses now carry BOTH the canonical camelCase /
-// past-tense timestamp names (`createdAt`, `updatedAt`, `expiresAt`) AND the
-// legacy Pax8-API names (`created`, `updatedDate`, `createdDate`, `createdOn`,
-// `expiresOn`) so existing `--json` consumers don't break during the deprecation
-// window. Real-API responses get this dual-emit via the Zod preprocess in
-// `api/types.ts`; demo-mode responses get it via these helpers — the mock
-// client doesn't Zod-parse on the way out for these resources because the
-// demo-data interfaces are slightly looser than the canonical schemas.
-
-function withCompanyTimestampAliases<T extends { created?: string; updatedDate?: string; createdAt?: string; updatedAt?: string }>(
-  c: T,
-): T & { createdAt?: string; updatedAt?: string; created?: string; updatedDate?: string } {
-  const createdAt = c.createdAt ?? c.created;
-  const updatedAt = c.updatedAt ?? c.updatedDate;
-  return {
-    ...c,
-    ...(createdAt !== undefined ? { createdAt, created: createdAt } : {}),
-    ...(updatedAt !== undefined ? { updatedAt, updatedDate: updatedAt } : {}),
-  };
-}
-
-function withOrderTimestampAliases<T extends { createdDate?: string; createdAt?: string }>(
-  o: T,
-): T & { createdAt?: string; createdDate?: string } {
-  const createdAt = o.createdAt ?? o.createdDate;
-  return {
-    ...o,
-    ...(createdAt !== undefined ? { createdAt, createdDate: createdAt } : {}),
-  };
-}
-
-function withSubscriptionTimestampAliases<T extends { createdDate?: string; createdAt?: string }>(
-  s: T,
-): T & { createdAt?: string; createdDate?: string } {
-  const createdAt = s.createdAt ?? s.createdDate;
-  return {
-    ...s,
-    ...(createdAt !== undefined ? { createdAt, createdDate: createdAt } : {}),
-  };
-}
-
-function withWebhookTimestampAliases<T extends { createdDate?: string; createdAt?: string; updatedAt?: string }>(
-  w: T,
-): T & { createdAt?: string; createdDate?: string; updatedAt?: string } {
-  const createdAt = w.createdAt ?? w.createdDate;
-  return {
-    ...w,
-    ...(createdAt !== undefined ? { createdAt, createdDate: createdAt } : {}),
-  };
 }
 
 // ─── Resource helpers ────────────────────────────────────────────────────────
@@ -225,12 +180,7 @@ class CompaniesResource {
       filtered = [...filtered].sort((a, b) => getField(a).localeCompare(getField(b)));
     }
     const page = paginate(filtered, params);
-    // #385: emit canonical timestamp aliases (`createdAt`) alongside the
-    // legacy wire-shape field names (`created`, `updatedDate`) so downstream
-    // `--json` consumers see both during the v0.2.x → v0.3.0 deprecation
-    // window. Real-API responses get this dual-emit via the Zod preprocess
-    // in `api/types.ts`.
-    return { ...page, content: page.content.map(withCompanyTimestampAliases) };
+    return page;
   }
 
   async get(id: string): Promise<Company> {
@@ -239,7 +189,7 @@ class CompaniesResource {
       ?? companies.find((c) => c.name.toLowerCase() === id.toLowerCase())
       ?? companies.find((c) => c.id.startsWith(id) || c.name.toLowerCase().includes(id.toLowerCase()));
     if (!company) throw notFound("Company", id);
-    return withCompanyTimestampAliases(company);
+    return company;
   }
 
   async create(data: Partial<Company>): Promise<Company> {
@@ -259,23 +209,29 @@ class CompaniesResource {
       billOnBehalfOfEnabled: data.billOnBehalfOfEnabled ?? false,
       selfServiceAllowed: data.selfServiceAllowed ?? false,
       orderApprovalRequired: data.orderApprovalRequired ?? false,
-      created: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString().split("T")[0],
     };
-    return withCompanyTimestampAliases(newCompany);
+    return newCompany;
   }
 
   async update(id: string, data: Partial<Company>): Promise<Company> {
     await randomDelay();
     const company = companies.find((c) => c.id === id);
     if (!company) throw notFound("Company", id);
-    return withCompanyTimestampAliases({ ...company, ...data, id: company.id });
+    return { ...company, ...data, id: company.id };
   }
 }
 
 class SubscriptionsResource {
   async list(
-    params?: ListParams & { companyId?: string; status?: string }
+    params?: ListParams & {
+      companyId?: string;
+      status?: string;
+      // #398: spec-backed filters previously dropped at the CLI boundary.
+      billingTerm?: string;
+      productId?: string;
+      sort?: string;
+    }
   ): Promise<PaginatedResponse<Subscription>> {
     await randomDelay();
     let filtered = subscriptions;
@@ -286,19 +242,74 @@ class SubscriptionsResource {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((sub) => sub.status.toLowerCase() === s);
     }
+    // #398: billingTerm + productId mirror the wire-side filter so PAX8_DEMO=1
+    // exercises the same code path as the real API.
+    if (params?.billingTerm) {
+      filtered = filtered.filter((sub) => sub.billingTerm === params.billingTerm);
+    }
+    if (params?.productId) {
+      filtered = filtered.filter((sub) => sub.productId === params.productId);
+    }
+    if (params?.sort) {
+      const [field, direction] = params.sort.split(",").map((s) => s.trim());
+      const dir = (direction ?? "asc").toLowerCase() === "desc" ? -1 : 1;
+      // Demo-data `Subscription` doesn't carry every field surfaced in the
+      // public Zod schema (e.g. `endDate`). Restrict mock sort to the
+      // fields the demo fixture actually populates; unknown sort fields
+      // become a no-op rather than a TypeScript crash. The real API will
+      // honor anything documented as sortable.
+      const getField = (sub: Subscription): string | number => {
+        switch (field) {
+          case "quantity":
+            return sub.quantity;
+          case "startDate":
+            return sub.startDate ?? "";
+          case "createdAt":
+            return sub.createdAt ?? "";
+          default:
+            return "";
+        }
+      };
+      filtered = [...filtered].sort((a, b) => {
+        const av = getField(a);
+        const bv = getField(b);
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
+    }
     const page = paginate(filtered, params);
-    // #385: dual-emit `createdAt` alongside legacy `createdDate`.
-    return {
-      ...page,
-      content: page.content.map(withSubscriptionTimestampAliases),
-    };
+    return page;
+  }
+
+  /**
+   * Mock counterpart to `SubscriptionsApi.streamAll` — walks pages of the
+   * in-memory fixture and yields them as `PaginatedResponse<Subscription>`
+   * envelopes. Same precedence and shape as the real API path so demo-mode
+   * exercises the same caller logic. See `api/subscriptions.ts` for the
+   * full contract.
+   */
+  async *streamAll(filter?: {
+    companyId?: string;
+    status?: string;
+    billingTerm?: string;
+    productId?: string;
+    sort?: string;
+  }): AsyncIterableIterator<PaginatedResponse<Subscription>> {
+    let page = 0;
+    let totalPages = 1;
+    while (page < totalPages) {
+      const result = await this.list({ ...filter, page, size: ALL_SUBS_PAGE_SIZE });
+      yield result;
+      totalPages = result.page.totalPages;
+      page = result.page.number + 1;
+    }
   }
 
   async get(id: string): Promise<Subscription> {
     await randomDelay();
     const sub = subscriptions.find((s) => s.id === id);
     if (!sub) throw notFound("Subscription", id);
-    return withSubscriptionTimestampAliases(sub);
+    return sub;
   }
 
   async getHistory(
@@ -310,7 +321,7 @@ class SubscriptionsResource {
     return {
       changes: [
         {
-          date: sub.createdDate,
+          date: sub.createdAt,
           field: "status",
           oldValue: "New",
           newValue: sub.status,
@@ -415,7 +426,7 @@ class ProductsResource {
       unitOfMeasurement: product.unitOfMeasurement,
       rates: [
         {
-          partnerBuyRate: p.partnerBuyPrice,
+          partnerBuyRate: p.partnerBuyRate,
           suggestedRetailPrice: p.suggestedRetailPrice,
         },
       ],
@@ -424,23 +435,29 @@ class ProductsResource {
 
   async getProvisioningDetails(
     id: string
-  ): Promise<ProvisioningDetailType> {
+  ): Promise<ProvisioningDetailType[]> {
     await randomDelay();
     const product = products.find((p) => p.id === id);
     if (!product) throw notFound("Product", id);
-    const isMicrosoft = product.vendorName === "Microsoft";
-    return {
-      productId: product.id,
-      vendorPrerequisites: isMicrosoft
-        ? "Customer must have a Microsoft tenant and a verified domain."
-        : undefined,
-      fields: isMicrosoft
-        ? [
-            { name: "domain", label: "Tenant Domain", type: "string", required: true },
-            { name: "tenantId", label: "Microsoft Tenant ID", type: "string", required: true },
-          ]
-        : [],
-    };
+    if (product.vendorName === "Microsoft") {
+      return [
+        {
+          key: "domain",
+          label: "Tenant Domain",
+          description: "Customer's verified Microsoft tenant domain (e.g. contoso.onmicrosoft.com).",
+          valueType: "Input",
+          possibleValues: null,
+        },
+        {
+          key: "tenantId",
+          label: "Microsoft Tenant ID",
+          description: "GUID identifying the customer's Microsoft Entra tenant.",
+          valueType: "Input",
+          possibleValues: null,
+        },
+      ];
+    }
+    return [];
   }
 
   async getDependencies(_id: string): Promise<ProductDependencyType[]> {
@@ -585,7 +602,15 @@ class InvoicesResource {
   }
 }
 
-const DEMO_ORDERS_FILE = nodePath.join(nodeHomedir(), ".pax8", "demo-orders.json");
+// #458 / #475: resolve lazily each call so `PAX8_CONFIG_DIR` overrides set by
+// vitest's per-test isolation (or by a developer between commands) are
+// honored. A module-level constant captured at load time would freeze the
+// path to whatever the env was at first import, which means writes leak
+// into the contributor's real `~/.pax8/` whenever a downstream test clears
+// or rebinds the variable.
+function demoOrdersFile(): string {
+  return nodePath.join(getConfigDir(), "demo-orders.json");
+}
 
 class OrdersResource {
   private createdOrders: Order[] | null = null;
@@ -593,7 +618,7 @@ class OrdersResource {
   private loadCreated(): Order[] {
     if (this.createdOrders !== null) return this.createdOrders;
     try {
-      this.createdOrders = JSON.parse(nodeFs.readFileSync(DEMO_ORDERS_FILE, "utf-8"));
+      this.createdOrders = JSON.parse(nodeFs.readFileSync(demoOrdersFile(), "utf-8"));
     } catch {
       this.createdOrders = [];
     }
@@ -602,13 +627,16 @@ class OrdersResource {
 
   private saveCreated(): void {
     try {
-      nodeFs.mkdirSync(nodePath.dirname(DEMO_ORDERS_FILE), { recursive: true });
-      nodeFs.writeFileSync(DEMO_ORDERS_FILE, JSON.stringify(this.createdOrders));
+      const fp = demoOrdersFile();
+      nodeFs.mkdirSync(nodePath.dirname(fp), { recursive: true });
+      // #469: route through safeWriteFileSync so the demo-state file is
+      // 0o600 + O_NOFOLLOW like the rest of the CLI's local writes.
+      safeWriteFileSync(fp, JSON.stringify(this.createdOrders));
     } catch { /* best effort */ }
   }
 
   async list(
-    params?: ListParams & { companyId?: string; status?: string }
+    params?: ListParams & { companyId?: string; status?: string; sort?: string }
   ): Promise<PaginatedResponse<Order>> {
     await randomDelay();
     // Test-only fault injection for the `pax8 orders list` timeout-hint UX
@@ -635,9 +663,32 @@ class OrdersResource {
       const s = params.status.toLowerCase();
       filtered = filtered.filter((o) => o.status.toLowerCase() === s);
     }
+    // #478: honor the `sort=<field>,<direction>` hint so the demo posture
+    // exercises the same code path partners take on real traffic. Default
+    // is `createdAt,desc` (newest first) — pre-#478 the CLI passed nothing
+    // and the large fixture surfaced 2013 archives in row 1.
+    if (params?.sort) {
+      const [field, direction] = params.sort.split(",").map((s) => s.trim());
+      const dir = (direction ?? "asc").toLowerCase() === "desc" ? -1 : 1;
+      const getField = (o: Order): string | number => {
+        // #385 / #476: `createdAt` is canonical; `createdDate` was the
+        // pre-removal alias. The mock honors both spellings on the
+        // input `sort` param (real Pax8 API still accepts both wire
+        // names) but the underlying Order field is just `createdAt`.
+        if (field === "createdAt" || field === "createdDate") {
+          return o.createdAt ?? "";
+        }
+        return "";
+      };
+      filtered = [...filtered].sort((a, b) => {
+        const av = getField(a);
+        const bv = getField(b);
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
+    }
     const page = paginate(filtered, params);
-    // #385: dual-emit `createdAt` alongside legacy `createdDate`.
-    return { ...page, content: page.content.map(withOrderTimestampAliases) };
+    return page;
   }
 
   async get(id: string): Promise<Order> {
@@ -645,7 +696,7 @@ class OrdersResource {
     const allOrders = [...orders, ...this.loadCreated()];
     const order = allOrders.find((o) => o.id === id);
     if (!order) throw notFound("Order", id);
-    return withOrderTimestampAliases(order);
+    return order;
   }
 
   async create(
@@ -664,7 +715,6 @@ class OrdersResource {
       companyName: company?.name ?? "Unknown",
       orderedBy: "Demo User",
       orderedByEmail: "demo@example.com",
-      createdDate: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString().split("T")[0],
       // Echo `lineItemNumber` back so callers can verify it was sent. Falls
       // back to 1-based array position when callers don't supply one — same
@@ -694,7 +744,7 @@ class OrdersResource {
       this.loadCreated().push(newOrder);
       this.saveCreated();
     }
-    return withOrderTimestampAliases(newOrder);
+    return newOrder;
   }
 }
 
@@ -868,7 +918,6 @@ class QuotesResource {
         isShadowCompany: false,
         ...(clientName ? { name: clientName } : {}),
       },
-      createdOn: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString().split("T")[0],
       status: "Draft",
       // Empty defaults for the two free-text fields the v2 read shape marks
@@ -915,10 +964,6 @@ class QuotesResource {
     if (!quote) throw notFound("Quote", id);
 
     if (typeof data.expiresOn === "string") {
-      // Set BOTH names — without this, the stored `expiresAt` alias would
-      // win in the schema preprocess (it prefers the canonical name when
-      // both are present) and the user's update would silently revert.
-      quote.expiresOn = data.expiresOn;
       quote.expiresAt = data.expiresOn;
     }
     if (typeof data.introMessage === "string") quote.introMessage = data.introMessage;
@@ -975,7 +1020,7 @@ class QuotesResource {
     const term = input.billingTerm ?? "Monthly";
     const plan = product?.pricing.find((p) => p.billingTerm === term);
     const unitPrice =
-      typeof input.price === "number" ? input.price : plan?.partnerBuyPrice;
+      typeof input.price === "number" ? input.price : plan?.partnerBuyRate;
     const newId = `li-demo-${Date.now()}`;
     // Round-trip `commitmentTermId` back onto the line as a
     // `commitmentTerm: { id, term }` object, mirroring the real v2 read
@@ -1050,15 +1095,14 @@ class QuotesResource {
 class WebhooksResource {
   async list(): Promise<Webhook[]> {
     await randomDelay();
-    // #385: dual-emit `createdAt` alongside legacy `createdDate`.
-    return webhooks.map(withWebhookTimestampAliases);
+    return webhooks;
   }
 
   async get(id: string): Promise<Webhook> {
     await randomDelay();
     const wh = webhooks.find((w) => w.id === id);
     if (!wh) throw notFound("Webhook", id);
-    return withWebhookTimestampAliases(wh);
+    return wh;
   }
 
   async create(data: {
@@ -1079,12 +1123,11 @@ class WebhooksResource {
       url: data.url,
       status: "Active",
       topics: data.webhookTopics.map((t) => t.topic),
-      createdDate: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString().split("T")[0],
       secret: `whsec_demo_${Date.now()}`,
       displayName: data.displayName,
     };
-    return withWebhookTimestampAliases(newWh);
+    return newWh;
   }
 
   async updateConfiguration(
@@ -1105,12 +1148,12 @@ class WebhooksResource {
     // real API and is not echoed back on read, so we don't include it.
     const { authorization: _ignored, ...rest } = data;
     void _ignored;
-    return withWebhookTimestampAliases({
+    return {
       ...wh,
       ...rest,
       id: wh.id,
       updatedAt: new Date().toISOString(),
-    });
+    };
   }
 
   async setStatus(id: string, active: boolean): Promise<Webhook> {
@@ -1122,7 +1165,7 @@ class WebhooksResource {
       status: active ? "Active" : "Disabled",
       updatedAt: new Date().toISOString(),
     };
-    return withWebhookTimestampAliases(updated);
+    return updated;
   }
 
   async delete(id: string): Promise<void> {

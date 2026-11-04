@@ -3,7 +3,6 @@
 
 import { Command } from "commander";
 import {
-  ALL_SUBS_PAGE_SIZE,
   ERROR_INVALID_INPUT,
   subscriptionMrr,
   type AmountCurrency,
@@ -11,6 +10,7 @@ import {
   type Subscription,
 } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { CliError, handleCommandError } from "../../lib/errors.js";
@@ -18,13 +18,23 @@ import { formatCompanyName, formatCurrency } from "../../lib/formatters.js";
 import { enrichCompanyNames, enrichProductNames } from "../../lib/enrich-subscriptions.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 
-type GroupBy = "customer" | "vendor" | "product" | "billing-term";
+type GroupBy = "client" | "vendor" | "product" | "billing-term";
 
 interface SubscriptionsOptions {
   by?: string;
   company?: string;
   vendor?: string;
 }
+
+// `client` is the canonical noun (per #317 — `pax8 clients *` is the
+// canonical command surface). We accept `customer` and `company` as
+// deprecated aliases and emit a one-line stderr warning so existing
+// scripts keep working while the docs and tab-completion converge on
+// `client`.
+const BY_ALIASES: Record<string, "client"> = {
+  customer: "client",
+  company: "client",
+};
 
 interface SubscriptionsGroupRow {
   groupName: string;
@@ -36,8 +46,14 @@ interface SubscriptionsGroupRow {
 
 function parseGroupBy(raw: string | undefined): GroupBy {
   const v = (raw ?? "vendor").toLowerCase();
+  if (BY_ALIASES[v]) {
+    process.stderr.write(
+      `  ⚠ --by ${v} is deprecated; use --by client instead.\n`,
+    );
+    return BY_ALIASES[v];
+  }
   if (
-    v === "customer" ||
+    v === "client" ||
     v === "vendor" ||
     v === "product" ||
     v === "billing-term"
@@ -46,7 +62,7 @@ function parseGroupBy(raw: string | undefined): GroupBy {
   throw new CliError(
     `Invalid --by value: "${raw}".`,
     undefined,
-    ["Use --by customer, --by vendor, --by product, or --by billing-term."],
+    ["Use --by client, --by vendor, --by product, or --by billing-term."],
     undefined,
     ERROR_INVALID_INPUT,
   );
@@ -84,7 +100,7 @@ export const reportSubscriptionsCommand = new Command("subscriptions")
   .description(
     "Audit and group your active Pax8 commitments. Useful for periodic state checks, capacity audits, and identifying orphaned subscriptions.",
   )
-  .option("--by <customer|vendor|product|billing-term>", "Group axis", "vendor")
+  .option("--by <client|vendor|product|billing-term>", "Group axis", "vendor")
   .option("--company <id|name>", "Filter by company ID or name")
   .option("--vendor <name>", "Filter by vendor (e.g. Microsoft, AvePoint)")
   .addHelpText(
@@ -92,14 +108,14 @@ export const reportSubscriptionsCommand = new Command("subscriptions")
     `
 Examples:
   pax8 report subscriptions
-  pax8 report subscriptions --by customer
+  pax8 report subscriptions --by client
   pax8 report subscriptions --by billing-term --json
   pax8 report subscriptions --company "Redwood Manufacturing"
   pax8 report subscriptions --vendor Microsoft
 
 JSON output (--json):
   {
-    "groupBy": "customer" | "vendor" | "product" | "billing-term",
+    "groupBy": "client" | "vendor" | "product" | "billing-term",
     "totalActiveSubscriptions": number,
     "totalMonthlyCost": { "amount": number, "currency": string },
     "groups": [{
@@ -125,16 +141,27 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         ? await resolveCompanyId(ctx, options.company)
         : undefined;
 
-      const [subsResult, companiesResult, productsResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId }),
+      // #613 Phase 2: walk every page so the report aggregates over the
+      // full subscription set. Pre-#628 the call was
+      // `subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, companyId })`,
+      // which silently truncated vendor / client / product group totals
+      // for partners with >1000 subs (or >1000 subs at a single filtered
+      // company). The grouped sums and the `groupName` rows would all
+      // reflect the first-page sample instead of the portfolio.
+      const [allSubs, companiesResult, productsResult] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ companyId }),
+          spinner,
+          "subscription report",
+        ),
         ctx.api.companies.list({ size: 200 }),
         ctx.api.products.list({ size: 500 }).catch(() => null),
       ]);
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) companyNames.set(c.id, c.name);
-      enrichCompanyNames(companyNames, subsResult.content);
-      await enrichProductNames(ctx, subsResult.content as Record<string, unknown>[]);
+      enrichCompanyNames(companyNames, allSubs);
+      await enrichProductNames(ctx, allSubs as Record<string, unknown>[]);
 
       const productVendor = new Map<string, string>();
       if (productsResult) {
@@ -147,7 +174,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       const vendorFilter = options.vendor?.toLowerCase();
 
-      const activeSubs = (subsResult.content as Subscription[]).filter(
+      const activeSubs = (allSubs as Subscription[]).filter(
         (s) => s.status === "Active",
       );
 
@@ -186,7 +213,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
         let key: string;
         let name: string;
-        if (groupBy === "customer") {
+        if (groupBy === "client") {
           key = sub.companyId;
           name = sub.companyName ?? sub.companyId;
         } else if (groupBy === "vendor") {

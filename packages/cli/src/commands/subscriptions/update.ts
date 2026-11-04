@@ -8,7 +8,7 @@ import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError, CliError, extractErrorDetail } from "../../lib/errors.js";
 import { confirmWithChange, replCmd } from "../../lib/confirm.js";
-import { formatQuantity, formatCurrency, formatStatus } from "../../lib/formatters.js";
+import { formatQuantity, formatCurrencyNullable, formatStatus } from "../../lib/formatters.js";
 import { invalidateCacheAfterWrite } from "../../lib/invalidate-cache.js";
 import { markWriteInFlight } from "../../lib/signals.js";
 import { ApiError, BillingTermSchema, ERROR_API_VALIDATION, ERROR_INVALID_INPUT } from "@pax8/core";
@@ -144,8 +144,8 @@ across vendors, so the CLI provides the guard.`,
       //
       // Quantity INCREASES are permitted (each gets its own vendor-specific
       // cancel window, but those windows are scattered across internal-only
-      // VPM wiki pages — Rovo confirmed this — so we don't try to mirror them
-      // here; we let increases pass through to the API.
+      // VPM wiki pages, so we don't try to mirror them here; we let
+      // increases pass through to the API.
       const commitEnd = activeCommitmentEndDate(sub);
       if (commitEnd) {
         const endLabel = formatDate(commitEnd);
@@ -250,15 +250,19 @@ across vendors, so the CLI provides the guard.`,
       process.stdout.write(`  ${chalk.dim("Status:".padEnd(18))}${formatStatus(updated.status)}\n`);
       process.stdout.write(`  ${chalk.dim("Quantity:".padEnd(18))}${formatQuantity(updated.quantity)}\n`);
       process.stdout.write(`  ${chalk.dim("Billing Term:".padEnd(18))}${updated.billingTerm}\n`);
-      process.stdout.write(`  ${chalk.dim("Price:".padEnd(18))}${formatCurrency(updated.price ?? 0)}\n`);
+      // #657 / UXR F9: relabel to disambiguate from customer-side price,
+      // and render missing data as `—` rather than `$0.00`.
+      process.stdout.write(
+        `  ${chalk.dim("Partner Price:".padEnd(18))}${formatCurrencyNullable(updated.price ?? null)}\n`,
+      );
       process.stdout.write("\n");
     } catch (error) {
       // Wrap opaque API rejections (post-confirm) with a generic
       // commitment-restriction hint. We deliberately do NOT pattern-match the
-      // flat `errors[]` string — Rovo confirmed it isn't a stable contract,
-      // and brittle string matching has bitten the CLI before. The hint
-      // simply points the user at `subscriptions show` so they can see the
-      // commitment shape and decide.
+      // flat `errors[]` string — it isn't a stable contract, and brittle
+      // string matching has bitten the CLI before. The hint simply points
+      // the user at `subscriptions show` so they can see the commitment
+      // shape and decide.
       if (error instanceof ApiError && error.statusCode >= 400 && error.statusCode < 500) {
         const detail = extractErrorDetail(error.responseBody);
         const causes: string[] = [];

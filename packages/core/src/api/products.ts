@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   ProductSchema,
   ProductPricingResponseSchema,
-  ProvisioningDetailSchema,
+  ProvisioningDetailResponseSchema,
   ProductDependencySchema,
   PaginatedResponseSchema,
   type Product,
@@ -65,9 +65,10 @@ export class ProductsApi {
   }
 
 
-  async getProvisioningDetails(id: string): Promise<ProvisioningDetail> {
-    const raw = await this.client.get<unknown>(`/products/${id}/provisioning-details`);
-    return ProvisioningDetailSchema.parse(raw);
+  async getProvisioningDetails(id: string): Promise<ProvisioningDetail[]> {
+    const raw = await this.client.get<unknown>(`/products/${id}/provision-details`);
+    const parsed = ProvisioningDetailResponseSchema.parse(raw);
+    return parsed.content;
   }
 
   async getDependencies(id: string): Promise<ProductDependency[]> {

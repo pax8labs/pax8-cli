@@ -194,6 +194,58 @@ const result = await ctx.api.companies.list({ page: apiPage, size: pageSize });
 
 Default `--page` to `"1"` and `--size` to `"25"` in the option declaration.
 
+### List-command envelope contract (#483)
+
+Every `--json` list command — `clients list`, `subscriptions list`, `invoices list`, `invoices items`, `quotes list`, `contacts list`, `webhooks list`, `webhooks logs`, `webhooks topics list`, `products search`, `products list`, `usage list`, `recommendations list`, `subscriptions renewals`, `orders list` — emits a **wrapped envelope**:
+
+```json
+{
+  "<resource>": [ ... ],
+  "page": { "number": 1, "size": 25, "totalElements": 1810, "totalPages": 73 }
+}
+```
+
+The resource key matches the resource name (`companies`, `subscriptions`, `invoices`, `items`, `quotes`, `contacts`, `webhooks`, `logs`, `topics`, `products`, `usage`, `renewals`, `orders`, `recommendations`). `page.number` is 1-based — matches what the user would pass as `--page` next. Compare `<resource>.length` to `page.totalElements` to detect pagination.
+
+When `--with-actions` is passed, an additional `nextActions` array is added, including a next-page entry on portfolios that span multiple pages. The next-page entry's `command` is exactly what the user/agent would run to fetch the next page.
+
+For endpoints that don't paginate server-side (webhooks list/logs/topics, usage, products search, subscriptions renewals), the helper `singlePageEnvelope(rowCount)` synthesizes a single-page envelope (`totalPages: 1`) so the shape stays consistent.
+
+#### Table footer
+
+Table output writes a one-line footer to **stderr** after the table:
+
+```
+  Page 1 of 73 — 1810 invoices — next: pax8 invoices list --page 2 --size 25
+```
+
+Suppress the `next:` segment on the last page. Use the helpers in `lib/output.ts`:
+
+```ts
+import {
+  buildPageEnvelope,
+  renderPaginationFooter,
+  buildNextPageAction,
+} from "../../lib/output.js";
+
+const pageEnvelope = buildPageEnvelope(result.page);
+const nextPageCommand = `pax8 <cmd> --page ${pageEnvelope.number + 1} --size ${pageEnvelope.size}`;
+
+// JSON path:
+process.stdout.write(JSON.stringify({ <resource>: result.content, page: pageEnvelope }, null, 2) + "\n");
+
+// Table footer (stderr):
+renderPaginationFooter(pageEnvelope, {
+  resourceSingular: "invoice",
+  nextPageCommand,
+  rowCount: result.content.length,
+});
+```
+
+#### Uncapped name enrichment
+
+Lists that resolve a companion ID → name (most commonly company IDs) **must** use `buildCompanyNameMap()` from `lib/enrich-subscriptions.ts`, which pages through `companies.list` until every referenced ID is resolved or a 10×1000 guardrail trips. The pre-#483 `companies.list({ size: 200 })` pattern left blank cells for partners with more than 200 customers; never re-introduce it. For callers that need the full customer set (not just specific IDs), use `fetchAllCompanies(ctx)`.
+
 ---
 
 ## 7. Confirmation prompts — for writes only
@@ -205,8 +257,20 @@ Three helpers in `packages/cli/src/lib/confirm.ts`:
 | Helper | Use for |
 |---|---|
 | `confirm(msg, {default})` | Standard `[y/n]` — most writes. |
-| `confirmWithChange(msg, currentValue, {label})` | `[y/n/c]` — lets the user edit a numeric value (e.g. quantity) inline before confirming. |
+| `confirmWithChange(msg, currentValue, {label})` | `[y/n/e]` — `e` opens an inline edit for a numeric value (e.g. quantity) before confirming. The letter is `e` (edit), not `c` — a `c` reads as "cancel" to most partners and inverts the meaning. |
 | `confirmDestructive(msg, keyword)` | User must type an exact keyword. Reserved for cancellations and deletes. |
+
+For **batched writes** where the partner has many similar candidates (e.g. `pax8 recommendations act` walking high-priority recs), use the `prompts` multi-select + single batch confirm rather than N per-item `confirm()` prompts:
+
+1. Show a `multiselect` picker (space toggles, `a` toggles all, enter submits) listing every candidate with its dollar / seat impact.
+2. After the user submits, summarize the selected subset (`About to place 5 orders for +$2,400/mo. Proceed?`) and gate the whole batch on a single `confirm` prompt.
+3. SIGINT during the picker exits 130 cleanly. Use the shared `ask()` wrapper in `packages/cli/src/lib/prompts.ts` — its `onCancel` writes a trailing newline to stderr and calls `process.exit(130)` directly. The action handler does NOT regain control after cancellation, so any cleanup that must run before exit belongs in a `SIGINT` handler registered earlier in the command (see `lib/signals.ts`), not in code that runs after `ask()` returns.
+
+The split between `lib/confirm.ts` (readline-based, used everywhere) and the vendored `prompts` package (used at `auth/login.ts` for password input + `recommendations/act.ts` for multi-select, both via `lib/prompts.ts:ask`) is intentional — `prompts` brings password masking and multi-line picker UI that readline alone doesn't. Always go through `ask()` rather than calling `prompts()` directly so the SIGINT contract stays uniform across callers.
+
+### Simulators are reads, not writes
+
+`pax8 cost sim` is the canonical "what-if" surface: same preview block as a write (current → proposed deltas in plain English with concrete numbers) but **no prompt**, **no `--yes`**, **no idempotency key**. Use the simulator pattern when the partner wants to model an order without committing to it. The naming convention is `<resource> sim` (e.g. future `subscriptions sim`); the output mirrors the write's preview format so the partner can move directly from `cost sim` to `orders create` without re-reading the numbers.
 
 Always declare the `-y, --yes` option on commands that prompt:
 
@@ -221,7 +285,7 @@ Show the user what they're about to do, in plain English with concrete numbers, 
     Microsoft 365 Business Premium × 25 seats
     $22.00/seat/mo · $550.00/mo · annual billing
 
-  Place this order? [y/n/c]
+  Place this order? [y/n/e]
 ```
 
 ---
@@ -268,6 +332,17 @@ When the user is at a terminal, we can be more helpful. When they're piping, we 
 - **Hints** like `Add --coverage to see uplift potential` go on stderr in dim text, only in TTY mode. Never in `--json`, `--csv`, or `--quiet`.
 
 If a feature would corrupt a JSON pipe, it doesn't ship without a TTY guard.
+
+### Guided walkthroughs
+
+Commands that gather information across multiple steps before producing an artifact — `pax8 report-bug` is the canonical example — use a guided walkthrough rather than a single big prompt. Pattern shape:
+
+1. Read whatever state is already on disk (e.g. `<configDir>/last-error.json` for `report-bug`).
+2. Show what will be included, redacted-as-shipped, before asking. Partner needs to see the bytes that would go to GitHub before consenting.
+3. Single `confirm()` at the end — never multi-stage approval. If the partner says no, exit cleanly without sending.
+4. Honor `--print` (or equivalent) to dump the artifact locally instead of opening a browser, for offline / air-gapped use.
+
+`report-bug`'s `redactor.ts` strips bearer tokens, client IDs, file paths inside `$HOME`, and any field matching the credential regex. The redactor is the only piece that touches partner-supplied free text — keep it under tight test coverage and never relax the patterns without a security review.
 
 ---
 
@@ -388,10 +463,12 @@ Two delivery modes, depending on the response shape:
 
 | Response shape | Where `nextActions` lives | Flag |
 |---|---|---|
-| Single object (`dashboard`, `invoices audit`) | Inline as a top-level `nextActions` field | Always emitted |
+| Single object (`dashboard`, `today`, `invoices audit`) | Inline as a top-level `nextActions` field | Always emitted |
 | List/array (`companies list`, `subscriptions list`, `subscriptions renewals`, `recommendations list`, `invoices list`, `webhooks list`, `webhooks logs`) | Inside an envelope: `{ <resourceKey>: [...], nextActions: [...] }` | Opt-in via `--with-actions` |
 
-The opt-in flag for list commands exists because the default contract is "list commands return a flat array" — agents that already parse `pax8 ... list --json` as an array of records don't break. If they want hints, they pass `--with-actions` and accept the wrapped envelope.
+Composite-summary commands (`today`) additionally carry a per-item `action: { command, args, description }` slot — same argv contract as `nextActions[]`. Agents pick an item by priority, then spawn `item.action.args.slice(1)` directly without ever re-deriving the command line.
+
+`--with-actions` is opt-in for historical reasons: it predates #483, when list commands really did return a bare array and adding `nextActions` meant restructuring the response. Since #483 every list command is already an envelope, so the flag is now purely additive — it appends `nextActions` beside the existing `<resourceKey>` and `page` keys rather than changing the shape. Agents that ignore the flag see exactly what they saw before.
 
 The resource key inside the envelope matches the resource name (`companies`, `subscriptions`, `renewals`, `recommendations`, `webhooks`, `logs`, `invoices`). Diagnostic siblings (e.g. `unmatchedProducts` on recommendations) ride alongside `nextActions`.
 
@@ -407,7 +484,44 @@ If you add a new list command and the sort order isn't obvious from the API docs
 
 ---
 
-## 13. Checklist for a new command
+## 13. Response caching
+
+### Overview
+
+Response caching is **opt-in**. By default no API responses are written to disk. To enable caching, add the following to `~/.pax8/config.yaml`:
+
+```yaml
+cache:
+  enabled: true
+  ttl_hours: 24   # optional, default is 24
+```
+
+When enabled, successful `GET` responses are stored under `~/.pax8/cache/` and served from disk until the TTL expires. Writes (`orders create`, `subscriptions cancel`, etc.) clear the entire cache via `invalidateCacheAfterWrite()`.
+
+### Env vars
+
+| Env var | Effect |
+|---|---|
+| `PAX8_NO_CACHE=1` | Disable caching for a single invocation, overriding `config.yaml` |
+
+### User-facing commands
+
+```
+pax8 cache status   # show enabled/disabled, TTL, dir, entry count and size
+pax8 cache clear    # remove all cached responses
+```
+
+`pax8 doctor` also reports cache status (enabled/disabled, dir size) as one of its checks.
+
+### For contributors
+
+- Caching is implemented in `Pax8Client` via `packages/core/src/services/cache.ts`. Passing `cacheTtlMs: 0` to the constructor disables it entirely (sets `this.cache = null`).
+- `buildContext()` in `packages/cli/src/lib/context.ts` reads `config.cache.enabled` and `config.cache.ttl_hours` and derives `cacheTtlMs`. It also checks `PAX8_NO_CACHE`.
+- Do not add per-command cache bypass flags. Use `PAX8_NO_CACHE=1` as the escape hatch.
+
+---
+
+## 14. Checklist for a new command
 
 Before opening the PR:
 

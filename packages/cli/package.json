@@ -1,6 +1,6 @@
 {
   "name": "@pax8/cli",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "description": "Pax8 open source CLI for MSPs to manage cloud marketplace operations",
   "type": "module",
   "bin": {
@@ -8,14 +8,17 @@
   },
   "main": "./dist/index.js",
   "files": [
-    "dist"
+    "dist",
+    "scripts/check-prerequisites.js"
   ],
   "publishConfig": {
     "access": "public",
     "provenance": true
   },
   "scripts": {
+    "preinstall": "node ./scripts/check-prerequisites.js",
     "build": "tsup",
+    "typecheck": "tsc --noEmit",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
@@ -25,14 +28,15 @@
     "commander": "^12.1.0",
     "ora": "^8.1.0",
     "prompts": "^2.4.2",
-    "yaml": "^2.8.4",
+    "update-notifier": "^7.3.1",
+    "yaml": "^2.9.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/node": "^25.6.2",
+    "@types/node": "^25.9.3",
     "@types/prompts": "^2.4.9",
     "tsup": "^8.0.0",
-    "tsx": "^4.19.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.5.0"
   },
   "repository": {
@@ -50,5 +54,8 @@
     "subscriptions",
     "billing"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "license": "Apache-2.0"
 }

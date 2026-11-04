@@ -1,20 +1,28 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { runCliExpectSuccess, runCliExpectFailure } from "./test-utils.js";
+import { DISPUTE_COPY } from "../commands/invoices/dispute.js";
 
 describe("pax8 invoices", () => {
   describe("invoices list", () => {
     it("lists invoices in demo mode", async () => {
       const result = await runCliExpectSuccess(["invoices", "list", "--json"]);
+      // #483: JSON envelope is { invoices, page } (was a flat array).
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("id");
-      expect(data[0]).toHaveProperty("companyName");
-      expect(data[0]).toHaveProperty("total");
-      expect(data[0]).toHaveProperty("status");
+      expect(data).toHaveProperty("invoices");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.invoices)).toBe(true);
+      expect(data.invoices.length).toBeGreaterThan(0);
+      expect(data.invoices[0]).toHaveProperty("id");
+      expect(data.invoices[0]).toHaveProperty("companyName");
+      expect(data.invoices[0]).toHaveProperty("total");
+      expect(data.invoices[0]).toHaveProperty("status");
+      expect(data.page.number).toBe(1);
     });
 
     it("filters by month", async () => {
@@ -30,8 +38,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const inv of data) {
+      expect(data.invoices.length).toBeGreaterThan(0);
+      for (const inv of data.invoices) {
         expect(inv.invoiceDate).toContain(currentMonth);
       }
     });
@@ -45,8 +53,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const inv of data) {
+      expect(data.invoices.length).toBeGreaterThan(0);
+      for (const inv of data.invoices) {
         expect(inv.companyId).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
       }
     });
@@ -72,8 +80,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const inv of data) {
+      expect(data.invoices.length).toBeGreaterThan(0);
+      for (const inv of data.invoices) {
         expect(inv.invoiceDate >= from).toBe(true);
         expect(inv.invoiceDate <= to).toBe(true);
       }
@@ -88,8 +96,8 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const inv of data) {
+      expect(data.invoices.length).toBeGreaterThan(0);
+      for (const inv of data.invoices) {
         expect(inv.status).toBe("Unpaid");
       }
     });
@@ -105,12 +113,12 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      const dueDates = data.map((i: { dueDate: string }) => i.dueDate);
+      const dueDates = data.invoices.map((i: { dueDate: string }) => i.dueDate);
       const sorted = [...dueDates].sort((a, b) => a.localeCompare(b));
       expect(dueDates).toEqual(sorted);
     });
 
-    it("--with-actions wraps in { invoices, nextActions }", async () => {
+    it("--with-actions adds nextActions to { invoices, page } envelope", async () => {
       const result = await runCliExpectSuccess([
         "invoices",
         "list",
@@ -119,6 +127,7 @@ describe("pax8 invoices", () => {
       ]);
       const data = JSON.parse(result.stdout);
       expect(data).toHaveProperty("invoices");
+      expect(data).toHaveProperty("page");
       expect(data).toHaveProperty("nextActions");
       expect(Array.isArray(data.invoices)).toBe(true);
       expect(Array.isArray(data.nextActions)).toBe(true);
@@ -157,13 +166,16 @@ describe("pax8 invoices", () => {
         "items",
         "--json",
       ]);
+      // #483: JSON envelope is { items, page }.
       const data = JSON.parse(result.stdout);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBeGreaterThan(0);
-      expect(data[0]).toHaveProperty("productName");
-      expect(data[0]).toHaveProperty("quantity");
-      expect(data[0]).toHaveProperty("price");
-      expect(data[0]).toHaveProperty("subTotal");
+      expect(data).toHaveProperty("items");
+      expect(data).toHaveProperty("page");
+      expect(Array.isArray(data.items)).toBe(true);
+      expect(data.items.length).toBeGreaterThan(0);
+      expect(data.items[0]).toHaveProperty("productName");
+      expect(data.items[0]).toHaveProperty("quantity");
+      expect(data.items[0]).toHaveProperty("price");
+      expect(data.items[0]).toHaveProperty("subTotal");
     });
 
     it("filters items by invoice ID", async () => {
@@ -175,14 +187,30 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data.length).toBeGreaterThan(0);
-      for (const item of data) {
+      expect(data.items.length).toBeGreaterThan(0);
+      for (const item of data.items) {
         expect(item.invoiceId).toBe("inv-summit-curr-001");
       }
     });
   });
 
   describe("invoices audit", () => {
+    // #613 Phase 2: at the large fixture (5000 subs across 5 pages), audit
+    // must walk every page so it reconciles invoices against the full
+    // subscription set — not just the first 1000. Pre-fix the stderr
+    // truncation warning was the only signal a user had that the audit was
+    // partial; post-fix there's no truncation and no warning.
+    it("at large scale audits against the full portfolio — no truncation warning (#613)", async () => {
+      const result = await runCliExpectSuccess(["invoices", "audit", "--json"], {
+        PAX8_DEMO_SCALE: "large",
+      });
+      const data = JSON.parse(result.stdout);
+      expect(data).toHaveProperty("itemsAudited");
+      // The truncation warning that fired pre-fix must not be in stderr —
+      // pre-fix it was the only signal users got that their audit was partial.
+      expect(result.stderr).not.toMatch(/page limit|results may be incomplete/);
+    });
+
     it("produces audit report in JSON", async () => {
       const result = await runCliExpectSuccess([
         "invoices",
@@ -190,12 +218,12 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      expect(data[0]).toHaveProperty("discrepancies");
-      expect(data[0]).toHaveProperty("totalOvercharge");
-      expect(data[0]).toHaveProperty("totalUndercharge");
-      expect(data[0]).toHaveProperty("netImpact");
-      expect(data[0]).toHaveProperty("itemsAudited");
-      expect(data[0].discrepancies.length).toBeGreaterThan(0);
+      expect(data).toHaveProperty("discrepancies");
+      expect(data).toHaveProperty("totalOvercharge");
+      expect(data).toHaveProperty("totalUndercharge");
+      expect(data).toHaveProperty("netImpact");
+      expect(data).toHaveProperty("itemsAudited");
+      expect(data.discrepancies.length).toBeGreaterThan(0);
     });
 
     it("each discrepancy has required fields", async () => {
@@ -205,7 +233,7 @@ describe("pax8 invoices", () => {
         "--json",
       ]);
       const data = JSON.parse(result.stdout);
-      const disc = data[0].discrepancies[0];
+      const disc = data.discrepancies[0];
       expect(disc).toHaveProperty("companyName");
       expect(disc).toHaveProperty("productName");
       expect(disc).toHaveProperty("invoicedQuantity");
@@ -213,6 +241,70 @@ describe("pax8 invoices", () => {
       expect(disc).toHaveProperty("delta");
       expect(disc).toHaveProperty("dollarImpact");
       expect(disc).toHaveProperty("type");
+    });
+
+    // #M-1: `--month` is interpolated into `nextActions[].command` strings on
+    // stdout. Agents (the Claude skill, scripts) extract that field and exec
+    // it, so a value like "2026-01; rm -rf ~" would turn the read into shell
+    // injection. The validator rejects at the parse boundary with
+    // ERROR_INVALID_INPUT before any side effects.
+    it("rejects --month with shell metacharacters (#M-1)", async () => {
+      const result = await runCliExpectFailure([
+        "invoices",
+        "audit",
+        "--month",
+        "2026-01; rm -rf",
+        "--json",
+      ]);
+      expect(result.stderr).toMatch(/Invalid value for --month/i);
+      // JSON error envelope carries the structured code. stderr also has a
+      // demo banner and spinner-fail glyph before the envelope; grab the
+      // first `{`-bracketed payload to parse.
+      const envelope = JSON.parse(extractJsonEnvelope(result.stderr));
+      expect(envelope.code).toBe("ERROR_INVALID_INPUT");
+    });
+
+    it("rejects --month with garbage shape (#M-1)", async () => {
+      const result = await runCliExpectFailure([
+        "invoices",
+        "audit",
+        "--month",
+        "not-a-month",
+        "--json",
+      ]);
+      expect(result.stderr).toMatch(/Invalid value for --month/i);
+    });
+
+    it("rejects --month with out-of-range month (#M-1)", async () => {
+      const result = await runCliExpectFailure([
+        "invoices",
+        "audit",
+        "--month",
+        "2026-13",
+        "--json",
+      ]);
+      expect(result.stderr).toMatch(/Invalid value for --month/i);
+    });
+  });
+
+  // #M-1: same validator runs on `pax8 invoices dispute --month` — that
+  // command also emits a `nextActions[].command` string that interpolates
+  // the user-supplied value (line ~417 in dispute.ts).
+  describe("invoices dispute --month validation (#M-1)", () => {
+    it("rejects --month with shell metacharacters", async () => {
+      const result = await runCliExpectFailure([
+        "invoices",
+        "dispute",
+        "--discrepancy",
+        "disc-deadbeef0000",
+        "--month",
+        "2026-01; echo pwned",
+        "--json",
+        "-y",
+      ]);
+      expect(result.stderr).toMatch(/Invalid value for --month/i);
+      const envelope = JSON.parse(extractJsonEnvelope(result.stderr));
+      expect(envelope.code).toBe("ERROR_INVALID_INPUT");
     });
   });
 
@@ -280,3 +372,264 @@ describe("pax8 invoices", () => {
     });
   });
 });
+
+/**
+ * Pull the JSON error envelope out of stderr. Demo mode prints a banner and
+ * spinner-fail glyph before the envelope when `--json` is set, so we can't
+ * `JSON.parse(stderr)` directly. The envelope is the JSON object that
+ * starts at the first `{` in stderr.
+ */
+
+// The audit used to start from invoices: `invoices.list({ companyId })`
+// returning nothing short-circuited to a green checkmark BEFORE the auditor
+// ran, discarding an already-fetched, already-company-filtered subscription
+// list. So a company with active subs and no invoice at all read as clean.
+// Acme Corp — the largest gap in the fixture, 25 seats across 5 products with
+// nothing invoiced — reported "No invoices found" when audited directly while
+// the unscoped audit listed all five rows.
+describe("invoices audit --company scoping (false all-clear regression)", () => {
+  async function auditJson(args: string[] = []) {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--json", ...args]);
+    return JSON.parse(r.stdout);
+  }
+
+  it("a company with active subs and no invoice reports findings, not a clean bill", async () => {
+    const scoped = await auditJson(["--company", "Acme Corp"]);
+    expect(scoped.discrepancies.length).toBeGreaterThan(0);
+    // itemsAudited: 0 alongside zero discrepancies is the signature of the
+    // bug — nothing was examined, rendered as if everything were fine.
+    expect(scoped.itemsAudited).toBeGreaterThan(0);
+    expect(scoped.netImpact).toBeLessThan(0);
+    for (const d of scoped.discrepancies) {
+      expect(d.type).toBe("missing");
+      expect(d.invoicedQuantity).toBe(0);
+      expect(d.activeQuantity).toBeGreaterThan(0);
+    }
+  });
+
+  it("scoped audit agrees row-for-row with the unscoped audit filtered to that company", async () => {
+    const key = (d: Record<string, unknown>) =>
+      [d.productName, d.type, d.delta, d.dollarImpact].join("|");
+    const scoped = await auditJson(["--company", "Acme Corp"]);
+    const unscoped = await auditJson();
+    const fromUnscoped = unscoped.discrepancies
+      .filter((d: { companyName: string }) => d.companyName === "Acme Corp")
+      .map(key)
+      .sort();
+    expect(scoped.discrepancies.map(key).sort()).toEqual(fromUnscoped);
+    expect(fromUnscoped.length).toBeGreaterThan(0);
+  });
+
+  it("no company with active subscriptions ever audits as itemsAudited: 0", async () => {
+    const subs = JSON.parse(
+      (await runCliExpectSuccess(["subscriptions", "list", "--status", "Active", "--size", "1000", "--json"]))
+        .stdout,
+    );
+    const companies: string[] = [
+      ...new Set(subs.subscriptions.map((s: { companyName: string }) => s.companyName)),
+    ] as string[];
+    expect(companies.length).toBeGreaterThan(0);
+    for (const name of companies) {
+      const report = await auditJson(["--company", name]);
+      expect(report.itemsAudited, `${name} audited nothing despite active subs`).toBeGreaterThan(0);
+    }
+  });
+});
+
+// A PAST month cannot be reconciled from this data at all: `invoices.list` is
+// month-filtered but `subscriptions.streamAll()` is not, and auditInvoices()
+// keeps only currently-active subs. A sub live in the audited month and
+// cancelled since is absent from the fetch entirely. So the audit must report
+// neither a checkmark (the original false all-clear) nor `missing` rows
+// (findings invented for subs that did not exist in that period).
+describe("invoices audit --month outside the current period", () => {
+  const PAST = "2024-01";
+  // A FUTURE month is unreconcilable for a different reason — it has not
+  // happened — but the same rule applies: do not invent findings for a period
+  // that cannot be reconciled. An earlier guard covered only the past, so
+  // `--month 2027-06` emitted 25 `missing` rows worth -$18,316 for a period
+  // that had not occurred.
+  const FUTURE = "2027-06";
+
+  it("warns on stderr that subscriptions were not reconciled", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST, "--json"]);
+    expect(r.stderr).toMatch(/No invoiced line items for/i);
+    expect(r.stderr).toMatch(/NOT reconciled/);
+    expect(r.stderr).toMatch(/not a clean bill of health/i);
+  });
+
+  it("does not render a success checkmark", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST], {
+      PAX8_OUTPUT_FORMAT: "table",
+    });
+    expect(r.stdout).not.toContain("✓");
+    expect(r.stdout).not.toMatch(/No invoices found for/i);
+  });
+
+  it("does not invent missing rows for a period it cannot reconcile", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST, "--json"]);
+    const report = JSON.parse(r.stdout);
+    expect(report.discrepancies).toEqual([]);
+    expect(report.itemsAudited).toBe(0);
+  });
+
+
+  it("does not invent missing rows for a future period", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", FUTURE, "--json"]);
+    const report = JSON.parse(r.stdout);
+    expect(report.discrepancies).toEqual([]);
+    expect(report.itemsAudited).toBe(0);
+  });
+
+  it("warns that a future period has not occurred", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", FUTURE, "--json"]);
+    expect(r.stderr).toMatch(/NOT reconciled/);
+    expect(r.stderr).toMatch(/has not occurred yet/i);
+    expect(r.stderr).toMatch(/not a clean bill of health/i);
+  });
+
+  it("renders no success checkmark for a future period", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", FUTURE], {
+      PAX8_OUTPUT_FORMAT: "table",
+    });
+    expect(r.stdout).not.toContain("✓");
+  });
+
+  // The period check governs regardless of whether the scope returned invoice
+  // items — it used to live inside the empty-items branch, so a past month
+  // WITH items skipped it and reconciled those lines against today's
+  // subscriptions. That path needs a past month carrying line items, which the
+  // demo fixture does not have (historical invoices are header-only), so what
+  // is asserted here is the other half: the warning must not fire on the
+  // current period, where "active now" IS the right population.
+  it("does not warn about period mismatch on the current period", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--json"]);
+    expect(r.stderr).not.toMatch(/not the current period/i);
+    const report = JSON.parse(r.stdout);
+    expect(report.discrepancies.length).toBeGreaterThan(0);
+  });
+
+  it("does not warn about period mismatch on an explicitly-current --month", async () => {
+    const now = new Date();
+    const current = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", current, "--json"]);
+    expect(r.stderr).not.toMatch(/not the current period/i);
+  });
+
+  it("still reconciles the CURRENT period normally", async () => {
+    // The guard must not swallow the only month that CAN be reconciled.
+    const now = new Date();
+    const current = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", current, "--json"]);
+    const report = JSON.parse(r.stdout);
+    expect(report.itemsAudited).toBeGreaterThan(0);
+    expect(report.discrepancies.length).toBeGreaterThan(0);
+  });
+
+  it("keeps stdout valid JSON in the documented envelope shape", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--month", PAST, "--json"]);
+    const report = JSON.parse(r.stdout);
+    expect(Object.keys(report).sort()).toEqual(
+      ["discrepancies", "itemsAudited", "netImpact", "totalOvercharge", "totalUndercharge"].sort(),
+    );
+  });
+});
+
+// Every discrepancy type walked end to end: unscoped audit finds it, the
+// company-scoped audit still finds it (the scoping regression), and the
+// dispute draft's remedy matches the direction of the finding (the template
+// regression). Both bugs shipped because only `overcharge` was ever exercised.
+describe("audit → drill-in → dispute, per discrepancy type", () => {
+  const TYPES = ["overcharge", "undercharge", "missing", "unexpected"] as const;
+  let disputesDir: string;
+
+  beforeEach(async () => {
+    disputesDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-audit-type-"));
+  });
+  afterEach(async () => {
+    await fs.rm(disputesDir, { recursive: true, force: true });
+  });
+
+  it.each(TYPES)("%s: audit → scoped re-find → direction-correct dispute", async (type) => {
+    const unscoped = JSON.parse(
+      (await runCliExpectSuccess(["invoices", "audit", "--json"])).stdout,
+    );
+    const row = unscoped.discrepancies.find((d: { type: string }) => d.type === type);
+    expect(row, `fixture has no ${type} row to exercise`).toBeDefined();
+
+    // Drill in: the same finding must survive company scoping.
+    const scoped = JSON.parse(
+      (await runCliExpectSuccess(["invoices", "audit", "--json", "--company", row.companyName]))
+        .stdout,
+    );
+    const same = scoped.discrepancies.find(
+      (d: { discrepancyId: string }) => d.discrepancyId === row.discrepancyId,
+    );
+    expect(same, `${type} row for ${row.companyName} vanished under --company`).toBeDefined();
+    expect(same.dollarImpact).toBe(row.dollarImpact);
+
+    // Dispute: remedy must match the direction of the money.
+    const draft = JSON.parse(
+      (
+        await runCliExpectSuccess(
+          ["invoices", "dispute", "--discrepancy", row.discrepancyId, "--yes", "--json"],
+          { PAX8_DISPUTES_DIR: disputesDir },
+        )
+      ).stdout,
+    );
+    // Direction, not literal wording — the partner-owes copy is pending
+    // sign-off (#728) and must stay free to change without touching tests.
+    const tpl: string = draft.portalTemplate;
+    const expected = row.dollarImpact > 0 ? DISPUTE_COPY.partnerIsOwed : DISPUTE_COPY.partnerOwes;
+    const wrong = row.dollarImpact > 0 ? DISPUTE_COPY.partnerOwes : DISPUTE_COPY.partnerIsOwed;
+    expect(tpl).toContain(row.dollarImpact > 0 ? "overcharge" : "undercharge");
+    expect(tpl).toContain(expected.opening);
+    expect(tpl).toContain(expected.remedy);
+    expect(tpl).not.toContain(wrong.remedy);
+  });
+});
+
+
+// promptNextSteps() returns early when stdin is not a TTY, but 18 commands
+// wrote their "Try next:" header to stderr immediately BEFORE calling it. So
+// every piped or agent invocation ended on a section header promising
+// suggestions that never arrived (#731 reported `invoices audit`; the rest
+// were the same shape). The header now lives inside the helper, after its
+// early returns, so it cannot outlive the list it introduces.
+describe("Try next: header never renders without its list (#731)", () => {
+  const ORPHAN = /Try next:\s*$/;
+
+  it.each([
+    [["invoices", "audit"]],
+    [["invoices", "audit", "--company", "Acme Corp"]],
+    [["subscriptions", "renewals"]],
+    [["invoices", "show", "inv-summit-curr-001"]],
+  ])("%s does not end on an orphan header off-TTY", async (args: string[]) => {
+    const r = await runCliExpectSuccess(args, { PAX8_OUTPUT_FORMAT: "table" });
+    expect(r.stderr).not.toMatch(ORPHAN);
+    expect(r.stdout).not.toMatch(ORPHAN);
+  });
+
+  it("the dispute menu label does not repeat the company and product", async () => {
+    // Both are already on the numbered discrepancy line directly above the
+    // menu; repeating them is what overran terminal width.
+    const r = await runCliExpectSuccess(["invoices", "audit", "--company", "Redwood Manufacturing"], {
+      PAX8_OUTPUT_FORMAT: "table",
+    });
+    const combined = r.stdout + r.stderr;
+    // The product name appears once, on the discrepancy line — not again in a
+    // line that also carries the dispute command.
+    const linesWithCommand = combined
+      .split("\n")
+      .filter((l) => l.includes("invoices dispute --discrepancy"));
+    for (const line of linesWithCommand) {
+      expect(line).not.toContain("Redwood Manufacturing");
+    }
+  });
+});
+
+function extractJsonEnvelope(stderr: string): string {
+  const start = stderr.indexOf("{");
+  if (start < 0) throw new Error("no JSON envelope in stderr: " + stderr);
+  return stderr.slice(start);
+}

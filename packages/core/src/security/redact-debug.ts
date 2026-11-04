@@ -50,8 +50,11 @@ const SECRET_KEY_RE =
 
 // Long opaque hex / base64-url blobs (>=32 chars). 32 is a deliberate
 // floor — a 16-char hex blob can be a legit short ID; a 32+ char one is
-// almost always a token / secret / hash. Word-boundary anchors keep this
-// from chopping inside a longer string.
+// almost always a token / secret / hash. The character class deliberately
+// includes lowercase-only runs (L-4): nanoid-style and slugged API keys
+// are entirely lowercase, and a mixed-case requirement would let them slip
+// through. Word-boundary anchors (`\b`) keep this from chopping inside
+// longer alphanumeric strings.
 const OPAQUE_TOKEN_RE = /\b[A-Za-z0-9_\-+/=]{32,}\b/g;
 
 /**

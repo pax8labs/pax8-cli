@@ -166,9 +166,12 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     type: "auth",
     demo: {
       // Under PAX8_DEMO=1 this should report demo mode somewhere in output.
-      expectedFragments: [/demo|not authenticated|authenticated/i],
+      // Field/label renamed in #573 from "authenticated" to
+      // "credentialsPresent" / "Credentials present" — the command only
+      // checks for files on disk, never hits /v1/token.
+      expectedFragments: [/demo|credentials present|no credentials stored/i],
     },
-    jsonContract: { objectRequiredFields: ["authenticated", "mode"] },
+    jsonContract: { objectRequiredFields: ["credentialsPresent", "mode"] },
   },
   // ── config ────────────────────────────────────────────────────────────────
   {
@@ -212,7 +215,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
   },
   // ── companies ─────────────────────────────────────────────────────────────
   {
-    command: ["companies", "list"],
+    command: ["clients", "list"],
     group: "companies",
     type: "list",
     demo: {
@@ -224,7 +227,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
   },
   {
-    command: ["companies", "show", "Acme Corp"],
+    command: ["clients", "show", "Acme Corp"],
     group: "companies",
     label: 'companies show "Acme Corp"',
     type: "show",
@@ -236,7 +239,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     },
   },
   {
-    command: ["companies", "more", "Acme Corp"],
+    command: ["clients", "more", "Acme Corp"],
     group: "companies",
     label: 'companies more "Acme Corp"',
     type: "list",
@@ -246,7 +249,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     jsonContract: { skip: { reason: "freeform multi-section render" } },
   },
   {
-    command: ["companies", "create"],
+    command: ["clients", "create"],
     group: "companies",
     type: "action",
     isWrite: true,
@@ -255,7 +258,7 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
     jsonContract: { skip: { reason: "write command" } },
   },
   {
-    command: ["companies", "update"],
+    command: ["clients", "update"],
     group: "companies",
     type: "action",
     isWrite: true,
@@ -745,9 +748,9 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
   },
   // ── report ────────────────────────────────────────────────────────────────
   // `pax8 report mrr` and `pax8 report growth` were removed in the
-  // Bret Pittenger reporting-domain review — they framed Pax8 cost as
-  // partner-side MRR / growth. The underlying analytics (`computeMrr`,
-  // `computeGrowth`) are preserved in `@pax8/core` for v0.2 reporting reuse.
+  // reporting-domain review — they framed Pax8 cost as partner-side MRR /
+  // growth. The underlying analytics (`computeMrr`, `computeGrowth`) are
+  // preserved in `@pax8/core` for v0.2 reporting reuse.
   // ── usage ─────────────────────────────────────────────────────────────────
   {
     command: ["usage", "list"],
@@ -831,20 +834,6 @@ export const COMMAND_INVENTORY: CommandSpec[] = [
       forbiddenFragments: ["undefined"],
     },
     jsonContract: { skip: { reason: "dashboard freeform" } },
-  },
-  {
-    // Deprecated alias for `dashboard`. Hidden from `pax8 --help` and prints
-    // a one-line stderr deprecation notice on every invocation. Kept here so
-    // the per-command matrix continues to exercise the alias path until v1.0.
-    command: ["status"],
-    label: "status (deprecated alias)",
-    group: "root",
-    type: "diagnostic",
-    demo: {
-      expectedFragments: [/MRR|customers|renewals/i],
-      forbiddenFragments: ["undefined"],
-    },
-    jsonContract: { skip: { reason: "alias for dashboard; same freeform output" } },
   },
   {
     command: ["doctor"],

@@ -91,6 +91,11 @@ describe("installSigintHandler — capture and invoke", () => {
       .spyOn(process.stderr, "write")
       .mockImplementation(() => true);
 
+    // Reset the singleton on each test so we can wire a fresh stub via the
+    // public Telemetry instance returned by getTelemetry().
+    const core = await import("@pax8/core");
+    core.resetTelemetry();
+
     const fresh = await import("./signals.js");
     fresh._resetWriteInFlight();
     fresh.installSigintHandler();
@@ -183,6 +188,88 @@ describe("installSigintHandler — capture and invoke", () => {
     const written = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
     expect(written).not.toContain("(cancelled)");
     expect(exitSpy).toHaveBeenCalledWith(130);
+  });
+
+  it(
+    "on SIGINT pushes a synthetic command_executed { cancelled: true, error_code: 'ERROR_CANCELLED' } event " +
+      "to telemetry BEFORE flushAndShutdown (M-2)",
+    async () => {
+      expect(sigintHandler).not.toBeNull();
+
+      // Stub the singleton's track() / flushAndShutdown() to record the
+      // order of calls. The handler must call track() FIRST so the event
+      // lands in the buffer that flushAndShutdown() then drains.
+      const core = await import("@pax8/core");
+      const tel = core.getTelemetry();
+      // Force the instance enabled for this test (default is off).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (tel as any).enabled = true;
+
+      const callOrder: string[] = [];
+      const trackSpy = vi
+        .spyOn(tel, "track")
+        .mockImplementation((_event) => {
+          callOrder.push("track");
+        });
+      const flushSpy = vi
+        .spyOn(tel, "flushAndShutdown")
+        .mockImplementation(async () => {
+          callOrder.push("flushAndShutdown");
+        });
+
+      try {
+        sigintHandler!();
+        await settle();
+
+        expect(trackSpy).toHaveBeenCalledTimes(1);
+        const trackedEvent = trackSpy.mock.calls[0][0];
+        expect(trackedEvent.event).toBe("command_executed");
+        expect(trackedEvent.success).toBe(false);
+        expect(trackedEvent.cancelled).toBe(true);
+        expect(trackedEvent.error_code).toBe("ERROR_CANCELLED");
+
+        expect(flushSpy).toHaveBeenCalled();
+
+        // Ordering: track must be called before flushAndShutdown, or the
+        // event won't make it into PostHog before exit.
+        expect(callOrder.indexOf("track")).toBeLessThan(
+          callOrder.indexOf("flushAndShutdown"),
+        );
+        expect(exitSpy).toHaveBeenCalledWith(130);
+      } finally {
+        trackSpy.mockRestore();
+        flushSpy.mockRestore();
+      }
+    },
+  );
+
+  it("does NOT push the cancelled event when telemetry is disabled", async () => {
+    expect(sigintHandler).not.toBeNull();
+
+    const core = await import("@pax8/core");
+    const tel = core.getTelemetry();
+    // Default is disabled but be explicit so the test reads clearly.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (tel as any).enabled = false;
+
+    const trackSpy = vi.spyOn(tel, "track").mockImplementation(() => {});
+    const flushSpy = vi
+      .spyOn(tel, "flushAndShutdown")
+      .mockImplementation(async () => {});
+
+    try {
+      sigintHandler!();
+      await settle();
+
+      // Opt-out users do not have a synthetic event pushed.
+      expect(trackSpy).not.toHaveBeenCalled();
+      // flushAndShutdown is still called — it's a fast no-op when disabled.
+      expect(flushSpy).toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalledWith(130);
+    } finally {
+      trackSpy.mockRestore();
+      flushSpy.mockRestore();
+    }
   });
 });
 

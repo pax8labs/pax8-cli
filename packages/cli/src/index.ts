@@ -7,6 +7,7 @@ import chalk from "chalk";
 declare const __CLI_VERSION__: string;
 import { registerAuthCommands } from "./commands/auth/index.js";
 import { registerConfigCommands } from "./commands/config/index.js";
+import { registerDemoCommands } from "./commands/demo/index.js";
 import { registerCompaniesCommands } from "./commands/companies/index.js";
 import { registerSubscriptionsCommands } from "./commands/subscriptions/index.js";
 import { registerProductsCommands } from "./commands/products/index.js";
@@ -14,21 +15,26 @@ import { registerInvoicesCommands } from "./commands/invoices/index.js";
 import { registerOrdersCommands } from "./commands/orders/index.js";
 import { registerRecommendationsCommands } from "./commands/recommendations/index.js";
 import { registerTelemetryCommands } from "./commands/telemetry/index.js";
+import { registerCacheCommands } from "./commands/cache/index.js";
 import { registerUsageCommands } from "./commands/usage/index.js";
 import { registerWebhooksCommands } from "./commands/webhooks/index.js";
 import { registerContactsCommands } from "./commands/contacts/index.js";
 import { registerQuotesCommands } from "./commands/quotes/index.js";
 import { registerCostCommands } from "./commands/cost/index.js";
 import { registerReportCommands } from "./commands/report/index.js";
-import { dashboardCommand, statusCommand } from "./commands/dashboard.js";
+import { registerSkillCommands } from "./commands/skill/index.js";
+import { dashboardCommand } from "./commands/dashboard.js";
+import { todayCommand } from "./commands/today.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { completionsCommand } from "./commands/completions.js";
 import { versionCommand } from "./commands/version.js";
+import { upgradeCommand } from "./commands/upgrade.js";
 import { initCommand } from "./commands/init.js";
+import { explainCommand } from "./commands/explain.js";
 import { reportBugCommand } from "./commands/report-bug.js";
 import { handleCommandError, flushTelemetryBeforeExit } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
-import { consumeTelemetryFields } from "./lib/telemetry-context.js";
+import { consumeTelemetryFields, setActiveCommand, consumeActiveCommand, resolveTelemetryAccount } from "./lib/telemetry-context.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
@@ -36,11 +42,13 @@ import {
   getTelemetry,
   getDefaultBaseUrl,
   getConfigDir,
+  CredentialStore,
 } from "@pax8/core";
 import { resolveDemoModeAsync } from "./lib/context.js";
 import type { Command as CommandType } from "commander";
 import { startRepl } from "./lib/repl.js";
 import { showWelcomeScreen } from "./lib/welcome.js";
+import { runUpdateCheck } from "./lib/update-check.js";
 
 /**
  * Build the full dotted command name from a Commander command,
@@ -96,6 +104,7 @@ export function createProgram(): Command {
   // Register command groups
   registerAuthCommands(program);
   registerConfigCommands(program);
+  registerDemoCommands(program);
   registerCompaniesCommands(program);
   registerSubscriptionsCommands(program);
   registerProductsCommands(program);
@@ -103,26 +112,61 @@ export function createProgram(): Command {
   registerOrdersCommands(program);
   registerRecommendationsCommands(program);
   registerTelemetryCommands(program);
+  registerCacheCommands(program);
   registerUsageCommands(program);
   registerWebhooksCommands(program);
   registerContactsCommands(program);
   registerQuotesCommands(program);
   registerCostCommands(program);
   registerReportCommands(program);
+  registerSkillCommands(program);
   program.addCommand(dashboardCommand);
-  // Deprecated alias for `dashboard`. Hidden from --help; emits a one-line
-  // stderr deprecation notice when invoked. Will be removed in v1.0. Same
-  // pattern as the `--events` → `--topics` deprecation on `webhooks create`.
-  program.addCommand(statusCommand, { hidden: true });
+  program.addCommand(todayCommand);
   program.addCommand(initCommand);
   program.addCommand(doctorCommand);
+  program.addCommand(explainCommand);
   program.addCommand(completionsCommand);
   program.addCommand(versionCommand);
+  program.addCommand(upgradeCommand);
   program.addCommand(reportBugCommand());
 
   // Easter egg commands (hidden from main help)
   program.addCommand(mooCommand, { hidden: true });
   program.addCommand(coffeeCommand, { hidden: true });
+
+  // #598: make Commander's own parse errors (unknown command, missing
+  // required argument, unknown option, invalid choice, --help, --version)
+  // throw instead of short-circuiting via Commander's internal
+  // `process.exit()`. Without this, the parseAsync.catch in main() never
+  // sees them, the program-level preAction hook never runs, and the
+  // failure-event telemetry wired up in #597 stays blind to the most
+  // common typo / friction surfaces.
+  //
+  // We also redirect Commander's own stderr error writes to a no-op so
+  // the user doesn't see "error: unknown command 'X'" from Commander
+  // followed by our own envelope rendering the same thing. `handleCommandError`
+  // is now the single owner of the user-visible error surface for these.
+  // (--help / --version still write to stdout via Commander before
+  // throwing — those are content the user asked for, not error output.)
+  //
+  // Critically, Commander 12 does NOT propagate `exitOverride` or
+  // `configureOutput` from the root program to subcommands — each Command
+  // has its own `_exitCallback` and `_outputConfiguration`. A missing
+  // required argument on `pax8 subscriptions show` would otherwise still
+  // call `process.exit()` from the subcommand directly, bypassing our
+  // handler. So we walk the entire command tree and apply both. Verified
+  // against Commander 12.1.0; cross-version assumption pinned by a
+  // subcommand parse-error test in telemetry.test.ts.
+  const applyExitOverride = (cmd: Command): void => {
+    cmd.exitOverride();
+    cmd.configureOutput({
+      outputError: () => {
+        /* suppressed — handleCommandError owns the user-facing render */
+      },
+    });
+    for (const sub of cmd.commands) applyExitOverride(sub);
+  };
+  applyExitOverride(program);
 
   // ── Telemetry: record start time before every command ───────────────
   const commandStartTimes = new WeakMap<CommandType, number>();
@@ -130,7 +174,21 @@ export function createProgram(): Command {
   // Time-based quip hook and demo mode banner
   program.hook("preAction", async (_thisCommand, actionCommand) => {
     // Record start time for duration tracking
-    commandStartTimes.set(actionCommand, Date.now());
+    const now = Date.now();
+    commandStartTimes.set(actionCommand, now);
+
+    // Stash the active command in telemetry-context so the failure path
+    // (`handleCommandError`) can emit a `command_executed { success: false }`
+    // event with the right command metadata. Without this, Commander's
+    // postAction hook only fires for the success path and failures get
+    // no telemetry attribution.
+    const subcommand = getFullCommandName(actionCommand);
+    setActiveCommand({
+      command: subcommand.split(".")[0] ?? subcommand,
+      subcommand,
+      flags: extractCommandFlags(actionCommand),
+      startTime: now,
+    });
 
     const quip = getTimeQuip();
     if (quip) {
@@ -152,10 +210,22 @@ export function createProgram(): Command {
     } catch {
       // Never block the CLI on telemetry init
     }
+
+    // Resolve the partner-account group ONCE here, before any event is
+    // captured, so every emit path (success postAction, failure handler,
+    // SIGINT) attaches it via flush(). See resolveTelemetryAccount() — this
+    // replaces the old per-emit-site setAccount calls, which the SIGINT path
+    // missed (interrupted credentialed runs shipped null groups).
+    await resolveTelemetryAccount();
   });
 
   // ── Telemetry: track successful command execution ──────────────────
   program.hook("postAction", async (_thisCommand, actionCommand) => {
+    // Action completed without throwing → clear the active-command
+    // sentinel so `handleCommandError` doesn't accidentally re-emit
+    // the same command as a failure event later in the process
+    // lifetime (notably in long-lived REPL parents).
+    consumeActiveCommand();
     try {
       const telemetry = getTelemetry();
       // Always consume so a leftover from a (rare) early-returning handler
@@ -167,6 +237,25 @@ export function createProgram(): Command {
       const subcommand = getFullCommandName(actionCommand);
       const flags = extractCommandFlags(actionCommand);
       const isDemo = await resolveDemoModeAsync();
+      // #621: emit credential-store state independently of demo_mode so we
+      // can answer "what share of partners transition from demo to real
+      // auth" and similar onboarding-funnel questions. Same primitive
+      // welcome.ts and `auth status` use; sub-millisecond stat + env-var
+      // read. Computed AFTER the action ran so a successful `auth login`
+      // emits `credentialed: true`.
+      // #621: `credentialed` reflects whether any credential source exists
+      // (hasCredentials = tolerant existence check). The partner-account
+      // *group* is set separately, once, in the preAction hook via
+      // resolveTelemetryAccount(), so it's already on the telemetry singleton
+      // by the time this event flushes — no per-emit-site setAccount here.
+      let credentialed = false;
+      try {
+        credentialed = await new CredentialStore().hasCredentials();
+      } catch {
+        // Telemetry must never crash the CLI. hasCredentials() already
+        // swallows fs errors, but defense-in-depth in case PAX8_CONFIG_DIR
+        // validation throws synchronously.
+      }
 
       // Single canonical event for every command run (#146). Handlers
       // contribute aggregate counters via setTelemetryFields(); they no
@@ -182,6 +271,7 @@ export function createProgram(): Command {
         node_version: process.version,
         os: process.platform,
         demo_mode: isDemo,
+        credentialed,
         ...handlerProps,
       });
 
@@ -229,20 +319,34 @@ async function main(): Promise<void> {
   }
 
   if (process.argv.length <= 2) {
-    if (process.stdin.isTTY) {
+    // PAX8_REPL_FORCE is an internal test seam: the REPL integration test
+    // (repl.integration.test.ts) needs to drive the prompt over a stdin pipe,
+    // which means stdin is not a TTY. Without this override there is no way
+    // to exercise REPL child-spawn from a subprocess test, and the
+    // MODULE_NOT_FOUND class of bug (#226 / #227) would ship invisibly again.
+    if (process.stdin.isTTY || process.env.PAX8_REPL_FORCE === "1") {
       await startRepl(createProgram);
     } else {
       await showWelcomeScreen();
     }
   } else {
+    // #183: nudge once per release when a newer pax8-cli is available.
+    // Fires before parse so the registry refresh (detached child process
+    // inside `update-notifier`) has the full command duration to settle
+    // and the synchronous cache read happens before any --json output
+    // could open the stdout pipe. The wrapper handles all suppression
+    // signals (PAX8_NO_UPDATE_CHECK, PAX8_DEMO, --json, --quiet, CI,
+    // NO_UPDATE_NOTIFIER) and renders only to stderr.
+    try {
+      runUpdateCheck();
+    } catch {
+      // Never let the courtesy nudge break command dispatch.
+    }
     const program = createProgram();
     await program.parseAsync(process.argv).catch(async (err) => {
-      // The canonical command_executed failure event is emitted by the
-      // postAction hook above; handleCommandError + the uncaughtException /
-      // unhandledRejection handlers flush via flushTelemetryBeforeExit().
-      // The catch here just ensures the buffer is drained on the parseAsync
-      // boundary before propagating to handleCommandError.
-      await flushTelemetryBeforeExit();
+      // `handleCommandError` itself emits the `command_executed`
+      // failure event (using the active command stashed by preAction
+      // in telemetry-context) and flushes before exit.
       await handleCommandError(err);
     });
   }

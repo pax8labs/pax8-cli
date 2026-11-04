@@ -77,15 +77,14 @@ function round2(n: number): number {
  */
 function normalizeTerm(term: string): string {
   const lower = term.toLowerCase();
+  if (lower.includes("month")) return "Monthly";
   if (lower.includes("annual") || lower.includes("yearly") || lower.includes("year")) {
-    if (lower === "monthly") return "Monthly";
     if (lower.includes("year") && !lower.includes("annual") && !lower.includes("yearly")) {
-      // Preserve commitment-style labels like "1-Year" verbatim.
+      // Preserve commitment-style labels like "1-Year" / "2-Year" verbatim.
       return term;
     }
     return "Annual";
   }
-  if (lower.includes("month")) return "Monthly";
   return term;
 }
 
@@ -116,7 +115,13 @@ function pickRate(plan: ProductPricingPlan, quantity: number): { unitPrice: numb
     }
   }
   return {
-    unitPrice: chosen.suggestedRetailPrice,
+    // partnerBuyRate, not suggestedRetailPrice. `cost sim` reports the
+    // partner's Pax8 cost delta, and `current` is derived from the
+    // subscription's own price (the buy rate on the wire) — pricing
+    // `proposed` at retail put the two sides of the comparison on
+    // different bases and overstated every simulated increase. Falls back
+    // to retail only when a rate row omits the buy rate.
+    unitPrice: chosen.partnerBuyRate ?? chosen.suggestedRetailPrice,
     tierStart: chosen.startQuantityRange ?? 0,
   };
 }

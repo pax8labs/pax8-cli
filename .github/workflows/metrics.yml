@@ -1,0 +1,125 @@
+name: Metrics
+
+# Daily push of npm download counts and GitHub repo stats to PostHog.
+# Runs at 12:00 UTC — npm's daily counts reset around 06:30 UTC, so noon
+# gives them time to settle and matches the pattern the CLI's own
+# telemetry uses (same PostHog project). Also triggerable manually via
+# `gh workflow run Metrics` for smoke testing and backfills.
+#
+# PostHog's guidance: project API keys are safe to expose in the repo
+# (they can only write events, not read data). The key hardcoded below
+# is the same one baked into `packages/core/src/telemetry/telemetry.ts`.
+# See https://posthog.com/docs/product-analytics/troubleshooting#is-it-ok-for-my-api-key-to-be-exposed-and-public.
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  POSTHOG_KEY: "phc_XKIa0EPGDACY1p4Cczk6IWXFa3n9E7htSxcVIg70rRp"
+  POSTHOG_HOST: "https://us.i.posthog.com"
+
+jobs:
+  push-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push npm download counts for @pax8/cli + @pax8/core
+        # npm's `last-day` endpoint returns yesterday's UTC-day count.
+        # Timestamp the event at yesterday 23:59:59Z so PostHog charts
+        # it on the day the downloads actually happened, not the day
+        # this workflow runs. Loop each public package; failures are
+        # logged but don't fail the job — this is metrics, not release.
+        run: |
+          set -uo pipefail
+          YESTERDAY=$(date -u -d 'yesterday' +%Y-%m-%d)
+          TIMESTAMP="${YESTERDAY}T23:59:59Z"
+          for pkg in "@pax8/cli" "@pax8/core"; do
+            echo "→ Fetching downloads for ${pkg}"
+            resp=$(curl -sS --fail-with-body \
+              "https://api.npmjs.org/downloads/point/last-day/${pkg}" \
+              || { echo "  npm fetch failed for ${pkg}"; continue; })
+            downloads=$(echo "$resp" | jq -r '.downloads // "null"')
+            if [ "$downloads" = "null" ]; then
+              echo "  npm response missing downloads field: $resp"
+              continue
+            fi
+            echo "  downloads (last-day): $downloads"
+            body=$(jq -n \
+              --arg api_key "$POSTHOG_KEY" \
+              --arg event "npm_downloads" \
+              --arg distinct_id "pax8-cli-metrics" \
+              --arg pkg "$pkg" \
+              --arg period "last-day" \
+              --arg date "$YESTERDAY" \
+              --arg timestamp "$TIMESTAMP" \
+              --argjson downloads "$downloads" \
+              '{
+                api_key: $api_key,
+                event: $event,
+                distinct_id: $distinct_id,
+                timestamp: $timestamp,
+                properties: {
+                  package: $pkg,
+                  downloads: $downloads,
+                  period: $period,
+                  date: $date
+                }
+              }')
+            curl -sS --fail-with-body -X POST "${POSTHOG_HOST}/capture/" \
+              -H "Content-Type: application/json" \
+              -d "$body" \
+              || echo "  posthog capture failed for ${pkg}"
+          done
+
+      - name: Push GitHub repo stats (forks/stars/watchers/issues)
+        # Uses the built-in GITHUB_TOKEN — no extra secrets needed. The
+        # /repos/{owner}/{repo} endpoint returns everything in one call.
+        # subscribers_count is GitHub's "watchers" (people who watch for
+        # notifications); watchers_count is a legacy alias for stars,
+        # which is why we surface subscribers_count as `watchers`.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          resp=$(curl -sS --fail-with-body \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}" \
+            || { echo "→ GitHub fetch failed"; exit 0; })
+          forks=$(echo "$resp"     | jq -r '.forks_count       // 0')
+          stars=$(echo "$resp"     | jq -r '.stargazers_count  // 0')
+          watchers=$(echo "$resp"  | jq -r '.subscribers_count // 0')
+          issues=$(echo "$resp"    | jq -r '.open_issues_count // 0')
+          echo "→ repo=${GITHUB_REPOSITORY} forks=$forks stars=$stars watchers=$watchers open_issues=$issues"
+          body=$(jq -n \
+            --arg api_key "$POSTHOG_KEY" \
+            --arg event "github_stats" \
+            --arg distinct_id "pax8-cli-metrics" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg timestamp "$NOW" \
+            --argjson forks "$forks" \
+            --argjson stars "$stars" \
+            --argjson watchers "$watchers" \
+            --argjson issues "$issues" \
+            '{
+              api_key: $api_key,
+              event: $event,
+              distinct_id: $distinct_id,
+              timestamp: $timestamp,
+              properties: {
+                repo: $repo,
+                forks: $forks,
+                stars: $stars,
+                watchers: $watchers,
+                open_issues: $issues
+              }
+            }')
+          curl -sS --fail-with-body -X POST "${POSTHOG_HOST}/capture/" \
+            -H "Content-Type: application/json" \
+            -d "$body" \
+            || echo "→ posthog capture failed for github_stats"

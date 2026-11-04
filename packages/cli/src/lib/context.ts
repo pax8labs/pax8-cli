@@ -16,27 +16,13 @@ import {
   TokenManager,
   CredentialStore,
   loadConfig,
+  ConfigValidationError,
   ERROR_AUTH_MISSING,
 } from "@pax8/core";
 import type { Config } from "@pax8/core";
-import { spawn } from "node:child_process";
 import { CliError } from "./errors.js";
+import chalk from "chalk";
 import { replCmd } from "./confirm.js";
-
-/**
- * Emit a stderr warning when a paginated result hits the page size limit,
- * indicating that results may be incomplete.
- */
-export function warnIfTruncated(
-  result: { content: unknown[] },
-  pageSize: number,
-): void {
-  if (result.content.length >= pageSize) {
-    process.stderr.write(
-      `\n  ⚠ Returned ${result.content.length} subscriptions (page limit) — results may be incomplete. Use --size to increase.\n`,
-    );
-  }
-}
 
 export interface ApiClient {
   companies: CompaniesApi;
@@ -150,16 +136,75 @@ export function resolveDemoMode(config: { demo?: boolean }): boolean {
   return config.demo === true;
 }
 
-export async function resolveDemoModeAsync(): Promise<boolean> {
+/**
+ * Warn once per process that the config on disk is being ignored (#729).
+ *
+ * Both config reads below fall back to defaults when the file fails
+ * validation, which is the right resilience posture — a malformed config
+ * shouldn't make every command unrunnable. But falling back *silently*
+ * is what let a version-less `config.yaml` sit there while `demo: true`
+ * inside it did nothing and the user was told "Not authenticated".
+ *
+ * stderr, so `--json` pipelines are unaffected. Deduped because both
+ * `resolveDemoModeWithSourceAsync` and `buildContext` can hit it in one run.
+ */
+let warnedInvalidConfig = false;
+function warnInvalidConfig(err: unknown): void {
+  if (!(err instanceof ConfigValidationError) || warnedInvalidConfig) return;
+  warnedInvalidConfig = true;
+  process.stderr.write(
+    chalk.yellow(`  ⚠ Ignoring invalid config at ${err.filePath}\n`) +
+      chalk.dim(`    ${err.issues.join("; ")}\n`) +
+      chalk.dim(`    Using defaults. Fix it with: ${replCmd("pax8 config init")}\n`),
+  );
+}
+
+/**
+ * Like `resolveDemoModeAsync` but also returns *where* demo mode came from
+ * (`env` | `config` | `null`). Callers that need to tell users how to turn
+ * demo off — `auth login`, `auth status`, `doctor` — use this so the hint
+ * names the right thing (`unset PAX8_DEMO` vs `pax8 demo off`).
+ *
+ * Same precedence as `resolveDemoMode`: env literal wins (`1`/`true`/`0`/
+ * `false`), then `config.demo`. Returns `source: null` when demo is off.
+ *
+ * The canonical single source of the env-then-config ladder for async call
+ * sites. `resolveDemoModeAsync` delegates here so the precedence logic
+ * lives in exactly one place — drift across inline copies of this ladder
+ * was the original bug the comment on `resolveDemoMode` warns about (#614).
+ */
+export type DemoSource = "env" | "config" | null;
+export async function resolveDemoModeWithSourceAsync(): Promise<{
+  isDemo: boolean;
+  source: DemoSource;
+}> {
   const envDemo = process.env.PAX8_DEMO;
-  if (envDemo === "1" || envDemo === "true") return true;
-  if (envDemo === "0" || envDemo === "false") return false;
+  if (envDemo === "1" || envDemo === "true") return { isDemo: true, source: "env" };
+  if (envDemo === "0" || envDemo === "false") return { isDemo: false, source: null };
   try {
-    const config = await loadConfig();
-    return config.demo === true;
-  } catch {
-    return false;
+    const cfg = await loadConfig();
+    if (cfg.demo === true) return { isDemo: true, source: "config" };
+  } catch (err) {
+    // Config unreadable — fall through; treat as demo off, but say so when
+    // the file exists and is merely invalid (#729).
+    warnInvalidConfig(err);
   }
+  return { isDemo: false, source: null };
+}
+
+export async function resolveDemoModeAsync(): Promise<boolean> {
+  return (await resolveDemoModeWithSourceAsync()).isDemo;
+}
+
+/**
+ * The shell-friendly instruction for turning off demo mode, given its
+ * source. Surfaced verbatim in user-facing copy from `auth login`,
+ * `auth status`, and `doctor`. Centralized so the wording stays consistent.
+ */
+export function disableDemoHint(source: Exclude<DemoSource, null>): string {
+  return source === "env"
+    ? "unset PAX8_DEMO (or run with `PAX8_DEMO=0`)"
+    : `run \`${replCmd("pax8 demo off")}\``;
 }
 
 export async function buildContext(
@@ -167,16 +212,19 @@ export async function buildContext(
 ): Promise<CommandContext> {
   const verbose = options.verbose ?? false;
 
-  const config = await loadConfig(options.config).catch(() => ({
-    version: "1.0" as const,
-    defaults: {
-      output_format: "table" as const,
-      page_size: 50,
-      confirm_destructive: true,
-    },
-    cache: { enabled: true, ttl_hours: 24 },
-    telemetry: { enabled: false },
-  }));
+  const config = await loadConfig(options.config).catch((err: unknown) => {
+    warnInvalidConfig(err);
+    return {
+      version: "1.0" as const,
+      defaults: {
+        output_format: "table" as const,
+        page_size: 50,
+        confirm_destructive: true,
+      },
+      cache: { enabled: false, ttl_hours: 24 },
+      telemetry: { enabled: false },
+    };
+  });
 
   // Extract `demo` rather than passing the whole Config union — the union
   // branch for an empty config object doesn't include `demo`, so passing
@@ -214,9 +262,22 @@ export async function buildContext(
       clientSecret: credentials.clientSecret,
     });
 
+    // Plumb the documented `cache.enabled` / `cache.ttl_hours` config fields
+    // through to `Pax8Client` so they actually take effect (#253). Previously
+    // these were defined in the schema but never read here, so a user setting
+    // `cache.enabled: false` in `~/.pax8/config.yaml` still got caching with
+    // the constructor's hard-coded 1h default. `cacheTtlMs: 0` disables the
+    // FileCache entirely inside `Pax8Client`.
+    const envNoCache = process.env.PAX8_NO_CACHE;
+    const noCache = envNoCache === "1" || envNoCache === "true";
+    const cacheEnabled = !noCache && (config.cache?.enabled ?? false);
+    const cacheTtlHours = config.cache?.ttl_hours ?? 24;
+    const cacheTtlMs = cacheEnabled ? cacheTtlHours * 3_600_000 : 0;
+
     const client = new Pax8Client({
       tokenManager,
       debug: verbose,
+      cacheTtlMs,
       // Per-API base URL overrides (#321). The Webhooks API lives at
       // `https://api.pax8.com/api/v2/webhooks/...` per the public webhooks
       // OpenAPI spec — a different *prefix* than the project-wide `/v1`
@@ -241,36 +302,5 @@ export async function buildContext(
     };
   }
 
-  // Spawn a detached background process to warm the cache.
-  // Skip if we're already a warmer child (prevents infinite recursion).
-  if (!isDemo && !process.env.PAX8_CACHE_WARMING) {
-    spawnCacheWarmer();
-  }
-
   return { api, outputFormat, config, isDemo, verbose };
-}
-
-/**
- * Spawn a detached child process that runs common pax8 queries to warm the file cache.
- * The child is fully detached (stdio ignored, unref'd) so the parent exits immediately.
- */
-function spawnCacheWarmer(): void {
-  const env = { ...process.env, PAX8_CACHE_WARMING: "1" };
-
-  spawnCacheWarm(["companies", "list", "--json", "--size", "200", "--quiet"], env, "companies");
-  spawnCacheWarm(["subscriptions", "list", "--json", "--size", "1000", "--quiet"], env, "subscriptions");
-  spawnCacheWarm(["products", "list", "--json", "--size", "500", "--quiet"], env, "products");
-}
-
-/**
- * Spawn a single detached `pax8 ...` cache-warm child. Errors are best-effort
- * and only surfaced under `PAX8_DEBUG`. Caller is responsible for passing the
- * env that already has `PAX8_CACHE_WARMING=1` set so the child doesn't recurse.
- */
-function spawnCacheWarm(args: string[], env: NodeJS.ProcessEnv, label: string): void {
-  const child = spawn("pax8", args, { detached: true, stdio: "ignore", env });
-  child.on("error", (err) => {
-    if (process.env.PAX8_DEBUG) process.stderr.write(`[debug] cache warmer (${label}) failed: ${err}\n`);
-  });
-  child.unref();
 }

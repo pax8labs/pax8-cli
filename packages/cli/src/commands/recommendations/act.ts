@@ -3,7 +3,8 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { ALL_SUBS_PAGE_SIZE, getRecommendations, type Recommendation, ERROR_INVALID_INPUT } from "@pax8/core";
+import { getRecommendations, type Recommendation, ERROR_INVALID_INPUT } from "@pax8/core";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { ask } from "../../lib/prompts.js";
 import { buildContext, type CommandContext } from "../../lib/context.js";
 import { createSpinner } from "../../lib/spinner.js";
@@ -33,24 +34,39 @@ interface PlacementResult {
 async function placeOrder(rec: Recommendation, ctx: CommandContext): Promise<PlacementResult> {
   const product = rec.suggestedProducts?.[0] ?? "product";
 
-  if (!rec.orderCommand) {
+  if (!rec.orderCommand && !rec.orderArgs) {
     process.stderr.write(chalk.dim(`  No orderable product available for ${rec.companyName} — skipping.\n`));
     return { ordered: false, mrrCaptured: 0 };
   }
 
-  // Parse the existing orderCommand for company/product/quantity hints.
-  const productMatch = rec.orderCommand.match(/--product\s+"([^"]+)"|--product\s+(\S+)/);
-  const qtyMatch = rec.orderCommand.match(/--quantity\s+(\S+)/);
-  if (!productMatch) {
+  // #509: extract product / quantity from `orderArgs` (#498's structured
+  // form) when present. Each argv element is a fixed slot — no string
+  // tokenization, no regex parse, no need to survive shell metacharacters
+  // in companyName. Fall back to the orderCommand regex parse for older
+  // Recommendation rows from a pre-#498 build.
+  let matchedProduct: string | undefined;
+  let quantityStr: string | undefined;
+  if (rec.orderArgs) {
+    const productIdx = rec.orderArgs.indexOf("--product");
+    const quantityIdx = rec.orderArgs.indexOf("--quantity");
+    matchedProduct = productIdx >= 0 ? rec.orderArgs[productIdx + 1] : undefined;
+    quantityStr = quantityIdx >= 0 ? rec.orderArgs[quantityIdx + 1] : undefined;
+  } else if (rec.orderCommand) {
+    const productMatch = rec.orderCommand.match(/--product\s+"([^"]+)"|--product\s+(\S+)/);
+    const qtyMatch = rec.orderCommand.match(/--quantity\s+(\S+)/);
+    matchedProduct = productMatch?.[1] ?? productMatch?.[2];
+    quantityStr = qtyMatch?.[1];
+  }
+
+  if (!matchedProduct) {
     process.stderr.write(chalk.red(`  Could not parse order for ${rec.companyName}.\n`));
     return { ordered: false, mrrCaptured: 0 };
   }
 
-  const quantity = parseInt(qtyMatch?.[1] ?? String(rec.targetSeats ?? 1), 10);
+  const quantity = parseInt(quantityStr ?? String(rec.targetSeats ?? 1), 10);
 
   // Resolve product: try the matched value as a product ID first, fall back
   // to a name search.
-  const matchedProduct = productMatch[1] ?? productMatch[2];
   let productId = matchedProduct;
   if (matchedProduct && !/^[0-9a-f-]{8,}$/i.test(matchedProduct) && !matchedProduct.startsWith("prod-")) {
     try {
@@ -188,8 +204,8 @@ Notes — what this command acts on:
   (unit price × seat count) and is NOT equivalent to Pax8's PMRR
   (Potential MRR) metric. Treat order-placement decisions accordingly.
 
-  This local engine will be retired or remapped when OE's first-party
-  /opportunities API ships (ARC-785, #375).
+  This local engine will be retired or remapped when Pax8's first-party
+  Opportunity Explorer API ships (#375).
 
 What this command does:
   Bulk action submits REAL orders to Pax8 via the orders API — one POST
@@ -224,8 +240,19 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
     const spinner = createSpinner("Analyzing portfolios...").start();
 
     try {
-      const [subsResult, companiesResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE, status: "Active" }),
+      // #613 Phase 2: `recommendations act` runs the same engine
+      // (`getRecommendations`) as `recommendations list`. Both must
+      // analyze the full active portfolio or partners see opportunities
+      // in `list` that `act` silently won't offer to write — the
+      // divergence claude-review on #629 caught. Keep the two paths
+      // consistent by using the same `streamAll({status:"Active"})`
+      // shape `list` now does.
+      const [subs, companiesResult] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll({ status: "Active" }),
+          spinner,
+          "recommendations",
+        ),
         ctx.api.companies.list({ size: 200 }),
       ]);
 
@@ -234,7 +261,6 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         companyNames.set(c.id, c.name);
       }
 
-      const subs = subsResult.content;
       await enrichProductNames(ctx, subs);
       enrichCompanyNames(companyNames, subs);
 

@@ -3,7 +3,6 @@
 
 import { Command } from "commander";
 import {
-  ALL_SUBS_PAGE_SIZE,
   ERROR_INVALID_INPUT,
   subscriptionMrr,
   type AmountCurrency,
@@ -13,17 +12,28 @@ import {
 import { buildContext } from "../../lib/context.js";
 import { output, type Column } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
+import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
 import { CliError, handleCommandError } from "../../lib/errors.js";
 import { formatCompanyName, formatCurrency } from "../../lib/formatters.js";
 import { enrichCompanyNames, enrichProductNames } from "../../lib/enrich-subscriptions.js";
 
-type GroupBy = "customer" | "vendor" | "product";
+type GroupBy = "client" | "vendor" | "product";
 
 interface ConcentrationOptions {
   by?: string;
   top?: string;
   threshold?: string;
 }
+
+// `client` is the canonical noun (per #317 — `pax8 clients *` is the
+// canonical command surface). We accept `customer` and `company` as
+// deprecated aliases and emit a one-line stderr warning so existing
+// scripts keep working while the docs and tab-completion converge on
+// `client`.
+const BY_ALIASES: Record<string, "client"> = {
+  customer: "client",
+  company: "client",
+};
 
 interface ConcentrationRow {
   rank: number;
@@ -36,21 +46,30 @@ interface ConcentrationRow {
 }
 
 function parseGroupBy(raw: string | undefined): GroupBy {
+  // Commander enforces --by required at parse time via .requiredOption(),
+  // so a missing value here would be a programming error rather than a
+  // user error. We still guard defensively in case the field is reused.
   if (!raw) {
     throw new CliError(
       "--by is required for `pax8 report concentration`.",
       undefined,
-      ["Use --by customer, --by vendor, or --by product."],
+      ["Use --by client, --by vendor, or --by product."],
       undefined,
       ERROR_INVALID_INPUT,
     );
   }
   const v = raw.toLowerCase();
-  if (v === "customer" || v === "vendor" || v === "product") return v;
+  if (BY_ALIASES[v]) {
+    process.stderr.write(
+      `  ⚠ --by ${v} is deprecated; use --by client instead.\n`,
+    );
+    return BY_ALIASES[v];
+  }
+  if (v === "client" || v === "vendor" || v === "product") return v;
   throw new CliError(
     `Invalid --by value: "${raw}".`,
     undefined,
-    ["Use --by customer, --by vendor, or --by product."],
+    ["Use --by client, --by vendor, or --by product."],
     undefined,
     ERROR_INVALID_INPUT,
   );
@@ -119,7 +138,10 @@ export const reportConcentrationCommand = new Command("concentration")
   .description(
     "Pax8 spend concentration analysis. Shows where your Pax8 cost is concentrated across customers, vendors, or products — useful for risk modeling and capacity planning.",
   )
-  .option("--by <customer|vendor|product>", "Concentration axis (required)")
+  // .requiredOption() lets Commander reject `pax8 report concentration`
+  // with no `--by` at parse time — no spinner, no fetch, no fallback to
+  // the deferred CliError throw in parseGroupBy() (#517).
+  .requiredOption("--by <client|vendor|product>", "Concentration axis (required)")
   .option("--top <n>", "Limit to the top N entities", "10")
   .option(
     "--threshold <pct>",
@@ -129,14 +151,14 @@ export const reportConcentrationCommand = new Command("concentration")
     "after",
     `
 Examples:
-  pax8 report concentration --by customer
+  pax8 report concentration --by client
   pax8 report concentration --by vendor --top 5
   pax8 report concentration --by product --threshold 5
-  pax8 report concentration --by customer --json
+  pax8 report concentration --by client --json
 
 JSON output (--json):
   {
-    "groupBy": "customer" | "vendor" | "product",
+    "groupBy": "client" | "vendor" | "product",
     "totalMonthlyCost": { "amount": number, "currency": string },
     "concentration": [{
       "rank": number,
@@ -171,16 +193,22 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
         );
       }
 
-      const [subsResult, companiesResult, productsResult] = await Promise.all([
-        ctx.api.subscriptions.list({ size: ALL_SUBS_PAGE_SIZE }),
+      // #613 Phase 2: walk every page so concentration math sees the
+      // full portfolio. Pre-#628 the call truncated at 1000 subs.
+      const [allSubs, companiesResult, productsResult] = await Promise.all([
+        collectSubsWithSpinner(
+          ctx.api.subscriptions.streamAll(),
+          spinner,
+          "concentration report",
+        ),
         ctx.api.companies.list({ size: 200 }),
         ctx.api.products.list({ size: 500 }).catch(() => null),
       ]);
 
       const companyNames = new Map<string, string>();
       for (const c of companiesResult.content) companyNames.set(c.id, c.name);
-      enrichCompanyNames(companyNames, subsResult.content);
-      await enrichProductNames(ctx, subsResult.content as Record<string, unknown>[]);
+      enrichCompanyNames(companyNames, allSubs);
+      await enrichProductNames(ctx, allSubs as Record<string, unknown>[]);
 
       const productVendor = new Map<string, string>();
       if (productsResult) {
@@ -191,7 +219,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
       spinner.stop();
 
-      const activeSubs = subsResult.content.filter(
+      const activeSubs = allSubs.filter(
         (s: Subscription) => s.status === "Active",
       );
       const portfolioCurrency =
@@ -219,7 +247,7 @@ Note: Numbers shown are Pax8 cost — what Pax8 charges you. For partner revenue
 
         let id: string;
         let name: string;
-        if (groupBy === "customer") {
+        if (groupBy === "client") {
           id = sub.companyId;
           name = sub.companyName ?? sub.companyId;
         } else if (groupBy === "vendor") {
