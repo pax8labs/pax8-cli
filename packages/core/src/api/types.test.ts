@@ -1485,6 +1485,8 @@ const FORBIDDEN_FIELDS = [
  * through common wrappers (optional, nullable, default, array, union,
  * discriminated union, intersection). Yields `{ path, keys }` so violations
  * can name the exact location (e.g. `SubscriptionSchema.commitment`).
+ * Lazy schemas, record values, tuple items, maps, and sets are not traversed;
+ * extend this walker and its regression tests before exporting those wrappers.
  */
 function* walkObjectShapes(
   schema: unknown,

@@ -819,6 +819,7 @@ class UsageResource {
     params?: ListParams & { resourceGroup?: string }
   ): Promise<PaginatedResponse<UsageSummary>> {
     await randomDelay();
+    // filter creates a private copy so sorting cannot reorder the shared fixture.
     let filtered = usageSummaries.filter(
       (u) => u.subscriptionId === subscriptionId,
     );

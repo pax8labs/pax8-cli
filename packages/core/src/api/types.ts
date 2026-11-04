@@ -197,7 +197,7 @@ export type Company = z.infer<typeof CompanySchema>;
 export const CreateCompanyContactInputSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  email: z.string().email(),
+  email: z.email(),
   phone: z.string().min(1),
   types: z.array(ContactTypeSchema).min(1),
 });
@@ -258,7 +258,7 @@ export const ContactSchema = z.object({
   id: z.string(),
   firstName: z.string(),
   lastName: z.string(),
-  email: z.string().email(),
+  email: z.email(),
   phone: z.string().optional(),
   // `companyId` is set client-side from the URL path (the spec's nested
   // resource carries it there, not in the body) but every consumer in the
@@ -280,7 +280,7 @@ export type Contact = z.infer<typeof ContactSchema>;
 export const CreateContactInputSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  email: z.string().email(),
+  email: z.email(),
   phone: z.string().min(1),
   types: z.array(ContactTypeSchema).min(1),
 });
@@ -299,7 +299,7 @@ export type CreateContactInput = z.infer<typeof CreateContactInputSchema>;
 export const UpdateContactInputSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  email: z.string().email(),
+  email: z.email(),
   phone: z.string().min(1),
   types: z.array(ContactTypeSchema).optional(),
 });
@@ -1004,7 +1004,7 @@ export const WebhookSchema = z.preprocess(
   },
   z.object({
   id: z.string(),
-  url: z.string().url(),
+  url: z.url(),
   topics: z.array(z.string()),
   status: WebhookStatusSchema,
   /**
@@ -1070,7 +1070,7 @@ export type AddWebhookTopic = z.infer<typeof AddWebhookTopicSchema>;
  */
 export const CreateWebhookInputSchema = z.object({
   displayName: z.string().min(1),
-  url: z.string().url(),
+  url: z.url(),
   webhookTopics: z.array(AddWebhookTopicSchema).min(1),
 });
 export type CreateWebhookInput = z.infer<typeof CreateWebhookInputSchema>;
@@ -1083,9 +1083,9 @@ export type CreateWebhookInput = z.infer<typeof CreateWebhookInputSchema>;
  */
 export const UpdateWebhookConfigurationInputSchema = z.object({
   displayName: z.string().min(1).optional(),
-  url: z.string().url().optional(),
+  url: z.url().optional(),
   authorization: z.string().optional(),
-  contactEmail: z.string().email().optional(),
+  contactEmail: z.email().optional(),
   errorThreshold: z.number().int().min(1).max(20).optional(),
 });
 export type UpdateWebhookConfigurationInput = z.infer<typeof UpdateWebhookConfigurationInputSchema>;

@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { MockPax8Client } from "./mock-client.js";
 import { NotFoundError } from "../api/errors.js";
-import { usageSummaries } from "./demo-data.js";
+import { usageSummaries } from "./fixture.js";
 
 describe("MockPax8Client — extended coverage", () => {
   const client = new MockPax8Client();
@@ -336,8 +336,13 @@ describe("MockPax8Client — extended coverage", () => {
       const subscriptionId = "sub-sort-regression";
       const groups = ["Storage", "Compute", undefined, "Backup"];
       const summaries = groups.map((resourceGroup, index) => ({
-        ...original[0],
         id: `usage-sort-${index}`,
+        companyId: "company-sort-regression",
+        productId: "product-sort-regression",
+        date: "2026-11-01",
+        quantity: 1,
+        unitPrice: 1,
+        subtotal: 1,
         subscriptionId,
         resourceGroup,
       }));
