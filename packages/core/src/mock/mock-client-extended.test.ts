@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { MockPax8Client } from "./mock-client.js";
 import { NotFoundError } from "../api/errors.js";
+import { usageSummaries } from "./demo-data.js";
 
 describe("MockPax8Client — extended coverage", () => {
   const client = new MockPax8Client();
@@ -326,6 +327,29 @@ describe("MockPax8Client — extended coverage", () => {
   const REDWOOD_ACRONIS_SUB = "sub-redwood-acronis-007";
 
   describe("usage.listSummaries()", () => {
+    it("sorts resource groups before pagination without changing demo fixtures", async () => {
+      const original = [...usageSummaries];
+      const subscriptionId = "sub-sort-regression";
+      const groups = ["Storage", "Compute", undefined, "Backup"];
+      const summaries = groups.map((resourceGroup, index) => ({
+        ...original[0],
+        id: `usage-sort-${index}`,
+        subscriptionId,
+        resourceGroup,
+      }));
+      usageSummaries.push(...summaries);
+
+      try {
+        const first = await client.usage.listSummaries(subscriptionId, { page: 0, size: 2 });
+        const second = await client.usage.listSummaries(subscriptionId, { page: 1, size: 2 });
+        expect(first.content.map((u) => u.resourceGroup)).toEqual([undefined, "Backup"]);
+        expect(second.content.map((u) => u.resourceGroup)).toEqual(["Compute", "Storage"]);
+        expect(usageSummaries).toEqual([...original, ...summaries]);
+      } finally {
+        usageSummaries.splice(original.length);
+      }
+    });
+
     it("returns usage summaries for a subscription", async () => {
       const result = await client.usage.listSummaries(REDWOOD_ACRONIS_SUB, { size: 100 });
       expect(result.content.length).toBeGreaterThan(0);

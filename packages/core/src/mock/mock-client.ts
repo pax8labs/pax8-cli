@@ -775,6 +775,7 @@ class UsageResource {
     if (params?.resourceGroup) {
       filtered = filtered.filter((u) => u.resourceGroup === params.resourceGroup);
     }
+    filtered.sort((a, b) => (a.resourceGroup ?? "").localeCompare(b.resourceGroup ?? ""));
     return paginate(filtered, params);
   }
 
