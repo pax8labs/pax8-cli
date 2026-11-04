@@ -1538,6 +1538,23 @@ function* walkObjectShapes(
 }
 
 describe("forbidden field hygiene (CI-enforced policy)", () => {
+  it.each([
+    ["optional", (schema: z.ZodType) => schema.optional()],
+    ["nullable", (schema: z.ZodType) => schema.nullable()],
+    ["default", (schema: z.ZodType) => schema.default({ billingFee: 1 })],
+    ["prefault", (schema: z.ZodType) => schema.prefault({ billingFee: 1 })],
+    ["transform", (schema: z.ZodType) => schema.transform((value) => value)],
+    ["refine", (schema: z.ZodType) => schema.refine(() => true)],
+    ["union", (schema: z.ZodType) => z.union([schema, z.string()])],
+    ["intersection", (schema: z.ZodType) => z.intersection(schema, z.object({ other: z.string() }))],
+  ] as const)("visits object shapes inside %s wrappers", (_name, wrap) => {
+    const schema = wrap(z.object({ billingFee: z.number() }));
+    expect([...walkObjectShapes(schema, "test", new WeakSet())]).toContainEqual({
+      path: "test",
+      keys: ["billingFee"],
+    });
+  });
+
   it("visits object shapes inside preprocess pipelines and arrays", () => {
     const schema = z.preprocess((value) => value, z.array(z.object({ billingFee: z.number() })));
     expect([...walkObjectShapes(schema, "test", new WeakSet())]).toEqual([

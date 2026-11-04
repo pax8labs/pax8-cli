@@ -825,6 +825,7 @@ class UsageResource {
     if (params?.resourceGroup) {
       filtered = filtered.filter((u) => u.resourceGroup === params.resourceGroup);
     }
+    // Missing groups sort first in demo mode; production null placement is unverified.
     filtered.sort((a, b) => (a.resourceGroup ?? "").localeCompare(b.resourceGroup ?? ""));
     return paginate(filtered, params);
   }

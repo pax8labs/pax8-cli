@@ -76,7 +76,7 @@ function formatZodError(error: ZodError): string {
   return error.issues
     .map((i) => {
       const path = i.path.length > 0 ? `"${i.path.join(".")}"` : "response";
-      return `${path}: ${i.code} — ${i.message}`;
+      return `${path}: ${i.message}`;
     })
     .join("; ");
 }
