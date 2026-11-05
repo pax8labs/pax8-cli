@@ -8,6 +8,7 @@ import { PageSchema } from "./types.js";
 import { FileCache } from "../services/cache.js";
 import { validateBaseUrl } from "../security/validate-env.js";
 import { redactDebugBody } from "../security/redact-debug.js";
+import { getUserAgent } from "./user-agent.js";
 
 /**
  * Minimal interface the client needs from a token manager. Carries an
@@ -483,6 +484,7 @@ export class Pax8Client {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Accept: "application/json",
+      "User-Agent": getUserAgent(),
     };
 
     const init: RequestInit & { signal?: AbortSignal } = {

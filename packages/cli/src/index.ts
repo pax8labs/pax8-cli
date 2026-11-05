@@ -43,6 +43,7 @@ import {
   getDefaultBaseUrl,
   getConfigDir,
   CredentialStore,
+  setUserAgentProduct,
 } from "@pax8/core";
 import { resolveDemoModeAsync } from "./lib/context.js";
 import type { Command as CommandType } from "commander";
@@ -90,6 +91,10 @@ function extractCommandFlags(cmd: CommandType): string[] {
 }
 
 export function createProgram(): Command {
+  // Identify CLI traffic in Pax8's API logs (see core's api/user-agent.ts).
+  setUserAgentProduct(
+    `pax8labs-cli/${typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0"}`,
+  );
   const program = new Command();
   program
     .name("pax8")
