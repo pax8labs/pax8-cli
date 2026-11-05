@@ -65,7 +65,33 @@ The durable asset — questions this package answers without you having to assem
 
 ## Versioning
 
-**Experimental.** This package is currently `0.x` and the public surface may change between minor versions. Pin a specific version (`"@pax8/core": "0.2.1"`, not `"^0.2.0"`) until the package reaches `1.0`. Breaking changes will be called out in release notes.
+**Experimental.** This package is currently `0.x` and the public surface may change between minor versions. Pin an exact version (`"@pax8/core": "0.4.0"`, not `"^0.4.0"`) until the package reaches `1.0`. Breaking changes are called out in the [changelog](./CHANGELOG.md) and below.
+
+### Upgrading to 0.4
+
+**Zod 4 is required.** Schemas you pass into the client (e.g. `Pax8Client.getPaginated(path, params, schema)`) must be Zod 4 schemas, and that schema is now typed `ZodType<T>`: its *parsed output* must match the iterator's item type.
+
+```ts
+// Before (0.3, Zod 3) — a broad annotation compiled
+const schema: z.ZodTypeAny = MyItemSchema;
+for await (const page of client.getPaginated("/things", {}, schema)) { /* any[] */ }
+
+// After (0.4, Zod 4) — keep the concrete schema type, or annotate the output
+const schema: z.ZodType<MyItem> = MyItemSchema;
+for await (const page of client.getPaginated<MyItem>("/things", {}, schema)) { /* MyItem[] */ }
+```
+
+If your schema transforms its input, use the transformed (output) type for `T`.
+
+**Usage types now match the live API.** The old shapes never matched what Pax8 returns, so any code that parsed live usage was already failing:
+
+| | Removed | Now |
+|---|---|---|
+| `UsageSummary` | `date`, `quantity`, `unitPrice`, `subtotal` | `resourceGroup`, `vendorName`, `currencyCode`, `currentCharges`, `partnerTotal`, `isTrial` — a current-billing-period rollup per resource group |
+| `UsageLine` | `id`, `usageSummaryId`, `description`, `subtotal`, `date` | `usageDate`, `productId`, `productName`, `unitOfMeasure`, `quantity`, `unitPrice`, `currentCharges`, `currentProfit`, `partnerTotal`, `currencyCode`, `isTrial` — one product, one day |
+| `UsageApi.listLines(id, params?)` | | `listLines(id, { usageDate: "YYYY-MM-DD" })` — the API requires the date |
+
+**Smaller additions** (non-breaking): paginated responses with no `content` key parse as an empty page; `Pax8ClientOptions.maxRetries` and per-request `RequestOpts.timeoutMs`; `OrdersApi.list(params, opts?)` sends the wire sort name `createdDate` for `createdAt`; `setUserAgentProduct("name/version")` names your app in the `User-Agent` sent to Pax8.
 
 The CLI in this repo is the reference consumer — if you're unsure how to assemble a workflow, look at how [`packages/cli`](https://github.com/pax8labs/pax8-cli/tree/main/packages/cli/src/commands) uses these services.
 
