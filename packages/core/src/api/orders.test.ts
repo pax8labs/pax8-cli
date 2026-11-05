@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { OrdersApi } from "./orders.js";
+import { OrdersApi, toWireSort, ordersListRequestOpts, ORDERS_LIST_TIMEOUT_MS } from "./orders.js";
 import type { Pax8Client } from "./client.js";
 
 function createMockClient(): Pax8Client {
@@ -52,9 +52,52 @@ describe("OrdersApi", () => {
 
     const result = await api.list({ page: 0, size: 50, companyId: COMPANY_ID });
 
-    expect(client.get).toHaveBeenCalledWith("/orders", { page: 0, size: 50, companyId: COMPANY_ID });
+    expect(client.get).toHaveBeenCalledWith(
+      "/orders",
+      { page: 0, size: 50, companyId: COMPANY_ID },
+      undefined,
+    );
     expect(result.content).toHaveLength(1);
     expect(result.content[0].id).toBe(ORDER_ID);
+  });
+
+  it("list rewrites the canonical createdAt sort to the wire name createdDate", async () => {
+    // Live API: `sort=createdAt,desc` → immediate 500; `createdDate,desc` → 200.
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+
+    await api.list({ size: 25, sort: "createdAt,desc" });
+
+    expect(client.get).toHaveBeenCalledWith("/orders", { size: 25, sort: "createdDate,desc" }, undefined);
+  });
+
+  it("list forwards request options (e.g. a longer timeout)", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedResponse);
+
+    await api.list({ size: 1 }, { timeoutMs: 90_000 });
+
+    expect(client.get).toHaveBeenCalledWith("/orders", { size: 1 }, { timeoutMs: 90_000 });
+  });
+
+  it.each([
+    ["createdAt,desc", "createdDate,desc"],
+    ["createdAt", "createdDate"],
+    [" createdAt , asc", "createdDate,asc"],
+    ["status,asc", "status,asc"],
+  ])("toWireSort(%j) → %j", (input, expected) => {
+    expect(toWireSort(input)).toBe(expected);
+  });
+
+  it("ordersListRequestOpts allows /orders 90s unless PAX8_TIMEOUT_MS is set", () => {
+    const saved = process.env.PAX8_TIMEOUT_MS;
+    try {
+      delete process.env.PAX8_TIMEOUT_MS;
+      expect(ordersListRequestOpts()).toEqual({ timeoutMs: ORDERS_LIST_TIMEOUT_MS });
+      process.env.PAX8_TIMEOUT_MS = "45000";
+      expect(ordersListRequestOpts()).toBeUndefined();
+    } finally {
+      if (saved === undefined) delete process.env.PAX8_TIMEOUT_MS;
+      else process.env.PAX8_TIMEOUT_MS = saved;
+    }
   });
 
   it("get returns a single order", async () => {

@@ -30,6 +30,12 @@ export interface Pax8ClientOptions {
   tokenManager: TokenManagerLike;
   baseUrl?: string;
   timeout?: number;
+  /**
+   * Transient-failure retries per request (5xx, timeout, network error, 429)
+   * for idempotent methods. Default 3. `0` makes each call a single attempt —
+   * for probes like `pax8 doctor` that must stay bounded.
+   */
+  maxRetries?: number;
   debug?: boolean;
   /** Cache TTL in ms for GET requests. 0 disables caching. Default: 3600000 (1 hour). */
   cacheTtlMs?: number;
@@ -87,6 +93,12 @@ export interface RequestOpts {
    * pure-addition change.
    */
   api?: string;
+  /**
+   * Per-request timeout override in ms (default: the client's `timeout`).
+   * For endpoints that are known to be slow on large portfolios — `/orders`
+   * takes ~30s server-side even at `size=1` on a 5k-order tenant.
+   */
+  timeoutMs?: number;
 }
 
 const FALLBACK_BASE_URL = "https://api.pax8.com/v1";
@@ -328,6 +340,7 @@ export class Pax8Client {
   private readonly baseUrl: string;
   private readonly apiBaseOverrides: Record<string, string> | undefined;
   private readonly timeout: number;
+  private readonly maxRetries: number;
   private readonly debug: boolean;
   private readonly cache: FileCache | null;
   private readonly cacheTtlMs: number;
@@ -356,6 +369,7 @@ export class Pax8Client {
     // the constructor argument exists for tests and downstream embedders that
     // want to bypass the env entirely.
     this.timeout = options.timeout ?? getDefaultTimeout();
+    this.maxRetries = Math.max(0, Math.floor(options.maxRetries ?? MAX_RETRIES));
     this.debug = options.debug ?? false;
     this.cacheTtlMs = options.cacheTtlMs ?? 3_600_000; // 1 hour default
     this.cache = this.cacheTtlMs > 0 ? new FileCache() : null;
@@ -460,6 +474,8 @@ export class Pax8Client {
     opts?: RequestOpts,
   ): Promise<T> {
     const url = this.buildUrl(path, params, opts?.apiVersion, opts?.api);
+    const timeoutMs = opts?.timeoutMs ?? this.timeout;
+    const maxRetries = this.maxRetries;
     const token = await this.tokenManager.getToken();
 
     const headers: Record<string, string> = {
@@ -503,9 +519,9 @@ export class Pax8Client {
     let retriedAfterAuthClear = false;
 
     try {
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
         const controller = new AbortController();
-        timeoutId = setTimeout(() => controller.abort(), this.timeout);
+        timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         init.signal = controller.signal;
 
         try {
@@ -527,7 +543,7 @@ export class Pax8Client {
 
           if (response.status === 429) {
             clearTimeout(timeoutId);
-            if (attempt === MAX_RETRIES) {
+            if (attempt === maxRetries) {
               throw new RateLimitError("Rate limit exceeded", path, (parseRetryAfter(response) ?? 60) * 1000);
             }
             const retryAfter = parseRetryAfter(response) ?? (attempt + 1);
@@ -562,7 +578,7 @@ export class Pax8Client {
           if (
             response.status === 401 &&
             !retriedAfterAuthClear &&
-            attempt < MAX_RETRIES
+            attempt < maxRetries
           ) {
             clearTimeout(timeoutId);
             retriedAfterAuthClear = true;
@@ -586,7 +602,7 @@ export class Pax8Client {
             // 5xx: the server may have processed the request before the error
             // was returned. Surface the error immediately so the caller
             // decides whether to retry with a fresh idempotency strategy.
-            if (!canRetryTransient || attempt === MAX_RETRIES) {
+            if (!canRetryTransient || attempt === maxRetries) {
               const errorBody = await safeJson(response);
               throw new ApiError(
                 `Server error: ${response.status} ${response.statusText}`,
@@ -663,8 +679,8 @@ export class Pax8Client {
             // client gave up reading the response. Never retry; surface
             // the timeout so the caller can verify state (e.g., `pax8 orders
             // show <id>` or list by company) before deciding what to do.
-            if (!canRetryTransient || attempt === MAX_RETRIES) {
-              throw new ApiError(`Request timed out after ${this.timeout}ms`, 0, path, method);
+            if (!canRetryTransient || attempt === maxRetries) {
+              throw new ApiError(`Request timed out after ${timeoutMs}ms`, 0, path, method);
             }
             lastError = error as Error;
             const backoff = Math.pow(2, attempt) * 1000;
@@ -676,7 +692,7 @@ export class Pax8Client {
           // whose response was dropped between the server and the client is
           // the canonical duplicate-charge bug. Surface the network error
           // for non-idempotent methods.
-          if (!canRetryTransient || attempt === MAX_RETRIES) {
+          if (!canRetryTransient || attempt === maxRetries) {
             throw new ApiError(
               `Network error: ${(error as Error).message}`,
               0,

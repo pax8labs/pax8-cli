@@ -157,6 +157,9 @@ async function checkTokenFetch(): Promise<CheckResult> {
   }
 }
 
+/** Per-endpoint cap for doctor's API probes (single attempt, no retries). */
+const DOCTOR_PROBE_TIMEOUT_MS = 15_000;
+
 async function checkApiHealth(): Promise<CheckResult[]> {
   const isDemo = await isDemoMode();
   if (isDemo) {
@@ -169,9 +172,18 @@ async function checkApiHealth(): Promise<CheckResult[]> {
     return [{ name: "API endpoints", passed: false, detail: "No credentials — skipped" }];
   }
 
-  const { TokenManager, Pax8Client, CompaniesApi, SubscriptionsApi, ProductsApi, InvoicesApi, OrdersApi } = await import("@pax8/core");
+  const { TokenManager, Pax8Client, CompaniesApi, SubscriptionsApi, ProductsApi, InvoicesApi, OrdersApi, isApiTimeoutError } = await import("@pax8/core");
   const tm = new TokenManager({ clientId: creds.clientId, clientSecret: creds.clientSecret });
-  const client = new Pax8Client({ tokenManager: tm, cacheTtlMs: 0 });
+  // Bounded probes: one attempt each, DOCTOR_PROBE_TIMEOUT_MS cap. With the
+  // client defaults (30s timeout, 3 retries), a slow endpoint — `/orders`
+  // takes ~32s server-side on a 5k-order tenant — made doctor sit silently
+  // for ~2 minutes before printing anything.
+  const client = new Pax8Client({
+    tokenManager: tm,
+    cacheTtlMs: 0,
+    timeout: DOCTOR_PROBE_TIMEOUT_MS,
+    maxRetries: 0,
+  });
 
   const endpoints: Array<{ name: string; fn: () => Promise<unknown> }> = [
     { name: "Companies", fn: () => new CompaniesApi(client).list({ size: 1 }) },
@@ -190,17 +202,31 @@ async function checkApiHealth(): Promise<CheckResult[]> {
   const settled = await Promise.allSettled(endpoints.map((ep) => ep.fn()));
   const wallTime = Date.now() - start;
 
-  for (const s of settled) {
+  // A probe that hit the timeout reached a live (just slow) endpoint, and the
+  // real commands allow longer — report it, but don't fail the check on it.
+  const slow: string[] = [];
+  const failed: string[] = [];
+  settled.forEach((s, i) => {
     if (s.status === "fulfilled") passed++;
-  }
+    else if (isApiTimeoutError(s.reason)) slow.push(endpoints[i].name);
+    else failed.push(endpoints[i].name);
+  });
 
   const avgLatency = Math.round(wallTime / total);
   const speed = avgLatency < 2000 ? "fast" : avgLatency < 10000 ? "slow" : "very slow";
+  const notes = [
+    ...(slow.length > 0
+      ? [`⚠ ${slow.join(", ")} slower than ${DOCTOR_PROBE_TIMEOUT_MS / 1000}s (commands allow longer)`]
+      : []),
+    ...(failed.length > 0 ? [`✗ ${failed.join(", ")} failed`] : []),
+  ];
 
   results.push({
     name: "API endpoints",
-    passed: passed === total,
-    detail: `${passed}/${total} reachable · avg ${avgLatency}ms ${avgLatency > 5000 ? "⚠ " + speed : speed}`,
+    passed: failed.length === 0,
+    detail:
+      `${passed}/${total} reachable · avg ${avgLatency}ms ${avgLatency > 5000 ? "⚠ " + speed : speed}` +
+      (notes.length > 0 ? ` · ${notes.join(" · ")}` : ""),
   });
 
   return results;
