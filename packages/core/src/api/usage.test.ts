@@ -71,10 +71,32 @@ describe("UsageApi", () => {
     // exposed under `/subscriptions/{subscriptionId}/usage-summaries`.
     expect(client.get).toHaveBeenCalledWith(
       `/subscriptions/${SUBSCRIPTION_ID}/usage-summaries`,
-      { page: 0, size: 50 },
+      { page: 0, size: 50, sort: "resourceGroup,asc" },
     );
     expect(result.content).toHaveLength(1);
     expect(result.content[0].subtotal).toBe(50);
+  });
+
+  it("listSummaries sends an explicit sort even without params", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedSummaries);
+
+    await api.listSummaries(SUBSCRIPTION_ID);
+
+    expect(client.get).toHaveBeenCalledWith(
+      `/subscriptions/${SUBSCRIPTION_ID}/usage-summaries`,
+      { sort: "resourceGroup,asc" },
+    );
+  });
+
+  it("listSummaries preserves pagination and resource group filters with the sort", async () => {
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedSummaries);
+
+    await api.listSummaries(SUBSCRIPTION_ID, { page: 2, size: 10, resourceGroup: "Compute" });
+
+    expect(client.get).toHaveBeenCalledWith(
+      `/subscriptions/${SUBSCRIPTION_ID}/usage-summaries`,
+      { page: 2, size: 10, resourceGroup: "Compute", sort: "resourceGroup,asc" },
+    );
   });
 
   it("getSummary returns a single usage summary", async () => {

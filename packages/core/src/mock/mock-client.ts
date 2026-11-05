@@ -819,12 +819,15 @@ class UsageResource {
     params?: ListParams & { resourceGroup?: string }
   ): Promise<PaginatedResponse<UsageSummary>> {
     await randomDelay();
+    // filter creates a private copy so sorting cannot reorder the shared fixture.
     let filtered = usageSummaries.filter(
       (u) => u.subscriptionId === subscriptionId,
     );
     if (params?.resourceGroup) {
       filtered = filtered.filter((u) => u.resourceGroup === params.resourceGroup);
     }
+    // Missing groups sort first in demo mode; production null placement is unverified.
+    filtered.sort((a, b) => (a.resourceGroup ?? "").localeCompare(b.resourceGroup ?? ""));
     return paginate(filtered, params);
   }
 

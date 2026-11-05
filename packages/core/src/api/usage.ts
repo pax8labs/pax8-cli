@@ -25,6 +25,8 @@ export class UsageApi {
    * list — summaries are always scoped to a single subscription. Callers that
    * want a per-company or cross-tenant view must resolve subscriptions first
    * (e.g. via `pax8 subscriptions list --company X`) and iterate.
+   * Sorting is fixed to resourceGroup ascending, with an explicit direction
+   * to avoid the reported server-side SQL error when sort is omitted.
    */
   async listSummaries(
     subscriptionId: string,
@@ -36,7 +38,11 @@ export class UsageApi {
   ): Promise<PaginatedResponse<UsageSummary>> {
     const raw = await this.client.get<unknown>(
       `/subscriptions/${subscriptionId}/usage-summaries`,
-      params as Record<string, string | number | undefined>,
+      {
+        ...params,
+        // Without explicit sorting, the API can generate invalid `ORDER BY id null` SQL.
+        sort: "resourceGroup,asc",
+      },
     );
     return PaginatedUsageSummarySchema.parse(raw);
   }
@@ -52,6 +58,9 @@ export class UsageApi {
    * Wire path: `GET /v1/usage-summaries/{id}/usage-lines`. The leaf segment
    * is `usage-lines` (not `lines`) per the spec — prior to this fix the CLI
    * hit `/lines`, which 404s against the real Pax8 API.
+   * Unlike usage summaries, this endpoint has no documented sort parameter.
+   * Do not assume it accepts the summaries workaround; the reported SQL error
+   * is scoped to usage summaries, and usage-lines needs separate verification.
    */
   async listLines(
     summaryId: string,

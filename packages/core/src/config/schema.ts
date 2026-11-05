@@ -17,18 +17,18 @@ export const ConfigSchema = z.object({
       page_size: z.number().min(1).max(100).default(50),
       confirm_destructive: z.boolean().default(true),
     })
-    .default({}),
+    .prefault({}),
   cache: z
     .object({
       enabled: z.boolean().default(false),
       ttl_hours: z.number().default(24),
     })
-    .default({}),
+    .prefault({}),
   telemetry: z
     .object({
       enabled: z.boolean().default(false),
     })
-    .default({}),
+    .prefault({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

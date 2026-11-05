@@ -425,7 +425,7 @@ export class Pax8Client {
   async *getPaginated<T>(
     path: string,
     params?: Record<string, string | number | undefined>,
-    schema?: ZodType,
+    schema?: ZodType<T>,
     opts?: RequestOpts,
   ): AsyncIterableIterator<T[]> {
     let page = 0;

@@ -219,6 +219,8 @@ describe("handleCommandError", () => {
 
     const written = stderrWrite.mock.calls.map((c) => c[0]).join("");
     expect(written).toContain("unexpected response");
+    expect(written).toContain('"id": Invalid input: expected string, received number');
+    expect(written).not.toContain("invalid_type");
     expect(written).toContain("doctor");
   });
 });

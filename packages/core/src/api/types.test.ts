@@ -32,7 +32,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { ZodObject } from "zod";
+import { z, ZodObject } from "zod";
 import * as types from "./types.js";
 import {
   CompanySchema,
@@ -1485,6 +1485,8 @@ const FORBIDDEN_FIELDS = [
  * through common wrappers (optional, nullable, default, array, union,
  * discriminated union, intersection). Yields `{ path, keys }` so violations
  * can name the exact location (e.g. `SubscriptionSchema.commitment`).
+ * Lazy schemas, record values, tuple items, maps, and sets are not traversed;
+ * extend this walker and its regression tests before exporting those wrappers.
  */
 function* walkObjectShapes(
   schema: unknown,
@@ -1510,15 +1512,12 @@ function* walkObjectShapes(
     schema as {
       _def?: {
         innerType?: unknown;
-        type?: unknown;
+        element?: unknown;
+        in?: unknown;
+        out?: unknown;
         options?: unknown[];
         left?: unknown;
         right?: unknown;
-        // ZodEffects (z.preprocess / z.transform / z.refine) exposes its
-        // wrapped schema as `schema` rather than `innerType`. Added in #385
-        // when several `*Schema` exports were wrapped in `z.preprocess()` to
-        // canonicalize wire-shape timestamp field aliases.
-        schema?: unknown;
       };
     }
   )._def;
@@ -1526,12 +1525,10 @@ function* walkObjectShapes(
   if (def.innerType) {
     yield* walkObjectShapes(def.innerType, path, visited);
   }
-  if (def.schema) {
-    // ZodEffects wrapper — descend into the wrapped schema at the same path.
-    yield* walkObjectShapes(def.schema, path, visited);
-  }
-  if (def.type) {
-    yield* walkObjectShapes(def.type, `${path}[*]`, visited);
+  if (def.in) yield* walkObjectShapes(def.in, path, visited);
+  if (def.out) yield* walkObjectShapes(def.out, path, visited);
+  if (def.element) {
+    yield* walkObjectShapes(def.element, `${path}[*]`, visited);
   }
   if (Array.isArray(def.options)) {
     for (const opt of def.options) {
@@ -1543,6 +1540,30 @@ function* walkObjectShapes(
 }
 
 describe("forbidden field hygiene (CI-enforced policy)", () => {
+  it.each([
+    ["optional", (schema: z.ZodType) => schema.optional()],
+    ["nullable", (schema: z.ZodType) => schema.nullable()],
+    ["default", (schema: z.ZodType) => schema.default({ billingFee: 1 })],
+    ["prefault", (schema: z.ZodType) => schema.prefault({ billingFee: 1 })],
+    ["transform", (schema: z.ZodType) => schema.transform((value) => value)],
+    ["refine", (schema: z.ZodType) => schema.refine(() => true)],
+    ["union", (schema: z.ZodType) => z.union([schema, z.string()])],
+    ["intersection", (schema: z.ZodType) => z.intersection(schema, z.object({ other: z.string() }))],
+  ] as const)("visits object shapes inside %s wrappers", (_name, wrap) => {
+    const schema = wrap(z.object({ billingFee: z.number() }));
+    expect([...walkObjectShapes(schema, "test", new WeakSet())]).toContainEqual({
+      path: "test",
+      keys: ["billingFee"],
+    });
+  });
+
+  it("visits object shapes inside preprocess pipelines and arrays", () => {
+    const schema = z.preprocess((value) => value, z.array(z.object({ billingFee: z.number() })));
+    expect([...walkObjectShapes(schema, "test", new WeakSet())]).toEqual([
+      { path: "test[*]", keys: ["billingFee"] },
+    ]);
+  });
+
   it("no exported Zod schema exposes a forbidden field", () => {
     const violations: string[] = [];
 

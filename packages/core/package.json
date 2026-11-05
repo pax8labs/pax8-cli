@@ -26,7 +26,7 @@
   "dependencies": {
     "posthog-node": "^5.36.17",
     "yaml": "^2.9.0",
-    "zod": "^3.23.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import chalk from "chalk";
-import { ZodError, ZodIssueCode } from "zod";
+import { ZodError } from "zod";
 import type { Ora } from "ora";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -76,19 +76,7 @@ function formatZodError(error: ZodError): string {
   return error.issues
     .map((i) => {
       const path = i.path.length > 0 ? `"${i.path.join(".")}"` : "response";
-      if (i.code === ZodIssueCode.invalid_type) {
-        return `${path}: expected ${i.expected}, got ${i.received}`;
-      }
-      if (i.code === ZodIssueCode.invalid_literal) {
-        return `${path}: expected ${String(i.expected)}, got ${String(i.received)}`;
-      }
-      if (i.code === ZodIssueCode.invalid_enum_value) {
-        return `${path}: expected one of ${i.options.join(", ")}, got ${i.received}`;
-      }
-      if (i.code === ZodIssueCode.invalid_union_discriminator) {
-        return `${path}: expected one of ${i.options.join(", ")}`;
-      }
-      return `${path}: ${i.code} — ${i.message}`;
+      return `${path}: ${i.message}`;
     })
     .join("; ");
 }
