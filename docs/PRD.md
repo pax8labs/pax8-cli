@@ -594,7 +594,7 @@ Examples:
 - Tracks: command names, flag names (not values), duration, success/failure
 - Never collects: company IDs, subscription data, credentials, personal information
 - Respects `DO_NOT_TRACK` and `PAX8_TELEMETRY_DISABLED` environment variables
-- Clear first-run notice explaining what's collected and how to disable
+- One-time first-run prompt on interactive runs (`[Y/n]`, default yes) explaining what's collected and how to disable; nothing is sent before an answer, and non-interactive runs are never prompted
 
 ---
 

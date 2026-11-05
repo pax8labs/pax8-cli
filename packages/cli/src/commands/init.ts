@@ -41,7 +41,7 @@ For one-shot demo runs (no persistence), prefer:
             confirm_destructive: true,
           },
           cache: { enabled: true, ttl_hours: 24 },
-          telemetry: { enabled: false },
+          telemetry: { enabled: false, asked: false },
         }));
 
         if (disabling) {

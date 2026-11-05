@@ -222,7 +222,7 @@ export async function buildContext(
         confirm_destructive: true,
       },
       cache: { enabled: false, ttl_hours: 24 },
-      telemetry: { enabled: false },
+      telemetry: { enabled: false, asked: false },
     };
   });
 

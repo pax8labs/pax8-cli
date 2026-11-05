@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { runCli, runCliExpectSuccess } from "./test-utils.js";
+import { runCli, runCliExpectSuccess, runCliWithInput } from "./test-utils.js";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -386,5 +386,79 @@ describe("pax8 telemetry", () => {
       // No new events from --help / --version (length is stable).
       expect(after.length).toBe(before.length);
     });
+  });
+});
+
+describe("first-run telemetry consent prompt", () => {
+  let tmpDir: string;
+  // The prompt is TTY-gated; the force seam lets piped stdin drive it.
+  const env = (extra: Record<string, string> = {}): Record<string, string> => ({
+    PAX8_CONFIG_DIR: tmpDir,
+    PAX8_TELEMETRY_PROMPT_TEST_FORCE: "1",
+    ...extra,
+  });
+  const status = async (): Promise<string> =>
+    (await runCliExpectSuccess(["telemetry", "status"], { PAX8_CONFIG_DIR: tmpDir })).stdout;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "pax8-consent-test-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("defaults to yes on Enter and enables telemetry", async () => {
+    const result = await runCliWithInput(["clients", "list"], "\n", env());
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("Share usage data?");
+    expect(result.stderr).toContain("telemetry enabled");
+    expect(await status()).toContain("Telemetry is enabled");
+  });
+
+  it("'n' keeps telemetry off and never asks again", async () => {
+    await runCliWithInput(["clients", "list"], "n\n", env());
+    expect(await status()).toContain("Telemetry is disabled");
+
+    const second = await runCliWithInput(["clients", "list"], "y\n", env());
+    expect(second.stderr).not.toContain("Share usage data?");
+    expect(await status()).toContain("Telemetry is disabled");
+  });
+
+  it("asks again when stdin closes without an answer", async () => {
+    const first = await runCliWithInput(["clients", "list"], "", env());
+    expect(first.exitCode).toBe(0);
+    expect(first.stderr).toContain("Share usage data?");
+    expect(await status()).toContain("Telemetry is disabled");
+
+    const second = await runCliWithInput(["clients", "list"], "\n", env());
+    expect(second.stderr).toContain("Share usage data?");
+  });
+
+  it("keeps stdout clean — the prompt goes to stderr", async () => {
+    const result = await runCliWithInput(["clients", "list"], "\n", env());
+    expect(result.stdout).not.toContain("Share usage data?");
+  });
+
+  it.each([
+    ["--json", ["clients", "list", "--json"], {}],
+    ["PAX8_YES=1", ["clients", "list"], { PAX8_YES: "1" }],
+    ["DO_NOT_TRACK=1", ["clients", "list"], { DO_NOT_TRACK: "1" }],
+    ["PAX8_TELEMETRY_DISABLED=1", ["clients", "list"], { PAX8_TELEMETRY_DISABLED: "1" }],
+    ["telemetry command", ["telemetry", "status"], {}],
+  ] as const)("is suppressed by %s", async (_label, args, extra) => {
+    const result = await runCliWithInput([...args], "y\n", env({ ...extra }));
+    expect(result.stderr).not.toContain("Share usage data?");
+  });
+
+  it("is suppressed on non-TTY stdin without the test seam", async () => {
+    const result = await runCliWithInput(["clients", "list"], "y\n", { PAX8_CONFIG_DIR: tmpDir });
+    expect(result.stderr).not.toContain("Share usage data?");
+  });
+
+  it("does not ask after an explicit `telemetry disable`", async () => {
+    await runCliExpectSuccess(["telemetry", "disable"], { PAX8_CONFIG_DIR: tmpDir });
+    const result = await runCliWithInput(["clients", "list"], "y\n", env());
+    expect(result.stderr).not.toContain("Share usage data?");
   });
 });

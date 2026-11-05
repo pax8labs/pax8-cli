@@ -27,6 +27,10 @@ export const ConfigSchema = z.object({
   telemetry: z
     .object({
       enabled: z.boolean().default(false),
+      // True once the partner has answered the first-run consent prompt
+      // (or run `telemetry enable|disable`). Distinguishes "chose no" from
+      // "never asked" — both have `enabled: false`.
+      asked: z.boolean().default(false),
     })
     .prefault({}),
 });

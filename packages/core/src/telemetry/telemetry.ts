@@ -198,8 +198,27 @@ export const TELEMETRY_NOTICE = `
     export PAX8_TELEMETRY_DISABLED=1
     export DO_NOT_TRACK=1
 
-  Telemetry is OFF by default. Enable with: pax8 telemetry enable
+  Nothing is sent until you say yes. Change anytime:
+    pax8 telemetry enable | disable
 `;
+
+/**
+ * True when this process is running under the project's own test suite.
+ * Subprocess tests run `pax8 telemetry enable` in a temp config dir, and
+ * without this guard every `pnpm test` (locally and on each CI matrix job)
+ * shipped real events to the production PostHog project — that traffic was
+ * ~all of `command_executed` volume. Vitest sets `VITEST` in its workers and
+ * spawned CLI subprocesses inherit it.
+ *
+ * Deliberately NOT keyed on `CI`: partners running the CLI from their own
+ * pipelines are real usage (see the `groups.account` note in flush()).
+ */
+function isTestEnv(): boolean {
+  return (
+    (process.env.VITEST ?? "").trim().length > 0 ||
+    process.env.NODE_ENV === "test"
+  );
+}
 
 /**
  * Per-install salted distinct ID, stored at `<config-dir>/telemetry-id`.
@@ -301,17 +320,41 @@ export class Telemetry {
   }
 
   async enable(): Promise<void> {
-    const config = await loadConfig();
-    config.telemetry.enabled = true;
-    await saveConfig(config);
-    this.enabled = true;
+    await this.recordConsent(true);
   }
 
   async disable(): Promise<void> {
+    await this.recordConsent(false);
+  }
+
+  /**
+   * Whether the first-run consent prompt should be shown: the partner has
+   * never answered it, hasn't already enabled telemetry, and hasn't set an
+   * ambient opt-out. Config read failures answer `false` — never nag on a
+   * broken config.
+   */
+  async needsConsent(): Promise<boolean> {
+    if (
+      process.env.PAX8_TELEMETRY_DISABLED === "1" ||
+      process.env.DO_NOT_TRACK === "1"
+    ) {
+      return false;
+    }
+    try {
+      const config = await loadConfig();
+      return !config.telemetry.asked && !config.telemetry.enabled;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Persist the partner's answer and mark the prompt as answered. */
+  async recordConsent(enabled: boolean): Promise<void> {
     const config = await loadConfig();
-    config.telemetry.enabled = false;
+    config.telemetry.enabled = enabled;
+    config.telemetry.asked = true;
     await saveConfig(config);
-    this.enabled = false;
+    this.enabled = enabled;
   }
 
   track(event: TelemetryEvent): void {
@@ -363,6 +406,10 @@ export class Telemetry {
     // queries can't accidentally sum them back to raw totals. The raw
     // numbers stay in the local JSONL backup (already 0o600) so the
     // operator can still audit their own machine's usage.
+    //
+    // Never construct the real client under the test suite (see isTestEnv).
+    // Unit tests that inject a mock `posthog` still exercise the capture path.
+    if (!this.posthog && isTestEnv()) return;
     try {
       const ph = this.getPostHog();
       // Register the partner-account group once (if credentialed this run) so
