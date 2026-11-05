@@ -79,6 +79,45 @@ describe("Telemetry", () => {
     expect(t.isEnabled()).toBe(false);
   });
 
+  it("needsConsent() is true on a fresh config", async () => {
+    const t = new Telemetry();
+    expect(await t.needsConsent()).toBe(true);
+  });
+
+  it("recordConsent() persists the answer and stops asking", async () => {
+    const t = new Telemetry();
+    await t.recordConsent(false);
+    expect(t.isEnabled()).toBe(false);
+    expect(await t.needsConsent()).toBe(false);
+
+    const reloaded = new Telemetry();
+    await reloaded.loadEnabled();
+    expect(reloaded.isEnabled()).toBe(false);
+    expect(await reloaded.needsConsent()).toBe(false);
+  });
+
+  it("enable() and disable() count as answering the prompt", async () => {
+    const t = new Telemetry();
+    await t.disable();
+    expect(await t.needsConsent()).toBe(false);
+    await t.enable();
+    expect(await t.needsConsent()).toBe(false);
+  });
+
+  it("needsConsent() is false under an ambient opt-out", async () => {
+    process.env.DO_NOT_TRACK = "1";
+    expect(await new Telemetry().needsConsent()).toBe(false);
+  });
+
+  it("never constructs the real PostHog client under the test suite", async () => {
+    const t = new Telemetry();
+    (t as any).enabled = true;
+    (t as any).storageDir = makeTmpDir();
+    t.track(makeEvent());
+    await t.flush();
+    expect((t as any).posthog).toBeNull();
+  });
+
   it("can be enabled and disabled", async () => {
     // We need a real config file for enable/disable to work
     const tmpDir = makeTmpDir();

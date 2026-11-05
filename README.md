@@ -460,6 +460,8 @@ pnpm test:coverage
 
 Anonymous, **opt-in** usage telemetry via PostHog. Off by default — `telemetry.enabled` defaults to `false` in config and the CLI sends nothing until you explicitly opt in.
 
+On your first interactive run, the CLI asks once whether to share usage data (`[Y/n]`, Enter means yes). Your answer is saved (`telemetry.asked: true`) and the question never repeats. Nothing is sent before you answer. The prompt never appears in non-interactive runs (non-TTY stdin or stderr, `CI`, `--json`, `--quiet`, `--yes` / `PAX8_YES=1`), so agents and pipelines stay off unless you run `pax8 telemetry enable`.
+
 ```bash
 pax8 telemetry enable     # Opt in
 pax8 telemetry disable    # Opt out
@@ -551,7 +553,7 @@ For partners on restricted networks, this is the complete allowlist of hosts the
 |---|---|---|
 | `https://api.pax8.com` | Every API call | Always |
 | `https://api.pax8.com/v1/token` | OAuth client-credentials token exchange | Always (during auth) |
-| `https://us.i.posthog.com` | Telemetry capture | Only when `pax8 telemetry enable` has been set AND no opt-out env var is present |
+| `https://us.i.posthog.com` | Telemetry capture | Only after you opt in (first-run prompt or `pax8 telemetry enable`) AND no opt-out env var is present |
 | `https://github.com/pax8labs/pax8-cli/issues/new` | Bug-report submission | Only when you run `pax8 report-bug` AND confirm `[y/N]` (or pass `-y`). When `gh` is installed, the upload happens via `gh`; otherwise the URL is opened in your default browser |
 
 No other network egress. The CLI does not contact npm, the Pax8 portal, the marketing site, or any auto-update service at runtime.

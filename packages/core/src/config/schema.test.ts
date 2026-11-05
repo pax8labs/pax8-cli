@@ -10,7 +10,7 @@ describe("ConfigSchema", () => {
       version: "1.0",
       defaults: { output_format: "table", page_size: 50, confirm_destructive: true },
       cache: { enabled: false, ttl_hours: 24 },
-      telemetry: { enabled: false },
+      telemetry: { enabled: false, asked: false },
     });
   });
 

@@ -49,6 +49,7 @@ import type { Command as CommandType } from "commander";
 import { startRepl } from "./lib/repl.js";
 import { showWelcomeScreen } from "./lib/welcome.js";
 import { runUpdateCheck } from "./lib/update-check.js";
+import { maybeAskTelemetryConsent } from "./lib/telemetry-consent.js";
 
 /**
  * Build the full dotted command name from a Commander command,
@@ -202,6 +203,10 @@ export function createProgram(): Command {
     if (await resolveDemoModeAsync()) {
       process.stderr.write(chalk.dim("  ✨ Demo mode — showing sample data\n"));
     }
+
+    // First interactive run: ask once whether to share usage data. Must run
+    // before loadEnabled() so a "yes" covers this very command.
+    await maybeAskTelemetryConsent(subcommand);
 
     // Load telemetry enabled state (reads config once)
     try {
