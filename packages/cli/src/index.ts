@@ -34,7 +34,7 @@ import { explainCommand } from "./commands/explain.js";
 import { reportBugCommand } from "./commands/report-bug.js";
 import { handleCommandError, flushTelemetryBeforeExit } from "./lib/errors.js";
 import { installSigintHandler } from "./lib/signals.js";
-import { consumeTelemetryFields, setActiveCommand, consumeActiveCommand, resolveTelemetryAccount } from "./lib/telemetry-context.js";
+import { consumeTelemetryFields, setActiveCommand, setActiveDemoMode, consumeActiveCommand, resolveTelemetryAccount } from "./lib/telemetry-context.js";
 import { mooCommand } from "./commands/easter-eggs/moo.js";
 import { coffeeCommand } from "./commands/easter-eggs/coffee.js";
 import { getTimeQuip } from "./commands/easter-eggs/time-quip.js";
@@ -200,7 +200,9 @@ export function createProgram(): Command {
     // PAX8_DEMO=false / =0 correctly suppresses the banner even when
     // `config.demo: true` is set (otherwise the banner stays on even
     // though the command is hitting the real API).
-    if (await resolveDemoModeAsync()) {
+    const isDemo = await resolveDemoModeAsync();
+    setActiveDemoMode(isDemo);
+    if (isDemo) {
       process.stderr.write(chalk.dim("  ✨ Demo mode — showing sample data\n"));
     }
 

@@ -105,6 +105,40 @@ describe("pax8 telemetry", () => {
       }
     };
 
+    describe("failure events report the resolved demo_mode", () => {
+      // Failure events used to hard-code `demo_mode: false`, so every demo /
+      // CI failure looked like a live-API failure in PostHog.
+      const failAudit = (env: Record<string, string>) =>
+        runCli(["invoices", "audit", "--month", "garbage", "--json"], { PAX8_CONFIG_DIR: tmpDir, ...env });
+      const failureEvent = async (match: (e: Record<string, unknown>) => boolean) =>
+        (await readEvents(tmpDir)).find((e) => e.success === false && match(e));
+
+      it("true under PAX8_DEMO=1", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], { PAX8_CONFIG_DIR: tmpDir });
+        await failAudit({ PAX8_DEMO: "1" });
+        expect((await failureEvent((e) => e.subcommand === "invoices.audit"))?.demo_mode).toBe(true);
+      });
+
+      it("true when demo mode comes from config (`pax8 demo on`), not env", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], { PAX8_CONFIG_DIR: tmpDir });
+        await runCliExpectSuccess(["demo", "on"], { PAX8_CONFIG_DIR: tmpDir, PAX8_DEMO: "" });
+        await failAudit({ PAX8_DEMO: "" });
+        expect((await failureEvent((e) => e.subcommand === "invoices.audit"))?.demo_mode).toBe(true);
+      });
+
+      it("true for a parse-time failure (unknown command) under PAX8_DEMO=1", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], { PAX8_CONFIG_DIR: tmpDir });
+        await runCli(["definitely-not-a-command"], { PAX8_CONFIG_DIR: tmpDir, PAX8_DEMO: "1" });
+        expect((await failureEvent((e) => e.command === "unknown"))?.demo_mode).toBe(true);
+      });
+
+      it("false when demo mode is explicitly off", async () => {
+        await runCliExpectSuccess(["telemetry", "enable"], { PAX8_CONFIG_DIR: tmpDir });
+        await failAudit({ PAX8_DEMO: "0" });
+        expect((await failureEvent((e) => e.subcommand === "invoices.audit"))?.demo_mode).toBe(false);
+      });
+    });
+
     it("action-throw fires a command_executed { success: false } event with the right command + error_code", async () => {
       await runCliExpectSuccess(["telemetry", "enable"], { PAX8_CONFIG_DIR: tmpDir });
 
