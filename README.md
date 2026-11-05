@@ -594,7 +594,6 @@ These are tracked and prioritized within the `0.x` line. Each links to a GitHub 
 
 **Real-API surfaces (depend on Pax8 backend):**
 - `GET /orders` is slow server-side (~30s even for one row on a 5k-order tenant). `pax8 orders list` and `pax8 dashboard` allow it 90s; set `PAX8_TIMEOUT_MS=<ms>` (max 300000) to choose your own limit for every request instead.
-- `pax8 usage list` returns 404 against the live Pax8 sandbox tenant — likely a path-version mismatch in the client; demo mode works ([#212](https://github.com/pax8labs/pax8-cli/issues/212)).
 - `pax8 doctor` marks the `~/.pax8/config` file as ✗ (and exits 1) when credentials are configured purely via env vars or `PAX8_DEMO=1` ([#220](https://github.com/pax8labs/pax8-cli/issues/220)).
 
 **Demo-mode UX:**

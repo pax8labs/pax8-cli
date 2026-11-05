@@ -8,16 +8,41 @@ import { buildContext } from "../../lib/context.js";
 import { output, singlePageEnvelope } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { formatCurrency, formatDate } from "../../lib/formatters.js";
+import { formatCurrency } from "../../lib/formatters.js";
 import { resolveCompanyId } from "../../lib/resolve-company.js";
 import { replCmd } from "../../lib/confirm.js";
 import { clampListSize, LIST_SIZE_CAP, warnSizeClamped } from "../../lib/validate.js";
+import {
+  buildCompanyNameMap,
+  enrichCompanyNames,
+  enrichProductNames,
+} from "../../lib/enrich-subscriptions.js";
+
+/**
+ * Sum `field` per currency. Usage can span currencies across a portfolio, so
+ * a single grand total would be meaningless; rows without a code count as USD
+ * (matching `formatCurrency`'s default).
+ */
+export function totalsByCurrency<T extends { currencyCode?: string | null }>(
+  rows: T[],
+  field: (row: T) => number,
+): string {
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const code = row.currencyCode || "USD";
+    totals.set(code, (totals.get(code) ?? 0) + field(row));
+  }
+  return [...totals].map(([code, amount]) => formatCurrency(amount, code)).join(" + ");
+}
 
 export const usageListCommand = new Command("list")
   .description("List usage summaries")
   .option("--subscription <id>", "List usage for a specific subscription ID (fastest path)")
   .option("--company <id|name>", "List usage across every subscription owned by a company")
-  .option("--month <YYYY-MM>", "Filter by usage month (e.g. 2026-04)")
+  .option(
+    "--month <YYYY-MM>",
+    "Deprecated and ignored: summaries cover the current billing period only",
+  )
   .option("--page <number>", "Page number", "1")
   .option("--size <number>", `Page size (max ${LIST_SIZE_CAP}; larger values are clamped)`, "50")
   .option("--ids-only", "Output only resource IDs, one per line")
@@ -27,10 +52,13 @@ export const usageListCommand = new Command("list")
 Examples:
   pax8 usage list --subscription sub-redwood-acronis-007
   pax8 usage list --company "Redwood Manufacturing"
-  pax8 usage list --company "Redwood Manufacturing" --month 2026-04
   pax8 usage list --subscription sub-redwood-acronis-007 --json
 
 Notes:
+  Each summary is the current billing period's metered usage for one
+  resource group of a subscription. For a single day's breakdown, use
+  \`pax8 usage show <id> --lines --date YYYY-MM-DD\`.
+
   Usage summaries are exposed by the Pax8 API only under a specific
   subscription (\`/v1/subscriptions/{id}/usage-summaries\`). \`--company\`
   is a convenience: the CLI resolves the company to its subscriptions and
@@ -89,14 +117,26 @@ Notes:
         });
         all.push(...result.content);
       }
+
+      // The wire shape carries only IDs; resolve names for the table and
+      // JSON. Best-effort — a lookup failure leaves the IDs in place.
+      try {
+        enrichCompanyNames(await buildCompanyNameMap(ctx, all, { quiet: globalOpts.quiet }), all);
+        await enrichProductNames(ctx, all);
+      } catch {
+        // Names are a convenience; never fail the listing over them.
+      }
       spinner.stop();
 
-      // The Pax8 API doesn't expose a month/date filter on usage-summaries,
-      // so honor --month client-side via the date prefix.
-      const month: string | undefined = options.month;
-      const summaries = month
-        ? all.filter((u) => u.date?.startsWith(month))
-        : all;
+      // Summaries have no date (they're current-period rollups), so --month
+      // can't filter anything. Kept as a no-op so existing scripts don't break.
+      if (options.month && !globalOpts.quiet && process.env.PAX8_QUIET !== "1") {
+        process.stderr.write(
+          `\n  ⚠ --month is ignored: usage summaries cover the current billing period only. ` +
+            `For one day, use \`pax8 usage show <id> --lines --date YYYY-MM-DD\`.\n`,
+        );
+      }
+      const summaries = all;
 
       if (globalOpts.idsOnly) {
         for (const item of summaries) {
@@ -123,15 +163,26 @@ Notes:
         { key: "id", header: "ID", width: 12, format: (v: unknown) => String(v).slice(0, 8) },
         { key: "companyName", header: "Company", width: 22 },
         { key: "productName", header: "Product", width: 28 },
-        { key: "date", header: "Date", width: 14, format: (v: unknown) => formatDate(String(v)) },
-        { key: "quantity", header: "Qty", width: 10 },
-        { key: "subtotal", header: "Subtotal", width: 14, format: (v: unknown) => formatCurrency(Number(v)) },
+        { key: "resourceGroup", header: "Resource group", width: 18 },
+        {
+          key: "currentCharges",
+          header: "Charges",
+          width: 12,
+          format: (v: unknown, row?: Record<string, unknown>) =>
+            formatCurrency(Number(v), String(row?.currencyCode ?? "USD")),
+        },
+        {
+          key: "partnerTotal",
+          header: "Partner total",
+          width: 15,
+          format: (v: unknown, row?: Record<string, unknown>) =>
+            formatCurrency(Number(v), String(row?.currencyCode ?? "USD")),
+        },
       ];
 
       const filtersApplied: Record<string, string> = {};
       if (options.subscription) filtersApplied.subscription = String(options.subscription);
       if (options.company) filtersApplied.company = `"${options.company}"`;
-      if (options.month) filtersApplied.month = String(options.month);
       const emptyReasons: string[] = [];
       if (options.subscription) {
         emptyReasons.push(
@@ -164,13 +215,16 @@ Notes:
       });
 
       if (ctx.outputFormat === "table" && summaries.length > 0) {
-        const total = summaries.reduce((s, u) => s + (u.subtotal ?? 0), 0);
         process.stderr.write(
-          chalk.dim(`\n  ${summaries.length} usage summaries · ${formatCurrency(total)} total\n`)
+          chalk.dim(
+            `\n  ${summaries.length} usage summaries · ` +
+              `${totalsByCurrency(summaries, (u) => u.currentCharges)} charges · ` +
+              `${totalsByCurrency(summaries, (u) => u.partnerTotal)} partner total\n`,
+          ),
         );
         const first = summaries[0] as Record<string, unknown>;
         process.stderr.write(chalk.dim("\n  Try next:\n"));
-        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 usage show ${first.id} --lines`))}  ${chalk.dim("view per-resource breakdown")}\n`);
+        process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 usage show ${first.id} --lines`))}  ${chalk.dim("view today's per-product breakdown")}\n`);
         process.stderr.write("\n");
       }
     } catch (error) {

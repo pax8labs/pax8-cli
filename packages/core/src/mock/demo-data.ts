@@ -216,33 +216,45 @@ export interface Contact {
   types: { type: "Admin" | "Billing" | "Technical"; primary: boolean }[];
 }
 
+/**
+ * Demo usage summary. Mirrors the live wire shape (see `UsageSummarySchema`
+ * in `api/types.ts`) plus the client-side `companyName` / `productName`
+ * enrichment; `subscriptionId` lets the mock answer the nested
+ * `GET /v1/subscriptions/{id}/usage-summaries` path.
+ */
 export interface UsageSummary {
   id: string;
   companyId: string;
   companyName: string;
   productId: string;
   productName: string;
-  /**
-   * Subscription the summary rolls up to. Populated in demo data so that
-   * `pax8 usage list --subscription <id>` can mirror the nested wire path
-   * (`GET /v1/subscriptions/{subscriptionId}/usage-summaries`).
-   */
-  subscriptionId?: string;
-  date: string;
-  quantity: number;
-  unitPrice: number;
-  subtotal: number;
-  resourceGroup?: string;
+  subscriptionId: string;
+  resourceGroup: string;
+  vendorName: string;
+  currencyCode: string;
+  currentCharges: number;
+  partnerTotal: number;
+  isTrial: boolean;
 }
 
+/**
+ * Demo usage line template. The live API returns one line per product per
+ * `usageDate`; the mock stamps the requested date onto these templates so
+ * any day the partner asks for has data. `usageSummaryId` is fixture-only
+ * (used to filter) and is stripped by the schema parse.
+ */
 export interface UsageLine {
-  id: string;
   usageSummaryId: string;
-  description: string;
+  productId: string;
+  productName: string;
+  unitOfMeasure: string;
   quantity: number;
   unitPrice: number;
-  subtotal: number;
-  date: string;
+  currentCharges: number;
+  currentProfit: number;
+  partnerTotal: number;
+  currencyCode: string;
+  isTrial: boolean;
 }
 
 /**
@@ -1984,11 +1996,12 @@ export const usageSummaries: UsageSummary[] = [
     productId: "prod-acronis-backup-0009",
     productName: "AvePoint Cloud Backup for Microsoft 365",
     subscriptionId: "sub-redwood-acronis-007",
-    date: `${currentMonth}-15`,
-    quantity: 850,
-    unitPrice: 0.3,
-    subtotal: 255.0,
     resourceGroup: "Backup",
+    vendorName: "AvePoint",
+    currencyCode: "USD",
+    currentCharges: 255.0,
+    partnerTotal: 204.0,
+    isTrial: false,
   },
   {
     id: "usage-redwood-acronis-last",
@@ -1997,41 +2010,56 @@ export const usageSummaries: UsageSummary[] = [
     productId: "prod-acronis-backup-0009",
     productName: "AvePoint Cloud Backup for Microsoft 365",
     subscriptionId: "sub-redwood-acronis-007",
-    date: `${lastMonth}-15`,
-    quantity: 810,
-    unitPrice: 0.3,
-    subtotal: 243.0,
-    resourceGroup: "Backup",
+    resourceGroup: "Archive Storage",
+    vendorName: "AvePoint",
+    currencyCode: "USD",
+    currentCharges: 48.6,
+    partnerTotal: 38.88,
+    isTrial: false,
   },
 ];
 
+// quantity × unitPrice = currentCharges; currentProfit = currentCharges −
+// partnerTotal — the same invariants observed on live usage lines.
 export const usageLines: UsageLine[] = [
   {
-    id: "uline-redwood-001",
     usageSummaryId: "usage-redwood-acronis-curr",
-    description: "ERP Server Backup - SAP01",
-    quantity: 400,
+    productId: "prod-acronis-backup-0009",
+    productName: "AvePoint Cloud Backup for Microsoft 365",
+    unitOfMeasure: "GB",
+    quantity: 28,
     unitPrice: 0.3,
-    subtotal: 120.0,
-    date: `${currentMonth}-15`,
+    currentCharges: 8.4,
+    currentProfit: 1.68,
+    partnerTotal: 6.72,
+    currencyCode: "USD",
+    isTrial: false,
   },
   {
-    id: "uline-redwood-002",
     usageSummaryId: "usage-redwood-acronis-curr",
-    description: "CAD Server Backup - CAD01",
-    quantity: 250,
-    unitPrice: 0.3,
-    subtotal: 75.0,
-    date: `${currentMonth}-15`,
+    productId: "prod-acronis-backup-0009",
+    productName: "AvePoint Cloud Backup for Microsoft 365 - Protected Users",
+    unitOfMeasure: "User",
+    quantity: 42,
+    unitPrice: 0.05,
+    currentCharges: 2.1,
+    currentProfit: 0.42,
+    partnerTotal: 1.68,
+    currencyCode: "USD",
+    isTrial: false,
   },
   {
-    id: "uline-redwood-003",
-    usageSummaryId: "usage-redwood-acronis-curr",
-    description: "Domain Controller Backup - DC01",
-    quantity: 200,
-    unitPrice: 0.3,
-    subtotal: 60.0,
-    date: `${currentMonth}-15`,
+    usageSummaryId: "usage-redwood-acronis-last",
+    productId: "prod-acronis-backup-0009",
+    productName: "AvePoint Cloud Backup for Microsoft 365 - Archive",
+    unitOfMeasure: "GB",
+    quantity: 54,
+    unitPrice: 0.03,
+    currentCharges: 1.62,
+    currentProfit: 0.32,
+    partnerTotal: 1.3,
+    currencyCode: "USD",
+    isTrial: false,
   },
 ];
 

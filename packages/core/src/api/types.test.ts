@@ -1003,57 +1003,65 @@ describe("InvoiceItemSchema", () => {
 // ─── Usage Summary ───────────────────────────────────────────────────────────
 
 describe("UsageSummarySchema", () => {
-  const valid = {
+  // Field set captured from the live API (GET /v1/subscriptions/{id}/usage-summaries,
+  // 2026-11-05). Values are synthetic.
+  const wire = {
     id: uuid,
     companyId: uuid2,
+    subscriptionId: uuid,
     productId: uuid,
-    date: "2024-03-01",
-    quantity: 100,
-    unitPrice: 0.05,
-    subtotal: 5.0,
-    resourceGroup: "compute",
-    companyName: "Acme Corp",
-    productName: "Azure Compute",
+    resourceGroup: "Acme Corp - Denver Office",
+    vendorName: "SentinelOne",
+    currencyCode: "USD",
+    currentCharges: 484,
+    partnerTotal: 134.2,
+    isTrial: false,
   };
 
-  it("validates a correct payload", () => {
-    expect(UsageSummarySchema.parse(valid)).toEqual(valid);
+  it("parses the live wire shape", () => {
+    expect(UsageSummarySchema.parse(wire)).toEqual(wire);
   });
 
-  it("validates minimal payload", () => {
-    const minimal = {
-      id: uuid,
-      companyId: uuid2,
-      productId: uuid,
-      date: "2024-03-01",
-      quantity: 100,
-      unitPrice: 0.05,
-      subtotal: 5.0,
-    };
-    expect(UsageSummarySchema.parse(minimal)).toEqual(minimal);
+  it("accepts client-side name enrichment", () => {
+    const enriched = { ...wire, companyName: "Acme Corp", productName: "SentinelOne Complete" };
+    expect(UsageSummarySchema.parse(enriched)).toEqual(enriched);
+  });
+
+  it("tolerates null optional wire fields", () => {
+    const parsed = UsageSummarySchema.parse({ ...wire, resourceGroup: null, vendorName: null });
+    expect(parsed.resourceGroup).toBeNull();
+  });
+
+  it("rejects a payload missing the money fields", () => {
+    const { currentCharges, ...rest } = wire;
+    expect(() => UsageSummarySchema.parse(rest)).toThrow();
   });
 });
 
 // ─── Usage Line ──────────────────────────────────────────────────────────────
 
 describe("UsageLineSchema", () => {
-  const valid = {
-    id: uuid,
-    usageSummaryId: uuid2,
-    quantity: 50,
-    unitPrice: 0.05,
-    subtotal: 2.5,
-    description: "VM hours",
-    date: "2024-03-15",
+  // Captured from GET /v1/usage-summaries/{id}/usage-lines?usageDate=…; lines have no id.
+  const wire = {
+    usageDate: "2026-11-05",
+    productName: "SentinelOne Complete",
+    productId: uuid,
+    unitOfMeasure: "Endpoint",
+    quantity: 20,
+    currentCharges: 121,
+    currencyCode: "USD",
+    currentProfit: 87.45,
+    partnerTotal: 33.55,
+    unitPrice: 6.05,
+    isTrial: false,
   };
 
-  it("validates a correct payload", () => {
-    expect(UsageLineSchema.parse(valid)).toEqual(valid);
+  it("parses the live wire shape", () => {
+    expect(UsageLineSchema.parse(wire)).toEqual(wire);
   });
 
-  it("rejects missing date", () => {
-    // Strip date via destructure; rest-sibling idiom.
-    const { date, ...rest } = valid;
+  it("rejects missing usageDate", () => {
+    const { usageDate, ...rest } = wire;
     expect(() => UsageLineSchema.parse(rest)).toThrow();
   });
 });
@@ -1342,6 +1350,13 @@ describe("WebhookLogSchema", () => {
 // ─── PaginatedResponse ──────────────────────────────────────────────────────
 
 describe("PaginatedResponseSchema", () => {
+  it("treats an omitted content array as an empty page", () => {
+    // The live API returns `{ page }` with no `content` key when nothing matches.
+    const schema = PaginatedResponseSchema(UsageSummarySchema);
+    const parsed = schema.parse({ page: { size: 10, totalElements: 0, totalPages: 0, number: 0 } });
+    expect(parsed.content).toEqual([]);
+  });
+
   it("works with CompanySchema", () => {
     const schema = PaginatedResponseSchema(CompanySchema);
     const data = {
