@@ -12,11 +12,12 @@ describe("E2E: Usage workflow — list and show summaries", () => {
     expect(Array.isArray(data.usage)).toBe(true);
     expect(data.usage.length).toBeGreaterThan(0);
     const first = data.usage[0];
+    // Live wire shape (verified against the real API 2026-11-05).
     expect(first).toHaveProperty("id");
-    expect(first).toHaveProperty("date");
-    expect(first).toHaveProperty("quantity");
-    expect(first).toHaveProperty("unitPrice");
-    expect(first).toHaveProperty("subtotal");
+    expect(first).toHaveProperty("resourceGroup");
+    expect(first).toHaveProperty("currentCharges");
+    expect(first).toHaveProperty("partnerTotal");
+    expect(first).not.toHaveProperty("subtotal");
   });
 
   it("pax8 usage list --company filters by company name", async () => {
@@ -34,26 +35,13 @@ describe("E2E: Usage workflow — list and show summaries", () => {
     }
   });
 
-  it("pax8 usage list --month filters client-side by date prefix", async () => {
-    // Demo data has summaries dated currentMonth-15 and lastMonth-15.
-    // Pull all, pick one month, then re-query with that month and confirm.
+  it("pax8 usage list --month is accepted but ignored, with a warning", async () => {
+    // Summaries are current-period rollups with no date, so --month can't
+    // filter. It's kept as a no-op so existing scripts don't break.
     const all = await runCliExpectSuccess(["usage", "list", "--json"]);
-    const allData = JSON.parse(all.stdout);
-    expect(allData.usage.length).toBeGreaterThan(0);
-    const targetMonth = String(allData.usage[0].date).slice(0, 7);
-
-    const filtered = await runCliExpectSuccess([
-      "usage",
-      "list",
-      "--month",
-      targetMonth,
-      "--json",
-    ]);
-    const filteredData = JSON.parse(filtered.stdout);
-    expect(filteredData.usage.length).toBeGreaterThan(0);
-    for (const u of filteredData.usage) {
-      expect(String(u.date).startsWith(targetMonth)).toBe(true);
-    }
+    const filtered = await runCliExpectSuccess(["usage", "list", "--month", "2020-01", "--json"]);
+    expect(JSON.parse(filtered.stdout).usage).toEqual(JSON.parse(all.stdout).usage);
+    expect(filtered.stderr).toContain("--month is ignored");
   });
 
   it("pax8 usage show returns a single summary object", async () => {
@@ -87,9 +75,9 @@ describe("E2E: Usage workflow — list and show summaries", () => {
     expect(data).toHaveProperty("lines");
     expect(Array.isArray(data.lines)).toBe(true);
     expect(data.lines.length).toBeGreaterThan(0);
-    expect(data.lines[0]).toHaveProperty("description");
-    expect(data.lines[0]).toHaveProperty("subtotal");
-    expect(data.lines[0].usageSummaryId).toBe(summary.id);
+    expect(data.lines[0]).toHaveProperty("usageDate", data.usageDate);
+    expect(data.lines[0]).toHaveProperty("currentCharges");
+    expect(data.lines[0]).not.toHaveProperty("usageSummaryId");
   });
 
   it("pax8 usage show fails for unknown summary id", async () => {
@@ -105,7 +93,8 @@ describe("E2E: Usage workflow — list and show summaries", () => {
     const result = await runCliExpectSuccess(["usage", "list", "--csv"]);
     const header = result.stdout.split("\n")[0].toLowerCase();
     expect(header).toContain("id");
-    expect(header).toContain("subtotal");
+    expect(header).toContain("charges");
+    expect(header).toContain("partner total");
   });
 
   it("pax8 usage list --ids-only emits one ID per line", async () => {

@@ -21,25 +21,32 @@ const COMPANY_ID = "b2c3d4e5-f6a7-8901-bcde-f12345678901";
 const PRODUCT_ID = "c3d4e5f6-a7b8-9012-cdef-123456789012";
 const SUBSCRIPTION_ID = "e5f6a7b8-9012-3456-cdef-7890abcdef12";
 
+// Wire shapes captured from the live API (2026-11-05); values synthetic.
 const sampleSummary = {
   id: SUMMARY_ID,
   companyId: COMPANY_ID,
+  subscriptionId: SUBSCRIPTION_ID,
   productId: PRODUCT_ID,
-  date: "2026-03-01",
-  quantity: 100,
-  unitPrice: 0.5,
-  subtotal: 50,
   resourceGroup: "Compute",
+  vendorName: "Microsoft",
+  currencyCode: "USD",
+  currentCharges: 50,
+  partnerTotal: 40,
+  isTrial: false,
 };
 
 const sampleLine = {
-  id: "d4e5f6a7-b890-1234-cdef-567890123456",
-  usageSummaryId: SUMMARY_ID,
+  usageDate: "2026-03-01",
+  productId: PRODUCT_ID,
+  productName: "Virtual Machines",
+  unitOfMeasure: "Hour",
   quantity: 50,
   unitPrice: 0.5,
-  subtotal: 25,
-  description: "VM hours",
-  date: "2026-03-01",
+  currentCharges: 25,
+  currentProfit: 5,
+  partnerTotal: 20,
+  currencyCode: "USD",
+  isTrial: false,
 };
 
 const samplePaginatedSummaries = {
@@ -74,7 +81,7 @@ describe("UsageApi", () => {
       { page: 0, size: 50, sort: "resourceGroup,asc" },
     );
     expect(result.content).toHaveLength(1);
-    expect(result.content[0].subtotal).toBe(50);
+    expect(result.content[0].currentCharges).toBe(50);
   });
 
   it("listSummaries sends an explicit sort even without params", async () => {
@@ -105,21 +112,33 @@ describe("UsageApi", () => {
     const result = await api.getSummary(SUMMARY_ID);
 
     expect(client.get).toHaveBeenCalledWith(`/usage-summaries/${SUMMARY_ID}`);
-    expect(result.quantity).toBe(100);
+    expect(result.partnerTotal).toBe(40);
   });
 
   it("listLines hits the /usage-lines leaf (not /lines)", async () => {
     (client.get as ReturnType<typeof vi.fn>).mockResolvedValue(samplePaginatedLines);
 
-    const result = await api.listLines(SUMMARY_ID, { page: 0, size: 50 });
+    const result = await api.listLines(SUMMARY_ID, { usageDate: "2026-03-01", page: 0, size: 50 });
 
     // Regression guard for #337: the leaf segment is `usage-lines`, not
     // `lines`. One-character drift on the leaf path caused 404s in #212.
     expect(client.get).toHaveBeenCalledWith(
       `/usage-summaries/${SUMMARY_ID}/usage-lines`,
-      { page: 0, size: 50 },
+      { usageDate: "2026-03-01", page: 0, size: 50 },
     );
     expect(result.content).toHaveLength(1);
-    expect(result.content[0].description).toBe("VM hours");
+    expect(result.content[0].usageDate).toBe("2026-03-01");
+  });
+
+  it("listSummaries returns an empty page when the API omits content", async () => {
+    // Live behavior for a subscription with no usage: `{ page }` only. Before
+    // this was handled, every such call failed with ERROR_API_VALIDATION.
+    (client.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      page: { size: 10, totalElements: 0, totalPages: 0, number: 0 },
+    });
+
+    const result = await api.listSummaries(SUBSCRIPTION_ID);
+
+    expect(result.content).toEqual([]);
   });
 });

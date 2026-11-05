@@ -442,7 +442,8 @@ export class Pax8Client {
       const pageInfo = PageSchema.parse(response.page);
       totalPages = pageInfo.totalPages;
 
-      let content = response.content;
+      // Empty pages may omit `content` (see PaginatedResponseSchema).
+      let content = response.content ?? [];
       if (schema) {
         content = content.map((item) => schema.parse(item));
       }

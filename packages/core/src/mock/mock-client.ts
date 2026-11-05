@@ -35,8 +35,6 @@ import type {
   InvoiceItem,
   Order,
   Contact,
-  UsageSummary,
-  UsageLine,
   Quote as DemoQuote,
   Webhook,
   WebhookLog,
@@ -46,6 +44,10 @@ import { ApiError, NotFoundError } from "../api/errors.js";
 import { ALL_SUBS_PAGE_SIZE } from "../api/constants.js";
 import {
   QuoteSchema,
+  UsageSummarySchema,
+  UsageLineSchema,
+  type UsageSummary,
+  type UsageLine,
   type CreateOrderInput,
   type ProductPricing as ProductPricingPlans,
   type ProvisioningDetail as ProvisioningDetailType,
@@ -814,6 +816,10 @@ class ContactsResource {
 }
 
 class UsageResource {
+  // Demo fixtures are projected through the same Zod schemas the real client
+  // uses, so a fixture that drifts from the wire shape fails in demo mode and
+  // CI instead of only against the live API (which is how the pre-0.4 usage
+  // schema survived: every demo/test path skipped the parse).
   async listSummaries(
     subscriptionId: string,
     params?: ListParams & { resourceGroup?: string }
@@ -828,22 +834,25 @@ class UsageResource {
     }
     // Missing groups sort first in demo mode; production null placement is unverified.
     filtered.sort((a, b) => (a.resourceGroup ?? "").localeCompare(b.resourceGroup ?? ""));
-    return paginate(filtered, params);
+    return paginate(filtered.map((u) => UsageSummarySchema.parse(u)), params);
   }
 
   async getSummary(id: string): Promise<UsageSummary> {
     await randomDelay();
     const summary = usageSummaries.find((u) => u.id === id);
     if (!summary) throw notFound("UsageSummary", id);
-    return summary;
+    return UsageSummarySchema.parse(summary);
   }
 
   async listLines(
     summaryId: string,
-    params?: ListParams
+    params: ListParams & { usageDate: string; productId?: string }
   ): Promise<PaginatedResponse<UsageLine>> {
     await randomDelay();
-    const filtered = usageLines.filter((l) => l.usageSummaryId === summaryId);
+    const filtered = usageLines
+      .filter((l) => l.usageSummaryId === summaryId)
+      .filter((l) => !params.productId || l.productId === params.productId)
+      .map((l) => UsageLineSchema.parse({ ...l, usageDate: params.usageDate }));
     return paginate(filtered, params);
   }
 }

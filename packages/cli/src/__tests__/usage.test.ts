@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { runCliExpectSuccess } from "./test-utils.js";
+import { runCli, runCliExpectSuccess } from "./test-utils.js";
 
 const REDWOOD_ACRONIS_SUB = "sub-redwood-acronis-007";
 const REDWOOD_USAGE_SUMMARY = "usage-redwood-acronis-curr";
@@ -59,33 +59,18 @@ describe("pax8 usage", () => {
       expect(result.stdout).toContain("--company");
     });
 
-    it("--month filters results client-side by date prefix", async () => {
-      // First grab the date the curr summary lives in, then assert filtering
-      // both keeps and drops the right rows.
-      const all = await runCliExpectSuccess([
-        "usage",
-        "list",
-        "--subscription",
-        REDWOOD_ACRONIS_SUB,
-        "--json",
-      ]);
-      const everything = (JSON.parse(all.stdout) as { usage: Array<{ date: string }> }).usage;
-      expect(everything.length).toBeGreaterThan(0);
-      const currMonth = everything[0].date.slice(0, 7); // YYYY-MM
-
-      const filtered = await runCliExpectSuccess([
+    it("--month is ignored with a stderr warning (summaries have no date)", async () => {
+      const result = await runCliExpectSuccess([
         "usage",
         "list",
         "--subscription",
         REDWOOD_ACRONIS_SUB,
         "--month",
-        currMonth,
+        "2020-01",
         "--json",
       ]);
-      const data = (JSON.parse(filtered.stdout) as { usage: Array<{ date: string }> }).usage;
-      for (const item of data) {
-        expect(item.date.startsWith(currMonth)).toBe(true);
-      }
+      expect(JSON.parse(result.stdout).usage.length).toBeGreaterThan(0);
+      expect(result.stderr).toContain("--month is ignored");
     });
   });
 
@@ -102,9 +87,51 @@ describe("pax8 usage", () => {
       expect(data.id).toBe(REDWOOD_USAGE_SUMMARY);
       expect(Array.isArray(data.lines)).toBe(true);
       expect(data.lines.length).toBeGreaterThan(0);
+      // Defaults to today; every line is for that one day.
+      expect(data.usageDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       for (const line of data.lines) {
-        expect(line.usageSummaryId).toBe(REDWOOD_USAGE_SUMMARY);
+        expect(line.usageDate).toBe(data.usageDate);
       }
+    });
+
+    it("--date picks the day and implies --lines", async () => {
+      const result = await runCliExpectSuccess([
+        "usage",
+        "show",
+        REDWOOD_USAGE_SUMMARY,
+        "--date",
+        "2026-04-15",
+        "--json",
+      ]);
+      const data = JSON.parse(result.stdout);
+      expect(data.usageDate).toBe("2026-04-15");
+      expect(data.lines.length).toBeGreaterThan(0);
+      for (const line of data.lines) {
+        expect(line.usageDate).toBe("2026-04-15");
+      }
+    });
+
+    it("rejects a malformed --date with ERROR_INVALID_INPUT", async () => {
+      const result = await runCli([
+        "usage",
+        "show",
+        REDWOOD_USAGE_SUMMARY,
+        "--date",
+        "2026-04",
+        "--json",
+      ]);
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("ERROR_INVALID_INPUT");
+    });
+
+    it("renders the summary's money fields in the table view", async () => {
+      const result = await runCliExpectSuccess(
+        ["usage", "show", REDWOOD_USAGE_SUMMARY],
+        { PAX8_OUTPUT_FORMAT: "table" },
+      );
+      expect(result.stdout).toContain("Charges:");
+      expect(result.stdout).toContain("Partner total:");
+      expect(result.stdout).toContain("Backup");
     });
   });
 });

@@ -3,24 +3,42 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
+import type { UsageLine } from "@pax8/core";
 import { buildContext } from "../../lib/context.js";
 import { output } from "../../lib/output.js";
 import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
-import { formatCurrency, formatDate } from "../../lib/formatters.js";
+import { formatCurrency } from "../../lib/formatters.js";
 import { replCmd } from "../../lib/confirm.js";
+import { normalizeIsoDate } from "../../lib/quote-line-item-defaults.js";
+import { enrichProductNames } from "../../lib/enrich-subscriptions.js";
+import { totalsByCurrency } from "./list.js";
+
+/** Today as `YYYY-MM-DD` in the partner's local time zone. */
+function localToday(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 export const usageShowCommand = new Command("show")
   .description("Show usage summary details")
   .argument("<id>", "Usage summary ID")
-  .option("--lines", "Include per-resource line breakdown")
+  .option("--lines", "Include the per-product line breakdown for one day")
+  .option("--date <YYYY-MM-DD>", "Day to break down with --lines (default: today); implies --lines")
   .addHelpText(
     "after",
     `
 Examples:
   pax8 usage show usage-redwood-acronis-curr
   pax8 usage show usage-redwood-acronis-curr --lines
-  pax8 usage show usage-redwood-acronis-curr --lines --json`
+  pax8 usage show usage-redwood-acronis-curr --date 2026-04-15
+  pax8 usage show usage-redwood-acronis-curr --lines --json
+
+Notes:
+  A summary is the current billing period's usage for one resource group.
+  The Pax8 API only returns line items one day at a time, so --lines shows
+  a single day (today unless --date is given).`
   )
   .action(async (id, options, command) => {
     const globalOpts = command.optsWithGlobals();
@@ -28,28 +46,55 @@ Examples:
     const spinner = createSpinner("Fetching usage summary...");
 
     try {
+      const wantLines = Boolean(options.lines || options.date);
+      // Validate before any network call so a typo fails fast.
+      const usageDate = options.date
+        ? normalizeIsoDate(String(options.date), "--date").slice(0, 10)
+        : localToday();
+
       spinner.start();
       const summary = await ctx.api.usage.getSummary(id);
-      const lines = options.lines
-        ? (await ctx.api.usage.listLines(id, { size: 1000 })).content
+      const lines: UsageLine[] = wantLines
+        ? (await ctx.api.usage.listLines(id, { usageDate, size: 1000 })).content
         : [];
+
+      // Names aren't on the wire. Best-effort: a lookup failure keeps the IDs.
+      if (!summary.companyName) {
+        try {
+          summary.companyName = (await ctx.api.companies.get(summary.companyId)).name;
+        } catch {
+          // Leave unset; rendered as "—".
+        }
+      }
+      try {
+        await enrichProductNames(ctx, [summary]);
+      } catch {
+        // Same as above.
+      }
       spinner.stop();
 
+      const currency = summary.currencyCode ?? "USD";
+      const money = (v: unknown, row?: Record<string, unknown>) =>
+        formatCurrency(Number(v), String(row?.currencyCode ?? currency));
+
       if (ctx.outputFormat === "json") {
-        const payload = options.lines ? { ...summary, lines } : summary;
+        const payload = wantLines ? { ...summary, usageDate, lines } : summary;
         process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
         return;
       }
 
       if (ctx.outputFormat === "csv") {
-        if (options.lines) {
+        if (wantLines) {
           const columns = [
-            { key: "id", header: "Line ID" },
-            { key: "description", header: "Description" },
+            { key: "usageDate", header: "Date" },
+            { key: "productName", header: "Product" },
+            { key: "unitOfMeasure", header: "Unit" },
             { key: "quantity", header: "Quantity" },
             { key: "unitPrice", header: "Unit Price" },
-            { key: "subtotal", header: "Subtotal" },
-            { key: "date", header: "Date" },
+            { key: "currentCharges", header: "Charges" },
+            { key: "partnerTotal", header: "Partner Total" },
+            { key: "currentProfit", header: "Profit" },
+            { key: "currencyCode", header: "Currency" },
           ];
           output(lines, { format: "csv", columns });
         } else {
@@ -57,11 +102,12 @@ Examples:
             { key: "id", header: "ID" },
             { key: "companyName", header: "Company" },
             { key: "productName", header: "Product" },
-            { key: "date", header: "Date" },
-            { key: "quantity", header: "Quantity" },
-            { key: "unitPrice", header: "Unit Price" },
-            { key: "subtotal", header: "Subtotal" },
+            { key: "vendorName", header: "Vendor" },
             { key: "resourceGroup", header: "Resource Group" },
+            { key: "currentCharges", header: "Charges" },
+            { key: "partnerTotal", header: "Partner Total" },
+            { key: "currencyCode", header: "Currency" },
+            { key: "isTrial", header: "Trial" },
           ];
           output([summary], { format: "csv", columns });
         }
@@ -70,39 +116,49 @@ Examples:
 
       if (ctx.outputFormat === "quiet") return;
 
+      const row = (label: string, value: string) =>
+        process.stdout.write(`  ${chalk.dim(label.padEnd(18))}${value}\n`);
       process.stdout.write("\n");
       process.stdout.write(chalk.bold(`  Usage Summary ${summary.id}\n\n`));
-      process.stdout.write(`  ${chalk.dim("Company:".padEnd(18))}${summary.companyName ?? "—"}\n`);
-      process.stdout.write(`  ${chalk.dim("Product:".padEnd(18))}${summary.productName ?? "—"}\n`);
-      process.stdout.write(`  ${chalk.dim("Date:".padEnd(18))}${formatDate(summary.date)}\n`);
-      process.stdout.write(`  ${chalk.dim("Quantity:".padEnd(18))}${summary.quantity}\n`);
-      process.stdout.write(`  ${chalk.dim("Unit price:".padEnd(18))}${formatCurrency(summary.unitPrice)}\n`);
-      process.stdout.write(`  ${chalk.dim("Subtotal:".padEnd(18))}${formatCurrency(summary.subtotal)}\n`);
-      if (summary.resourceGroup) {
-        process.stdout.write(`  ${chalk.dim("Resource group:".padEnd(18))}${summary.resourceGroup}\n`);
-      }
-      process.stdout.write("\n");
+      row("Company:", summary.companyName ?? "—");
+      row("Product:", summary.productName ?? "—");
+      row("Vendor:", summary.vendorName ?? "—");
+      row("Resource group:", summary.resourceGroup ?? "—");
+      row("Charges:", formatCurrency(summary.currentCharges, currency));
+      row("Partner total:", formatCurrency(summary.partnerTotal, currency));
+      if (summary.isTrial) row("Trial:", "yes");
+      process.stdout.write(chalk.dim(`\n  Current billing period to date.\n\n`));
 
-      if (options.lines) {
+      if (wantLines) {
         if (lines.length === 0) {
-          process.stdout.write(chalk.dim(`  No line items.\n\n`));
+          process.stdout.write(chalk.dim(`  No usage lines for ${usageDate}.\n\n`));
         } else {
+          process.stdout.write(chalk.bold(`  Lines for ${usageDate}\n\n`));
           const columns = [
-            { key: "description", header: "Resource", width: 36 },
+            { key: "productName", header: "Product", width: 36 },
+            { key: "unitOfMeasure", header: "Unit", width: 10 },
             { key: "quantity", header: "Qty", width: 10 },
-            { key: "unitPrice", header: "Unit", width: 12, format: (v: unknown) => formatCurrency(Number(v)) },
-            { key: "subtotal", header: "Subtotal", width: 14, format: (v: unknown) => formatCurrency(Number(v)) },
+            { key: "unitPrice", header: "Unit price", width: 12, format: money },
+            { key: "currentCharges", header: "Charges", width: 12, format: money },
+            { key: "partnerTotal", header: "Partner total", width: 15, format: money },
           ];
           output(lines, { format: ctx.outputFormat, columns });
-          const total = lines.reduce((s, l) => s + (l.subtotal ?? 0), 0);
-          process.stderr.write(chalk.dim(`\n  ${lines.length} lines · ${formatCurrency(total)} total\n`));
+          process.stderr.write(
+            chalk.dim(
+              `\n  ${lines.length} lines · ` +
+                `${totalsByCurrency(lines, (l) => l.currentCharges)} charges · ` +
+                `${totalsByCurrency(lines, (l) => l.partnerTotal)} partner total\n`,
+            ),
+          );
         }
       }
 
       if (ctx.outputFormat === "table") {
         process.stderr.write(chalk.dim("\n  Try next:\n"));
-        if (!options.lines) {
-          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 usage show ${summary.id} --lines`))}  ${chalk.dim("view per-resource breakdown")}\n`);
+        if (!wantLines) {
+          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 usage show ${summary.id} --lines`))}  ${chalk.dim("view today's per-product breakdown")}\n`);
+        } else {
+          process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 usage show ${summary.id} --date YYYY-MM-DD`))}  ${chalk.dim("break down a different day")}\n`);
         }
         if (summary.companyName) {
           process.stderr.write(`    ${chalk.cyan(replCmd(`pax8 invoices audit --company "${summary.companyName}"`))}  ${chalk.dim("reconcile against billing")}\n`);
