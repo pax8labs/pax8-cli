@@ -1,6 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { getUserAgent } from "../api/user-agent.js";
 import { AuthError } from "../api/errors.js";
 import { getDefaultBaseUrl } from "../api/client.js";
 import {
@@ -201,7 +202,7 @@ export class TokenManager {
     try {
       response = await fetch(tokenUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "User-Agent": getUserAgent() },
         body: JSON.stringify({
           client_id: this.clientId,
           client_secret: this.clientSecret,

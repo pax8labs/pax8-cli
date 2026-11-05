@@ -24,6 +24,7 @@ export {
   isApiTimeoutError,
 } from "./api/client.js";
 export type { Pax8ClientOptions, RequestOpts } from "./api/client.js";
+export { setUserAgentProduct, getUserAgent, resetUserAgentProduct } from "./api/user-agent.js";
 export { CompaniesApi } from "./api/companies.js";
 export { ContactsApi } from "./api/contacts.js";
 export { ProductsApi } from "./api/products.js";

@@ -554,6 +554,8 @@ For partners on restricted networks, this is the complete allowlist of hosts the
 | `https://us.i.posthog.com` | Telemetry capture | Only when `pax8 telemetry enable` has been set AND no opt-out env var is present |
 | `https://github.com/pax8labs/pax8-cli/issues/new` | Bug-report submission | Only when you run `pax8 report-bug` AND confirm `[y/N]` (or pass `-y`). When `gh` is installed, the upload happens via `gh`; otherwise the URL is opened in your default browser |
 
+Requests to `api.pax8.com` identify themselves as `User-Agent: pax8labs-cli/<version> pax8labs-core node/<version> (<platform>)` so Pax8 can tell this CLI's traffic apart from other clients. It carries no credentials, hostnames, or user data.
+
 No other network egress. The CLI does not contact npm, the Pax8 portal, the marketing site, or any auto-update service at runtime.
 
 ### Using @pax8/core as a standalone library
