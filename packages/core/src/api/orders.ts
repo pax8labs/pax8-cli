@@ -1,7 +1,7 @@
 // Copyright 2026 Pax8, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Pax8Client } from "./client.js";
+import type { Pax8Client, RequestOpts } from "./client.js";
 import {
   OrderSchema,
   PaginatedResponseSchema,
@@ -20,17 +20,22 @@ export class OrdersApi {
     size?: number;
     companyId?: string;
     /**
-     * #478: server-side sort hint. The Pax8 OpenAPI doesn't enumerate this
-     * for `GET /orders`, but the platform's standard list endpoints accept
-     * `sort=<field>,<direction>` (`createdAt,desc` puts newest first) and
-     * the server returns the parameter unchanged in its `Link` header on
-     * real traffic. The CLI sends `createdAt,desc` by default so partners
-     * with thousands of orders don't see 2013 archives in row 1. Servers
-     * that ignore the hint still get a well-formed request.
+     * #478: server-side sort, `<field>,<direction>`. Callers use the
+     * canonical `createdAt` (the `Order` field); it's rewritten to the wire
+     * name `createdDate` before sending, because the live API answers
+     * `sort=createdAt,…` with an immediate 500 while `createdDate,desc`
+     * works (verified 2026-11-05). Other fields pass through unchanged.
      */
     sort?: string;
-  }): Promise<PaginatedResponse<Order>> {
-    const raw = await this.client.get<unknown>("/orders", params as Record<string, string | number | undefined>);
+  }, opts?: RequestOpts): Promise<PaginatedResponse<Order>> {
+    const wireParams = params?.sort
+      ? { ...params, sort: toWireSort(params.sort) }
+      : params;
+    const raw = await this.client.get<unknown>(
+      "/orders",
+      wireParams as Record<string, string | number | undefined>,
+      opts,
+    );
     return PaginatedOrderSchema.parse(raw);
   }
 
@@ -71,4 +76,25 @@ export class OrdersApi {
     const raw = await this.client.post<unknown>(path, payload);
     return OrderSchema.parse(raw);
   }
+}
+
+/** Canonical → wire sort field names for `GET /orders`. */
+const ORDER_SORT_WIRE_FIELDS: Record<string, string> = { createdAt: "createdDate" };
+
+export function toWireSort(sort: string): string {
+  const [field = "", ...rest] = sort.split(",");
+  const wire = ORDER_SORT_WIRE_FIELDS[field.trim()] ?? field.trim();
+  return [wire, ...rest.map((r) => r.trim())].join(",");
+}
+
+/**
+ * `GET /orders` is slow server-side: ~32s even at `size=1` on a 5,352-order
+ * tenant (2026-11-05), past the 30s default timeout, so every attempt timed
+ * out and retries stretched a call to ~2 minutes. Callers fetching orders
+ * pass this, unless the partner set `PAX8_TIMEOUT_MS` explicitly.
+ */
+export const ORDERS_LIST_TIMEOUT_MS = 90_000;
+
+export function ordersListRequestOpts(): RequestOpts | undefined {
+  return process.env.PAX8_TIMEOUT_MS ? undefined : { timeoutMs: ORDERS_LIST_TIMEOUT_MS };
 }

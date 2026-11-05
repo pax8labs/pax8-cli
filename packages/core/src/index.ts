@@ -27,7 +27,7 @@ export type { Pax8ClientOptions, RequestOpts } from "./api/client.js";
 export { CompaniesApi } from "./api/companies.js";
 export { ContactsApi } from "./api/contacts.js";
 export { ProductsApi } from "./api/products.js";
-export { OrdersApi } from "./api/orders.js";
+export { OrdersApi, toWireSort, ordersListRequestOpts, ORDERS_LIST_TIMEOUT_MS } from "./api/orders.js";
 export { SubscriptionsApi } from "./api/subscriptions.js";
 export { InvoicesApi } from "./api/invoices.js";
 export { UsageApi } from "./api/usage.js";

@@ -10,7 +10,7 @@ import { handleCommandError } from "../lib/errors.js";
 import { formatCurrency, calculateMrr, formatTimeAgo } from "../lib/formatters.js";
 import { enrichProductNames, enrichCompanyNames } from "../lib/enrich-subscriptions.js";
 import { getUpcomingRenewals } from "@pax8/core";
-import { getRecommendations } from "@pax8/core";
+import { getRecommendations, ordersListRequestOpts } from "@pax8/core";
 import type { Subscription, RenewalReport, Recommendation } from "@pax8/core";
 import { replCmd } from "../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../lib/next-step.js";
@@ -212,7 +212,7 @@ export async function fetchAll(
   const [companiesSettled, productsSettled, ordersSettled, subsSettled] = await Promise.allSettled([
     ctx.api.companies.list({ size: 200 }),
     ctx.api.products.list({ size: 200 }),
-    ctx.api.orders.list({ size: 200 }),
+    ctx.api.orders.list({ size: 200 }, ordersListRequestOpts()),
     collectSubsWithSpinner(ctx.api.subscriptions.streamAll(), spinner, "dashboard"),
   ]);
 

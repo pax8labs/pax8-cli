@@ -638,7 +638,9 @@ class OrdersResource {
   }
 
   async list(
-    params?: ListParams & { companyId?: string; status?: string; sort?: string }
+    params?: ListParams & { companyId?: string; status?: string; sort?: string },
+    // Request options (timeouts) only matter over HTTP; accepted for parity.
+    _opts?: unknown,
   ): Promise<PaginatedResponse<Order>> {
     await randomDelay();
     // Test-only fault injection for the `pax8 orders list` timeout-hint UX
@@ -673,10 +675,10 @@ class OrdersResource {
       const [field, direction] = params.sort.split(",").map((s) => s.trim());
       const dir = (direction ?? "asc").toLowerCase() === "desc" ? -1 : 1;
       const getField = (o: Order): string | number => {
-        // #385 / #476: `createdAt` is canonical; `createdDate` was the
-        // pre-removal alias. The mock honors both spellings on the
-        // input `sort` param (real Pax8 API still accepts both wire
-        // names) but the underlying Order field is just `createdAt`.
+        // #385 / #476: `createdAt` is canonical; `createdDate` is the wire
+        // name. The mock honors both spellings. The real API only accepts
+        // `createdDate` (`createdAt` 500s), so `OrdersApi.list` rewrites
+        // it before sending — see `toWireSort`.
         if (field === "createdAt" || field === "createdDate") {
           return o.createdAt ?? "";
         }

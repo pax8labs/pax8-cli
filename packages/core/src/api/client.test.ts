@@ -1157,6 +1157,50 @@ describe("Pax8Client honors PAX8_TIMEOUT_MS (#199)", () => {
     expect((thrown as ApiError).message).not.toContain("99999");
   }, 15_000);
 
+  it("per-request `timeoutMs` overrides the client timeout", async () => {
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      return new Promise((_, reject) => {
+        const err = new DOMException("The operation was aborted", "AbortError");
+        setTimeout(() => reject(err), 10);
+      });
+    });
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      timeout: 47,
+      maxRetries: 0,
+      cacheTtlMs: 0,
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/orders", undefined, { timeoutMs: 61 });
+    } catch (e) {
+      thrown = e;
+    }
+    expect((thrown as ApiError).message).toContain("timed out after 61ms");
+  }, 15_000);
+
+  it("`maxRetries: 0` makes a transient failure a single attempt", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+      headers: new Headers(),
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve(""),
+    });
+    const client = new Pax8Client({
+      tokenManager: mockTokenManager,
+      baseUrl: "https://api.pax8.com/v1",
+      maxRetries: 0,
+      cacheTtlMs: 0,
+    });
+
+    await expect(client.get("/orders")).rejects.toBeInstanceOf(ApiError);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  }, 15_000);
+
   it("falls back to 30000ms when PAX8_TIMEOUT_MS is malformed", async () => {
     process.env.PAX8_TIMEOUT_MS = "garbage";
 

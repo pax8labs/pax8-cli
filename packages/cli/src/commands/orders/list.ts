@@ -4,7 +4,7 @@
 import { Command } from "commander";
 import { buildAction } from "../../lib/actions.js";
 import chalk from "chalk";
-import { ApiError, isApiTimeoutError, ERROR_API_TIMEOUT } from "@pax8/core";
+import { ApiError, isApiTimeoutError, ERROR_API_TIMEOUT, ordersListRequestOpts } from "@pax8/core";
 import { createSpinner } from "../../lib/spinner.js";
 import { CliError, handleCommandError, timeoutRecoverySteps } from "../../lib/errors.js";
 import { buildContext } from "../../lib/context.js";
@@ -108,7 +108,7 @@ Examples:
         params.companyId = await resolveCompanyId(ctx, allOpts.company);
       }
 
-      const result = await ctx.api.orders.list(params);
+      const result = await ctx.api.orders.list(params, ordersListRequestOpts());
 
       // #478 defect 4 / #483: page the companies catalog until every
       // companyId referenced by the orders page is covered. Pre-fix the

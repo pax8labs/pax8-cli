@@ -593,7 +593,7 @@ The same pattern works for `auditInvoices(...)`, `computeMrr(...)`, `computeGrow
 These are tracked and prioritized within the `0.x` line. Each links to a GitHub issue with repro and fix shape.
 
 **Real-API surfaces (depend on Pax8 backend):**
-- `pax8 orders list` against busy tenants can hit the 30s default timeout. Extend it by setting `PAX8_TIMEOUT_MS=<ms>` (default 30000, max 300000). Workaround for very large portfolios: `--size 25` or smaller.
+- `GET /orders` is slow server-side (~30s even for one row on a 5k-order tenant). `pax8 orders list` and `pax8 dashboard` allow it 90s; set `PAX8_TIMEOUT_MS=<ms>` (max 300000) to choose your own limit for every request instead.
 - `pax8 doctor` marks the `~/.pax8/config` file as ✗ (and exits 1) when credentials are configured purely via env vars or `PAX8_DEMO=1` ([#220](https://github.com/pax8labs/pax8-cli/issues/220)).
 
 **Demo-mode UX:**
