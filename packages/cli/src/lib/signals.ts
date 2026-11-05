@@ -5,6 +5,7 @@ import chalk from "chalk";
 import { getTelemetry, ERROR_CANCELLED } from "@pax8/core";
 import { stopAllActiveSpinners } from "./spinner.js";
 import { recordWriteAudit } from "./write-audit.js";
+import { peekActiveCommand } from "./telemetry-context.js";
 
 // Injected at build time by the rollup config (see packages/cli/rollup.config.js).
 declare const __CLI_VERSION__: string;
@@ -171,7 +172,7 @@ export function installSigintHandler(): void {
           cli_version: typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.0.0",
           node_version: process.version,
           os: process.platform,
-          demo_mode: process.env.PAX8_DEMO === "1",
+          demo_mode: peekActiveCommand()?.demoMode ?? process.env.PAX8_DEMO === "1",
         });
       }
     } catch {

@@ -155,12 +155,28 @@ export interface ActiveCommandContext {
   subcommand: string;
   flags: string[];
   startTime: number;
+  /**
+   * Resolved demo mode (env or `config.demo`), filled in by preAction once
+   * it has resolved it for the banner. Failure and SIGINT events read it so
+   * they report the same `demo_mode` as success events.
+   */
+  demoMode?: boolean;
 }
 
 let active: ActiveCommandContext | null = null;
 
 export function setActiveCommand(ctx: ActiveCommandContext): void {
   active = ctx;
+}
+
+/** Record the resolved demo mode on the active command, if any. */
+export function setActiveDemoMode(demoMode: boolean): void {
+  if (active) active.demoMode = demoMode;
+}
+
+/** Read the active command without clearing it (SIGINT path). */
+export function peekActiveCommand(): ActiveCommandContext | null {
+  return active;
 }
 
 /**

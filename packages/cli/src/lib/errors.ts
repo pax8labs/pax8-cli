@@ -527,11 +527,27 @@ async function emitFailureEvent(error: unknown): Promise<void> {
       cli_version: typeof __CLI_VERSION__ !== "undefined" ? __CLI_VERSION__ : "0.1.0",
       node_version: process.version,
       os: process.platform,
-      demo_mode: false,
+      // Previously hard-coded `false`, which mislabeled every failure from a
+      // demo run (and every CI test failure) as a live-API failure.
+      demo_mode: active?.demoMode ?? (await resolveDemoModeForParseFailure()),
       credentialed,
     });
   } catch {
     // Telemetry must never crash the CLI.
+  }
+}
+
+/**
+ * Demo mode for a failure that happened before preAction ran (a Commander
+ * parse error), so nothing has resolved it yet. Dynamic import: `context.ts`
+ * imports this module, so a static import would be circular. Best-effort.
+ */
+async function resolveDemoModeForParseFailure(): Promise<boolean> {
+  try {
+    const { resolveDemoModeAsync } = await import("./context.js");
+    return await resolveDemoModeAsync();
+  } catch {
+    return false;
   }
 }
 
