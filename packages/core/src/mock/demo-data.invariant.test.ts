@@ -125,7 +125,13 @@ describe("demo-data — Zod schema invariant", () => {
   });
 
   it("usageLines parse against UsageLineSchema", () => {
-    expectAllParse(usageLines, UsageLineSchema, "usageLines");
+    // Line fixtures are date-less templates; the mock stamps the requested
+    // `usageDate` (see UsageResource.listLines), so validate them stamped.
+    expectAllParse(
+      usageLines.map((l) => ({ ...l, usageDate: "2026-01-01" })),
+      UsageLineSchema,
+      "usageLines",
+    );
   });
 
   it("quotes parse against QuoteSchema", () => {

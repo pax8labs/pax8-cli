@@ -694,23 +694,25 @@ export type InvoiceItem = z.infer<typeof InvoiceItemSchema>;
 
 // ─── Usage Summary ───────────────────────────────────────────────────────────
 
+/**
+ * A current-billing-period rollup of metered usage for one resource group of
+ * a subscription. Field set verified against the live API (2026-11-05): there
+ * is no date, quantity, or unit price at this level — those live on the daily
+ * usage lines. On every observed line, `quantity × unitPrice = currentCharges`
+ * and `currentProfit = currentCharges − partnerTotal`.
+ */
 export const UsageSummarySchema = z.object({
   id: z.string(),
   companyId: z.string(),
   productId: z.string(),
-  /**
-   * Subscription the usage rolls up to. Optional because not every backend
-   * response includes it (the field is denormalized client-side from the
-   * `/subscriptions/{id}/usage-summaries` request context), but populated in
-   * demo data so commands can resolve summary → subscription without a
-   * second lookup.
-   */
   subscriptionId: z.string().optional(),
-  date: z.string(),
-  quantity: z.number(),
-  unitPrice: z.number(),
-  subtotal: z.number(),
-  resourceGroup: z.string().optional(),
+  resourceGroup: z.string().nullish(),
+  vendorName: z.string().nullish(),
+  currencyCode: z.string().nullish(),
+  currentCharges: z.number(),
+  partnerTotal: z.number(),
+  isTrial: z.boolean().nullish(),
+  /** Not on the wire — filled in client-side from the companies / products APIs. */
   companyName: z.string().optional(),
   productName: z.string().optional(),
 });
@@ -718,14 +720,22 @@ export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
 // ─── Usage Line ──────────────────────────────────────────────────────────────
 
+/**
+ * One product's metered usage for one day (`usageDate`, `YYYY-MM-DD`). Lines
+ * carry no id of their own; they're addressed by summary + date.
+ */
 export const UsageLineSchema = z.object({
-  id: z.string(),
-  usageSummaryId: z.string(),
+  usageDate: z.string(),
+  productId: z.string(),
+  productName: z.string().nullish(),
+  unitOfMeasure: z.string().nullish(),
   quantity: z.number(),
   unitPrice: z.number(),
-  subtotal: z.number(),
-  description: z.string().nullable().optional(),
-  date: z.string(),
+  currentCharges: z.number(),
+  currentProfit: z.number().nullish(),
+  partnerTotal: z.number(),
+  currencyCode: z.string().nullish(),
+  isTrial: z.boolean().nullish(),
 });
 export type UsageLine = z.infer<typeof UsageLineSchema>;
 
@@ -1137,7 +1147,9 @@ export type PageInfo = z.infer<typeof PageInfoSchema>;
 export function PaginatedResponseSchema<T extends z.ZodTypeAny>(itemSchema: T) {
   return z.object({
     page: PageInfoSchema,
-    content: z.array(itemSchema),
+    // The live API omits `content` entirely on an empty page (observed on
+    // usage-summaries: `{ page: { totalElements: 0, ... } }`).
+    content: z.array(itemSchema).default([]),
   });
 }
 

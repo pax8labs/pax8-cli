@@ -3,6 +3,6 @@
 "@pax8/cli": patch
 ---
 
-Always send `sort=resourceGroup,asc` when listing subscription usage summaries. This supplies an explicit field and direction to avoid the reported server-side `ORDER BY id null` SQL error when sorting is omitted.
+Always send an explicit, documented sort (`sort=resourceGroup,asc`) when listing subscription usage summaries, and sort demo usage summaries by resource group before pagination.
 
-Demo usage summaries also sort by resource group before pagination. Usage lines do not have a documented sort parameter; whether that endpoint shares the backend SQL bug requires separate verification.
+For context on the `ORDER BY id null` usage-summary 500s seen in Pax8 API logs: they reproduce when sorting by `currentCharges` or `partnerTotal` (with or without a direction), which this CLI has never sent; the logged `pax8-cli/1.0.0` user agent belongs to a different tool.

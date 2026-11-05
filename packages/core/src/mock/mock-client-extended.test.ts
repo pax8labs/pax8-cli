@@ -338,13 +338,16 @@ describe("MockPax8Client — extended coverage", () => {
       const summaries = groups.map((resourceGroup, index) => ({
         id: `usage-sort-${index}`,
         companyId: "company-sort-regression",
+        companyName: "Sort Regression Co",
         productId: "product-sort-regression",
-        date: "2026-11-01",
-        quantity: 1,
-        unitPrice: 1,
-        subtotal: 1,
+        productName: "Sort Regression Product",
         subscriptionId,
-        resourceGroup,
+        resourceGroup: resourceGroup as string,
+        vendorName: "Vendor",
+        currencyCode: "USD",
+        currentCharges: 1,
+        partnerTotal: 1,
+        isTrial: false,
       }));
       usageSummaries.push(...summaries);
 
@@ -403,14 +406,18 @@ describe("MockPax8Client — extended coverage", () => {
     it("returns lines for a given summary id", async () => {
       const summaries = await client.usage.listSummaries(REDWOOD_ACRONIS_SUB, { size: 100 });
       const summaryId = summaries.content[0].id;
-      const result = await client.usage.listLines(summaryId, { size: 100 });
+      const result = await client.usage.listLines(summaryId, { usageDate: "2026-04-15", size: 100 });
+      expect(result.content.length).toBeGreaterThan(0);
       for (const line of result.content) {
-        expect(line.usageSummaryId).toBe(summaryId);
+        // Lines are daily: the mock stamps the requested date, like the live API.
+        expect(line.usageDate).toBe("2026-04-15");
+        // Fixture-only filter key must not leak past the schema parse.
+        expect(line).not.toHaveProperty("usageSummaryId");
       }
     });
 
     it("returns empty content for an unknown summary id", async () => {
-      const result = await client.usage.listLines("does-not-exist", { size: 100 });
+      const result = await client.usage.listLines("does-not-exist", { usageDate: "2026-04-15", size: 100 });
       expect(result.content).toEqual([]);
     });
   });
