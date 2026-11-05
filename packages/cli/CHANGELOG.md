@@ -1,5 +1,55 @@
 # @pax8/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- [#753](https://github.com/pax8labs/pax8-cli/pull/753) [`8299aba`](https://github.com/pax8labs/pax8-cli/commit/8299aba5decc2b7b6faea69e38f24d6d4d67bdc5) Thanks [@jidulberger](https://github.com/jidulberger)! - Fix `pax8 orders list` and `pax8 doctor` against the live Pax8 API.
+
+  - `pax8 orders list` failed with `ERROR_INTERNAL` (500) on every call: the default sort was sent as `sort=createdAt,desc`, which the API rejects with an immediate 500. `OrdersApi.list` now rewrites the canonical `createdAt` to the wire name `createdDate` (other fields pass through).
+  - `GET /orders` takes ~30s server-side even at `size=1` on large tenants, just past the 30s default timeout, so calls timed out and retried for ~2 minutes. `orders list` and `dashboard` now allow `/orders` 90s (unless `PAX8_TIMEOUT_MS` is set).
+  - `pax8 doctor` no longer appears to hang: its API probes are single attempts capped at 15s, and a probe that only timed out is reported as slow (`⚠ Orders slower than 15s`) instead of failing the check.
+
+  `@pax8/core`: `Pax8ClientOptions.maxRetries` (default 3), per-request `RequestOpts.timeoutMs`, `OrdersApi.list(params, opts?)`, and new `toWireSort`, `ordersListRequestOpts`, `ORDERS_LIST_TIMEOUT_MS` exports.
+
+- [#748](https://github.com/pax8labs/pax8-cli/pull/748) [`d6aa97e`](https://github.com/pax8labs/pax8-cli/commit/d6aa97e7cf27ab84677dee7c44d3d07516d3c104) Thanks [@cbrownpax8](https://github.com/cbrownpax8)! - Breaking change: upgrade Zod to version 4 to address the dependency audit finding. Consumers passing Zod schemas to the core client must use Zod 4. This ships as a minor release while the packages are pre-1.0.
+
+  `Pax8Client.getPaginated<T>` now requires its optional schema to be `ZodType<T>`: the schema's parsed output must match the iterator's item type. Callers using a broad `ZodType` annotation must retain the concrete schema type or annotate it as `ZodType<T>`. Callers passing a schema that transforms its input should use the transformed output type for `T`.
+
+  Preserve nested configuration defaults with `prefault`, use Zod's default validation messages with field paths instead of custom per-code formatting, and type pagination schemas by their parsed output. Human-readable validation errors no longer include raw Zod issue-code tokens; structured CLI error codes stay unchanged.
+
+  Upgrade the Vite validation toolchain and source-map-js dependency to patched versions so the high-severity CI audit passes.
+
+- [#751](https://github.com/pax8labs/pax8-cli/pull/751) [`724280d`](https://github.com/pax8labs/pax8-cli/commit/724280d9bc86749c878c41cd705cc40e8a7476a0) Thanks [@jidulberger](https://github.com/jidulberger)! - Ask once, on the first interactive run, whether to share anonymous usage telemetry (`[Y/n]`, Enter means yes). The answer is saved as `telemetry.asked` and never re-asked; nothing is sent before an answer. Non-interactive runs are never prompted (non-TTY stdin/stderr, `CI`, `--json`, `--quiet`, `--yes` / `PAX8_YES=1`, REPL children, `pax8 telemetry` itself), so agents and pipelines stay off unless `pax8 telemetry enable` is run. `DO_NOT_TRACK=1` and `PAX8_TELEMETRY_DISABLED=1` still win.
+
+  Telemetry is no longer sent from the project's own test suite (`VITEST` / `NODE_ENV=test`), which had been the bulk of recorded events.
+
+  `@pax8/core`: new `Telemetry.needsConsent()` / `recordConsent()`; the config schema gains `telemetry.asked`.
+
+- [#750](https://github.com/pax8labs/pax8-cli/pull/750) [`1a82dde`](https://github.com/pax8labs/pax8-cli/commit/1a82dde4d90849b5f2e82cc1d18b3f7581a82db6) Thanks [@jidulberger](https://github.com/jidulberger)! - Fix `pax8 usage list` and `pax8 usage show` against the live Pax8 API. Both previously failed with `ERROR_API_VALIDATION` on every real subscription: the usage schemas were modeled on demo data and never matched the wire shape.
+
+  - Paginated responses that omit `content` (the API's shape for an empty page) now parse as an empty list instead of failing validation.
+  - Breaking (`@pax8/core`): `UsageSummary` now mirrors the live shape — `resourceGroup`, `vendorName`, `currencyCode`, `currentCharges`, `partnerTotal`, `isTrial` — and drops `date`, `quantity`, `unitPrice`, and `subtotal`, which the API never returns at summary level. `UsageLine` is now one product's usage for one day (`usageDate`, `productName`, `unitOfMeasure`, `quantity`, `unitPrice`, `currentCharges`, `currentProfit`, `partnerTotal`, `currencyCode`) with no `id` / `usageSummaryId`. `UsageApi.listLines` now requires `{ usageDate: "YYYY-MM-DD" }`, which the API mandates.
+  - `pax8 usage show --lines` shows one day's lines (today by default); the new `--date YYYY-MM-DD` picks the day and implies `--lines`.
+  - `pax8 usage list --month` is now ignored with a stderr warning: summaries are current-billing-period rollups and carry no date.
+  - Usage tables show company and product names (resolved from their IDs), resource group, charges, and partner total, with per-currency totals.
+  - Demo mode now parses usage fixtures through the same schemas as the live client, so fixture drift fails in CI instead of only in production.
+
+- [#752](https://github.com/pax8labs/pax8-cli/pull/752) [`0e6a064`](https://github.com/pax8labs/pax8-cli/commit/0e6a0643844444b243f9cc963885b38667722acb) Thanks [@jidulberger](https://github.com/jidulberger)! - Send a `User-Agent` on every Pax8 API request, including the OAuth token exchange: `pax8labs-cli/<version> pax8labs-core node/<version> (<platform>)`. Requests previously went out as Node's default `node`, so Pax8's API logs couldn't attribute CLI traffic — and a third-party tool's hard-coded `pax8-cli/1.0.0` was mistaken for this CLI. The `pax8labs-` prefix avoids that collision.
+
+  `@pax8/core`: new `setUserAgentProduct("name/version")` lets embedders name themselves (otherwise core sends `pax8labs-core node/... (...)`); `getUserAgent()` returns the header value.
+
+### Patch Changes
+
+- [#754](https://github.com/pax8labs/pax8-cli/pull/754) [`3a26922`](https://github.com/pax8labs/pax8-cli/commit/3a269223522f433727ec67e5739cb76a865bcc15) Thanks [@jidulberger](https://github.com/jidulberger)! - Telemetry failure events now report the real `demo_mode`. It was hard-coded to `false` on every failure event (and read from `PAX8_DEMO` only on SIGINT), so demo-mode and test-suite failures showed up as live-API failures. Failure and SIGINT events now use the same resolved demo mode (env or `config.demo`) as success events; parse-time failures resolve it on the spot.
+
+- [#748](https://github.com/pax8labs/pax8-cli/pull/748) [`d6aa97e`](https://github.com/pax8labs/pax8-cli/commit/d6aa97e7cf27ab84677dee7c44d3d07516d3c104) Thanks [@cbrownpax8](https://github.com/cbrownpax8)! - Always send an explicit, documented sort (`sort=resourceGroup,asc`) when listing subscription usage summaries, and sort demo usage summaries by resource group before pagination.
+
+  For context on the `ORDER BY id null` usage-summary 500s seen in Pax8 API logs: they reproduce when sorting by `currentCharges` or `partnerTotal` (with or without a direction), which this CLI has never sent; the logged `pax8-cli/1.0.0` user agent belongs to a different tool.
+
+- Updated dependencies [[`8299aba`](https://github.com/pax8labs/pax8-cli/commit/8299aba5decc2b7b6faea69e38f24d6d4d67bdc5), [`d6aa97e`](https://github.com/pax8labs/pax8-cli/commit/d6aa97e7cf27ab84677dee7c44d3d07516d3c104), [`724280d`](https://github.com/pax8labs/pax8-cli/commit/724280d9bc86749c878c41cd705cc40e8a7476a0), [`1a82dde`](https://github.com/pax8labs/pax8-cli/commit/1a82dde4d90849b5f2e82cc1d18b3f7581a82db6), [`d6aa97e`](https://github.com/pax8labs/pax8-cli/commit/d6aa97e7cf27ab84677dee7c44d3d07516d3c104), [`0e6a064`](https://github.com/pax8labs/pax8-cli/commit/0e6a0643844444b243f9cc963885b38667722acb)]:
+  - @pax8/core@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes
