@@ -436,6 +436,41 @@ describe("invoices audit --company scoping (false all-clear regression)", () => 
   });
 });
 
+// #756: a portfolio with NO invoices for the current period has not been
+// billed yet. Reconciling every active sub against nothing turned that into
+// one `missing` finding per subscription (497 on a live tenant). The large
+// fixture has 0 invoices (#709), which is exactly that shape.
+describe("invoices audit when nothing in the portfolio has been invoiced", () => {
+  const LARGE = { PAX8_DEMO_SCALE: "large" };
+
+  it("does not invent a missing row per active subscription", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit", "--json"], LARGE);
+    const report = JSON.parse(r.stdout);
+    expect(report.discrepancies).toEqual([]);
+    expect(report.itemsAudited).toBe(0);
+    expect(r.stderr).toMatch(/No client has been invoiced yet/);
+    expect(r.stderr).toMatch(/NOT reconciled/);
+    expect(r.stderr).toMatch(/not a clean bill of health/i);
+  });
+
+  it("applies to a company-scoped audit too", async () => {
+    const subs = JSON.parse(
+      (await runCliExpectSuccess(["subscriptions", "list", "--status", "Active", "--size", "1", "--json"], LARGE))
+        .stdout,
+    );
+    // By ID: name resolution on the large fixture is not what's under test.
+    const companyId = subs.subscriptions[0].companyId;
+    const r = await runCliExpectSuccess(["invoices", "audit", "--company", companyId, "--json"], LARGE);
+    expect(JSON.parse(r.stdout).discrepancies).toEqual([]);
+    expect(r.stderr).toMatch(/No client has been invoiced yet/);
+  });
+
+  it("does not render a success checkmark", async () => {
+    const r = await runCliExpectSuccess(["invoices", "audit"], { ...LARGE, PAX8_OUTPUT_FORMAT: "table" });
+    expect(r.stdout).not.toContain("✓");
+  });
+});
+
 // A PAST month cannot be reconciled from this data at all: `invoices.list` is
 // month-filtered but `subscriptions.streamAll()` is not, and auditInvoices()
 // keeps only currently-active subs. A sub live in the audited month and

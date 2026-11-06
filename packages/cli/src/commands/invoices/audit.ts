@@ -16,6 +16,7 @@ import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
 import { validateMonth } from "../../lib/validate.js";
 import { collectSubsWithSpinner } from "../../lib/subs-stream.js";
+import { buildCompanyNameMap, enrichCompanyNames } from "../../lib/enrich-subscriptions.js";
 
 export const invoicesAuditCommand = new Command("audit")
   .description("Audit invoices against active subscriptions")
@@ -131,7 +132,7 @@ JSON output (--json):
       // false negative on a reconciliation tool, on the account with the
       // largest gap in the fixture.
       // Computed once when the scope has no invoice items and reused as the
-      // final report if we fall through to case (c) — the inputs are identical
+      // final report if we fall through to case (d) — the inputs are identical
       // there (`itemsResult.content` is empty), so re-running the auditor would
       // duplicate the whole reconciliation on what is now a common path.
       let emptyScopeReport: ReturnType<typeof auditInvoices> | undefined;
@@ -224,11 +225,46 @@ JSON output (--json):
           return;
         }
 
-        // (c) Current period with active subs — "active now" IS the correct
-        //     population, so those subs genuinely should have been invoiced.
-        //     Fall through: auditInvoices() marks every unmatched sub
-        //     `missing`, which is exactly what the unscoped audit reports for
-        //     the same company.
+        // (c) Current period, but NOTHING in the portfolio has been invoiced
+        //     for it (#756). That is "billing hasn't happened yet", not "Pax8
+        //     under-billed every subscription" — the line `today` already
+        //     draws via auditWhenInvoiced (#705). Without this, a live tenant
+        //     with no invoices got one `missing` row per active subscription.
+        //     A company-scoped audit has to ask the unscoped question
+        //     separately: its own empty scope says nothing about whether the
+        //     rest of the portfolio was billed.
+        const portfolioInvoiced = companyId
+          ? (await ctx.api.invoices.list({ month: options.month, size: 1 })).page.totalElements > 0
+          : false;
+        if (!portfolioInvoiced) {
+          if (ctx.outputFormat !== "quiet") {
+            const monthLabel = options.month ? formatMonthLabel(options.month) : "the current period";
+            process.stderr.write(
+              `\n  ${chalk.yellow("⚠")} No client has been invoiced yet for ${monthLabel}.\n` +
+                `    ${activeSubCount} active subscription${activeSubCount === 1 ? "" : "s"} ` +
+                `${activeSubCount === 1 ? "was" : "were"} NOT reconciled — there is no invoice\n` +
+                `    to reconcile against yet.\n\n` +
+                `    ${chalk.dim("This is not a clean bill of health.")}\n\n`,
+            );
+          }
+          if (ctx.outputFormat === "json") {
+            // Same envelope and the same #709 caveat as case (b).
+            process.stdout.write(
+              JSON.stringify(
+                { discrepancies: [], totalOvercharge: 0, totalUndercharge: 0, netImpact: 0, itemsAudited: 0 },
+                null,
+                2,
+              ) + "\n",
+            );
+          }
+          return;
+        }
+
+        // (d) Current period, this company has active subs and no invoice
+        //     while the rest of the portfolio was billed — those subs
+        //     genuinely should have been invoiced. Fall through:
+        //     auditInvoices() marks every unmatched sub `missing`, which is
+        //     exactly what the unscoped audit reports for the same company.
       }
 
       // A non-current period that DOES have invoice items still cannot be
@@ -248,6 +284,15 @@ JSON output (--json):
 
       // Run audit (reusing the empty-scope report when one was computed above)
       const report = emptyScopeReport ?? auditInvoices(itemsResult.content, normalizedSubs);
+
+      // `missing` rows are built from the subscription, and live subscriptions
+      // carry only companyId — every such row rendered with a blank company
+      // (#756). Fill the gaps from `clients list`; rows that already have a
+      // name (invoice-side, or the demo fixture) are left alone.
+      const unnamed = report.discrepancies.filter((d) => !d.companyName);
+      if (unnamed.length > 0) {
+        enrichCompanyNames(await buildCompanyNameMap(ctx, unnamed, { quiet: globalOpts.quiet }), unnamed);
+      }
 
       // Stamp each discrepancy with a stable ID so `pax8 invoices dispute
       // --discrepancy <id>` can locate it without re-auditing under the user's
