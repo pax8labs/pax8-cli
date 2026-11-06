@@ -5,54 +5,14 @@ import { ERROR_PRODUCT_NOT_FOUND, type Product } from "@pax8/core";
 import type { CommandContext } from "./context.js";
 import { CliError } from "./errors.js";
 import { replCmd } from "./confirm.js";
-
-// Vendors common in the Pax8 catalog. Used to detect a vendor prefix in
-// user input ("Microsoft 365 Business Premium" → vendorName=Microsoft) so
-// we can narrow the API search dramatically. Not exhaustive — unknown
-// vendors fall back to a keyword-only search, which still returns ≤200
-// results for any reasonable single keyword.
-const KNOWN_VENDORS = [
-  "Microsoft",
-  "AvePoint",
-  "Acronis",
-  "Bitdefender",
-  "CrowdStrike",
-  "Datto",
-  "Dropsuite",
-  "ConnectWise",
-  "Kaseya",
-  "Mimecast",
-  "N-able",
-  "Proofpoint",
-  "SentinelOne",
-  "Sophos",
-  "Veeam",
-  "Webroot",
-  "Keeper",
-  "Duo",
-  "Cisco",
-  "Adobe",
-  "Google",
-  "Dropbox",
-  "Box",
-  "Zoom",
-  "Slack",
-];
+import { searchProducts } from "./product-search.js";
 
 const STOPWORDS = new Set([
   "the", "a", "an", "and", "or", "for", "of", "to", "in", "by", "with",
 ]);
 
-function detectVendor(input: string): string | undefined {
-  const lower = input.toLowerCase();
-  return KNOWN_VENDORS.find((v) => lower.startsWith(v.toLowerCase()));
-}
-
-// Pick the most discriminating single keyword for the API's `search` param.
-// The Pax8 API only honors single-word values, so we must pick one. Prefer
-// longer non-stopword tokens — "Premium" (7) beats "Business" (8) only
-// because length is the proxy for specificity, but ties go to the later
-// token (more likely to be the SKU-distinguishing one).
+// A single keyword for the "Did you mean" lookup on a miss — not for finding
+// the product itself, which searchProducts does. Longest non-stopword token.
 function pickKeyword(tokens: string[]): string | undefined {
   const candidates = tokens.filter(
     (t) => t.length >= 4 && !STOPWORDS.has(t.toLowerCase())
@@ -77,72 +37,48 @@ export async function resolveProduct(ctx: CommandContext, input: string): Promis
     } catch { /* not found by ID, try name search */ }
   }
 
-  const vendor = detectVendor(input);
-  const remaining = vendor
-    ? input.slice(vendor.length).trim()
-    : input;
-  const tokens = remaining.split(/\s+/).filter(Boolean);
-  const keyword = pickKeyword(tokens) ?? tokens[0];
-
-  const result = await ctx.api.products.list({
-    vendorName: vendor,
-    search: keyword,
-    size: 200,
-  });
+  // Every catalog product whose name contains all the input's words (#757).
+  // The old lookup scanned one page of a single-keyword search, so "unique
+  // substring match" meant unique within ~100 rows: "Microsoft 365 E3"
+  // resolved to a Defender add-on, and exact names past that page failed.
+  const { products: candidates } = await searchProducts(ctx, input);
   const lower = input.toLowerCase();
 
-  const exact = result.content.find((p) => p.name.toLowerCase() === lower);
-  if (exact) return exact;
+  const exact = candidates.find((p) => p.name.toLowerCase() === lower);
+  if (exact) return exact as Product;
 
-  const fuzzy = result.content.filter((p) => p.name.toLowerCase().includes(lower));
-  if (fuzzy.length === 1) return fuzzy[0];
-  if (fuzzy.length > 1) {
+  // Prefer names that contain the input as one phrase, then any order.
+  const phrase = candidates.filter((p) => p.name.toLowerCase().includes(lower));
+  const pool = phrase.length > 0 ? phrase : candidates;
+  if (pool.length === 1) return pool[0] as Product;
+  if (pool.length > 1) {
     // #408: include IDs in the "Did you mean" list so the user can
     // copy/paste a canonical match instead of round-tripping through
-    // `pax8 products search`. Mirrors the partner-walkthrough rec.
-    const lines = fuzzy
+    // `pax8 products search`.
+    const lines = pool
       .slice(0, 5)
       .map((p) => `  ${p.name} (${p.id})`)
       .join("\n");
     throw new CliError(
       `Multiple products match "${input}"`,
-      [`Use an exact name or product ID.`],
+      [`${pool.length} products match. Use an exact name or product ID.`],
       [`Did you mean:\n${lines}`],
       undefined,
       ERROR_PRODUCT_NOT_FOUND,
     );
   }
 
-  // Fall back to multi-token client-side match: every input token appears
-  // in the product name. Catches cases where "Microsoft 365 Business
-  // Premium" doesn't appear as a contiguous substring but each word does.
-  const inputTokens = input.toLowerCase().split(/\s+/).filter(Boolean);
-  const tokenMatches = result.content.filter((p) => {
-    const name = p.name.toLowerCase();
-    return inputTokens.every((t) => name.includes(t));
-  });
-  if (tokenMatches.length === 1) return tokenMatches[0];
-  if (tokenMatches.length > 1) {
-    const names = tokenMatches
-      .slice(0, 5)
-      .map((p) => p.name)
-      .join(", ");
-    throw new CliError(
-      `Multiple products match "${input}"`,
-      [`Matches: ${names}`],
-      ["Use an exact name or product ID."],
-      undefined,
-      ERROR_PRODUCT_NOT_FOUND,
-    );
-  }
-
   // #408: surface inline "Did you mean" suggestions on a not-found miss
-  // rather than only pointing the user at `pax8 products search`. We
-  // already have a 200-row keyword search result in `result.content` —
-  // rank those by simple token-overlap against the input and surface the
-  // top 3. Falls back gracefully when there are zero candidates.
+  // rather than only pointing the user at `pax8 products search`. Nothing
+  // contains every word, so fetch one page for the longest word and rank
+  // it by token overlap against the input. Best-effort: a failed lookup
+  // just means no suggestions.
   const recoverySteps: string[] = [];
-  const suggestions = rankProductSuggestions(input, result.content).slice(0, 3);
+  const tokens = input.split(/\s+/).filter(Boolean);
+  const nearby = await ctx.api.products
+    .list({ search: pickKeyword(tokens) ?? tokens[0], size: 100 })
+    .then((r) => r.content, () => []);
+  const suggestions = rankProductSuggestions(input, nearby).slice(0, 3);
   if (suggestions.length > 0) {
     const lines = suggestions.map((p) => `  ${p.name} (${p.id})`).join("\n");
     recoverySteps.push(`Did you mean:\n${lines}`);

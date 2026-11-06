@@ -9,6 +9,7 @@ import { createSpinner } from "../../lib/spinner.js";
 import { handleCommandError } from "../../lib/errors.js";
 import { replCmd } from "../../lib/confirm.js";
 import { promptNextSteps, type NextStep } from "../../lib/next-step.js";
+import { searchProducts, PRODUCT_SEARCH_MAX_ROWS } from "../../lib/product-search.js";
 
 export const productsSearchCommand = new Command("search")
   .description("Search products by name")
@@ -29,28 +30,15 @@ Examples:
 
     try {
       spinner.start();
-      // The Pax8 API's `search` param only honors single-word values, so
-      // pass the longest token from the query and filter the rest
-      // client-side. Without this we'd be limited to the first 200
-      // products of a 2,600+ catalog.
-      const tokens = query.split(/\s+/).filter(Boolean);
-      const apiKeyword = tokens.reduce(
-        (best: string, t: string) => (t.length >= best.length ? t : best),
-        ""
-      );
-      const result = await ctx.api.products.list({
+      const { products: matches, truncated } = await searchProducts(ctx, query, {
         vendorName: options.vendor,
-        search: apiKeyword || undefined,
-        size: 200,
       });
       spinner.stop();
-
-      const q = query.toLowerCase();
-      const queryTokens = q.split(/\s+/).filter(Boolean);
-      const matches = result.content.filter((p) => {
-        const name = p.name.toLowerCase();
-        return name.includes(q) || queryTokens.every((t) => name.includes(t));
-      });
+      if (truncated && !globalOpts.quiet) {
+        process.stderr.write(
+          chalk.yellow(`  ⚠ "${query}" matches more than ${PRODUCT_SEARCH_MAX_ROWS.toLocaleString("en-US")} products; showing matches from the first ${PRODUCT_SEARCH_MAX_ROWS.toLocaleString("en-US")}. Add a word to narrow it.\n`),
+        );
+      }
 
       const columns = [
         { key: "name", header: "Name", width: 40 },
@@ -59,10 +47,10 @@ Examples:
         { key: "unitOfMeasure", header: "Category", width: 15 },
       ];
 
-      // #483: emit a `{ products, page }` envelope on `--json`. The Pax8
-      // search API isn't paginated end-to-end here (we narrow client-side
-      // after a single-page fetch), so we synthesize a single-page envelope
-      // for shape consistency with the other list commands.
+      // #483: emit a `{ products, page }` envelope on `--json`. Matches are
+      // narrowed client-side (searchProducts), so there is no server page to
+      // report; synthesize a single-page envelope for shape consistency with
+      // the other list commands.
       if (ctx.outputFormat === "json") {
         process.stdout.write(
           JSON.stringify(

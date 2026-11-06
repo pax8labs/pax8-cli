@@ -27,7 +27,7 @@ interface ListParams {
 
 // Mock list() that mirrors the real API's filtering: vendorName narrows
 // by vendor (substring), search is a single-word substring against name
-// and silently returns [] for multi-word values.
+// and silently returns [] for multi-word values, and pages cap at 100 rows.
 function makeMockCtx(products: ReturnType<typeof makeProduct>[] = []): CommandContext {
   const list = vi.fn().mockImplementation((params: ListParams = {}) => {
     let filtered = products;
@@ -42,7 +42,12 @@ function makeMockCtx(products: ReturnType<typeof makeProduct>[] = []): CommandCo
         ? filtered.filter((p) => p.name.toLowerCase().includes(s))
         : [];
     }
-    return Promise.resolve({ content: filtered });
+    const size = Math.min(params.size ?? 10, 100);
+    const page = params.page ?? 0;
+    return Promise.resolve({
+      content: filtered.slice(page * size, (page + 1) * size),
+      page: { size, number: page, totalElements: filtered.length, totalPages: Math.ceil(filtered.length / size) },
+    });
   });
 
   return {
@@ -128,31 +133,40 @@ describe("resolveProduct", () => {
     expect(ctx.api.products.list).toHaveBeenCalled();
   });
 
-  it("uses vendorName + single-keyword search for multi-word names with known vendor", async () => {
-    const product = makeProduct();
-    const ctx = makeMockCtx([product]);
+  it("never sends whitespace in the API search param", async () => {
+    const ctx = makeMockCtx([makeProduct(), makeProduct({ id: "p2", name: "ObscureVendor Pro Suite" })]);
 
     await resolveProduct(ctx, "Microsoft 365 Business Premium");
-
-    const list = ctx.api.products.list as ReturnType<typeof vi.fn>;
-    const args = list.mock.calls[0][0];
-    expect(args.vendorName).toBe("Microsoft");
-    // longest non-stopword in "365 Business Premium" is "Business" (8 chars)
-    expect(args.search).toBe("Business");
-    expect(/\s/.test(args.search)).toBe(false);
-  });
-
-  it("falls back to keyword-only search when vendor is unknown", async () => {
-    const product = makeProduct({ name: "ObscureVendor Pro Suite" });
-    const ctx = makeMockCtx([product]);
-
     await resolveProduct(ctx, "ObscureVendor Pro Suite");
 
     const list = ctx.api.products.list as ReturnType<typeof vi.fn>;
-    const args = list.mock.calls[0][0];
-    expect(args.vendorName).toBeUndefined();
-    expect(args.search).toBeTruthy();
-    expect(/\s/.test(args.search)).toBe(false);
+    for (const [args] of list.mock.calls) expect(/\s/.test(args.search ?? "")).toBe(false);
+  });
+
+  // #757: the lookup used to scan one page of a single-keyword search, so
+  // "only one substring match" meant only one in ~100 rows.
+  it("does not pick the one phrase match on page 1 when the catalog has others", async () => {
+    const filler = Array.from({ length: 150 }, (_, i) =>
+      makeProduct({ id: `f${i}`, name: `Microsoft 365 Filler ${i}` }),
+    );
+    const products = [
+      makeProduct({ id: "addon", name: "Defender Add On for Microsoft 365 E3" }),
+      ...filler,
+      makeProduct({ id: "e3", name: "Microsoft 365 E3 [New Commerce Experience]" }),
+    ];
+    const ctx = makeMockCtx(products);
+
+    await expect(resolveProduct(ctx, "Microsoft 365 E3")).rejects.toThrow(/Multiple products match/);
+  });
+
+  it("resolves an exact name that sits past the first page", async () => {
+    const filler = Array.from({ length: 250 }, (_, i) =>
+      makeProduct({ id: `f${i}`, name: `Microsoft 365 Business Filler ${i} [New Commerce Experience]` }),
+    );
+    const target = makeProduct({ id: "bp", name: "Microsoft 365 Business Premium [New Commerce Experience]" });
+    const ctx = makeMockCtx([...filler, target]);
+
+    expect(await resolveProduct(ctx, "Microsoft 365 Business Premium [New Commerce Experience]")).toEqual(target);
   });
 
   it("matches against products returned only when each input token appears in the name", async () => {
@@ -169,9 +183,9 @@ describe("resolveProduct", () => {
   });
 
   it("recovers when API search keyword filters out the target — mirrors the live-API bug", async () => {
-    // Regression: the live API treats whitespace in `search` as zero
-    // results. Our resolver picks a single keyword ("Business") so the
-    // API still returns the product, then exact-matches client-side.
+    // Regression: multi-word `search` values are unreliable on the live API
+    // (the mock returns nothing for them). The resolver sends single words
+    // only, then exact-matches client-side.
     const product = makeProduct();
     const ctx = makeMockCtx([product]);
 
